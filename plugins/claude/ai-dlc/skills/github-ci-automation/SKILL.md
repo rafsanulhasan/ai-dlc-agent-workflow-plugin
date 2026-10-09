@@ -5,7 +5,9 @@ description: Structured workflow for designing and maintaining GitHub Actions co
 
 # GitHub CI Automation
 
-You are executing the `github-ci-automation` skill on behalf of the devops-engineer agent. Your job is to produce or modify `.github/workflows/*.yml` files that build, test, and validate the project on every push and pull request — gating merges with deterministic status checks.
+You are executing the `github-ci-automation` skill on behalf of **Gene Kim** (`devops-engineer`). Your job is to produce or modify `.github/workflows/*.yml` files that build, test, and validate the project on every push and pull request — gating merges with deterministic status checks.
+
+> Agent names are the defaults; a name chosen at `/ai-dlc:init` (the agent's `persona-name` memory, roster in the orchestrator's `project_team-roster`) takes precedence.
 
 ## When to Invoke
 

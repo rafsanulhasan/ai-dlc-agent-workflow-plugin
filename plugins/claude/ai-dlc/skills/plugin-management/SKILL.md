@@ -7,6 +7,8 @@ description: "Creates and maintains a plugin that ships the same agents and skil
 
 This is how the **ai-dlc** plugin is built; use it as the recipe for any new plugin and as the rulebook when changing one. The Claude Code plugin is the **source of truth**; the GitHub Copilot plugin is **generated** from it by `build-copilot.mjs` (shipped next to this file in `templates/`). Nobody edits the Copilot tree by hand.
 
+> Agent names are the defaults; a name chosen at `/ai-dlc:init` (the agent's `persona-name` memory, roster in the orchestrator's `project_team-roster`) takes precedence.
+
 ```
 Skill("ai-dlc:plugin-management", args: "create <plugin-name>")   // new dual-platform plugin + marketplaces
 Skill("ai-dlc:plugin-management", args: "update <change>")        // change agents, skills or manifests in an existing one
@@ -76,7 +78,7 @@ Copy `${CLAUDE_SKILL_DIR}/templates/build-copilot.mjs` to `tools/build-copilot.m
 | `hooks/hooks.json` (optional) | `hooks.json` in Copilot's `version: 1` format (`Stop`→`agentStop`, …) |
 | manifest | generated `plugin.json` + `GENERATED.md` |
 
-It also writes **generated sources** into the Claude plugin when their inputs exist (an `AGENTS.md` template built from `tools/templates/AGENTS.template.md` + the orchestrator persona; the copy of itself in this skill). Skills listed in `tools/project-skills.json` are also mirrored into the repo's own `.claude/skills/<name>/` for repo-local use. `--check` exits 1 when the Copilot tree or any generated source is stale — that is what CI and the Stop hook run. When the build warns `no Copilot alias for tool "X"`, add `X` to `ALIAS` or `DROP`.
+It also writes **generated sources** into the Claude plugin when their inputs exist (an `AGENTS.md` template built from `tools/templates/AGENTS.template.md` + the **Scott Hanselman** (`orchestrator`) persona; the copy of itself in this skill). Skills listed in `tools/project-skills.json` are also mirrored into the repo's own `.claude/skills/<name>/` for repo-local use. `--check` exits 1 when the Copilot tree or any generated source is stale — that is what CI and the Stop hook run. When the build warns `no Copilot alias for tool "X"`, add `X` to `ALIAS` or `DROP`.
 
 ## 7. Change workflow (every change)
 

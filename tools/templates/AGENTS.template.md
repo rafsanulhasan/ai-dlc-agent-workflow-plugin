@@ -57,6 +57,7 @@ Use these wherever the persona below says "the project's build and test commands
 
 - Each agent keeps persistent memory under `.claude/agent-memory/<agent-name>/` with a `MEMORY.md` index, managed through the `manage-memory` skill.
 - Load at the start of a task; save durable learnings (decisions, recurring pitfalls, conventions) at the end. Never store secrets.
+- If an agent's memory holds `persona-name`, that name replaces its default persona name. The team roster lives in the orchestrator's memory (`project_team-roster.md`).
 
 ### Repository conventions
 

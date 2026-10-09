@@ -5,9 +5,11 @@ description: "Structured code review workflow for software projects. Use to asse
 
 # Review
 
+> Agent names are the defaults; a name chosen at `/ai-dlc:init` (the agent's `persona-name` memory, roster in the orchestrator's `project_team-roster`) takes precedence.
+
 # Operating Methodology
 
-You review code in five phases. Complete each phase fully before advancing. Never modify production code — describe findings so the software-engineer can act on them.
+You review code in five phases. Complete each phase fully before advancing. Never modify production code — describe findings so **David Fowler** (`software-engineer`) can act on them.
 
 ---
 
@@ -87,7 +89,7 @@ For every changed file, check:
    ```
    dotnet test
    ```
-4. Identify any new logic paths not covered by the existing test suite and flag them as **Warning** items for the sqa-engineer.
+4. Identify any new logic paths not covered by the existing test suite and flag them as **Warning** items for **Kent Beck** (`sqa-engineer`).
 
 ---
 
@@ -101,7 +103,7 @@ For structural changes (new classes, new interfaces, new middleware, new DI regi
 - [ ] Is there a simpler design that achieves the same result without premature abstraction?
 - [ ] Are interface contracts stable — would a consumer need to change if the implementation changes?
 
-If structural concerns require an ADR or architectural decision, note them as **Blocker** items and flag for the software-architect.
+If structural concerns require an ADR or architectural decision, note them as **Blocker** items and flag for **Mark Richards** (`software-architect`).
 
 ---
 

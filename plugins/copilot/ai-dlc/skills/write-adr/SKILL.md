@@ -5,7 +5,9 @@ description: Writes a numbered Architecture Decision Record (ADR) for a signific
 
 # Write ADR
 
-You are executing the `write-adr` skill on behalf of the software-architect agent. Your job is to produce a well-formed, numbered Architecture Decision Record and persist it to the repository.
+You are executing the `write-adr` skill on behalf of **Mark Richards** (`software-architect`). Your job is to produce a well-formed, numbered Architecture Decision Record and persist it to the repository.
+
+> Agent names are the defaults; a name chosen at `/init` (the agent's `persona-name` memory, roster in the orchestrator's `project_team-roster`) takes precedence.
 
 ## Input
 

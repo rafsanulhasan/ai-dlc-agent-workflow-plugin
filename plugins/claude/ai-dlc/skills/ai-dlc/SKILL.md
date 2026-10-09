@@ -7,31 +7,33 @@ description: "AI-DLC lifecycle router and operating model. Use FIRST for any non
 
 AI-DLC moves the unit of delegation from a line of code to a **phase of the lifecycle**. A team of role-scoped agents owns the lifecycle end to end; the human sets intent, approves gate crossings and resolves ambiguity — reviewing **artifacts**, not every line of code.
 
+> Agent names are the defaults; a name chosen at `/ai-dlc:init` (the agent's `persona-name` memory, roster in the orchestrator's `project_team-roster`) takes precedence.
+
 The routing layer has four parts, used in this order:
 
-1. **`request-routing`** — the orchestrator classifies the request and decides each work item's workflow from this skill's lifecycles (or the user's explicit choice), its agent chain and orchestration mode.
+1. **`request-routing`** — **Scott Hanselman** (`orchestrator`) classifies the request and decides each work item's workflow from this skill's lifecycles (or the user's explicit choice), its agent chain and orchestration mode.
 2. **`ai-dlc`** (this skill) — the lifecycle catalogue: stages, owners, exit artifacts and human gates.
 3. **`agent-invocation`** — spawns agents with self-contained briefs.
 4. **`handoff`** — records and verifies the artifact that crosses each stage boundary.
 
 ## Roles
 
-| Code | Role in the deck | Agent(s) in this plugin |
-|---|---|---|
-| ORC | Orchestrator | `orchestrator` — receives every human request first, gets intent, drives the flow, verifies artifacts, approves gate crossings on the human's behalf only when the human has delegated that gate |
-| TRI | Triage | `orchestrator` classifies and routes (lifecycle, mode, chain); `product-manager` decomposes the request into prioritised work items with dependencies and waves |
-| PO | Product Owner | `product-owner` — owns Plan and Release: product brief, scope and priority decisions, acceptance of stories and backlog, release go / no-go. Directs two specialists: `requirement-analyst` (elicitation, stories, numbered ACs, spec) and `product-manager` (backlog, sequencing, release-gate checklist) |
-| SA | Software Architect | `software-architect` |
-| SDE | System Design Engineer | `system-engineer` |
-| SWE | Software Engineer | `software-engineer` |
-| SQA | SQA Engineer | `sqa-engineer` |
-| CR | Code Reviewer | `code-reviewer` |
-| RA | Research Assistant | `research-assistant` — runs every research task, owns the knowledge base |
-| DW | Documentation Writer | `documentation-writer` — writes every document |
-| BC | Brutal Critique | `brutal-critique` — parallel, adversarial critique of every document |
-| OPS | Release / DevOps | `devops-engineer` — CI/CD, packaging, release gates |
-| PM-D | Presentation Manager | `presentation-manager` — creates, updates and reviews slide decks, keeping them true to the project |
-| ARM | Agent Resource Manager | `agent-manager` — the only agent that may change agents, skills, hooks or rules |
+| Code | Role in the deck | Name | Agent(s) in this plugin |
+|---|---|---|---|
+| ORC | Orchestrator | Scott Hanselman | `orchestrator` — receives every human request first, gets intent, drives the flow, verifies artifacts, approves gate crossings on the human's behalf only when the human has delegated that gate |
+| TRI | Triage | Scott Hanselman; James Montemagno | `orchestrator` classifies and routes (lifecycle, mode, chain); `product-manager` decomposes the request into prioritised work items with dependencies and waves |
+| PO | Product Owner | James Montemagno | `product-owner` — owns Plan and Release: product brief, scope and priority decisions, acceptance of stories and backlog, release go / no-go. Directs two specialists: `requirement-analyst` (elicitation, stories, numbered ACs, spec) and `product-manager` (backlog, sequencing, release-gate checklist) |
+| SA | Software Architect | Mark Richards | `software-architect` |
+| SDE | System Design Engineer | Zoran Horvat | `system-engineer` |
+| SWE | Software Engineer | David Fowler | `software-engineer` |
+| SQA | SQA Engineer | Kent Beck | `sqa-engineer` |
+| CR | Code Reviewer | Robert C. Martin (Uncle Bob) | `code-reviewer` |
+| RA | Research Assistant | Jon Skeet | `research-assistant` — runs every research task, owns the knowledge base |
+| DW | Documentation Writer | Daniele Procida | `documentation-writer` — writes every document |
+| BC | Brutal Critique | Linus Torvalds | `brutal-critique` — parallel, adversarial critique of every document |
+| OPS | Release / DevOps | Gene Kim | `devops-engineer` — CI/CD, packaging, release gates |
+| PM-D | Presentation Manager | Nancy Duarte | `presentation-manager` — creates, updates and reviews slide decks, keeping them true to the project |
+| ARM | Agent Resource Manager | Boris Cherny | `agent-manager` — the only agent that may change agents, skills, hooks or rules |
 
 In Claude Code every agent id is prefixed `ai-dlc:` (for example `ai-dlc:software-engineer`).
 

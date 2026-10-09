@@ -5,7 +5,9 @@ description: "Records and verifies the artifact that crosses an AI-DLC stage bou
 
 # Handoff
 
-Every AI-DLC stage boundary is crossed with a handoff record. The record is what the next agent reads first, what the orchestrator verifies, and what the human approves at a gate.
+Every AI-DLC stage boundary is crossed with a handoff record. The record is what the next agent reads first, what **Scott Hanselman** (`orchestrator`) verifies, and what the human approves at a gate.
+
+> Agent names are the defaults; a name chosen at `/ai-dlc:init` (the agent's `persona-name` memory, roster in the orchestrator's `project_team-roster`) takes precedence.
 
 ## When to use
 

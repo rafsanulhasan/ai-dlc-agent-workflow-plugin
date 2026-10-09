@@ -5,7 +5,9 @@ description: Create, modify, delete, and sync Claude rules files (.claude/rules/
 
 # Rules and Instructions Management
 
-> **Scope.** This skill manages *project-scope* artifacts in a consumer repository (`.claude/` and `.github/` twins). To change the shared `ai-dlc` plugin itself, edit `plugins/claude/ai-dlc/` in the plugin repository and run `node tools/build-copilot.mjs` — see the agent-manager's *Two Scopes of Ownership*.
+> **Scope.** This skill manages *project-scope* artifacts in a consumer repository (`.claude/` and `.github/` twins). To change the shared `ai-dlc` plugin itself, edit `plugins/claude/ai-dlc/` in the plugin repository and run `node tools/build-copilot.mjs` — see **Boris Cherny** (`agent-manager`)'s *Two Scopes of Ownership*.
+
+> Agent names are the defaults; a name chosen at `/init` (the agent's `persona-name` memory, roster in the orchestrator's `project_team-roster`) takes precedence.
 
 Use this skill when a user asks to create, update, or remove a repository rule or instruction file on either the Claude Code or GitHub Copilot platform in this repository.
 

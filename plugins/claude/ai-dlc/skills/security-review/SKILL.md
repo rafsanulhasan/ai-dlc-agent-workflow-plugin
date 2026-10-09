@@ -5,7 +5,9 @@ description: "Security-focused review workflow for software projects. Use for au
 
 # Security Review
 
-Use this skill for security-sensitive changes, P0 security work items, and incidents. It produces findings — fixes are implemented by `software-engineer` through the BFLC lifecycle.
+Use this skill for security-sensitive changes, P0 security work items, and incidents. It produces findings — fixes are implemented by **David Fowler** (`software-engineer`) through the BFLC lifecycle.
+
+> Agent names are the defaults; a name chosen at `/ai-dlc:init` (the agent's `persona-name` memory, roster in the orchestrator's `project_team-roster`) takes precedence.
 
 ## Phase 0 — Context
 
@@ -31,7 +33,7 @@ List every entry point the scope touches: HTTP endpoints, middleware, message co
 | **Dependencies** | `dotnet list package --vulnerable --include-transitive` clean, or each finding triaged |
 | **Logging & audit** | Security-relevant events logged without sensitive values; correlation ids present |
 
-Use `research-assistant` for any CVE, library-version or protocol detail you are not certain of.
+Use **Jon Skeet** (`research-assistant`) for any CVE, library-version or protocol detail you are not certain of.
 
 ## Phase 3 — Report
 
@@ -46,4 +48,4 @@ Dependency scan: <command + result>
 Verdict: BLOCK | PASS WITH FINDINGS | PASS
 ```
 
-Every Critical/High finding becomes a P0/P1 BFLC work item via `product-manager`.
+Every Critical/High finding becomes a P0/P1 BFLC work item via **James Montemagno** (`product-manager`).

@@ -5,7 +5,9 @@ description: Comprehensive guidance for writing coded end-to-end UI tests in C# 
 
 # tunit-playwright-ui-testing
 
-This skill guides the `sqa-engineer` to write coded, repeatable UI tests in C# for web applications in the project using **TUnit.Playwright** — where tests inherit from `PageTest` and the base class manages browser lifecycle automatically.
+This skill guides **Kent Beck** (`sqa-engineer`) to write coded, repeatable UI tests in C# for web applications in the project using **TUnit.Playwright** — where tests inherit from `PageTest` and the base class manages browser lifecycle automatically.
+
+> Agent names are the defaults; a name chosen at `/ai-dlc:init` (the agent's `persona-name` memory, roster in the orchestrator's `project_team-roster`) takes precedence.
 
 > **Source:** Official TUnit docs — https://tunit.dev/docs/examples/playwright
 

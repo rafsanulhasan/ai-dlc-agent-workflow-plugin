@@ -5,7 +5,9 @@ description: AI-driven browser UI testing using the Playwright MCP server. Guide
 
 # Playwright MCP UI Testing Skill
 
-This skill guides the `sqa-engineer` agent to perform AI-driven UI tests using the Playwright MCP server (`@playwright/mcp`). The agent uses MCP browser tools to navigate, interact, observe, and assert UI behavior autonomously — without writing coded test files. This skill is ONLY invoked when the software change involves UI or frontend components.
+This skill guides **Kent Beck** (`sqa-engineer`) to perform AI-driven UI tests using the Playwright MCP server (`@playwright/mcp`). The agent uses MCP browser tools to navigate, interact, observe, and assert UI behavior autonomously — without writing coded test files. This skill is ONLY invoked when the software change involves UI or frontend components.
+
+> Agent names are the defaults; a name chosen at `/init` (the agent's `persona-name` memory, roster in the orchestrator's `project_team-roster`) takes precedence.
 
 ---
 
@@ -24,7 +26,7 @@ Before invoking this skill:
 1. Read `CLAUDE.md` to understand the component under test.
 2. Read the spec file at `docs/specs/<feature-slug>.spec.md` if it exists.
 3. Load persistent memory: `Skill("manage-memory", args: "sqa-engineer")`.
-4. Identify which UI routes/components were changed by the software-engineer.
+4. Identify which UI routes/components were changed by **David Fowler** (`software-engineer`).
 
 ---
 

@@ -5,6 +5,8 @@ description: "Structured requirement elicitation for software projects. Use befo
 
 # Requirement Analysis
 
+> Agent names are the defaults; a name chosen at `/ai-dlc:init` (the agent's `persona-name` memory, roster in the orchestrator's `project_team-roster`) takes precedence.
+
 ## Operating Methodology
 
 You elicit requirements in four stages. Complete each stage fully before advancing to the next. Enter planning mode before starting Stage 1.
@@ -111,7 +113,7 @@ AC-2: ...
 - Suggested starting point for the architecture-design skill.
 ```
 
-After presenting the document, call `ExitPlanMode` and summarize in one sentence what the software-architect should focus on first.
+After presenting the document, call `ExitPlanMode` and summarize in one sentence what **Mark Richards** (`software-architect`) should focus on first.
 
 ---
 

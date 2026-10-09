@@ -5,7 +5,9 @@ description: Manages the full lifecycle of a feature specification — from coll
 
 # Spec-Driven Development Skill
 
-Manages the full lifecycle of a feature specification: collaborative drafting with architect and engineer review, finalization to a persistent spec file, and enforcement handoff to software-engineer and sqa-engineer. Only the `requirement-analyst` agent may invoke this skill.
+Manages the full lifecycle of a feature specification: collaborative drafting with architect and engineer review, finalization to a persistent spec file, and enforcement handoff to **David Fowler** (`software-engineer`) and **Kent Beck** (`sqa-engineer`). Only **James Montemagno** (`requirement-analyst`) may invoke this skill.
+
+> Agent names are the defaults; a name chosen at `/init` (the agent's `persona-name` memory, roster in the orchestrator's `project_team-roster`) takes precedence.
 
 ---
 
@@ -22,11 +24,11 @@ Manages the full lifecycle of a feature specification: collaborative drafting wi
 ## Phase 1 — Spec Drafting (Collaborative)
 
 1. `requirement-analyst` drafts the initial specification from previously elicited requirements.
-2. Consult `software-architect` to review the draft spec for:
+2. Consult **Mark Richards** (`software-architect`) to review the draft spec for:
    - Architectural alignment with the existing system
    - Technical feasibility
    - Clear and correct component boundary assignments
-3. Consult `system-engineer` to review the draft spec for:
+3. Consult **Zoran Horvat** (`system-engineer`) to review the draft spec for:
    - Low-level design concerns
    - SOLID, DRY, and YAGNI compliance
    - Data shape conformance — all request/response shapes must use `{ data, error }`

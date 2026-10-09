@@ -5,7 +5,9 @@ description: Structured documentation writing workflow for software projects. Wr
 
 # Write Documentation
 
-Writes and maintains README.md files throughout the project's repository. Invoked by the `documentation-writer` agent whenever documentation needs to be created, updated, or brought into sync with the current implementation.
+Writes and maintains README.md files throughout the project's repository. Invoked by **Daniele Procida** (`documentation-writer`) whenever documentation needs to be created, updated, or brought into sync with the current implementation.
+
+> Agent names are the defaults; a name chosen at `/init` (the agent's `persona-name` memory, roster in the orchestrator's `project_team-roster`) takes precedence.
 
 ---
 

@@ -5,7 +5,9 @@ description: "The product-manager's task and bug triage skill. Turns a classifie
 
 # Task & Bug Triage
 
-The `product-manager` runs this skill. The `orchestrator` has already classified the request (`request-routing`, Step 1); this skill decides *what the work items are, how they depend on each other, how urgent they are, and in what order they run*. Agent chains, lifecycles and orchestration modes are not part of this skill — the orchestrator assigns them from your breakdown.
+**James Montemagno** (`product-manager`) runs this skill. **Scott Hanselman** (`orchestrator`) has already classified the request (`request-routing`, Step 1); this skill decides *what the work items are, how they depend on each other, how urgent they are, and in what order they run*. Agent chains, lifecycles and orchestration modes are not part of this skill — the orchestrator assigns them from your breakdown.
+
+> Agent names are the defaults; a name chosen at `/init` (the agent's `persona-name` memory, roster in the orchestrator's `project_team-roster`) takes precedence.
 
 ```
 Skill("task-triage", args: "breakdown <request + classification>")
@@ -23,7 +25,7 @@ For complex requests (multiple types, or more than one agent needed):
 1. Identify atomic work items — each deliverable by a single, contiguous agent chain.
 2. Map dependencies: which items must complete before others can begin.
 3. Identify parallelization: which items share no dependency and can run concurrently.
-4. Mark **needs research** on items that require external knowledge (library/API/SDK docs, unfamiliar framework, current best practices, version-migration info) or non-trivial cross-cutting code exploration, so the orchestrator prepends `research-assistant`.
+4. Mark **needs research** on items that require external knowledge (library/API/SDK docs, unfamiliar framework, current best practices, version-migration info) or non-trivial cross-cutting code exploration, so the orchestrator prepends **Jon Skeet** (`research-assistant`).
 5. Keep decomposition minimal — do not split a naturally sequential flow into artificial fragments.
 
 For simple requests (one type, one agent, no dependencies): return a single-item breakdown.
@@ -54,7 +56,7 @@ Order the items into execution waves: P0 first; within a wave, items with no dep
 
 ## Step 5 — Flag product-owner decisions
 
-You propose priorities; the `product-owner` decides scope and priority for features. Flag:
+You propose priorities; **James Montemagno** (`product-owner`) decides scope and priority for features. Flag:
 
 - any new Feature or scope change;
 - any priority that conflicts with the current milestone or in-progress work;

@@ -5,7 +5,9 @@ description: "The orchestrator's single routing skill. Classifies every incoming
 
 # Request Routing
 
-The `orchestrator` runs this skill for every human request. It turns the request into a **Routing Plan**: for each work item, the AI-DLC workflow to run (or the single agent to hand it to), the agent chain and the orchestration mode. Decomposition, dependencies, priorities and bug severity come from the `product-manager`'s `task-triage` skill; this skill consumes that breakdown.
+**Scott Hanselman** (`orchestrator`) runs this skill for every human request. It turns the request into a **Routing Plan**: for each work item, the AI-DLC workflow to run (or the single agent to hand it to), the agent chain and the orchestration mode. Decomposition, dependencies, priorities and bug severity come from **James Montemagno** (`product-manager`)'s `task-triage` skill; this skill consumes that breakdown.
+
+> Agent names are the defaults; a name chosen at `/init` (the agent's `persona-name` memory, roster in the orchestrator's `project_team-roster`) takes precedence.
 
 ```
 Skill("request-routing", args: "classify <request>")      // Step 1
@@ -16,21 +18,21 @@ Skill("request-routing", args: "route <work breakdown>")  // Steps 2–5
 
 The orchestrator's job is delegation. Every piece of real work goes to the agent that owns it:
 
-| Work | Owner |
-|---|---|
-| Requirements, stories, ACs | `requirement-analyst` (directed by `product-owner`) |
-| Scope, priority, acceptance, release go / no-go | `product-owner` |
-| Work breakdown, bug triage, backlog | `product-manager` |
-| Architecture, ADRs, specs | `software-architect` |
-| Low-level design | `system-engineer` |
-| Code, fixes, refactors | `software-engineer` |
-| Tests, mutation gate | `sqa-engineer` |
-| Review | `code-reviewer` |
-| Documents | `documentation-writer` (critiqued by `brutal-critique`) |
-| Slide decks (.pptx) — create, update, review | `presentation-manager` |
-| Research, library/API facts, wide code exploration | `research-assistant` |
-| CI/CD, packaging, releases | `devops-engineer` |
-| Agents, skills, hooks, rules, commands, agent memory | `agent-manager` |
+| Work | Owner | Name |
+|---|---|---|
+| Requirements, stories, ACs | `requirement-analyst` (directed by `product-owner`) | James Montemagno |
+| Scope, priority, acceptance, release go / no-go | `product-owner` | James Montemagno |
+| Work breakdown, bug triage, backlog | `product-manager` | James Montemagno |
+| Architecture, ADRs, specs | `software-architect` | Mark Richards |
+| Low-level design | `system-engineer` | Zoran Horvat |
+| Code, fixes, refactors | `software-engineer` | David Fowler |
+| Tests, mutation gate | `sqa-engineer` | Kent Beck |
+| Review | `code-reviewer` | Robert C. Martin (Uncle Bob) |
+| Documents | `documentation-writer` (critiqued by `brutal-critique`) | Daniele Procida (+ Linus Torvalds) |
+| Slide decks (.pptx) — create, update, review | `presentation-manager` | Nancy Duarte |
+| Research, library/API facts, wide code exploration | `research-assistant` | Jon Skeet |
+| CI/CD, packaging, releases | `devops-engineer` | Gene Kim |
+| Agents, skills, hooks, rules, commands, agent memory | `agent-manager` | Boris Cherny |
 
 The orchestrator never writes code, tests, designs, specs or documents, never runs research, and never reviews code itself. It reads only enough of the repository to route correctly and to verify artifacts. If no agent owns a piece of work, that is a capability gap (Step 3), not a reason to do it yourself.
 
@@ -97,17 +99,17 @@ A feature that starts as an idea usually becomes a sequence of work items (PDLC 
 
 3. **No lifecycle needed** → hand the item to one agent instead:
 
-| The work item is… | Hand off to |
-|---|---|
-| agent-artifact work | `agent-manager` |
-| a factual or library/API question, or wide code exploration | `research-assistant` |
-| a backlog or prioritisation question | `product-manager` |
-| a scope or priority decision | `product-owner` |
-| an architecture question | `software-architect` |
-| a low-level design question | `system-engineer` |
-| a documentation-only change | `documentation-writer` (+ `brutal-critique`) |
-| a slide deck to create, update or review | `presentation-manager` |
-| a CI/CD or pipeline change | `devops-engineer` |
+| The work item is… | Hand off to | Name |
+|---|---|---|
+| agent-artifact work | `agent-manager` | Boris Cherny |
+| a factual or library/API question, or wide code exploration | `research-assistant` | Jon Skeet |
+| a backlog or prioritisation question | `product-manager` | James Montemagno |
+| a scope or priority decision | `product-owner` | James Montemagno |
+| an architecture question | `software-architect` | Mark Richards |
+| a low-level design question | `system-engineer` | Zoran Horvat |
+| a documentation-only change | `documentation-writer` (+ `brutal-critique`) | Daniele Procida (+ Linus Torvalds) |
+| a slide deck to create, update or review | `presentation-manager` | Nancy Duarte |
+| a CI/CD or pipeline change | `devops-engineer` | Gene Kim |
 
 State the reason for every choice in the Routing Plan, so the human can correct it at the Confirm step.
 
