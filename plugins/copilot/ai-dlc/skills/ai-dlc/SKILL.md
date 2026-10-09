@@ -1,6 +1,6 @@
 ---
 name: ai-dlc
-description: "AI-DLC lifecycle router and operating model. Use FIRST for any non-trivial request to pick which of the eight named lifecycles applies (PDLC, ASDLC, STBLC, FDLC, BFLC, RLC, TLC, CRLC), which agents own each stage, which artifact each stage must hand off, and which gates a human must approve. The orchestrator's request-routing skill chooses each work item's lifecycle from this catalogue (unless the user named one), and the orchestrator follows it to run each stage."
+description: "AI-DLC lifecycle router and operating model. Use FIRST for any non-trivial request to pick which of the eight named lifecycles applies (PDLC, ASDLC, STBLC, FDLC, BFLC, RLC, TLC, CRLC), which agents own each stage, which artifact each stage must hand off, which gates a human must approve, and which upstream agents a stage consults when an input is unclear (the Clarify loop). The orchestrator's request-routing skill chooses each work item's lifecycle from this catalogue (unless the user named one), and the orchestrator follows it to run each stage."
 ---
 
 # AI-DLC — Lifecycle Router
@@ -126,9 +126,50 @@ Shortcuts:
 - **Every handoff is an artifact.** Cross a stage boundary only with `Skill("handoff")`, which records the artifact paths and the verification result in `docs/handoffs/`.
 - **Trust, but verify.** The orchestrator reads the artifact before the next agent starts. An agent's summary is a claim, not evidence.
 - **Hard gates beat confidence.** Build and tests must be green before Build ends (in .NET repositories `init` installs a Stop hook that enforces `dotnet test`); mutation testing is the SQA's gate.
-- **Ambiguity is a human job.** When intent, scope or ACs are unclear, ask the human one targeted question. Never let an agent guess.
+- **Ask upstream, then the human.** When an input is unclear, the stage agent consults the agents that produced it (*Clarify loop* below). Intent, scope or AC questions that no upstream agent can answer go to the human as one targeted question. Never let an agent guess.
 - **Re-anchor long runs** on the frozen spec at each stage boundary to stop drift.
 - **Skip gates only for artifact-only changes** (planning, agents, skills, hooks, prompts, rules): `dotnet test` and `dotnet stryker` may be skipped when no runtime code, test code, runtime configuration or build logic changed.
+
+## Clarify loop — consult upstream
+
+Every handoff follows one rule: a stage agent that finds something unclear in its inputs **asks the agents that produced them**, rather than guessing or deciding outside its role. `product-owner` answering `software-architect` and `system-engineer` is one row of the matrix below, not a separate loop.
+
+### Consultation matrix
+
+Each stage may consult the agents that produced its inputs, on the topics listed.
+
+| Asker | Name | Consults → about |
+|---|---|---|
+| `product-owner` | James Montemagno | `product-manager` → release-gate checklist status before go / no-go. Everything else is intent: the human, through the orchestrator |
+| `requirement-analyst` | James Montemagno | `product-owner` → brief, scope, priority, intended behaviour; `software-architect` and `system-engineer` → test seams, boundaries and data shapes while drafting the spec they co-sign |
+| `product-manager` | James Montemagno | `product-owner` → scope, priority, milestone and release decisions; `requirement-analyst` → stories and ACs being sliced into work items |
+| `software-architect` | Mark Richards | `product-owner` → intended behaviour, scope, priority; `requirement-analyst` → story and AC wording, NFRs; at Architecture Conformance, `software-engineer` and `system-engineer` → intent behind the diff and the design |
+| `system-engineer` | Zoran Horvat | `software-architect` → architecture, boundaries, ADR intent, and **every decision that would change the architecture** (escalated, never made); `product-owner` → intended behaviour; `requirement-analyst` → AC wording |
+| `software-engineer` | David Fowler | `software-architect` → architecture, boundaries, ADR intent; `system-engineer` → low-level design, patterns, UI design, interfaces; `requirement-analyst` → the meaning of an AC in the spec |
+| `sqa-engineer` | Kent Beck | `software-engineer` → implementation details and the test cases the change implies; `product-owner` → acceptance criteria and intended behaviour; `system-engineer` → system design and test-case design (seams, interfaces); `software-architect` → architecture testing (layer and dependency rules, NFRs) |
+| `documentation-writer` | Daniele Procida | `software-engineer` → behaviour and public API of the change; `software-architect` → ADRs and architecture intent |
+| `code-reviewer` | Robert C. Martin (Uncle Bob) | `sqa-engineer` → test intent, coverage, mutation results; `software-engineer` → implementation intent, trade-offs; `requirement-analyst` → the meaning of an AC on the spec axis |
+| `devops-engineer` | Gene Kim | `product-manager` → release-gate checklist, version, release scope; `sqa-engineer` → test and mutation gate results; `product-owner` → conditions attached to the go / no-go |
+| `brutal-critique` | Linus Torvalds | Consults no one. Questions for the author go into the critique (Blockers or Unverified claims); the orchestrator routes them |
+
+The same agents **answer** questions about their own artifacts and **own any revision** the answer causes: `product-owner` (brief, scope, priority, go / no-go), `requirement-analyst` (stories, ACs, spec), `product-manager` (backlog, work items, release checklist), `software-architect` (architecture, ADRs, NFRs), `system-engineer` (low-level design, interfaces, seams), `software-engineer` (implementation), `sqa-engineer` (test plan, tests, mutation report).
+
+### How a round runs
+
+1. **Raise.** The asker raises questions while verifying the incoming handoff (`handoff`, *Receiving a handoff*) or as soon as a gap appears mid-stage, and keeps doing any work the questions do not block.
+2. **Return a clarification request** to the orchestrator: every open question in one batch, each naming the target upstream agent, the artifact or AC it refers to, and a recommended default. Format and relay mechanics: `agent-invocation`, *Clarification requests*. Subagents cannot spawn subagents; if the session's main agent is itself a stage agent, it consults the upstream agent directly with the same format.
+3. **Relay.** The orchestrator sends each question to its target — `SendMessage` to the instance that produced the artifact when it is still available, otherwise a fresh brief — and returns the answers to the asker with `SendMessage`, which resumes the stage.
+4. **Pass up or to the human.** An upstream agent that cannot answer passes the question along its own row (for example `system-engineer` → `product-owner`) within the same round. A question about the human's intent that no agent can answer goes to the human.
+5. **Record.** The asker lists every question and answer in the *Clarifications* section of its stage's handoff record.
+
+### Rules
+
+- **Ask, don't guess.** A recommended default is a proposal for the answerer; never proceed on it unanswered.
+- **Batch.** One request per round carries every open question; no drip-feeding.
+- **The owner revises.** An answer that changes an upstream artifact (spec, AC, ADR, design, test plan) is made by that artifact's owner, never by the asker; the orchestrator verifies the revision before resuming the asker.
+- **ACs change only through the product line.** An answer that changes an AC goes through `product-owner`, who directs `requirement-analyst` to update the spec with `spec-driven-development`; a frozen spec re-enters ASDLC step 3.
+- **Stay in role.** An answer never licenses the asker to do the upstream agent's job.
+- **Bounded: at most 3 rounds per stage.** A round is one batched request and its answers. If a question is still open after the third round, the stage is **blocked**: the orchestrator stops it and escalates to the human with the open questions, the answers so far and the recommended defaults.
 
 ## Output of this skill
 

@@ -25,6 +25,15 @@ Every AI-DLC stage boundary is crossed with a handoff record. The record is what
 4. **Gate.** If the boundary is a human gate, stop and ask the human to approve the record. Otherwise continue.
 5. **Brief the receiver.** Spawn the next agent with `Skill("ai-dlc:agent-invocation")` and pass the handoff file path as the first item of *Required context*.
 
+## Receiving a handoff
+
+The receiving agent verifies its input before building on it.
+
+1. Read the record, then open every listed artifact and the ACs it covers.
+2. List everything unclear, contradictory or missing: an AC that admits two readings, a design that does not say who owns a responsibility, a test result that does not match the diff.
+3. If the list is not empty, return one batched clarification request to the orchestrator before starting the blocked work (format: `agent-invocation`, *Clarification requests*; whom to ask: the consultation matrix in the `ai-dlc` skill, *Clarify loop*). Continue only with work the questions do not block.
+4. When the answers arrive, record them in the *Clarifications* section of the record **you** write at the end of your stage. Do not edit the incoming record, and do not change an upstream artifact yourself — its owner does.
+
 ## Template
 
 ```markdown
@@ -57,6 +66,11 @@ date: YYYY-MM-DD
 ## Decisions made in this stage
 - <decision> — <ADR path if any>
 
+## Clarifications
+| # | Asked → answered by | Refers to | Question | Answer | Artifact revised by owner |
+|---|---|---|---|---|---|
+| Q1 | <asker> → <upstream agent or human> | `<path>` / AC-n | <question> | <answer> | none / `<path>` |
+
 ## Open questions / risks for the receiver
 - <item>
 
@@ -74,6 +88,7 @@ date: YYYY-MM-DD
 - Redact before writing: replace secrets, tokens, connection strings, passwords and personal data with `<REDACTED>`. Handoff records are committed and read by every later agent.
 - Name the skills the receiver should load under *Suggested skills*, so a cold-started agent does not have to rediscover which workflow applies.
 - One record per boundary crossing; loops create new records rather than editing old ones, so the history of a work item stays auditable.
+- Every clarification the stage asked, and its answer, appears under *Clarifications*; write `none` when there were none.
 - Artifact-only lifecycles (agent/skill changes) do not need handoff records.
 
 ## Verification-only work

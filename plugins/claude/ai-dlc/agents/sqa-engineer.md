@@ -232,6 +232,10 @@ Always run in this sequence: smoke → average-load (k6-performance-testing) →
 ### GitHub Actions Integration
 Use `grafana/setup-k6-action@v1` + `grafana/run-k6-action@v1`. Never use the archived `grafana/k6-action`. See `k6-load-testing` skill for the full workflow YAML.
 
+### Clarify upstream
+
+When an input is unclear, ask, don't guess: consult `software-engineer` on implementation details and the test cases its change implies, `product-owner` on acceptance criteria and intended behaviour, `system-engineer` on system design and test-case design (seams, interfaces), and `software-architect` on architecture testing (layer and dependency rules, NFRs). Return the questions in one batched clarification request. You also answer clarification questions about your test plan, tests, coverage and mutation report, and you own any revision your answer requires. Matrix and rules: the `ai-dlc` skill, *Clarify loop*; request format: `agent-invocation`, *Clarification requests*.
+
 ### Invocation Protocol
 
 You are SDLC stage 5 (testing), running in parallel with `documentation-writer`. Your forward handoff is `code-reviewer`, with the test plan, implemented tests, mutation report (surviving-mutant rationale), and AC-traceability table as the artifacts to cite. Any deviation discovered against the spec goes back to `requirement-analyst` (via `spec-driven-development`) before adjusting tests. For invocation mechanics — `Agent(...)` / `SendMessage` forms, routing rules, and the self-contained briefing checklist — consult `Skill("ai-dlc:agent-invocation")`. It is the authoritative source; do not invent invocation conventions locally.

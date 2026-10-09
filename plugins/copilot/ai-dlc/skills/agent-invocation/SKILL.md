@@ -1,6 +1,6 @@
 ---
 name: agent-invocation
-description: "Authoritative skill for spawning or invoking another agent with proper context. Use PROACTIVELY before any agent calls another agent — covers Claude `Agent(...)` / `SendMessage` and Copilot/VS Code `agent` tool invocation forms, routing rules to orchestrator / product-manager / agent-manager / research-assistant / product-manager, the SDLC chain and per-stage artifacts, how to brief a cold-started spawned agent with a self-contained handoff, the compressed report a spawned agent returns (path:line citations, one finding per line) so the caller's context lasts longer, when to delegate a lookup instead of doing it inline, foreground vs background and parallel calls, trust-but-verify after the spawned agent returns, and when NOT to invoke another agent at all."
+description: "Authoritative skill for spawning or invoking another agent with proper context. Use PROACTIVELY before any agent calls another agent — covers Claude `Agent(...)` / `SendMessage` and Copilot/VS Code `agent` tool invocation forms, routing rules to orchestrator / product-manager / agent-manager / research-assistant / product-manager, the SDLC chain and per-stage artifacts, how to brief a cold-started spawned agent with a self-contained handoff, the compressed report a spawned agent returns (path:line citations, one finding per line) so the caller's context lasts longer, the clarification request a stage agent returns to consult upstream agents and how the orchestrator relays it, when to delegate a lookup instead of doing it inline, foreground vs background and parallel calls, trust-but-verify after the spawned agent returns, and when NOT to invoke another agent at all."
 ---
 
 # agent-invocation
@@ -144,6 +144,38 @@ A spawned agent's final message enters the caller's context verbatim and stays t
 | *check* | `code-reviewer` | The `review` skill's compact format: one line per finding, then `totals:` and `verdict:` | `No findings.` |
 
 A terminal reply is the whole answer: stop and act on it — split the work, confirm with the human, answer the question, or send the regression back. Before showing a compressed report to a human, paraphrase it into prose.
+
+Any stage agent, under any contract, may also end with a **clarification request** (below) instead of, or after, its partial deliverable.
+
+## Clarification requests
+
+The Clarify loop in the `ai-dlc` skill lets a stage agent ask the agents that produced its inputs. A subagent cannot spawn another agent, so it returns its questions to the orchestrator, which relays them. Whom an agent may ask, the rules and the round limit live in the `ai-dlc` skill's consultation matrix; this section is only the format and the relay.
+
+**Request** — returned by the asker, all open questions in one batch:
+
+```
+clarify: round <r>/3 · <n> questions · blocked: <what waits> · continuing: <what proceeds | nothing>
+Q1 → <upstream-agent | human> · <path or AC-n> — <question> · default: <recommended answer>
+Q2 → <upstream-agent> · <path:line> — <question> · default: <recommended answer>
+```
+
+**Answer** — returned by the upstream agent, one line per question it received:
+
+```
+A1 · <answer> · revised: none | <path> (by me)
+A2 · pass → <its own upstream agent | human> · <why it cannot answer>
+```
+
+**Relay** — the orchestrator, for each request:
+
+1. Check every target against the asker's row in the matrix; redirect a question aimed at the wrong owner.
+2. Group the questions by target and send each target one message. If the instance that produced the artifact is still available, continue it with `SendMessage` (on Copilot, a follow-up to the named agent); otherwise spawn a fresh one with a brief whose *Required context* is the artifact path, the handoff record and the questions verbatim with their defaults, and whose deliverable is the answer format above — report only, unless the answer requires revising the target's own artifact.
+3. Ask the human, with the recommended defaults, any question marked `human` or passed up with no agent left to answer it.
+4. Verify every `revised:` artifact on disk before relaying (trust but verify).
+5. Return all answers to the asker with one `SendMessage`, which resumes its stage. If the asker's instance is gone, spawn a fresh one with its original brief plus the answers.
+6. Count rounds per stage; when a question is still open after round 3, block the stage and escalate to the human.
+
+When the session's main agent is itself a stage agent, it skips the relay and spawns or messages the upstream agent directly, with the same request and answer formats.
 
 ## Parallelism and concurrency
 

@@ -117,6 +117,10 @@ Never directly edit `.github/skills/`, `.claude/skills/`, or `.claude/commands/`
 - When in doubt about an API's behavior, read the source rather than guessing
 - All links in documentation must be relative and must point to files that exist
 
+### Clarify upstream
+
+When an input is unclear, ask, don't guess: consult `software-engineer` on the behaviour and public API of the change and `software-architect` on ADRs and architecture intent. Return the questions in one batched clarification request. Matrix and rules: the `ai-dlc` skill, *Clarify loop*; request format: `agent-invocation`, *Clarification requests*.
+
 ### Invocation Protocol
 
 You are SDLC stage 5 (documentation), running in parallel with `sqa-engineer`. Your forward handoff is `code-reviewer`, with the new or updated `README.md` files reflecting the implementation as the artifacts to cite. For invocation mechanics — `Agent(...)` / `SendMessage` forms, routing rules, and the self-contained briefing checklist — consult `Skill("ai-dlc:agent-invocation")`. It is the authoritative source; do not invent invocation conventions locally.

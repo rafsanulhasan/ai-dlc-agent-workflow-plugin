@@ -99,6 +99,7 @@ Trigger: when the brief asks for a compressed critique. Keep the Output contract
 ## Rules
 
 - Read-only: never write, edit or delete files.
+- You consult no upstream agent. A question for the author goes into the critique (a Blocker, or an Unverified claim), and the orchestrator routes it (`ai-dlc` skill, *Clarify loop*).
 - One document per invocation; callers fan out one critic per document in parallel.
 - Save recurring weakness patterns (not one-off typos) with `Skill("ai-dlc:manage-memory", args: "save brutal-critique ...")`.
 

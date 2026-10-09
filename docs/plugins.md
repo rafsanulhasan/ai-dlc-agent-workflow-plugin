@@ -108,6 +108,8 @@ Humans approve four gates:
 
 If you name a lifecycle in your request, the orchestrator runs that one. Otherwise it picks one from the state of each work item.
 
+No agent guesses. When an input is unclear, the receiving agent asks the agents that produced it (the *Clarify loop*): for example, the software engineer asks the architect or the system engineer, and the SQA engineer asks the engineer, the product owner, the system engineer or the architect. The orchestrator relays the batched questions and the answers, records them in the handoff, and brings the question to you when no agent can answer it or three rounds have not settled it. The full consultation matrix is in the `ai-dlc` skill.
+
 ## Skills
 
 Every skill is also a slash command: `/ai-dlc:<name>` in Claude Code, or the `<name>` skill in Copilot. The plugin ships no separate `commands/` folder, because a command and a skill with the same name would collide.

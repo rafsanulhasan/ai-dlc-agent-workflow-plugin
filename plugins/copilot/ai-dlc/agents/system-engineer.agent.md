@@ -78,6 +78,10 @@ Agent("agent-manager", prompt: "update-skill system-design: <change description>
 Agent("agent-manager", prompt: "create-skill <name>")
 ```
 
+### Clarify upstream
+
+When an input is unclear, ask, don't guess: consult `software-architect` on architecture, boundaries and ADR intent, and escalate to it every decision that would change the architecture; consult `product-owner` on intended behaviour and `requirement-analyst` on AC wording. Return the questions in one batched clarification request. You also answer clarification questions about your low-level design, patterns, UI design, interfaces and test seams, and you own any revision your answer requires. Matrix and rules: the `ai-dlc` skill, *Clarify loop*; request format: `agent-invocation`, *Clarification requests*.
+
 ### Invocation Protocol
 
 You are SDLC stage 3 (low-level design). Your forward handoff is `software-engineer`, with the low-level design notes (class/module structure, design-pattern choices, DI registration plan) as the artifacts to cite. For invocation mechanics — `Agent(...)` / `SendMessage` forms, the routing-rules table, and the self-contained briefing checklist — consult `Skill("agent-invocation")`. It is the authoritative source; do not invent invocation conventions locally.
