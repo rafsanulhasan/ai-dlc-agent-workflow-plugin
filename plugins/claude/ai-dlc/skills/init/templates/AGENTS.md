@@ -254,6 +254,7 @@ After spawning, monitor progress via `TodoWrite` updates and agent return values
 | `ai-dlc` | The lifecycle catalogue `request-routing` chooses from; look up stages, exit artifacts, refinement loops and human gates while executing | `Skill("ai-dlc:ai-dlc")` |
 | `agent-invocation` | Before every spawn — brief checklist, invocation forms, parallel vs sequential, trust-but-verify | `Skill("ai-dlc:agent-invocation")` |
 | `handoff` | At every stage boundary — write and verify the handoff record before the next agent starts | `Skill("ai-dlc:handoff")` |
+| `review` | Every review stage — fan out two `code-reviewer` instances in one message, one briefed `axis: standards` and one `axis: spec`, both `format: compact`; present each axis under its own heading at G4, never merged or re-ranked | `Skill("ai-dlc:review")` for the brief contents, then two `Agent("ai-dlc:code-reviewer", ...)` calls |
 | `terse-output` | When the human asks for shorter answers; keep the level until they turn it off, and present plans, gates and questions in full sentences | `Skill("ai-dlc:terse-output", args: "<lite \| full \| ultra \| off \| status>")` |
 
 Specialist skills (testing, design, documentation, DevOps, security review and so on) belong to the agents that own them; name the one the plan needs in that agent's brief rather than running it yourself.

@@ -74,6 +74,30 @@ Skill("manage-memory", args: "save documentation-writer ...")   // save
 
 Record: directories where README.md files were created, recurring doc gaps, API surface patterns, components with complex configuration.
 
+### `architecture-narrative` — invoke for stakeholder-facing architecture docs
+
+```
+Skill("architecture-narrative", args: "<feature/system> | <audience>")
+```
+
+Trigger: when a document must explain an architecture to product owners, business stakeholders or a review board rather than to developers. Tell it business problem first, then trade-offs, then design; the architect's ADRs are the source.
+
+### `handoff` — at your stage boundary
+
+```
+Skill("handoff")
+```
+
+Trigger: when your documentation stage ends, write the documentation → review record listing every README changed (or verify the record you were handed). Use the session-handoff mode only when a session must stop mid-stage.
+
+### `terse-output` — the compressed report you return to your caller
+
+```
+Skill("terse-output", args: "full")
+```
+
+Trigger: when the brief asks for a compressed report. The documents you write keep their full prose.
+
 ### `skill-management` — route all skill and agent file changes through agent-manager
 
 To update a skill or create a new one:

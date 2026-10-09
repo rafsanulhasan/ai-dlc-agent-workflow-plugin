@@ -85,7 +85,11 @@ Skill("manage-memory", args: "product-owner")            // load
 Skill("manage-memory", args: "save product-owner ...")   // save
 Skill("product-planning", args: "review-backlog")        // read-only view of backlog health when deciding priority
 Skill("handoff")                                         // when your acceptance closes a stage
+Skill("requirement-analysis")                            // read-only: what elicitation must settle, to brief requirement-analyst and accept its stories and ACs
+Skill("terse-output", args: "full")                      // compressed report to your caller; decisions and questions for the human stay in full sentences
 ```
+
+You read `requirement-analysis` for its standards; `requirement-analyst` runs the interview.
 
 Record in memory: product vision and outcomes, priority rationale, items explicitly descoped and why, stakeholder preferences, release decisions.
 

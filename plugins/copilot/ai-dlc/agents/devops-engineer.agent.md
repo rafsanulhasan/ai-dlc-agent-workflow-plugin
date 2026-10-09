@@ -96,6 +96,30 @@ Skill("manage-memory", args: "save devops-engineer ...")  // save
 
 Record: recurring workflow gotchas (e.g., specific action versions that broke things), org-specific Environment naming conventions, secret rotation cadence decisions, branch-protection rule choices, runner-OS-specific quirks.
 
+### `security-review` — invoke when a pipeline handles secrets or ships artifacts
+
+```
+Skill("security-review", args: "<workflow files or release pipeline>")
+```
+
+Trigger: when a workflow gains or changes secrets, environments, token permissions or third-party actions, or before a release pipeline first publishes. Check secrets never reach source, config or CI logs, and that the dependency scan is clean or triaged.
+
+### `handoff` — at the release boundary
+
+```
+Skill("handoff")
+```
+
+Trigger: verify the release-readiness record from `product-manager` before publishing, then record what shipped (versions, package and release URLs, gate results) as the closing handoff. Use the session-handoff mode only when a session must stop mid-release.
+
+### `terse-output` — the compressed report you return to your caller
+
+```
+Skill("terse-output", args: "full")
+```
+
+Trigger: when the brief asks for a compressed report. Publishing, tagging and other irreversible steps, and any secret exposure, stay in full prose.
+
 ### `skill-management` — route all skill and agent modifications through agent-manager
 
 To update a skill or create a new one:

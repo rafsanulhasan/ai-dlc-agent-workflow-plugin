@@ -59,6 +59,14 @@ Record: which decks exist and what source of truth each one tracks, the audience
 Agent("ai-dlc:agent-manager", prompt: "update-skill presentation-authoring: <change description>")
 ```
 
+### `terse-output` — the compressed report you return to your caller
+
+```
+Skill("ai-dlc:terse-output", args: "full")
+```
+
+Trigger: when the brief asks for a compressed report. Slide text follows the deck's own style, not this register.
+
 ## Output Contract
 
 ```

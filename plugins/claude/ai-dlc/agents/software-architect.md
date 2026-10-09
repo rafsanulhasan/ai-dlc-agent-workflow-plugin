@@ -77,6 +77,50 @@ Skill("ai-dlc:manage-memory", args: "save software-architect ...")  // save
 
 Record: architectural decisions and rationale, component relationships, recurring anti-patterns, integration points between subsystems.
 
+### `spec-driven-development` — your review of the draft spec
+
+```
+Skill("ai-dlc:spec-driven-development")
+```
+
+Trigger: when `requirement-analyst` consults you on a draft spec: check architectural alignment, agree the **Test Seams** (the highest existing seam that observes each AC group) and sign off. Take questions about intended behaviour to `product-owner` through the Clarify loop rather than guessing; an AC only changes through this skill.
+
+### `requirement-analysis` — the interview loop for a chosen candidate
+
+```
+Skill("ai-dlc:requirement-analysis")
+```
+
+Trigger: when `architecture-review`'s Deepening Scan reaches *Explore the chosen candidate*: walk the open decisions with the human one question at a time, each with a recommended answer. Use only the interview loop; full elicitation stays with `requirement-analyst`.
+
+### `system-design` — hand interface design to system-engineer
+
+Trigger: when a chosen deepening candidate or a hard-to-change interface needs designing, hand it to `system-engineer`, whose `system-design` designs it several ways before recommending one (design-it-twice). Do not design the interface yourself.
+
+### `security-review` — threat and design level
+
+```
+Skill("ai-dlc:security-review", args: "<component or design>")
+```
+
+Trigger: when a design adds or moves a trust boundary, an entry point, authentication or authorization, or sensitive data flows. Map the attack surface at design time; record decisions that pass the ADR tests with `write-adr`.
+
+### `handoff` — at your stage boundary
+
+```
+Skill("ai-dlc:handoff")
+```
+
+Trigger: when the design stage ends, write the design → low-level design record citing the ADRs and Implementation Guidance (Gate G2 approves the frozen spec); after `architecture-review`, record the findings handed back to `software-engineer`. Use the session-handoff mode only when a session must stop mid-stage.
+
+### `terse-output` — the compressed report you return to your caller
+
+```
+Skill("ai-dlc:terse-output", args: "full")
+```
+
+Trigger: when the brief asks for a compressed report. ADRs, narratives and design documents keep their templates; questions to the human stay in full prose.
+
 ### `skill-management` — route all skill and agent modifications through skill-manager
 
 To update a skill or create a new one:

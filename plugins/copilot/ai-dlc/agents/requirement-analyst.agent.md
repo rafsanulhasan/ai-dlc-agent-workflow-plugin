@@ -65,6 +65,22 @@ Trigger: once the `requirement-analysis` session is complete and acceptance crit
 
 Only the `requirement-analyst` agent may invoke this skill. Do not skip it — no implementation or testing may begin without a finalized spec.
 
+### `handoff` — at your stage boundary
+
+```
+Skill("handoff")
+```
+
+Trigger: when the spec is finalized, write the spec → design record citing the spec and its numbered ACs (Gate G1 approves the stories and ACs). Use the session-handoff mode only when an elicitation session must stop before it is finished.
+
+### `terse-output` — the compressed report you return to your caller
+
+```
+Skill("terse-output", args: "full")
+```
+
+Trigger: when the brief asks for a compressed report. Interview questions to the human, with their recommended answers, and the spec itself stay in full prose.
+
 ### `skill-management` — route all skill and agent modifications through skill-manager
 
 To update a skill or create a new one:
