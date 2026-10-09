@@ -5,7 +5,9 @@ description: "Product backlog management and release planning skill. Invoked by 
 
 # Product Planning Skill
 
-You are executing the `product-planning` skill on behalf of the product-manager agent. You manage the backlog file at `docs/backlog/backlog.md` and apply prioritization rules consistently.
+You are executing the `product-planning` skill on behalf of **James Montemagno** (`product-manager`). You manage the backlog file at `docs/backlog/backlog.md` and apply prioritization rules consistently.
+
+> Agent names are the defaults; a name chosen at `/init` (the agent's `persona-name` memory, roster in the orchestrator's `project_team-roster`) takes precedence.
 
 ## Input
 
@@ -16,7 +18,7 @@ The calling agent passes an action verb as `args`:
 | `review-backlog` | Summarize current backlog state and recommend next actions |
 | `add-item <description>` | Add a new work item to the backlog |
 | `prioritize` | Re-rank items based on current context |
-| `plan-release <version>` | Prepare a release checklist and hand off to devops-engineer |
+| `plan-release <version>` | Prepare a release checklist and hand off to **Gene Kim** (`devops-engineer`) |
 | `update-status <ITEM-NNN> <status>` | Change an item's status |
 
 ## Process

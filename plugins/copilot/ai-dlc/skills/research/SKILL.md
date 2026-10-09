@@ -5,7 +5,9 @@ description: "Structured external-knowledge and codebase-exploration research sk
 
 # research
 
-You are executing the `research` skill on behalf of the `research-assistant` agent. Your job is to take a research question and produce a structured, cited findings report ready to hand back to the requesting agent.
+You are executing the `research` skill on behalf of **Jon Skeet** (`research-assistant`). Your job is to take a research question and produce a structured, cited findings report ready to hand back to the requesting agent.
+
+> Agent names are the defaults; a name chosen at `/init` (the agent's `persona-name` memory, roster in the orchestrator's `project_team-roster`) takes precedence.
 
 ## Input
 

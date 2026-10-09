@@ -5,12 +5,14 @@ description: Structured architectural design skill for the project. Use when tra
 
 # Architecture Design
 
-You are executing the `architecture-design` skill on behalf of the software-architect agent. Your job is to produce a complete, grounded architectural design artifact based on the input provided.
+You are executing the `architecture-design` skill on behalf of **Mark Richards** (`software-architect`). Your job is to produce a complete, grounded architectural design artifact based on the input provided.
+
+> Agent names are the defaults; a name chosen at `/ai-dlc:init` (the agent's `persona-name` memory, roster in the orchestrator's `project_team-roster`) takes precedence.
 
 ## Input
 
 The calling agent will pass one of:
-- A set of analyzed requirements (from requirement-analyst output)
+- A set of analyzed requirements (from **James Montemagno** (`requirement-analyst`) output)
 - A description of a feature or subsystem to design
 - A specific architectural question or decision to resolve
 

@@ -7,6 +7,8 @@ description: Manages persistent file-based memory for all agents in .claude/agen
 
 You manage all persistent memory for agents in the project. Memory is stored in `.claude/agent-memory/<agent-name>/`. Parse the args to determine the operation.
 
+> Agent names are the defaults; a name chosen at `/ai-dlc:init` (the agent's `persona-name` memory, roster in the orchestrator's `project_team-roster`) takes precedence.
+
 ---
 
 ## Load — args: `<agent-name>`
@@ -17,7 +19,7 @@ Retrieve all memories for the named agent.
 2. If it exists, read the index to get all memory file pointers
 3. Read each referenced memory file
 4. Run the Staleness Check (see below) on all entries
-5. Return all memory content as structured context for the calling agent
+5. Return all memory content as structured context for the calling agent. If a `persona-name` memory exists, return it first and state that the calling agent adopts that name in place of its default `Persona name`.
 
 If no MEMORY.md exists: respond "No prior memories for <agent-name>."
 
@@ -120,6 +122,8 @@ Lines after 200 are truncated — keep the index concise.
 | **feedback** | Corrections AND validated approaches | User corrects ("don't X") or confirms ("yes, exactly") |
 | **project** | Work, decisions, constraints, deadlines | You learn project context (convert relative dates to absolute YYYY-MM-DD) |
 | **reference** | Pointers to external systems | You learn about tools, dashboards, trackers, channels |
+
+**Persona name.** `user_persona-name.md` (name `persona-name`) holds the name the developer gave an agent; the full roster is **Scott Hanselman** (`orchestrator`)'s `project_team-roster.md`. Renames happen only through `/ai-dlc:init` or **Boris Cherny** (`agent-manager`), which update both files together — an agent never renames itself.
 
 ---
 

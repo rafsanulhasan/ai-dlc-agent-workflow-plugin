@@ -5,7 +5,9 @@ description: Comprehensive guidance for writing Blazor component tests using bUn
 
 # bunit-blazor-testing
 
-This skill guides the `sqa-engineer` to write Blazor component tests using **bUnit** — an in-memory Blazor component testing library — with **TUnit** as the test runner. bUnit renders Blazor components without a real browser, making tests fast and deterministic.
+This skill guides **Kent Beck** (`sqa-engineer`) to write Blazor component tests using **bUnit** — an in-memory Blazor component testing library — with **TUnit** as the test runner. bUnit renders Blazor components without a real browser, making tests fast and deterministic.
+
+> Agent names are the defaults; a name chosen at `/init` (the agent's `persona-name` memory, roster in the orchestrator's `project_team-roster`) takes precedence.
 
 > **When to use:** Use this skill for testing Blazor components in isolation (unit/component tests). For full browser end-to-end tests of a Blazor app, use `tunit-playwright-ui-testing` instead.
 

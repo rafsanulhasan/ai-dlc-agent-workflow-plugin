@@ -7,7 +7,9 @@ description: "Runs and interprets Stryker.NET mutation testing for C# projects �
 
 Mutation testing checks whether the tests would notice if the code were wrong. Stryker.NET makes small changes (mutants) to production code and re-runs the tests; a mutant that does not make any test fail **survived** and points to a weak or missing assertion.
 
-Ownership: this gate belongs to `sqa-engineer`. Other agents may run it for information, but only SQA declares the gate passed.
+> Agent names are the defaults; a name chosen at `/init` (the agent's `persona-name` memory, roster in the orchestrator's `project_team-roster`) takes precedence.
+
+Ownership: this gate belongs to **Kent Beck** (`sqa-engineer`). Other agents may run it for information, but only SQA declares the gate passed.
 
 ## Phase 0 — Context
 
@@ -68,7 +70,7 @@ Open the HTML report (path printed at the end of the run; `--output` sets the lo
 | **Equivalent** | The mutation cannot change observable behaviour | Record it with justification; do not write a test to "kill" it |
 | **Out of scope** | Code outside this work item | Note for a future TLC item; do not expand scope |
 
-Never change production code to kill a mutant — report real defects to `software-engineer` (that forks a BFLC item).
+Never change production code to kill a mutant — report real defects to **David Fowler** (`software-engineer`) (that forks a BFLC item).
 
 ## Phase 4 — Report
 

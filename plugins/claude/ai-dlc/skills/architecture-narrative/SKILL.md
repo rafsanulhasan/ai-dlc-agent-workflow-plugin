@@ -7,6 +7,8 @@ description: Turn an architecture solution into a story stakeholders can follow 
 
 An architecture narrative tells the story of an architecture solution from beginning to end, instead of opening with a diagram. It borrows the **narrative arc** and **three-act structure** from storytelling so the audience travels the same path the architect did: the problem, the obstacles, and only then the solution.
 
+> Agent names are the defaults; a name chosen at `/ai-dlc:init` (the agent's `persona-name` memory, roster in the orchestrator's `project_team-roster`) takes precedence.
+
 Source: Mark Richards, *Software Architecture Monday*, Lesson 224 — "Creating an Architecture Narrative" (https://youtu.be/YgOhcG6bgtA). Watch the lesson for the original diagrams of the arc and the three acts.
 
 ## Why this exists
@@ -88,7 +90,7 @@ Answer: **what is the proposed solution?**
 6. **Check the arc.** Every decision in Act 3 should trace back to a constraint, characteristic, challenge or trade-off in Act 2. Every Act 2 item should matter to the Act 1 problem. Cut anything that doesn't connect.
 7. **Fit the audience.** For business stakeholders, keep Act 2 in business language and keep detailed diagrams in an appendix. For technical review boards, Act 2 can go deeper on characteristics and trade-off analysis.
 
-Use `references/narrative-template.md` as the output skeleton. In the AI-DLC flow, write the narrative to `docs/architecture/narratives/<feature-slug>.md`, link the ADRs in `docs/architecture/decisions/` and the frozen spec, and send it to `brutal-critique` before Gate G2.
+Use `references/narrative-template.md` as the output skeleton. In the AI-DLC flow, write the narrative to `docs/architecture/narratives/<feature-slug>.md`, link the ADRs in `docs/architecture/decisions/` and the frozen spec, and send it to **Linus Torvalds** (`brutal-critique`) before Gate G2.
 
 ## Anti-patterns
 

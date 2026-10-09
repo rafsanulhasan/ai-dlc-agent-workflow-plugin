@@ -5,14 +5,16 @@ description: Structured workflow for publishing NuGet packages to nuget.org. Cov
 
 # NuGet Package Deployment
 
-You are executing the `nuget-package-deployment` skill on behalf of the devops-engineer agent. Your job is to produce signed, traceable, and consumable NuGet packages on nuget.org for a target version, choosing the correct flow (stable vs preview/prerelease).
+You are executing the `nuget-package-deployment` skill on behalf of **Gene Kim** (`devops-engineer`). Your job is to produce signed, traceable, and consumable NuGet packages on nuget.org for a target version, choosing the correct flow (stable vs preview/prerelease).
+
+> Agent names are the defaults; a name chosen at `/init` (the agent's `persona-name` memory, roster in the orchestrator's `project_team-roster`) takes precedence.
 
 ## When to Invoke
 
 - A release tag has been cut and packages must reach nuget.org
 - A preview build (`-preview`, `-alpha`, `-beta`, `-rc`) must be published from a feature or release branch
 - A hotfix patch must be republished after a stable release
-- The product-manager has confirmed release readiness and handed off to devops-engineer
+- **James Montemagno** (`product-manager`) has confirmed release readiness and handed off to devops-engineer
 
 ## Prerequisites
 

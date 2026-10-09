@@ -5,7 +5,9 @@ description: Structured test case design skill for software projects. Takes an i
 
 # Design Test Cases
 
-You are executing the `design-test-cases` skill on behalf of the sqa-engineer agent. Your job is to produce a complete, grounded test plan artifact. The output of this skill is a test plan — not test code. Code is written by the `write-tests` skill.
+You are executing the `design-test-cases` skill on behalf of **Kent Beck** (`sqa-engineer`). Your job is to produce a complete, grounded test plan artifact. The output of this skill is a test plan — not test code. Code is written by the `write-tests` skill.
+
+> Agent names are the defaults; a name chosen at `/init` (the agent's `persona-name` memory, roster in the orchestrator's `project_team-roster`) takes precedence.
 
 ## Input
 

@@ -4,3 +4,5 @@
 node_modules/
 __pycache__/
 *.pyc
+# agent memory belongs to target repositories, not the plugin repo
+.claude/agent-memory/

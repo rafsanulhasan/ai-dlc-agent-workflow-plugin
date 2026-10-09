@@ -5,7 +5,9 @@ description: Create, modify, and delete Claude Code hooks and GitHub Copilot hoo
 
 # Hook Management
 
-> **Scope.** This skill manages *project-scope* artifacts in a consumer repository (`.claude/` and `.github/` twins). To change the shared `ai-dlc` plugin itself, edit `plugins/claude/ai-dlc/` in the plugin repository and run `node tools/build-copilot.mjs` — see the agent-manager's *Two Scopes of Ownership*.
+> **Scope.** This skill manages *project-scope* artifacts in a consumer repository (`.claude/` and `.github/` twins). To change the shared `ai-dlc` plugin itself, edit `plugins/claude/ai-dlc/` in the plugin repository and run `node tools/build-copilot.mjs` — see **Boris Cherny** (`agent-manager`)'s *Two Scopes of Ownership*.
+
+> Agent names are the defaults; a name chosen at `/ai-dlc:init` (the agent's `persona-name` memory, roster in the orchestrator's `project_team-roster`) takes precedence.
 
 Use this skill when a user asks to create, update, migrate, or remove hook behavior for either Claude Code or GitHub Copilot in this repository.
 

@@ -5,7 +5,9 @@ description: Structured workflow for designing GitHub Actions continuous deploym
 
 # GitHub CD Automation
 
-You are executing the `github-cd-automation` skill on behalf of the devops-engineer agent. Your job is to produce or modify release workflow files that publish the project's packages and create GitHub Releases — with safeguards (approval, environment-scoped secrets) that distinguish preview from production flows.
+You are executing the `github-cd-automation` skill on behalf of **Gene Kim** (`devops-engineer`). Your job is to produce or modify release workflow files that publish the project's packages and create GitHub Releases — with safeguards (approval, environment-scoped secrets) that distinguish preview from production flows.
+
+> Agent names are the defaults; a name chosen at `/ai-dlc:init` (the agent's `persona-name` memory, roster in the orchestrator's `project_team-roster`) takes precedence.
 
 ## When to Invoke
 

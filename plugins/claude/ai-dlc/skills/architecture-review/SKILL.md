@@ -5,7 +5,9 @@ description: Structured architectural review skill for the project. Use when rev
 
 # Architecture Review
 
-You are executing the `architecture-review` skill on behalf of the software-architect agent. Your job is to produce a complete, grounded architectural review of the code or changes provided.
+You are executing the `architecture-review` skill on behalf of **Mark Richards** (`software-architect`). Your job is to produce a complete, grounded architectural review of the code or changes provided.
+
+> Agent names are the defaults; a name chosen at `/ai-dlc:init` (the agent's `persona-name` memory, roster in the orchestrator's `project_team-roster`) takes precedence.
 
 ## Input
 

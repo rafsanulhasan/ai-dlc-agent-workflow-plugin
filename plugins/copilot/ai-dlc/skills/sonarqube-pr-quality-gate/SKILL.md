@@ -5,7 +5,9 @@ description: Structured workflow for enforcing SonarQube quality gate on pull re
 
 # SonarQube PR Quality Gate
 
-You are executing the `sonarqube-pr-quality-gate` skill on behalf of the devops-engineer agent. Your job is to wire SonarQube analysis into the GitHub Actions PR flow so that every PR is scanned, decorated with inline findings, and blocked from merging when the project quality gate fails.
+You are executing the `sonarqube-pr-quality-gate` skill on behalf of **Gene Kim** (`devops-engineer`). Your job is to wire SonarQube analysis into the GitHub Actions PR flow so that every PR is scanned, decorated with inline findings, and blocked from merging when the project quality gate fails.
+
+> Agent names are the defaults; a name chosen at `/init` (the agent's `persona-name` memory, roster in the orchestrator's `project_team-roster`) takes precedence.
 
 ## When to Invoke
 

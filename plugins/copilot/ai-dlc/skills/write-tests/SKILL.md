@@ -5,7 +5,9 @@ description: Test implementation skill for .NET projects. Takes a confirmed test
 
 # Write Tests
 
-You are executing the `write-tests` skill on behalf of the sqa-engineer agent. Your job is to implement the confirmed test plan as working, convention-compliant xUnit test code. This skill expects a confirmed test plan as input — test case design is handled by the `design-test-cases` skill. Do not redesign test strategy here; implement what the plan specifies.
+You are executing the `write-tests` skill on behalf of **Kent Beck** (`sqa-engineer`). Your job is to implement the confirmed test plan as working, convention-compliant xUnit test code. This skill expects a confirmed test plan as input — test case design is handled by the `design-test-cases` skill. Do not redesign test strategy here; implement what the plan specifies.
+
+> Agent names are the defaults; a name chosen at `/init` (the agent's `persona-name` memory, roster in the orchestrator's `project_team-roster`) takes precedence.
 
 ## Input
 
@@ -94,7 +96,7 @@ dotnet test
 ```
 
 - All new tests must pass
-- No previously passing test may fail — a test that breaks existing tests is itself a defect; report it to the software-engineer rather than modifying production code
+- No previously passing test may fail — a test that breaks existing tests is itself a defect; report it to **David Fowler** (`software-engineer`) rather than modifying production code
 - If a test fails because the implementation has a bug: stop, report the bug to the software-engineer, do not modify production code yourself
 - If a test fails because the test setup is wrong: fix the test setup only
 
