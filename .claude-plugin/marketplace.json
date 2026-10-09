@@ -11,7 +11,7 @@
     {
       "name": "ai-dlc",
       "source": "./plugins/claude/ai-dlc",
-      "description": "Agentic engineering team running the AI-DLC lifecycles with artifact handoffs and hard quality gates.",
+      "description": "Agentic engineering team running the AI-DLC lifecycles with artifact handoffs and hard quality gates. .NET is the first supported stack.",
       "category": "development"
     }
   ]

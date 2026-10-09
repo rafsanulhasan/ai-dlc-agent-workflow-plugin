@@ -1,6 +1,6 @@
 ---
 name: agent-invocation
-description: "Authoritative skill for spawning or invoking another agent with proper context. Use PROACTIVELY before any agent calls another agent — covers Claude `Agent(...)` / `SendMessage` and Copilot/VS Code `agent` tool invocation forms, routing rules to orchestrator / triage-agent / agent-manager / research-assistant / product-manager, the SDLC chain and per-stage artifacts, how to brief a cold-started spawned agent with a self-contained handoff, foreground vs background and parallel calls, trust-but-verify after the spawned agent returns, and when NOT to invoke another agent at all."
+description: "Authoritative skill for spawning or invoking another agent with proper context. Use PROACTIVELY before any agent calls another agent — covers Claude `Agent(...)` / `SendMessage` and Copilot/VS Code `agent` tool invocation forms, routing rules to orchestrator / product-manager / agent-manager / research-assistant / product-manager, the SDLC chain and per-stage artifacts, how to brief a cold-started spawned agent with a self-contained handoff, foreground vs background and parallel calls, trust-but-verify after the spawned agent returns, and when NOT to invoke another agent at all."
 ---
 
 # agent-invocation
@@ -19,7 +19,7 @@ This skill is the single source of truth for how any agent in the AI-DLC multi-a
 - A simple factual question already answered by the current agent's own context.
 - A follow-up inside an already-triaged workflow where the receiving agent is already running.
 - A task that is fully within the current agent's own responsibilities — do the work, do not subcontract it.
-- Trivial one-shot lookups already resolved inline by `triage-agent` during classification.
+- Trivial one-shot lookups already resolved inline by the `orchestrator` during classification.
 
 ## Invocation mechanisms
 
@@ -39,7 +39,7 @@ This skill is the single source of truth for how any agent in the AI-DLC multi-a
   SendMessage({to: "<agent-id-or-name-returned-by-Agent>", message: "<follow-up>"})
   ```
 
-- **Parallel independent agents** — issue multiple `Agent(...)` calls in a single message. Each runs concurrently and returns to the caller, who synthesizes the combined output. This is the canonical form for orchestration mode 2 (Parallel independent subagents) in the `agent-selection` skill.
+- **Parallel independent agents** — issue multiple `Agent(...)` calls in a single message. Each runs concurrently and returns to the caller, who synthesizes the combined output. This is the canonical form for orchestration mode 2 (Parallel independent subagents) in the `request-routing` skill.
 
 - **Foreground vs background** — default to foreground (you block until the agent returns). Use background only for genuinely independent long-running work where the caller has other useful work to do meanwhile.
 
@@ -59,11 +59,11 @@ This skill is the single source of truth for how any agent in the AI-DLC multi-a
 
 ## Routing rules every caller must respect
 
-- **Every human request → `orchestrator` first.** The orchestrator gets intent, then sends non-trivial / multi-step / ambiguous requests to `triage-agent`, which returns a routing plan (work items, lifecycle, mode, chain, flags). The orchestrator confirms the plan with the human and executes it. Skipping triage to save time costs more than it saves.
+- **Every human request → `orchestrator` first.** The orchestrator gets intent and classifies the request; for non-trivial / multi-step / ambiguous requests it gets a work breakdown from `product-manager` (work items, dependencies, priorities, waves), then routes each item (lifecycle, mode, chain) into a Routing Plan, confirms it with the human and executes it. Skipping classification and breakdown to save time costs more than it saves.
 - **Any agent / skill / command / prompt / rules / instructions / hook file lifecycle work → `agent-manager`.** No other agent edits files under `.claude/agents/`, `.github/agents/`, `.github/skills/`, `.claude/skills/`, `.claude/commands/`, `.github/prompts/`, `.claude/rules/`, `.github/instructions/`, or any hook configuration. `agent-manager` is the single authority.
 - **External knowledge (library / API / SDK docs, framework conventions, version-specific behavior, current best practices) and non-trivial cross-cutting codebase exploration → `research-assistant`.** Prefer **context7** over web search for library docs. Never run ad-hoc `WebSearch` / `WebFetch` / library-docs tools yourself when a `research-assistant` call would do the job.
 - **Product scope, priority, acceptance of stories, release go / no-go → `product-owner`**, which directs `requirement-analyst` and `product-manager`.
-- **Backlog management, milestone planning, and the release-gate checklist → `product-manager`.** The `orchestrator` consults the PM (flagged by `triage-agent`) before the plan is executed for any Feature or TechDebt batch; feed PM priorities into the routing decision.
+- **Backlog management, milestone planning, and the release-gate checklist → `product-manager`.** The `orchestrator` gets the PM's work breakdown before routing any non-trivial batch; the PM's priorities and waves feed the routing decision, and Feature/TechDebt scope or priority decisions go to `product-owner`.
 - **SDLC forward chain** — implementation work flows through this order, with each role producing an explicit artifact for the next:
 
   | Stage | Role | Hands off to next stage |
@@ -107,7 +107,7 @@ Anti-patterns to avoid:
 
 - For **independent sub-tasks** (no collaboration needed between them) — fire multiple `Agent(...)` calls in a single message on Claude, or multiple `agent` tool calls in a single message on Copilot/VS Code. The orchestrator synthesizes the combined output.
 - For **research breadth** (e.g., comparing 3–5 options) — spawn 3–5 `research-assistant` subagents in parallel, each with a distinct angle, then synthesize.
-- For **collaborative SDLC work** — do **not** parallelize within the chain; run it sequentially with explicit handoffs (Mode 3 in `agent-selection`).
+- For **collaborative SDLC work** — do **not** parallelize within the chain; run it sequentially with explicit handoffs (Mode 3 in `request-routing`).
 - Background mode is for genuinely long-running independent work only — not a default. Most invocations should be foreground.
 
 ## Trust but verify
@@ -120,8 +120,8 @@ A spawned agent's summary describes **intent**, not necessarily what landed on d
 
 ## Companion skills
 
-- `agent-selection` — decides *which* agent (or team) to invoke and which of the four orchestration modes applies. Use it alongside this skill: `agent-selection` picks the targets and mode; `agent-invocation` covers the mechanics of actually invoking them with proper context.
-- `triage` — the primary caller of both skills, run at the start of every non-trivial user request.
+- `request-routing` — the `orchestrator` classifies every request and decides *which* workflow, agent (or team) and orchestration mode each work item gets; this skill covers the mechanics of invoking them with proper context. 
+- `task-triage` — the `product-manager` decomposes and triages the work (dependencies, bug severity, priorities, waves).
 
 ## Authority
 

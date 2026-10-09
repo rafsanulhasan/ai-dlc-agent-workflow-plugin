@@ -10,7 +10,7 @@
     {
       "name": "ai-dlc",
       "source": "./plugins/copilot/ai-dlc",
-      "description": "Agentic .NET engineering team running the AI-DLC lifecycles with artifact handoffs and hard quality gates.",
+      "description": "Agentic engineering team running the AI-DLC lifecycles with artifact handoffs and hard quality gates. .NET is the first supported stack.",
       "version": "1.0.0",
       "category": "development"
     }

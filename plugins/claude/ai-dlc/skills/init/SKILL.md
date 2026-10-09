@@ -1,6 +1,6 @@
 ---
 name: init
-description: "Bootstraps a repository for the AI-DLC agent team: scaffolds AGENTS.md (orchestration authority), CLAUDE.md, recommended .claude/settings.json permissions and the docs/ skeleton the lifecycles write to. In a .NET repository it also installs the C# coding and testing rules with their Copilot twins (via dotnet-rules), the dotnet test gate hook (via dotnet-test-gate) and a Stryker config. Use once per repository, or to repair a partial setup. Never overwrites existing files without showing a diff first."
+description: "Bootstraps a repository for the AI-DLC agent team: scaffolds AGENTS.md (the orchestrator persona with all its skills, plus the project's commands and gates), CLAUDE.md, recommended .claude/settings.json permissions and the docs/ skeleton the lifecycles write to. In a .NET repository it also installs the C# coding and testing rules with their Copilot twins (via dotnet-rules), the dotnet test gate hook (via dotnet-test-gate) and a Stryker config. Use once per repository, or to repair a partial setup. Never overwrites existing files without showing a diff first."
 disable-model-invocation: true
 ---
 
@@ -34,7 +34,7 @@ For each template, replace the `{{PLACEHOLDERS}}` and write it. For a file that 
 
 | Template | Destination |
 |---|---|
-| `templates/AGENTS.md` | `AGENTS.md` |
+| `templates/AGENTS.md` | `AGENTS.md` — the **orchestrator persona** for this project (the full `orchestrator` agent definition, its routing rules and skills) followed by the project's commands, gates, artifact locations and conventions. Fill every `{{PLACEHOLDER}}`; do not edit the persona sections. If an `AGENTS.md` exists, keep its project-specific notes and show the diff. |
 | `templates/CLAUDE.md` | `CLAUDE.md` (or `.claude/CLAUDE.md` if the repo already keeps it there) |
 | `templates/settings.json` | `.claude/settings.json` — **merge** `agent`, `permissions` and `env` keys into any existing file; never drop existing entries |
 | `templates/stryker-config.json` | test project folder (.NET only, and only if no Stryker config exists) |

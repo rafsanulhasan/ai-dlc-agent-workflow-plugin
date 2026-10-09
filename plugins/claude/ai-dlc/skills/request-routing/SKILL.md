@@ -1,0 +1,147 @@
+---
+name: request-routing
+description: "The orchestrator's single routing skill. Classifies every incoming request, decides which AI-DLC workflow (lifecycle) each work item runs — the one the user explicitly asked for, otherwise chosen from the ai-dlc lifecycles — or which single agent it is handed to, assigns the agent chain, and picks the orchestration mode (direct delegation, parallel subagents, sequential agent team, full traversal). Produces the Routing Plan. The orchestrator only delegates; this skill never does engineering work itself."
+---
+
+# Request Routing
+
+The `orchestrator` runs this skill for every human request. It turns the request into a **Routing Plan**: for each work item, the AI-DLC workflow to run (or the single agent to hand it to), the agent chain and the orchestration mode. Decomposition, dependencies, priorities and bug severity come from the `product-manager`'s `task-triage` skill; this skill consumes that breakdown.
+
+```
+Skill("ai-dlc:request-routing", args: "classify <request>")      // Step 1
+Skill("ai-dlc:request-routing", args: "route <work breakdown>")  // Steps 2–5
+```
+
+## Delegation only
+
+The orchestrator's job is delegation. Every piece of real work goes to the agent that owns it:
+
+| Work | Owner |
+|---|---|
+| Requirements, stories, ACs | `requirement-analyst` (directed by `product-owner`) |
+| Scope, priority, acceptance, release go / no-go | `product-owner` |
+| Work breakdown, bug triage, backlog | `product-manager` |
+| Architecture, ADRs, specs | `software-architect` |
+| Low-level design | `system-engineer` |
+| Code, fixes, refactors | `software-engineer` |
+| Tests, mutation gate | `sqa-engineer` |
+| Review | `code-reviewer` |
+| Documents | `documentation-writer` (critiqued by `brutal-critique`) |
+| Slide decks (.pptx) — create, update, review | `presentation-manager` |
+| Research, library/API facts, wide code exploration | `research-assistant` |
+| CI/CD, packaging, releases | `devops-engineer` |
+| Agents, skills, hooks, rules, commands, agent memory | `agent-manager` |
+
+The orchestrator never writes code, tests, designs, specs or documents, never runs research, and never reviews code itself. It reads only enough of the repository to route correctly and to verify artifacts. If no agent owns a piece of work, that is a capability gap (Step 3), not a reason to do it yourself.
+
+## Step 1 — Classify
+
+First check for **agent-artifact work** (agents, skills, hooks, rules/instructions, commands/prompts, agent memory). If the request only touches those, stop: it goes straight to `agent-manager` (Mode 1, no lifecycle, no work breakdown).
+
+Otherwise identify all task types present:
+
+| Type | Indicators |
+|---|---|
+| Feature | "Add X", "I want X", "we need X", new capability |
+| Bug Fix | Crash, incorrect behavior, failing test, exception, regression |
+| Security Fix | Auth bypass, data exposure, input validation gap, vulnerable dependency |
+| TechDebt | Refactor, convention violation, cleanup, performance |
+| Testing | Missing coverage, AC traceability, weak mutation score |
+| Review | An open change or PR to drive to merge-ready |
+| Release | "Ship", "release", "deploy", "publish" |
+| Question | Exploratory — "what would...", "how should we..." |
+
+A single request may contain multiple types.
+
+Record whether the user **explicitly named a workflow** — a lifecycle by name or code (PDLC, ASDLC, STBLC, FDLC, BFLC, RLC, TLC, CRLC) or an unambiguous equivalent ("run a code review on PR 42", "just write the tests", "only design it, don't build"). An explicit choice is binding in Step 2.
+
+Decide whether the request needs a work breakdown from `product-manager` (`task-triage`):
+
+- **Yes** — more than one type, more than one agent, or any Feature / Bug / Security / TechDebt work that touches the backlog.
+- **No** — a single question or a single-agent task with no dependencies; continue with Step 2 directly.
+
+Security fixes and regressions are flagged `route-immediately`; send them for breakdown in parallel with starting work, not before it.
+
+### Step 1 output
+
+```
+### Classification: <request summary>
+- Types: <type(s)> — <one sentence why>
+- Explicit workflow requested: <lifecycle | none>
+- Agent-artifact work: <yes → agent-manager | no>
+- Work breakdown needed: <yes → product-manager task-triage | no>
+- Route immediately (P0): <yes | no>
+- Open questions for the human: <questions | none>
+```
+
+## Step 2 — Decide the workflow for each work item
+
+Load `Skill("ai-dlc:ai-dlc")` and use its lifecycle table — never pick from memory.
+
+1. **The user named a workflow** → run exactly that lifecycle for the items it covers. If it cannot work as asked (for example FDLC requested but no stories or spec exist), do not silently switch: tell the human what is missing and propose the earlier lifecycle that produces it.
+2. **No workflow named** → decide per work item from its state, earliest missing artifact first:
+
+| The work item… | Workflow |
+|---|---|
+| is a vague idea, epic or business goal | **PDLC** |
+| has stories with ACs but no agreed design or frozen spec | **ASDLC** |
+| has a frozen spec but no task plan | **STBLC** |
+| has a task plan and code must land | **FDLC** |
+| is incorrect behaviour, a failing test or a regression | **BFLC** (P0 security: BFLC with `security-review` first) |
+| must change structure without changing behaviour | **RLC** |
+| lacks coverage, AC traceability or mutation strength | **TLC** |
+| is an open change / PR to drive to merge-ready | **CRLC** |
+| is a release | Release phase (`product-manager` checklist → `product-owner` go / no-go → `devops-engineer`) |
+
+A feature that starts as an idea usually becomes a sequence of work items (PDLC → ASDLC → STBLC → FDLC), each gated by the human.
+
+3. **No lifecycle needed** → hand the item to one agent instead:
+
+| The work item is… | Hand off to |
+|---|---|
+| agent-artifact work | `agent-manager` |
+| a factual or library/API question, or wide code exploration | `research-assistant` |
+| a backlog or prioritisation question | `product-manager` |
+| a scope or priority decision | `product-owner` |
+| an architecture question | `software-architect` |
+| a low-level design question | `system-engineer` |
+| a documentation-only change | `documentation-writer` (+ `brutal-critique`) |
+| a slide deck to create, update or review | `presentation-manager` |
+| a CI/CD or pipeline change | `devops-engineer` |
+
+State the reason for every choice in the Routing Plan, so the human can correct it at the Confirm step.
+
+## Step 3 — Assign the agent chain
+
+Within the chosen workflow, use the agents the `ai-dlc` lifecycle lists for its stages. For work handed to one agent, the chain is that agent. Then apply:
+
+- **Research-prepend rule** — if the item is marked *needs research* in the breakdown, or its design or implementation depends on external technology the team has not recently verified, prepend `research-assistant`; the next agent waits for the cited findings report.
+- **Scope decision first** — Feature or TechDebt items flagged for a `product-owner` decision get `product-owner` before the build chain.
+- **Capability gaps** — if no agent has the skill, hook, command or MCP tool an item needs, add a preceding `agent-manager` item to create or attach it and make the original item depend on it. Never route to an agent that lacks the capability, and never fill the gap yourself.
+
+## Step 4 — Pick the orchestration mode
+
+Run this once per planning cycle over the whole batch, so cross-item dependencies and shared context are visible.
+
+| Mode | When to use | How to execute |
+|---|---|---|
+| **1. Direct single-agent delegation** | One agent's expertise fully covers the item; no collaboration or lifecycle traversal needed | Hand off with a self-contained brief (`agent-invocation`). Done. |
+| **2. Parallel independent subagents** | The item splits into sub-tasks that do not need each other (research angles, independent reviews or analyses) | Spawn them in one message; the orchestrator synthesizes. For broad research, 3–5 `research-assistant` subagents, each with a distinct angle. |
+| **3. Sequential agent team** | Roles must collaborate — design informs implementation, implementation informs testing | Run the lifecycle's stages in order with explicit handoffs (`handoff`). |
+| **4. Full lifecycle traversal** | The work is large enough to cross several lifecycles (requirements → architecture → implementation → test/docs → review) | Use the `product-manager`'s breakdown; run one sequential team per work item, in waves; coordinate inter-team handoffs. |
+
+Decision tree:
+
+1. Can one agent fully own the item? → **Mode 1**.
+2. Do its sub-tasks need no collaboration? → **Mode 2**.
+3. Otherwise → **Mode 3** for one lifecycle, **Mode 4** when the item spans several lifecycles.
+
+Rules:
+
+- Prefer the smallest mode that fits; never collapse a needed team into one agent to save calls, and never expand a single-agent task into a team.
+- Within a sequential chain, parallelize only where the lifecycle allows it (for example `sqa-engineer` and `documentation-writer` after `software-engineer`; `software-architect` and `system-engineer` together in design).
+- Re-plan when progress reveals new constraints or scope: return to Step 2 for the affected items only.
+
+## Step 5 — Write the Routing Plan
+
+Use the Routing Plan format in the orchestrator definition: classification, work items with workflow (lifecycle or hand-off agent), reason, mode and agent chain, execution waves, flags and expected human gates. Present it to the human at the Confirm step before any delegation, except `route-immediately` items.

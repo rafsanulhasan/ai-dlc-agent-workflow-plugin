@@ -1,6 +1,6 @@
 ---
 name: ai-dlc
-description: "AI-DLC lifecycle router and operating model. Use FIRST for any non-trivial request to pick which of the eight named lifecycles applies (PDLC, ASDLC, STBLC, FDLC, BFLC, RLC, TLC, CRLC), which agents own each stage, which artifact each stage must hand off, and which gates a human must approve. Used by triage-agent to build the routing plan and by the orchestrator to run each stage."
+description: "AI-DLC lifecycle router and operating model. Use FIRST for any non-trivial request to pick which of the eight named lifecycles applies (PDLC, ASDLC, STBLC, FDLC, BFLC, RLC, TLC, CRLC), which agents own each stage, which artifact each stage must hand off, and which gates a human must approve. The orchestrator's request-routing skill chooses each work item's lifecycle from this catalogue (unless the user named one), and the orchestrator follows it to run each stage."
 ---
 
 # AI-DLC — Lifecycle Router
@@ -9,8 +9,8 @@ AI-DLC moves the unit of delegation from a line of code to a **phase of the life
 
 The routing layer has four parts, used in this order:
 
-1. **`ai-dlc`** (this skill) — picks the lifecycle.
-2. **`agent-selection`** — picks the orchestration mode per work item.
+1. **`request-routing`** — the orchestrator classifies the request and decides each work item's workflow from this skill's lifecycles (or the user's explicit choice), its agent chain and orchestration mode.
+2. **`ai-dlc`** (this skill) — the lifecycle catalogue: stages, owners, exit artifacts and human gates.
 3. **`agent-invocation`** — spawns agents with self-contained briefs.
 4. **`handoff`** — records and verifies the artifact that crosses each stage boundary.
 
@@ -19,7 +19,7 @@ The routing layer has four parts, used in this order:
 | Code | Role in the deck | Agent(s) in this plugin |
 |---|---|---|
 | ORC | Orchestrator | `orchestrator` — receives every human request first, gets intent, drives the flow, verifies artifacts, approves gate crossings on the human's behalf only when the human has delegated that gate |
-| TRI | Triage | `triage-agent` — classifies and decomposes the request into a routing plan for the orchestrator (work items, lifecycle, mode, chain, flags) |
+| TRI | Triage | `orchestrator` classifies and routes (lifecycle, mode, chain); `product-manager` decomposes the request into prioritised work items with dependencies and waves |
 | PO | Product Owner | `product-owner` — owns Plan and Release: product brief, scope and priority decisions, acceptance of stories and backlog, release go / no-go. Directs two specialists: `requirement-analyst` (elicitation, stories, numbered ACs, spec) and `product-manager` (backlog, sequencing, release-gate checklist) |
 | SA | Software Architect | `software-architect` |
 | SDE | System Design Engineer | `system-engineer` |
@@ -30,6 +30,7 @@ The routing layer has four parts, used in this order:
 | DW | Documentation Writer | `documentation-writer` — writes every document |
 | BC | Brutal Critique | `brutal-critique` — parallel, adversarial critique of every document |
 | OPS | Release / DevOps | `devops-engineer` — CI/CD, packaging, release gates |
+| PM-D | Presentation Manager | `presentation-manager` — creates, updates and reviews slide decks, keeping them true to the project |
 | ARM | Agent Resource Manager | `agent-manager` — the only agent that may change agents, skills, hooks or rules |
 
 In Claude Code every agent id is prefixed `ai-dlc:` (for example `software-engineer`).
@@ -50,7 +51,7 @@ In Claude Code every agent id is prefixed `ai-dlc:` (for example `software-engin
 
 ## Step 1 — Classify into one lifecycle
 
-`triage-agent` picks exactly one primary lifecycle per work item; the `orchestrator` runs the stages. A request may produce several work items in different lifecycles (for example a feature that first needs PDLC, then ASDLC, STBLC and FDLC).
+The `orchestrator` picks exactly one primary lifecycle per work item and runs the stages. A request may produce several work items in different lifecycles (for example a feature that first needs PDLC, then ASDLC, STBLC and FDLC).
 
 | # | Lifecycle | Pick it when… | Agents | Exit artifact |
 |---|---|---|---|---|
@@ -140,4 +141,4 @@ Human gates: <G1..G4 that apply>
 Parallel opportunities: <which stages fan out>
 ```
 
-Hand this to `agent-selection` to choose orchestration modes.
+`request-routing` adds the agent chain and orchestration mode to this.

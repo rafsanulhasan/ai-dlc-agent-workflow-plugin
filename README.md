@@ -11,21 +11,23 @@ One source, two plugins:
 | Claude Code | `plugins/claude/ai-dlc` (**source of truth**) | `.claude-plugin/marketplace.json` |
 | GitHub Copilot CLI / VS Code | `plugins/copilot/ai-dlc` (**generated**) | `.github/plugin/marketplace.json` |
 
+Full reference for both plugins (agents, skills, lifecycles, hooks, the build and releasing): [docs/plugins.md](docs/plugins.md).
+
 ## The team
 
 | Agent | Role | Model |
 |---|---|---|
-| `orchestrator` | Receives every human request first; drives the flow, verifies artifacts, runs human gates | opus |
-| `triage-agent` | Classifies and decomposes requests into a routing plan for the orchestrator | opus |
+| `orchestrator` | Receives every human request first; classifies and routes it (lifecycle, mode, agent chain), drives the flow, verifies artifacts, runs human gates | opus |
 | `product-owner` | Owns Plan and Release — product brief, scope and priority, acceptance, release go / no-go | opus |
 | `requirement-analyst` | Specialist under the product owner — elicitation, stories, numbered ACs, frozen specs | opus |
-| `product-manager` | Specialist under the product owner — backlog, sequencing, release-gate checklist | opus |
+| `product-manager` | Specialist under the product owner — work breakdown (work items, dependencies, priorities, waves), backlog, release-gate checklist | opus |
 | `software-architect` | Architecture design, ADRs, architecture conformance review | opus |
 | `system-engineer` | Low-level design, SOLID/patterns, DI plan | opus |
 | `software-engineer` | Implementation, bug fixes, refactors | sonnet |
 | `sqa-engineer` | Test design, unit/integration/UI/architecture tests, mutation gate | sonnet |
 | `code-reviewer` | Quality gate — approves only at zero Blockers | sonnet |
 | `documentation-writer` | Every document | sonnet |
+| `presentation-manager` | Slide decks — creates, updates and reviews .pptx presentations, keeping them true to the project | sonnet |
 | `brutal-critique` | Adversarial read-only critique of every document | sonnet |
 | `research-assistant` | All external research; owns the knowledge base | opus |
 | `devops-engineer` | CI/CD, NuGet, SonarQube PR gates, releases | sonnet |
@@ -35,7 +37,7 @@ Agents use the `opus` and `sonnet` aliases, and nothing pins `haiku`, so every r
 
 ## Eight lifecycles
 
-`ai-dlc` picks the lifecycle → `agent-selection` the orchestration mode → `agent-invocation` spawns → `handoff` carries the artifact.
+`request-routing` decides each work item's workflow (the lifecycle you asked for, else one chosen from `ai-dlc`), agent chain and orchestration mode → `agent-invocation` spawns → `handoff` carries the artifact. The orchestrator only delegates; it never does the engineering work itself.
 
 | Lifecycle | Exit artifact |
 |---|---|
@@ -77,9 +79,9 @@ VS Code's agent-plugin support reads the same Copilot/Claude plugin formats; add
 
 ## Use it in a project
 
-1. **Bootstrap once:** `/ai-dlc:init` (Claude) or the `init` skill (Copilot). It scaffolds `AGENTS.md`, `CLAUDE.md`, recommended `.claude/settings.json` permissions and the `docs/` folders the lifecycles write to. In a .NET repository it also installs the C# coding-style, GlobalUsings and testing rules (`.claude/rules/*` with `.github/instructions/*` twins, via `dotnet-rules`), the `dotnet test` gate hook (via `dotnet-test-gate`) and `stryker-config.json`. It shows a diff before touching any existing file.
+1. **Bootstrap once:** `/ai-dlc:init` (Claude) or the `init` skill (Copilot). It scaffolds `AGENTS.md` — the orchestrator persona for your project, with all its routing rules and skills, plus your build/test commands, gates and artifact paths — `CLAUDE.md`, recommended `.claude/settings.json` permissions and the `docs/` folders the lifecycles write to. In a .NET repository it also installs the C# coding-style, GlobalUsings and testing rules (`.claude/rules/*` with `.github/instructions/*` twins, via `dotnet-rules`), the `dotnet test` gate hook (via `dotnet-test-gate`) and `stryker-config.json`. It shows a diff before touching any existing file.
 2. **Talk to the orchestrator.** `init` sets `"agent": "ai-dlc:orchestrator"` in the repo's `.claude/settings.json`, so every request reaches it first (one-off: `claude --agent ai-dlc:orchestrator`). On Copilot, select the `orchestrator` custom agent.
-3. The orchestrator asks `triage-agent` for a routing plan, confirms it with you, then runs the lifecycle and stops at each human gate.
+3. The orchestrator classifies your request, gets a work breakdown from `product-manager`, routes each item to a lifecycle and agent chain, confirms the plan with you, then runs the lifecycle and stops at each human gate.
 
 The orchestrator must be the **main** agent: subagents cannot spawn other subagents, so invoking it as `@agent-ai-dlc:orchestrator` from another agent will not let it run the team.
 
@@ -107,10 +109,14 @@ The test target is `AI_DLC_TEST_TARGET`, else a `*.Testing.slnx` / `*.Tests.sln`
 
 ```text
 plugins/claude/ai-dlc/          ← edit here (agents/, skills/)
-node tools/build-copilot.mjs    ← regenerate plugins/copilot/ai-dlc
+node tools/build-copilot.mjs    ← regenerate plugins/copilot/ai-dlc and init's AGENTS.md template
 node tools/build-copilot.mjs --check
 npx @anthropic-ai/claude-code plugin validate --strict ./plugins/claude/ai-dlc
 ```
+
+`init`'s `AGENTS.md` template is generated too: `tools/templates/AGENTS.template.md` with the body of `agents/orchestrator.md` inserted at its persona marker, so a project's `AGENTS.md` always carries the current orchestrator persona. Edit the orchestrator or the template, then rebuild.
+
+This whole setup is captured as the `plugin-management` skill (owned by `agent-manager`), with the build script shipped as its template, so the team can create and release other Claude Code + Copilot plugins the same way: `/ai-dlc:plugin-management create <name>`.
 
 CI (`.github/workflows/validate.yml`) fails if the Copilot tree is stale or either manifest stops validating. Never hand-edit `plugins/copilot/**`.
 
@@ -122,10 +128,9 @@ The build projects each Claude agent to `agents/<name>.agent.md`, translates too
 - **Commands folded into skills.** In a plugin a command and a skill with the same name collide, and skills are slash-invocable on both platforms. Where a skill was a stub (`fix-bug`, `implement-feature`, `review`, `requirement-analysis`, `system-design`), the command's full method became the skill.
 - **Sync skills replaced by the build.** `agent-sync`, `skills-sync`, `hooks-sync`, `command-prompt-sync` and `rules-instructions-sync` are gone; `agent-manager` now distinguishes plugin scope (edit + rebuild) from project scope (hand-maintained twins).
 - **Product owner added.** `product-owner` (new) owns the Plan and Release phases and directs `requirement-analyst` and `product-manager`, which stay as specialists.
-- **Orchestrator split from triage.** `orchestrator` (new) receives human requests and executes the flow; `triage-agent` now only classifies, decomposes and returns a routing plan.
+- **Triage agent retired.** `orchestrator` (new) receives human requests, classifies and routes them, and executes the flow; `product-manager` triages non-trivial requests and bugs into prioritised work items with dependencies and waves. The old `triage` skill is split into `request-routing` (orchestrator) and `task-triage` (product manager).
 - **Added from the AI-DLC deck:** `ai-dlc` lifecycle router, `handoff`, `brutal-critique`, `csharp-mutation-testing`, a full `security-review`, and `init`.
 - **Added afterwards:** `architecture-narrative` (three-act architecture story for G2 and stakeholders, after Mark Richards' Software Architecture Monday lesson 224); its source video frames are not redistributed.
 - **Test gate moved to the target project.** The `dotnet test` Stop hook is no longer a plugin hook; `init` installs it only in .NET repositories via `dotnet-test-gate`, and the plugin's `enforce_tests` / `test_target` settings are gone (use `AI_DLC_ENFORCE_TESTS` / `AI_DLC_TEST_TARGET`).
 - **.NET rules moved to a skill.** The C# coding-style, GlobalUsings and testing rules are no longer scaffolded into every repository; `init` installs them only in .NET repositories via `dotnet-rules`.
 - **Fixes:** the test-gate script now reads its JSON payload from stdin and returns the top-level `decision`/`reason` contract (the old script could not block); agents that call skills now have the `Skill` tool; `software-architect` can write the ADRs it is asked to write.
-- **Not shipped:** `agent-memory/` (project-specific), `settings.local.json`, and `CLAUDE.md`/rules (plugins can't carry them — `init` scaffolds them instead). The repository's own `.claude/` folder is its development setup and is not shipped.
