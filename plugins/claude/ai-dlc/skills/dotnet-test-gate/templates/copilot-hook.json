@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "hooks": {
+    "agentStop": [
+      {
+        "type": "command",
+        "bash": "pwsh -NoProfile -ExecutionPolicy Bypass -File .claude/hooks/enforce-tests.ps1",
+        "powershell": "pwsh -NoProfile -ExecutionPolicy Bypass -File .claude/hooks/enforce-tests.ps1",
+        "timeoutSec": 900
+      }
+    ]
+  }
+}

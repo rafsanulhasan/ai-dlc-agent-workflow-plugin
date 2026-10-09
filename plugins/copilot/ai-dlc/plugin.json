@@ -1,0 +1,23 @@
+{
+  "name": "ai-dlc",
+  "description": "An agentic engineering team that runs the AI-DLC: 15 role-scoped agents (orchestrator, triage, product owner, product, requirements, architecture, system design, engineering, SQA, review, docs, critique, research, DevOps, agent management), eight named lifecycles, artifact handoffs and hard quality gates. .NET is the first supported stack (init installs a dotnet test gate in .NET repos); more languages will follow.",
+  "version": "1.0.0",
+  "author": {
+    "name": "Rafsanul Hasan",
+    "url": "https://github.com/rafsanulhasan"
+  },
+  "homepage": "https://github.com/rafsanulhasan/ai-dlc-agent-workflow-plugin",
+  "repository": "https://github.com/rafsanulhasan/ai-dlc-agent-workflow-plugin",
+  "keywords": [
+    "ai-dlc",
+    "sdlc",
+    "multi-agent",
+    "dotnet",
+    "csharp",
+    "tdd",
+    "mutation-testing",
+    "spec-driven-development"
+  ],
+  "agents": "agents/",
+  "skills": "skills/"
+}

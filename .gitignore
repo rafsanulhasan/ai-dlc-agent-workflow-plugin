@@ -1,0 +1,4 @@
+# machine-specific Claude Code settings and agent worktrees
+.claude/settings.local.json
+.claude/worktrees/
+node_modules/

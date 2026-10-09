@@ -1,0 +1,18 @@
+{
+  "name": "ai-dlc-agent-workflow",
+  "owner": {
+    "name": "Rafsanul Hasan",
+    "url": "https://github.com/rafsanulhasan"
+  },
+  "metadata": {
+    "description": "AI-DLC agentic engineering team for Claude Code."
+  },
+  "plugins": [
+    {
+      "name": "ai-dlc",
+      "source": "./plugins/claude/ai-dlc",
+      "description": "Agentic engineering team running the AI-DLC lifecycles with artifact handoffs and hard quality gates.",
+      "category": "development"
+    }
+  ]
+}

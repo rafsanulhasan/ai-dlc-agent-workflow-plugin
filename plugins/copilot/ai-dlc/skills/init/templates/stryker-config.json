@@ -1,0 +1,9 @@
+{
+  "stryker-config": {
+    "project": "{{PRODUCTION_PROJECT_FILE}}",
+    "mutation-level": "Standard",
+    "reporters": ["html", "json", "progress"],
+    "thresholds": { "high": 80, "low": 60, "break": {{MUTATION_BREAK}} },
+    "mutate": ["**/*.cs", "!**/Migrations/**/*.cs", "!**/obj/**/*.cs"]
+  }
+}

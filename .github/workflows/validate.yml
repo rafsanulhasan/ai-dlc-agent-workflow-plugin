@@ -1,0 +1,20 @@
+name: validate-plugin
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Copilot plugin is regenerated from the Claude plugin
+        run: node tools/build-copilot.mjs --check
+      - name: Validate Claude plugin manifest
+        run: npx -y @anthropic-ai/claude-code plugin validate --strict ./plugins/claude/ai-dlc
+      - name: Validate Claude marketplace
+        run: npx -y @anthropic-ai/claude-code plugin validate --strict .
