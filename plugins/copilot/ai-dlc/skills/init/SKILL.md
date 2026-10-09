@@ -27,7 +27,7 @@ Show the user a table of files to **create**, files that **exist** (will be diff
 - .NET only: the rules and test gate hook that will be installed, and the test solution the gate will run (a `*.Testing.slnx` / `*.Tests.sln` if present)
 - Mutation break threshold (default 60)
 - Team names: a table agent ID → current name (default, or the name chosen at an earlier init). Ask whether to rename any agents; the developer replies with `agent → new name` pairs, or "keep". Validate:
-  - names are unique across the team (case-insensitive) and never equal an agent ID;
+  - names are unique across the team (case-insensitive) and never equal an agent ID or a role alias (the ID with spaces, or a short form in the role-alias table under "Addressing agents by name or role" in `../../agents/orchestrator.md`, e.g. "architect", "QA");
   - `product-owner`, `product-manager` and `requirement-analyst` share one default name, so addressing that name is ambiguous — suggest distinct names, but do not force them.
 
 For a stack other than .NET, say that the stack-specific rules and the automatic test gate are .NET-only for now and will be skipped.
@@ -72,7 +72,7 @@ Also create empty folders with a `.gitkeep`: `docs/specs/`, `docs/architecture/d
   ```
 
   Add or update its line in that agent's `MEMORY.md` index (create the index if missing).
-- Always (renamed or not) write `.claude/agent-memory/orchestrator/project_team-roster.md` (type `project`, name `team-roster`) with the full table agent ID → name (chosen or default), a **Why:** and a **How to apply:** line, and add or update its line in the orchestrator's `MEMORY.md`.
+- Always (renamed or not) write `.claude/agent-memory/orchestrator/project_team-roster.md` (type `project`, name `team-roster`) with the full table agent ID → name (chosen or default), a note that every agent stays addressable by its role too (agent ID or role alias, see the orchestrator's "Addressing agents by name or role"), a **Why:** and a **How to apply:** line, and add or update its line in the orchestrator's `MEMORY.md`.
 - Existing memory files follow the same rule as every other file: diff, then consent.
 
 ## Phase 3 — Report
