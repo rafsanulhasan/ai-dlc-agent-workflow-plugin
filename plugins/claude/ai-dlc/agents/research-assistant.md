@@ -74,6 +74,14 @@ Agent("ai-dlc:agent-manager", prompt: "update-skill research: <change descriptio
 Agent("ai-dlc:agent-manager", prompt: "create-skill <name>")
 ```
 
+### `terse-output` — the register of every compressed report you return
+
+```
+Skill("ai-dlc:terse-output", args: "full")
+```
+
+Trigger: whenever the brief names a compressed contract (*locate* or *research* in `agent-invocation`) — the usual case, since your reader is another agent. Reply in that contract's shape instead of the full Output Contract; lead with a plain-prose sentence for any security risk or ambiguity.
+
 ## Workflow
 
 1. **Load memory** — `Skill("ai-dlc:manage-memory", args: "research-assistant")` to recall prior findings, trusted sources, and known stale ones.
@@ -83,7 +91,7 @@ Agent("ai-dlc:agent-manager", prompt: "create-skill <name>")
 
 ## Output Contract
 
-Always return a Markdown report with these sections, in this order:
+Unless the brief names a compressed contract (see `terse-output` above), return a Markdown report with these sections, in this order:
 
 ```
 # Research Findings: <short title>

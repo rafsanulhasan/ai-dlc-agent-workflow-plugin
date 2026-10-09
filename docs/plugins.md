@@ -69,7 +69,7 @@ The orchestrator has to be the **main** agent, because subagents cannot spawn ot
 | `requirement-analyst` | Elicitation, user stories, numbered acceptance criteria, frozen specs | opus |
 | `product-manager` | Work breakdown and bug triage, backlog, milestones, release-gate checklist | opus |
 | `software-architect` | Architecture design, ADRs, architecture conformance review | opus |
-| `system-engineer` | Low-level design, SOLID, design patterns, DI plan | opus |
+| `system-engineer` | Low-level design: code structure, SOLID, design patterns, DI plan, UI design (component structure, UI patterns) | opus |
 | `software-engineer` | Implementation, bug fixes, refactors | sonnet |
 | `sqa-engineer` | Test design; unit, integration, UI and architecture tests; mutation gate | sonnet |
 | `code-reviewer` | Quality gate; approves only when there are zero Blockers | sonnet |
@@ -108,6 +108,8 @@ Humans approve four gates:
 
 If you name a lifecycle in your request, the orchestrator runs that one. Otherwise it picks one from the state of each work item.
 
+No agent guesses. When an input is unclear, the receiving agent asks the agents that produced it (the *Clarify loop*): for example, the software engineer asks the architect or the system engineer, and the SQA engineer asks the engineer, the product owner, the system engineer or the architect. The orchestrator relays the batched questions and the answers, records them in the handoff, and brings the question to you when no agent can answer it or three rounds have not settled it. The full consultation matrix is in the `ai-dlc` skill.
+
 ## Skills
 
 Every skill is also a slash command: `/ai-dlc:<name>` in Claude Code, or the `<name>` skill in Copilot. The plugin ships no separate `commands/` folder, because a command and a skill with the same name would collide.
@@ -115,19 +117,63 @@ Every skill is also a slash command: `/ai-dlc:<name>` in Claude Code, or the `<n
 | Area | Skills | Main user |
 |---|---|---|
 | Routing and flow | `request-routing`, `ai-dlc`, `agent-invocation`, `handoff` | orchestrator |
-| Product | `product-planning`, `task-triage`, `requirement-analysis`, `spec-driven-development` | product-owner, product-manager, requirement-analyst |
-| Architecture and design | `architecture-design`, `architecture-review`, `architecture-narrative`, `write-adr`, `system-design` | software-architect, system-engineer |
+| Product | `product-planning`, `task-triage`, `requirement-analysis`, `spec-driven-development` | product-manager (`product-planning`, `task-triage`), requirement-analyst (`requirement-analysis`, `spec-driven-development`); product-owner reads `product-planning` and `requirement-analysis` |
+| Architecture and design | `architecture-design`, `architecture-review`, `architecture-narrative`, `write-adr`, `system-design` | software-architect (architecture skills and `write-adr`); system-engineer (`system-design` only) |
 | Engineering | `implement-feature`, `fix-bug`, `review`, `security-review` | software-engineer, code-reviewer |
 | Testing (general) | `design-test-cases`, `write-tests`, `playwright-mcp-ui-testing` | sqa-engineer |
 | Testing (C# / .NET) | `csharp-unit-testing`, `csharp-integration-testing`, `csharp-architecture-testing`, `csharp-mutation-testing`, `bunit-blazor-testing`, `tunit-playwright-ui-testing` | sqa-engineer |
 | Performance testing | `k6-performance-testing`, `k6-load-testing`, `k6-stress-testing`, `k6-docker` | sqa-engineer |
 | DevOps | `github-ci-automation`, `github-cd-automation`, `nuget-package-deployment`, `sonarqube-pr-quality-gate` | devops-engineer |
-| Communication | `write-documentation`, `presentation-authoring` | documentation-writer, presentation-manager |
+| Communication | `write-documentation`, `presentation-authoring`, `terse-output` | documentation-writer, presentation-manager; `terse-output`: the user and every agent |
 | Research | `research` | research-assistant |
 | Team management | `agent-management`, `skill-management`, `hook-management`, `rules-management`, `command-management`, `plugin-management`, `manage-memory` | agent-manager (all agents use `manage-memory`) |
 | Project setup | `init`, `dotnet-rules`, `dotnet-test-gate` | the user |
 
 `init`, `dotnet-rules` and `dotnet-test-gate` are **user-invocable only**: they set `disable-model-invocation: true`. `init` reads the other two skills' `SKILL.md` files and follows them, rather than calling them. Run `/ai-dlc:dotnet-test-gate` or `/ai-dlc:dotnet-rules` yourself to add, repair or remove them later.
+
+### Which agent uses which skill
+
+Each agent lists its skills, and when it uses them, in the `## Skills` section of its definition. Skills are not preloaded through a `skills:` frontmatter field; an agent loads one when it needs it.
+
+The **lifecycle agents** own a stage and hand an artifact on: James Montemagno (`product-owner`), James Montemagno (`requirement-analyst`), James Montemagno (`product-manager`), Mark Richards (`software-architect`), Zoran Horvat (`system-engineer`), David Fowler (`software-engineer`), Kent Beck (`sqa-engineer`), Robert C. Martin (`code-reviewer`), Daniele Procida (`documentation-writer`), Gene Kim (`devops-engineer`) and Linus Torvalds (`brutal-critique`). The others are Scott Hanselman (`orchestrator`), Jon Skeet (`research-assistant`), Nancy Duarte (`presentation-manager`) and Boris Cherny (`agent-manager`). Names are the defaults; names chosen at `/ai-dlc:init` take precedence.
+
+*Reads* means the agent reads the skill's standard and does not run its workflow.
+
+| Skill | Scope | Agents (Name (`id`)) |
+|---|---|---|
+| `agent-invocation` | All agents | Every agent, before it spawns or briefs another agent |
+| `manage-memory` | All agents | Every agent: load at session start, save durable learnings |
+| `terse-output` | All agents | Every agent, for the compressed report it returns to its caller; by default for Jon Skeet (`research-assistant`), whose reader is another agent; Scott Hanselman (`orchestrator`) when the human asks for shorter answers |
+| `handoff` | Lifecycle agents | Scott Hanselman (`orchestrator`) and every lifecycle agent, at each stage boundary; Robert C. Martin (`code-reviewer`) and Linus Torvalds (`brutal-critique`) verify records but never write one |
+| `ai-dlc` | Role | Scott Hanselman (`orchestrator`) |
+| `request-routing` | Role | Scott Hanselman (`orchestrator`) |
+| `research` | Role | Jon Skeet (`research-assistant`) runs it; every other agent routes external questions to Jon Skeet (`research-assistant`) instead |
+| `product-planning` | Role | James Montemagno (`product-manager`); James Montemagno (`product-owner`) reads the backlog view |
+| `task-triage` | Role | James Montemagno (`product-manager`) owns it, including deciding and recording rejections in `out-of-scope/`; Linus Torvalds (`brutal-critique`) reads the agent-brief self-check |
+| `requirement-analysis` | Role | James Montemagno (`requirement-analyst`); James Montemagno (`product-owner`) reads it to direct elicitation; Mark Richards (`software-architect`) uses its interview loop on a chosen deepening candidate; Linus Torvalds (`brutal-critique`) reads |
+| `spec-driven-development` | Role | James Montemagno (`requirement-analyst`); Mark Richards (`software-architect`) reviews the draft spec and agrees its Test Seams; David Fowler (`software-engineer`) and Kent Beck (`sqa-engineer`) follow its enforcement handoff; Linus Torvalds (`brutal-critique`) reads |
+| `architecture-design` | Role | Mark Richards (`software-architect`) |
+| `architecture-review` | Role | Mark Richards (`software-architect`) |
+| `architecture-narrative` | Role | Mark Richards (`software-architect`); Daniele Procida (`documentation-writer`) for stakeholder-facing architecture docs |
+| `write-adr` | Role | Mark Richards (`software-architect`); Linus Torvalds (`brutal-critique`) reads |
+| `system-design` | Role | Zoran Horvat (`system-engineer`); Mark Richards (`software-architect`) hands interface design to it |
+| `security-review` | Role | Robert C. Martin (`code-reviewer`) on security-sensitive changes; Mark Richards (`software-architect`) at threat and design level; Gene Kim (`devops-engineer`) for pipelines and secrets |
+| `implement-feature` | Role | David Fowler (`software-engineer`) |
+| `fix-bug` | Role | David Fowler (`software-engineer`), including diagnosis-only requests |
+| `review` | Role | Robert C. Martin (`code-reviewer`); Scott Hanselman (`orchestrator`) fans out its two axes (Standards, Spec) to two reviewers |
+| `design-test-cases` | Role | Kent Beck (`sqa-engineer`); Linus Torvalds (`brutal-critique`) reads |
+| `write-tests` | Role | Kent Beck (`sqa-engineer`) |
+| `playwright-mcp-ui-testing` | Role | Kent Beck (`sqa-engineer`) |
+| `csharp-unit-testing`, `csharp-integration-testing`, `csharp-architecture-testing`, `bunit-blazor-testing`, `tunit-playwright-ui-testing` | Role (C# / .NET) | Kent Beck (`sqa-engineer`) |
+| `csharp-mutation-testing` | Role (C# / .NET) | Kent Beck (`sqa-engineer`), who alone declares the mutation gate passed |
+| `k6-performance-testing`, `k6-stress-testing`, `k6-load-testing`, `k6-docker` | Role | Kent Beck (`sqa-engineer`) |
+| `github-ci-automation`, `github-cd-automation`, `nuget-package-deployment`, `sonarqube-pr-quality-gate` | Role | Gene Kim (`devops-engineer`) |
+| `write-documentation` | Role | Daniele Procida (`documentation-writer`); Linus Torvalds (`brutal-critique`) reads |
+| `presentation-authoring` | Role | Nancy Duarte (`presentation-manager`) |
+| `agent-management`, `command-management`, `hook-management`, `rules-management`, `plugin-management` | Role | Boris Cherny (`agent-manager`) |
+| `skill-management` | Role | Boris Cherny (`agent-manager`); Linus Torvalds (`brutal-critique`) reads its writing guide for agent and skill files; every other agent asks Boris Cherny (`agent-manager`) for skill changes |
+| `init` | Init-only | The user (`/ai-dlc:init`); no agent |
+| `dotnet-rules`, `dotnet-test-gate` | Init-only | Followed by `init` in .NET repositories, or run by the user; no agent |
 
 ## Hooks and rules
 

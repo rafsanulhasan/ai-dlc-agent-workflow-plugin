@@ -1,6 +1,6 @@
 ---
 name: write-tests
-description: Test implementation skill for .NET projects. Takes a confirmed test plan from design-test-cases and produces compilable, runnable xUnit tests following project conventions. Validates coverage quality through mutation testing. Invoked by the sqa-engineer agent after the test plan is approved.
+description: Test implementation skill for .NET projects. Takes a confirmed test plan from design-test-cases and produces compilable, runnable xUnit tests following project conventions, one test case at a time in a red-green-refactor loop (test-first when the code does not exist yet). Every test is seen failing before it is trusted, tests behaviour through public seams, and avoids implementation-coupled and tautological assertions. Validates coverage quality through mutation testing. Invoked by the sqa-engineer agent after the test plan is approved.
 ---
 
 # Write Tests
@@ -37,6 +37,28 @@ Before writing any code:
 ### Phase 1 — Test Implementation
 
 Implement each TC from the confirmed plan in order. For every test file written:
+
+#### The loop: one TC per cycle
+
+Work in vertical slices. Never write the whole suite first and run it afterwards: bulk-written tests encode imagined behaviour, test the shape of the code rather than what callers observe, and lock in a structure before you have learned anything from the first test. Each cycle is:
+
+1. **Red** — write the test for one TC and run it. Watch it fail, for the reason the TC describes (an assertion failure on the expected value, not a compile error or a setup exception).
+   - **Test-first** (the behaviour does not exist yet — new work in a test-first lifecycle, or a bug regression test): the failure is real. Hand the red test to **David Fowler** (`software-engineer`), or to the engineer in the same session, to make it pass with the least code; do not write the production code yourself.
+   - **Test-after** (the behaviour already exists, the usual case after implementation): a new test usually passes at once, and a test you have never seen fail may not be able to fail. Prove it can: temporarily break the exact behaviour the TC targets (flip the condition, return the wrong value, or stash the change that introduced it), run the test and see it go red, then restore the code and confirm `git diff` shows no change to production files.
+2. **Green** — run it again and see it pass against the real implementation.
+3. **Refactor the test code only** — with the suite green, remove duplication in arrange blocks, extract builders or fixtures, and sharpen names. Production refactoring belongs to the engineer and to review, not to this loop.
+
+Then take the next TC. Let what the last cycle taught you (a missing seam, an unexpected collaborator, an ambiguous AC) shape the next test, and raise plan problems with the calling agent instead of silently redesigning.
+
+#### What a good test checks
+
+Read [references/test-quality.md](references/test-quality.md) before the first cycle. In short:
+
+- Tests observe behaviour through the **public seam** the plan names — the interface a caller uses — never private members or internal state. A test should survive a refactor that does not change behaviour.
+- Verify through the interface, not a side channel: create a user and then fetch it through the API, rather than querying the table directly.
+- Expected values come from an **independent source** — a literal, a worked example, the AC. Never recompute the expected value the way the code does; that test passes by construction.
+- Mock at **system boundaries** (external services, clock, randomness, sometimes the database or file system), not collaborators you own. Assert on outcomes; assert on calls only when the call *is* the behaviour (the email was sent, the message was published).
+- If a TC can only be checked by reaching inside the component, do not test the internals. Report the missing seam to the calling agent so **Zoran Horvat** (`system-engineer`) can address testability.
 
 #### Structure
 
@@ -85,7 +107,7 @@ For TCs marked as integration type in the plan:
 - Register test doubles in the test host's DI — do not modify production registrations
 - Each test must leave shared infrastructure in a clean state
 
-Mark each `TodoWrite` TC item complete immediately after its test is written and compiling.
+Mark each `TodoWrite` TC item complete immediately after its test has been seen red and then green.
 
 ---
 
@@ -128,6 +150,8 @@ Do not mark work complete with unresolved surviving mutants unless each one is e
 Do not mark the test suite complete until:
 
 - [ ] Every TC from the confirmed plan has a corresponding test method
+- [ ] Every new test was seen failing for the TC's reason before it was seen passing, and production files were restored afterwards
+- [ ] No test asserts on private members, internal state or a side channel, and no expected value is recomputed from the implementation
 - [ ] Every AC listed in the plan maps to at least one passing test
 - [ ] `dotnet test` exits with 0 failures
 - [ ] `dotnet stryker` produces no surviving mutants on new code paths (or each survivor is commented and justified)
@@ -140,3 +164,5 @@ Do not mark the test suite complete until:
 Report completion with:
 
 > **Tests implemented for**: [component name] — [N tests written, dotnet test: pass, dotnet stryker: N survivors / all killed]
+
+Adapted in part from [mattpocock/skills](https://github.com/mattpocock/skills) (MIT).

@@ -1,6 +1,6 @@
 ---
 name: skill-management
-description: Creates, updates, and lists skill files (.claude/skills/*/SKILL.md) and (.github/skills/*/SKILL.md) for the AI-DLC multi-agent system. Invoked exclusively by the agent-manager agent.
+description: Creates, updates, and lists skill files (.claude/skills/*/SKILL.md) and (.github/skills/*/SKILL.md) for the AI-DLC multi-agent system, and holds the writing guide and review checklist for any agent-facing document (skills, agent bodies, rules, AGENTS.md, CLAUDE.md). Invoked exclusively by the agent-manager agent.
 ---
 
 # Skill Management
@@ -10,6 +10,8 @@ description: Creates, updates, and lists skill files (.claude/skills/*/SKILL.md)
 > Agent names are the defaults; a name chosen at `/ai-dlc:init` (the agent's `persona-name` memory, roster in the orchestrator's `project_team-roster`) takes precedence.
 
 You scaffold and maintain all skill files. Parse the args to determine the operation mode, then execute the corresponding procedure.
+
+Every skill you write or change is read by an agent, not a person. Write and review it with [references/writing-for-agents.md](references/writing-for-agents.md): how descriptions trigger a skill, what stays in `SKILL.md` versus `references/`, completion criteria for steps, the invocation choice, and the pruning rules. The same guide applies when `agent-manager` edits an agent body, a rule, `AGENTS.md` or `CLAUDE.md`.
 
 ---
 
@@ -29,7 +31,7 @@ You scaffold and maintain all skill files. Parse the args to determine the opera
    a. `.claude/skills/<name>/SKILL.md` already exists
    b. `.claude/commands/<name>.md` already exists
    c. `.github/skills/<name>.agent.md` already exists
-2. Ask for: model (default sonnet), tools list, one-line description, primary operation modes
+2. Ask for: model (default sonnet), tools list, primary operation modes, the trigger situations (branches) that should fire the skill, and whether it is model-invoked or user-only (`disable-model-invocation: true`) — see *Invocation choice* in [references/writing-for-agents.md](references/writing-for-agents.md). Write the `description` from these: lead with the trigger word, one phrase per branch for a model-invoked skill; a one-line human summary for a user-only skill.
 3. Create Directories: 
    a. `.claude/skills/<name>/` directory via Bash: `mkdir -p .claude/skills/<name>`
    b. `.github/skills/<name>/` directory via Bash: `mkdir -p .github/skills/<name>`
@@ -37,7 +39,9 @@ You scaffold and maintain all skill files. Parse the args to determine the opera
    a. Write to the `.claude/skills/<name>/SKILL.md` file with the same content for Claude Code discoverability. 
    b. Write to the `.github/skills/<name>/SKILL.md` file with the same content for Copilot/VS Code discoverability
 5. Write `.claude/commands/<name>.md` using the Command File Template below
-6. Confirm: "Skill '<name>' created. Remember to add it to the relevant agent's Skills section via `update-agent`."
+6. If some branches need material the others do not (long templates, examples, per-case rules), put it in `references/<topic>.md` beside `SKILL.md` on both platforms and link it from the step that needs it.
+7. Run the **Review checklist** in [references/writing-for-agents.md](references/writing-for-agents.md) on the new `SKILL.md`; fix every unchecked item.
+8. Confirm: "Skill '<name>' created. Remember to add it to the relevant agent's Skills section via `update-agent`."
 
 ### Skill File Template
 
@@ -61,7 +65,7 @@ description: <one-line description>
 
 ## Phase 1 — [Main Phase Name]
 
-[Describe the main work phase]
+[Ordered steps. End each step on a checkable completion criterion, e.g. "every caller listed", not "understand the code".]
 
 ---
 
@@ -79,10 +83,11 @@ description: <one-line description>
    b. `.github/skills/<name>/SKILL.md`
 2. Read `.claude/commands/<name>.md`
 3. Parse `<change-description>` to determine what to change
-4. Apply the change using Edit on the relevant file(s)
+4. Apply the change using Edit on the relevant file(s), including any `references/` files. Replace or remove what the change supersedes rather than appending beside it, so each meaning keeps a single source.
 5. Validate that Phase 0 still loads CLAUDE.md and calls `manage-memory`
-6. Validate that the frontmatter still contains: `name`, `description`
-7. Confirm: "Skill '<name>' updated."
+6. Validate that the frontmatter still contains: `name`, `description`, and that `description` still names every trigger the skill now handles
+7. Run the **Review checklist** in [references/writing-for-agents.md](references/writing-for-agents.md) on the changed sections
+8. Confirm: "Skill '<name>' updated."
 
 ---
 
@@ -92,3 +97,6 @@ description: <one-line description>
 - Skill files must have frontmatter: `name`, `description`
 - All skill files must have a Phase 0 that reads CLAUDE.md and calls `manage-memory`
 - Command files (.claude/commands/*.md) must always pair with a skill file in .claude/skills/
+- Every link from `SKILL.md` to a `references/` file must resolve, on both platforms
+
+Adapted in part from [mattpocock/skills](https://github.com/mattpocock/skills) (MIT).

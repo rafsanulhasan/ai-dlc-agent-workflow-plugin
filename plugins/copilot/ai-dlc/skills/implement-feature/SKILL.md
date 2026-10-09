@@ -1,9 +1,11 @@
 ---
 name: implement-feature
-description: "Structured feature implementation workflow for software projects. Use when architecture/system design is ready and code must be implemented safely."
+description: "Structured feature implementation workflow for software projects. Use when architecture/system design is ready and code must be implemented safely, from a design, spec or work item, in small verified steps (test-first when failing tests are supplied), without overbuilding: reuse what the repository has, keep scope strict and stop when acceptance passes. Also covers behaviour-preserving refactors, reversible schema/data/API/config migrations, and writing the commit message."
 ---
 
 # Implement Feature
+
+> Agent names are the defaults; a name chosen at `/init` (the agent's `persona-name` memory, roster in the orchestrator's `project_team-roster`) takes precedence.
 
 # Operating Methodology
 
@@ -21,6 +23,8 @@ Before writing any code:
 4. Glob the solution structure to understand project boundaries and locate files to create or modify.
 5. Read the specific files that will be touched — understand existing patterns before adding new ones.
 6. Check `docs/architecture/decisions/` for any ADRs constraining this feature.
+7. If the brief names a work item, spec or handoff record, open it and restate its ID, title and acceptance criteria in one short block before planning. If the reference is ambiguous or does not resolve, ask instead of guessing which item is meant.
+8. Note which failing tests, if any, came with the brief — they decide whether Phase 2 runs test-first.
 
 ---
 
@@ -32,6 +36,21 @@ Break the feature into atomic, independently buildable steps. Present the plan u
 - Order steps so each one compiles standalone: define interfaces first, then implementations, then DI registrations, then integration points
 - Flag any ambiguity in the architecture design that must be resolved before coding begins
 
+### Scope, reuse and stop condition
+
+Overbuilding is the usual failure of feature work. Put three short lists at the top of the plan:
+
+- **Reuse** — the existing modules, helpers, extension points and patterns this feature will build on. Search for them before planning anything new; a second implementation of behaviour the repository already has is a defect, not a feature. If the fitting seam needs reshaping to take the feature cleanly, plan that as a refactor step (below) rather than patching around it.
+- **Non-goals** — what this work item will *not* do: extra modes, providers, options, configuration, extensibility hooks and polish that no acceptance criterion asks for. A new dependency, public surface, service, configuration key or migration is added only when the design or an acceptance criterion requires it, and the plan states the trade-off in one line.
+- **Stop condition** — the observable check that ends the work, normally "every acceptance criterion restated in Phase 0 passes, through the real entry point". When it is met, stop; do not add unrequested cleanup or improvements. Material omissions go in the handoff, each with the trigger that would justify building it later.
+
+Still deliver a coherent path through every layer that owns part of the behaviour. "Small" means no speculative scope, not cramming the feature into one file or bypassing the layers the design assigns.
+
+### Refactor and migration steps
+
+- A step that restructures existing code without changing behaviour follows [references/refactoring.md](references/refactoring.md): the same proof runs green **before and after** the structural edit, and no feature change rides along.
+- A step that changes a schema, stored data, an API or message contract, a configuration format or a behaviour-changing dependency follows [references/migrations.md](references/migrations.md): forward and rollback paths, mixed-version safety, rollback proof, and no destructive step unless separately approved.
+
 Ask the user to confirm the plan or clarify ambiguities. Do not write code until the plan is confirmed.
 
 ---
@@ -39,6 +58,19 @@ Ask the user to confirm the plan or clarify ambiguities. Do not write code until
 ## Phase 2 — Implementation
 
 Implement each step in the confirmed plan. For every file written or edited:
+
+### Test-first when failing tests are supplied
+
+If the brief includes failing tests from **Kent Beck** (`sqa-engineer`) — a test-first lifecycle, or acceptance tests written ahead of the code — implement in red → green slices: take one failing test, write the least code that makes it pass, re-run it, then take the next. Do not write code that no current test or plan step asks for. Tidy up only while the suite is green. Ownership does not change: if a slice has no test, note the gap for the SQA engineer rather than writing the test yourself.
+
+### Tight feedback after every step
+
+Do not wait for Phase 3 to find out a step is broken. After each step:
+
+- build (or type-check) the affected project;
+- run the narrowest tests that cover the changed code — one test file or a name filter, not the whole suite.
+
+A failure caught at the step that caused it is a one-line fix; the same failure found after ten steps is an investigation. The full suite runs once, in Phase 4.
 
 ### Convention Checklist (apply to every file)
 
@@ -109,17 +141,15 @@ For each surviving mutant:
 
 ## Phase 6 — Commit
 
-Stage only the files changed for this feature. Commit with a message that:
+Stage only the files changed for this feature. Write the message by [references/commit-messages.md](references/commit-messages.md): the repository's own convention first, otherwise Conventional Commits; the subject states the intent, the body (when needed) states why rather than what. Refactor and migration steps get their own commits, typed and bodied as that reference describes.
 
-- Starts with a verb: "Add", "Implement", "Refactor", "Fix"
-- Names the component: "Add IRequestValidator middleware"
-- States the why if non-obvious: "...to enforce schema constraints before handler dispatch"
-
-Example:
+Example (Conventional Commits):
 ```
 git add <specific files>
-git commit -m "Add IRequestValidator middleware to enforce schema constraints before handler dispatch"
+git commit -m "feat(validation): reject requests that fail schema constraints" -m "Handlers assumed validated input; checking before dispatch keeps that assumption true for every endpoint."
 ```
+
+Do not self-approve. The stage ends with a handoff record (`Skill("handoff")`) listing the changed files, the work item's acceptance criteria and the build and test results; review by **Robert C. Martin** (`code-reviewer`) follows in the lifecycle and checks the change against both the project's standards and the spec.
 
 ---
 
@@ -133,3 +163,10 @@ Do not mark the feature complete until:
 - [ ] Every new interface and public method follows the `{ data, error }` return shape
 - [ ] No stack traces can escape to a client
 - [ ] All conventions from the checklist in Phase 2 are satisfied
+- [ ] Every acceptance criterion restated in Phase 0 is implemented, and nothing outside them was added
+- [ ] When failing tests were supplied, each one now passes, and none was changed to make it pass without the SQA engineer agreeing the test was wrong
+- [ ] Nothing on the plan's non-goals list was built, and every new dependency, surface or configuration key is justified in the plan
+- [ ] Each refactor step has a green run of the same proof before and after the edit; each migration step has a proven rollback and stopped at the requested stage
+
+Adapted in part from [mattpocock/skills](https://github.com/mattpocock/skills) (MIT).
+Adapted in part from [JuliusBrussee/caveman](https://github.com/JuliusBrussee/caveman) (Apache-2.0); modified.

@@ -50,7 +50,31 @@ Never mark a review complete if any Blocker remains open.
 Skill("review")
 ```
 
-Trigger: when you receive a branch name, PR number, commit range, or list of files to review. Invokes the structured review checklist covering correctness, conventions, coverage, and design.
+Trigger: when you receive a branch name, PR number, commit range, or list of files to review. Invokes the structured review checklist covering correctness, conventions, coverage, and design. Review the two axes apart — **Standards** (correctness, documented conventions, coverage, design and smells) and **Spec** (does the change do what the ACs asked, no more and no less): as two separate passes, or only the axis your brief names (`axis: standards` / `axis: spec`). Reply in the skill's compact format when the brief asks for `format: compact`.
+
+### `security-review` — invoke when the change is security-sensitive
+
+```
+Skill("security-review", args: "<changed files or component>")
+```
+
+Trigger: when the diff touches authentication or authorization, external input, data exposure, secrets, crypto or dependencies, or the work item is a security fix. A Critical finding is a Blocker.
+
+### `handoff` — verify the record you review from
+
+```
+Skill("handoff")
+```
+
+Trigger: at the start of a review, check the incoming handoff record's gate evidence against the diff and test results. You do not write files: your review report is the artifact the orchestrator records at the review → release boundary.
+
+### `terse-output` — the compressed report you return to your caller
+
+```
+Skill("terse-output", args: "full")
+```
+
+Trigger: when the brief asks for a compressed report; the `review` compact format already applies this register. Security risks and ambiguities stay in full prose.
 
 ### `manage-memory` — invoke at session start and when learning something worth preserving
 
@@ -69,6 +93,10 @@ To update a skill or create a new one:
 Agent("agent-manager", prompt: "update-skill review: <change description>")
 Agent("agent-manager", prompt: "create-skill <name>")
 ```
+
+### Clarify upstream
+
+When an input is unclear, ask, don't guess: consult `sqa-engineer` on test intent, coverage and mutation results, `software-engineer` on implementation intent and trade-offs, and `requirement-analyst` on the meaning of an AC on the spec axis. Return the questions in one batched clarification request; an unanswered question is not a finding. Matrix and rules: the `ai-dlc` skill, *Clarify loop*; request format: `agent-invocation`, *Clarification requests*.
 
 ### Invocation Protocol
 

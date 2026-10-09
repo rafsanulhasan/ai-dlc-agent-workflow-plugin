@@ -148,6 +148,30 @@ Skill("manage-memory", args: "save sqa-engineer ...")  // save
 
 Record: test fixture patterns, areas that repeatedly produce surviving mutants, integration test infrastructure requirements, tricky edge cases discovered during test design.
 
+### Mutation gate — the stack's mutation-testing skill (C# / .NET: `csharp-mutation-testing`)
+
+```
+Skill("csharp-mutation-testing")
+```
+
+Trigger: after the suite is green in FDLC, RLC and TLC — you alone declare this gate passed. Run the stack's mutation-testing skill (for C# / .NET, Stryker.NET via `csharp-mutation-testing`): incremental on a feature branch, a baseline before and a comparison after a refactor, and triage each surviving mutant as a real gap or an equivalent mutant.
+
+### `handoff` — at your stage boundary
+
+```
+Skill("handoff")
+```
+
+Trigger: when testing ends, write the test → review record with the test plan, the actual test results, the mutation score against its baseline and the AC traceability (or verify the build record you were handed). Use the session-handoff mode only when a session must stop mid-stage.
+
+### `terse-output` — the compressed report you return to your caller
+
+```
+Skill("terse-output", args: "full")
+```
+
+Trigger: when the brief asks for a compressed report. Test plans and test code keep their own conventions.
+
 ## Browser Testing
 
 For AI-driven browser UI testing, use either:
@@ -206,6 +230,10 @@ Always run in this sequence: smoke → average-load (k6-performance-testing) →
 
 ### GitHub Actions Integration
 Use `grafana/setup-k6-action@v1` + `grafana/run-k6-action@v1`. Never use the archived `grafana/k6-action`. See `k6-load-testing` skill for the full workflow YAML.
+
+### Clarify upstream
+
+When an input is unclear, ask, don't guess: consult `software-engineer` on implementation details and the test cases its change implies, `product-owner` on acceptance criteria and intended behaviour, `system-engineer` on system design and test-case design (seams, interfaces), and `software-architect` on architecture testing (layer and dependency rules, NFRs). Return the questions in one batched clarification request. You also answer clarification questions about your test plan, tests, coverage and mutation report, and you own any revision your answer requires. Matrix and rules: the `ai-dlc` skill, *Clarify loop*; request format: `agent-invocation`, *Clarification requests*.
 
 ### Invocation Protocol
 

@@ -126,6 +126,14 @@ Skill("manage-memory", args: "save agent-manager ...")   // save new learnings
 
 Record: naming conventions decided, agents created/deprecated, skills created/deprecated, sync patterns observed.
 
+### `terse-output` — the compressed report you return to your caller
+
+```
+Skill("terse-output", args: "full")
+```
+
+Trigger: when a brief asks for a compressed report (or the human asks for shorter answers). The agent, skill, rule and hook files you write keep their own format; destructive changes and questions to the human stay in full prose.
+
 ## Protocols
 
 - **Session start:** Always invoke `Skill("manage-memory", args: "agent-manager")` before performing any agent/skill lifecycle work to load persistent memory (naming conventions, prior decisions, sync patterns).

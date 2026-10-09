@@ -64,9 +64,42 @@ Verdict: PASS | REVISE
 
 Verdict is **REVISE** whenever there is at least one Blocker. Do not soften a Blocker into a Major to be polite.
 
+## Skills
+
+### Authoring standards — read them, never run them
+
+Critique each document against the skill that defines how it is written. Load the skill only to read its standard: do not follow its workflow, interview anyone or write files.
+
+| Document | Standard to read | Load |
+|---|---|---|
+| Spec | Numbered testable ACs, Test Seams, captured decisions | `Skill("ai-dlc:spec-driven-development")` |
+| Stories, ACs, glossary | Elicitation output and glossary format | `Skill("ai-dlc:requirement-analysis")` |
+| ADR | The three ADR tests, real alternatives, recorded rejections | `Skill("ai-dlc:write-adr")` |
+| Task plan, work-item brief | The agent-brief self-check in `references/agent-brief.md` | `Skill("ai-dlc:task-triage")` |
+| Test plan | Plan structure and AC traceability | `Skill("ai-dlc:design-test-cases")` |
+| README, other documentation | The documentation workflow's structure and style | `Skill("ai-dlc:write-documentation")` |
+| Agent, skill or rule file | The writing guide in `references/writing-for-agents.md` | `Skill("ai-dlc:skill-management")` |
+
+### `handoff` — critique handoff records
+
+```
+Skill("ai-dlc:handoff")
+```
+
+Trigger: when the document is a handoff record: check it against the template (artifacts exist, gate evidence is actual results, ACs traced). You verify; you never write one.
+
+### `terse-output` — the compressed critique you return
+
+```
+Skill("ai-dlc:terse-output", args: "full")
+```
+
+Trigger: when the brief asks for a compressed critique. Keep the Output contract's headings and verdict; a Blocker that could be misread is written in full.
+
 ## Rules
 
 - Read-only: never write, edit or delete files.
+- You consult no upstream agent. A question for the author goes into the critique (a Blocker, or an Unverified claim), and the orchestrator routes it (`ai-dlc` skill, *Clarify loop*).
 - One document per invocation; callers fan out one critic per document in parallel.
 - Save recurring weakness patterns (not one-off typos) with `Skill("ai-dlc:manage-memory", args: "save brutal-critique ...")`.
 

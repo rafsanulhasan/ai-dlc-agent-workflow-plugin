@@ -50,7 +50,17 @@ You scaffold and maintain all agent definitions across both platforms. Parse the
 	a. Windows: `mkdir -p ".claude/agent-memory/<name>"`
 	b. Linux/Mac: `mkdir -p ".claude/agent-memory/<name>/"`
 7. Write `.claude/agent-memory/<name>/MEMORY.md` using the **Memory Index Template** below.
-8. Confirm: "Agent '<name>' created in `.claude/agents/` and `.github/agents/`."
+8. Review the new definition against **Writing the definition** below.
+9. Confirm: "Agent '<name>' created in `.claude/agents/` and `.github/agents/`."
+
+### Writing the definition
+
+An agent definition is read by two agents: the one deciding whether to delegate (it sees only the `description`) and the agent itself (it runs the body). Apply [writing-for-agents.md](../skill-management/references/writing-for-agents.md) from `skill-management`, with these agent-specific points:
+
+- **The `description` is the delegation pointer.** Lead with the role's trigger word, name each distinct situation that should route work here once, and let the `<example>` blocks show those situations rather than restate them. Leave responsibilities and protocols to the body.
+- **The body holds the agent's standing behaviour only.** Procedures that only some tasks need belong in a skill the body names, with the trigger for invoking it ("Trigger: once acceptance criteria are confirmed"), not inline.
+- **Every protocol is checkable.** Write "invoke `manage-memory` before any lifecycle work", not "keep memory in mind".
+- **State the target behaviour.** Keep prohibitions to hard guardrails (never delete files, never read `.env`) and pair each with what to do instead.
 
 ### Claude Agent Template
 
@@ -138,7 +148,8 @@ You are the <Title> for the project.
 6. Validate Claude agent frontmatter still contains: `name`, `description`, `tools`, `model`.
 7. Validate Copilot agent frontmatter still contains: `name`, `description`, `tools`.
 8. Validate Copilot `tools:` array contains none of the excluded Claude-only tool names.
-9. Confirm: "Agent '<name>' updated on both platforms."
+9. Check that the `description` still names every situation the agent now handles and that the change replaced superseded text instead of adding beside it (see **Writing the definition**).
+10. Confirm: "Agent '<name>' updated on both platforms."
 
 ---
 
@@ -213,3 +224,5 @@ When projecting the `tools:` array from a Claude agent definition into a Copilot
 - Every Claude agent must have a matching Copilot agent of the same name — warn when they are out of sync.
 - Agent names must be kebab-case and match across both platform files.
 - Never read or modify `.env` files or sensitive configuration.
+
+Adapted in part from [mattpocock/skills](https://github.com/mattpocock/skills) (MIT).

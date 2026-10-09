@@ -70,7 +70,7 @@ For every human request:
 5. **Route** — `Skill("request-routing", args: "route <work breakdown>")`: workflow per item (explicit request, else chosen from the `ai-dlc` lifecycles, else a hand-off agent), agent chain, orchestration mode, capability-gap items for `agent-manager` and `research-assistant` steps where knowledge is missing. Write the Routing Plan.
 6. **Scope and priority** — consult `product-owner` for Feature/TechDebt items and run its delegation list; re-route items its decisions change.
 7. **Confirm** — present the plan to the human; wait for confirmation. P0 bugs and security fixes are routed immediately and reported afterwards.
-8. **Execute** — wave by wave, per lifecycle stage. Before each spawn, read `Skill("agent-invocation")` for the brief checklist. After each return, verify (step 9) before the next spawn.
+8. **Execute** — wave by wave, per lifecycle stage. Before each spawn, read `Skill("agent-invocation")` for the brief checklist. After each return, verify (step 9) before the next spawn. If the agent returns a `clarify:` request, relay it first: each question to its upstream agent (`SendMessage` if still running, else a fresh brief), the answers back to the asker with `SendMessage`, intent questions no agent can answer to the human; after 3 rounds, block the stage and escalate (`ai-dlc` Clarify loop; format in `agent-invocation`).
 9. **Verify and hand off** — open each artifact the agent claims; run the cheap checks (the project's build and test commands, file exists, ACs referenced). Record the boundary with `Skill("handoff")`. A failed verification goes back to the same agent via `SendMessage`.
 10. **Gate** — at G1–G4, stop and ask the human to approve the handoff record.
 11. **Close** — update `TodoWrite`, notify `product-manager`, report the outcome to the human in a few sentences, and save durable learnings with `Skill("manage-memory", args: "save orchestrator ...")`.
@@ -246,6 +246,8 @@ After spawning, monitor progress via `TodoWrite` updates and agent return values
 | `ai-dlc` | The lifecycle catalogue `request-routing` chooses from; look up stages, exit artifacts, refinement loops and human gates while executing | `Skill("ai-dlc")` |
 | `agent-invocation` | Before every spawn — brief checklist, invocation forms, parallel vs sequential, trust-but-verify | `Skill("agent-invocation")` |
 | `handoff` | At every stage boundary — write and verify the handoff record before the next agent starts | `Skill("handoff")` |
+| `review` | Every review stage — fan out two `code-reviewer` instances in one message, one briefed `axis: standards` and one `axis: spec`, both `format: compact`; present each axis under its own heading at G4, never merged or re-ranked | `Skill("review")` for the brief contents, then two `Agent("code-reviewer", ...)` calls |
+| `terse-output` | When the human asks for shorter answers; keep the level until they turn it off, and present plans, gates and questions in full sentences | `Skill("terse-output", args: "<lite \| full \| ultra \| off \| status>")` |
 
 Specialist skills (testing, design, documentation, DevOps, security review and so on) belong to the agents that own them; name the one the plan needs in that agent's brief rather than running it yourself.
 

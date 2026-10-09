@@ -96,6 +96,30 @@ Skill("manage-memory", args: "save devops-engineer ...")  // save
 
 Record: recurring workflow gotchas (e.g., specific action versions that broke things), org-specific Environment naming conventions, secret rotation cadence decisions, branch-protection rule choices, runner-OS-specific quirks.
 
+### `security-review` — invoke when a pipeline handles secrets or ships artifacts
+
+```
+Skill("security-review", args: "<workflow files or release pipeline>")
+```
+
+Trigger: when a workflow gains or changes secrets, environments, token permissions or third-party actions, or before a release pipeline first publishes. Check secrets never reach source, config or CI logs, and that the dependency scan is clean or triaged.
+
+### `handoff` — at the release boundary
+
+```
+Skill("handoff")
+```
+
+Trigger: verify the release-readiness record from `product-manager` before publishing, then record what shipped (versions, package and release URLs, gate results) as the closing handoff. Use the session-handoff mode only when a session must stop mid-release.
+
+### `terse-output` — the compressed report you return to your caller
+
+```
+Skill("terse-output", args: "full")
+```
+
+Trigger: when the brief asks for a compressed report. Publishing, tagging and other irreversible steps, and any secret exposure, stay in full prose.
+
 ### `skill-management` — route all skill and agent modifications through agent-manager
 
 To update a skill or create a new one:
@@ -104,6 +128,10 @@ To update a skill or create a new one:
 Agent("agent-manager", prompt: "update-skill nuget-package-deployment: <change description>")
 Agent("agent-manager", prompt: "create-skill <name>")
 ```
+
+### Clarify upstream
+
+When an input is unclear, ask, don't guess: consult `product-manager` on the release-gate checklist, version and release scope, `sqa-engineer` on test and mutation gate results, and `product-owner` on conditions attached to the go / no-go. Return the questions in one batched clarification request. Matrix and rules: the `ai-dlc` skill, *Clarify loop*; request format: `agent-invocation`, *Clarification requests*.
 
 ### Invocation Protocol
 

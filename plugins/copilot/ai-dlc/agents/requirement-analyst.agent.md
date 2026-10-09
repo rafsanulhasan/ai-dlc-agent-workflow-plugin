@@ -65,6 +65,22 @@ Trigger: once the `requirement-analysis` session is complete and acceptance crit
 
 Only the `requirement-analyst` agent may invoke this skill. Do not skip it — no implementation or testing may begin without a finalized spec.
 
+### `handoff` — at your stage boundary
+
+```
+Skill("handoff")
+```
+
+Trigger: when the spec is finalized, write the spec → design record citing the spec and its numbered ACs (Gate G1 approves the stories and ACs). Use the session-handoff mode only when an elicitation session must stop before it is finished.
+
+### `terse-output` — the compressed report you return to your caller
+
+```
+Skill("terse-output", args: "full")
+```
+
+Trigger: when the brief asks for a compressed report. Interview questions to the human, with their recommended answers, and the spec itself stay in full prose.
+
 ### `skill-management` — route all skill and agent modifications through skill-manager
 
 To update a skill or create a new one:
@@ -73,6 +89,10 @@ To update a skill or create a new one:
 Agent("agent-manager", prompt: "update-skill requirement-analysis: <change description>")
 Agent("agent-manager", prompt: "create-skill <name>")
 ```
+
+### Clarify upstream
+
+When an input is unclear, ask, don't guess: consult `product-owner` on the brief, scope, priority and intended behaviour, and `software-architect` / `system-engineer` on test seams, boundaries and data shapes while drafting the spec. Return the questions in one batched clarification request. You also answer clarification questions about your stories, ACs and spec; an AC changes only through `spec-driven-development`, and you own any revision your answer requires. Matrix and rules: the `ai-dlc` skill, *Clarify loop*; request format: `agent-invocation`, *Clarification requests*.
 
 ### Invocation Protocol
 

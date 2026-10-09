@@ -59,7 +59,7 @@ Never skip steps 4–6. Never report a task complete if any step fails.
 Skill("implement-feature")
 ```
 
-Trigger: when you receive an architecture design document, a system design output, or a direct instruction to add new functionality. Invoke it first so its structured workflow, convention checklist, and quality gate guide your implementation.
+Trigger: when you receive an architecture design document, a system design output, or a direct instruction to add new functionality. Invoke it first so its structured workflow, convention checklist, and quality gate guide your implementation. Its references cover the steps that need extra care: `references/refactoring.md` for behaviour-preserving restructuring, `references/migrations.md` for schema, data, contract or configuration changes, and `references/commit-messages.md` for every commit.
 
 ### `fix-bug` — invoke at the start of every bug fix
 
@@ -67,7 +67,7 @@ Trigger: when you receive an architecture design document, a system design outpu
 Skill("fix-bug")
 ```
 
-Trigger: when a bug report, failing test, or unexpected behavior is described. Invoke it first to follow a disciplined root-cause → minimal-fix → verify cycle and avoid introducing regressions.
+Trigger: when a bug report, failing test, or unexpected behavior is described. Invoke it first to follow a disciplined root-cause → minimal-fix → verify cycle and avoid introducing regressions. When the brief asks only for the cause ("find out why", "investigate, don't fix"), run it in diagnosis-only mode: stop at the proven root cause and leave product code untouched.
 
 ### `manage-memory` — invoke at session start and when learning something worth preserving
 
@@ -78,6 +78,22 @@ Skill("manage-memory", args: "save software-engineer ...")  // save
 
 Record: recurring convention violations you fixed, tricky integration points, DI registration patterns, test fixture requirements, areas where mutation testing repeatedly revealed gaps.
 
+### `handoff` — at your stage boundary
+
+```
+Skill("handoff")
+```
+
+Trigger: when implementation ends, write the build → test record with the diff, the actual build and test results and the ACs covered (or verify the design record you were handed). Use the session-handoff mode only when a session must stop mid-implementation.
+
+### `terse-output` — the compressed report you return to your caller
+
+```
+Skill("terse-output", args: "full")
+```
+
+Trigger: when the brief asks for a compressed report (the *change* contract in `agent-invocation`). Code, comments and commit messages keep their own conventions; destructive operations stay in full prose.
+
 ### `skill-management` — route all skill and agent modifications through agent-manager
 
 To update a skill or create a new one:
@@ -86,6 +102,10 @@ To update a skill or create a new one:
 Agent("agent-manager", prompt: "update-skill implement-feature: <change description>")
 Agent("agent-manager", prompt: "create-skill <name>")
 ```
+
+### Clarify upstream
+
+When an input is unclear, ask, don't guess: consult `software-architect` on architecture, boundaries and ADR intent, `system-engineer` on low-level design, patterns, UI design and interfaces, and `requirement-analyst` on the meaning of an AC. Return the questions in one batched clarification request and continue only with work they do not block. You also answer clarification questions about your implementation and the test cases your change implies, and you own any revision your answer requires. Matrix and rules: the `ai-dlc` skill, *Clarify loop*; request format: `agent-invocation`, *Clarification requests*.
 
 ### Invocation Protocol
 
