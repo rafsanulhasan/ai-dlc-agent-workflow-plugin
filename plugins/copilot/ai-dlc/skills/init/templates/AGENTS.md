@@ -254,6 +254,7 @@ After spawning, monitor progress via `TodoWrite` updates and agent return values
 | `ai-dlc` | The lifecycle catalogue `request-routing` chooses from; look up stages, exit artifacts, refinement loops and human gates while executing | `Skill("ai-dlc")` |
 | `agent-invocation` | Before every spawn — brief checklist, invocation forms, parallel vs sequential, trust-but-verify | `Skill("agent-invocation")` |
 | `handoff` | At every stage boundary — write and verify the handoff record before the next agent starts | `Skill("handoff")` |
+| `terse-output` | When the human asks for shorter answers; keep the level until they turn it off, and present plans, gates and questions in full sentences | `Skill("terse-output", args: "<lite \| full \| ultra \| off \| status>")` |
 
 Specialist skills (testing, design, documentation, DevOps, security review and so on) belong to the agents that own them; name the one the plan needs in that agent's brief rather than running it yourself.
 

@@ -1,6 +1,6 @@
 ---
 name: research
-description: "Structured external-knowledge and codebase-exploration research skill for software projects. Invoked by the research-assistant agent to clarify the question, select authoritative sources (context7 for library docs, web search/fetch for general information, Grep/Glob/Read for codebase exploration), triangulate findings, and produce a cited findings report with confidence assessment."
+description: "Structured external-knowledge and codebase-exploration research skill for software projects. Invoked by the research-assistant agent to clarify the question, select authoritative sources (context7 for library docs, web search/fetch for general information, Grep/Glob/Read for codebase exploration), trace each claim to its primary source, triangulate findings, and produce a cited findings report with confidence assessment."
 ---
 
 # research
@@ -12,6 +12,8 @@ You are executing the `research` skill on behalf of **Jon Skeet** (`research-ass
 ## Input
 
 The calling agent passes the research question and any scope/time-sensitivity hints as `args`.
+
+Research is reading legwork the caller should not wait on. A caller that has other work to do should spawn the research in the background and carry on with everything that does not depend on the answer.
 
 ## Process
 
@@ -43,9 +45,11 @@ Rules:
 - Never fabricate URLs. Only cite URLs you have actually fetched or that came from a search result.
 - For codebase exploration, prefer Grep over reading every file. Read in full only when context demands it.
 
-### Step 3 — Triangulate
+### Step 3 — Trace to primary sources and triangulate
 
-For any non-trivial claim, find **at least two independent sources** that agree. If sources disagree:
+Trace every claim back to the source that owns it: the official documentation, the library's source code, the specification, the release notes or changelog, the first-party API itself. Blog posts, tutorials, answers on Q&A sites and AI summaries are leads that tell you where to look; they are not evidence. When one is all you have, follow it to the primary source it is based on, or report the claim as unverified.
+
+For any non-trivial claim, find **at least two independent sources** that agree. Sources are independent only if neither is derived from the other: two write-ups that repeat the same docs page count as one source. If sources disagree:
 
 - Record the disagreement explicitly in the Findings section.
 - Prefer the most authoritative source (official docs > vendor blog > third-party tutorial).
@@ -85,7 +89,8 @@ Rules for the report:
 - Every external claim must cite at least one numbered source.
 - Quote code or doc snippets when the exact text is load-bearing; otherwise paraphrase.
 - Confidence is **Low** if only one source was found for a non-trivial claim, or if any source is older than the library's current major version.
-- Never write the report to a file — return it as the skill's text output.
+- Confidence cannot be **High** for a claim backed only by secondary sources.
+- Never write the report to a file — return it as the skill's text output. If the findings should outlive the conversation, say so in Open Questions; the requesting agent saves the report where the repository already keeps such notes (match the existing convention; if none exists, it picks a sensible place such as `docs/research/` and says where).
 
 ### Step 5 — Persist learnings
 
@@ -105,3 +110,5 @@ Skill("ai-dlc:manage-memory", args: "save research-assistant\ntype: reference\nn
 ## Output
 
 Return the structured findings report to the calling agent. The caller reads your text output — do not write to files.
+
+Adapted in part from [mattpocock/skills](https://github.com/mattpocock/skills) (MIT).

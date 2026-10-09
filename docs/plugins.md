@@ -122,7 +122,7 @@ Every skill is also a slash command: `/ai-dlc:<name>` in Claude Code, or the `<n
 | Testing (C# / .NET) | `csharp-unit-testing`, `csharp-integration-testing`, `csharp-architecture-testing`, `csharp-mutation-testing`, `bunit-blazor-testing`, `tunit-playwright-ui-testing` | sqa-engineer |
 | Performance testing | `k6-performance-testing`, `k6-load-testing`, `k6-stress-testing`, `k6-docker` | sqa-engineer |
 | DevOps | `github-ci-automation`, `github-cd-automation`, `nuget-package-deployment`, `sonarqube-pr-quality-gate` | devops-engineer |
-| Communication | `write-documentation`, `presentation-authoring` | documentation-writer, presentation-manager |
+| Communication | `write-documentation`, `presentation-authoring`, `terse-output` | documentation-writer, presentation-manager; `terse-output`: the user and every agent |
 | Research | `research` | research-assistant |
 | Team management | `agent-management`, `skill-management`, `hook-management`, `rules-management`, `command-management`, `plugin-management`, `manage-memory` | agent-manager (all agents use `manage-memory`) |
 | Project setup | `init`, `dotnet-rules`, `dotnet-test-gate` | the user |

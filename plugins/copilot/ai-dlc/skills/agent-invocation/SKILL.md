@@ -1,6 +1,6 @@
 ---
 name: agent-invocation
-description: "Authoritative skill for spawning or invoking another agent with proper context. Use PROACTIVELY before any agent calls another agent — covers Claude `Agent(...)` / `SendMessage` and Copilot/VS Code `agent` tool invocation forms, routing rules to orchestrator / product-manager / agent-manager / research-assistant / product-manager, the SDLC chain and per-stage artifacts, how to brief a cold-started spawned agent with a self-contained handoff, foreground vs background and parallel calls, trust-but-verify after the spawned agent returns, and when NOT to invoke another agent at all."
+description: "Authoritative skill for spawning or invoking another agent with proper context. Use PROACTIVELY before any agent calls another agent — covers Claude `Agent(...)` / `SendMessage` and Copilot/VS Code `agent` tool invocation forms, routing rules to orchestrator / product-manager / agent-manager / research-assistant / product-manager, the SDLC chain and per-stage artifacts, how to brief a cold-started spawned agent with a self-contained handoff, the compressed report a spawned agent returns (path:line citations, one finding per line) so the caller's context lasts longer, when to delegate a lookup instead of doing it inline, foreground vs background and parallel calls, trust-but-verify after the spawned agent returns, and when NOT to invoke another agent at all."
 ---
 
 # agent-invocation
@@ -22,6 +22,23 @@ This skill is the single source of truth for how any agent in the AI-DLC multi-a
 - A follow-up inside an already-triaged workflow where the receiving agent is already running.
 - A task that is fully within the current agent's own responsibilities — do the work, do not subcontract it.
 - Trivial one-shot lookups already resolved inline by **Scott Hanselman** (`orchestrator`) during classification.
+
+## Delegate a lookup, or do it inline?
+
+A spawned agent's reads stay in its own context; only its final report enters yours. Delegate when the reads would cost you more context than the compressed answer, and work inline when you must read the code yourself anyway to act on it.
+
+| Situation | Do |
+|---|---|
+| You already know the file or symbol, or one `Grep` / `Read` answers it | Inline |
+| "Where is X defined", "what calls Y", "list every use of Z", cold-start orientation in an unfamiliar area, or a direct search already failed | Spawn **Jon Skeet** (`research-assistant`) with a *locate* brief |
+| The locate question has several angles (definitions, callers, tests) | 2–3 `research-assistant` spawns in one message, one angle each; merge their lists yourself |
+| You want explanation, options or design commentary, not locations | `research-assistant` with a prose deliverable, or **Mark Richards** (`software-architect`) / **Zoran Horvat** (`system-engineer`) for design |
+| A bounded change — at most two files, sites known as `path:line`, no new abstraction | Spawn **David Fowler** (`software-engineer`) with a *change* brief |
+| A new feature, three or more files, or a cross-cutting refactor | Not a bounded change: route it through the lifecycle (`ai-dlc`, `implement-feature`) |
+| A findings-only check of a diff | Spawn **Robert C. Martin** (`code-reviewer`) asking for the `review` skill's compact format |
+| A full review with rationale, or the review the human approves at G4 | `code-reviewer` with the `review` skill's full report |
+
+**Locate → change → check.** `research-assistant` returns the sites; you pick one or two and hand their exact `path:line` to `software-engineer`; `code-reviewer` checks the resulting diff. Skip *locate* when the site is already known. A change brief without its sites forces the engineer to search, which spends the context the chain was meant to save. Only the session's main agent can run this chain, because a subagent cannot spawn further agents.
 
 ## Invocation mechanisms
 
@@ -94,7 +111,7 @@ Required elements in every brief:
 - **Required context** — concrete artifact paths (`docs/specs/<slug>.spec.md`, `docs/architecture/decisions/NNN-*.md`, plan files, failing test names), file paths with **line numbers**, prior findings from earlier agents, and any constraints discovered so far.
 - **Instructions** — the specific question to answer or work to perform, scoped to the receiving agent's role. Do not ask one agent to do another's job.
 - **Acceptance criteria** — numbered ACs the deliverable must satisfy.
-- **Expected deliverable** — its shape and length (e.g., "findings report ≤ 30 lines", "ADR following the project template", "code diff + passing tests", "test plan with AC-traceability table").
+- **Expected deliverable** — its shape and length (e.g., "findings report ≤ 30 lines", "ADR following the project template", "code diff + passing tests", "test plan with AC-traceability table"). When you, not a human, will read the reply, ask for a **compressed report** and name its contract (see *Compressed reports* below).
 - **Write code vs. report only** — say explicitly whether the agent should land code on disk or only return analysis.
 - **Next-hop hint** — which agent (if any) receives this agent's output, so the receiving agent can shape its deliverable appropriately.
 - **Success criteria** — how you (the caller) will verify the handoff is complete.
@@ -104,6 +121,29 @@ Anti-patterns to avoid:
 - **Do not delegate synthesis.** "Look into X and fix whatever you find" outsources the *understanding* — that is your job. Do the diagnostic work first, then hand off a scoped task with a clear acceptance criterion.
 - **Do not assume shared context.** If the spawned agent needs a file path, a line number, or a prior finding, include it explicitly. A cold agent re-reading the entire repo is wasted tokens.
 - **Do not skip the next-hop hint.** Without it, the receiver cannot shape its output for the next stage.
+
+## Compressed reports
+
+A spawned agent's final message enters the caller's context verbatim and stays there for every later turn. Twenty delegations that each return two thousand tokens of prose add forty thousand tokens to the caller's context; the same findings as `path:line` lines cost a fraction. So when the caller is an agent, the reply is compressed; the files the agent writes are not.
+
+**Rules for every compressed report** (the floor of `Skill("terse-output")`):
+
+- One finding per line, location first, as `path:line` or `path:start-end`. Cite only lines actually read; never estimate a range.
+- Identifiers, commands, paths and error text verbatim, in backticks.
+- No preamble, narrative of the search, or closing summary — a final `totals:` line is the only summary.
+- A plain-prose sentence first for any security risk, destructive operation or ambiguity, then the compressed lines.
+- Stage artifacts written to disk (spec, ADR, test plan, handoff record, the G4 review report) keep their full templates. Only the message back to the caller is compressed.
+
+**Contracts.** Name the one you want in the brief:
+
+| Brief | Agent | Reply shape | Terminal replies |
+|---|---|---|---|
+| *locate* | `research-assistant` | ``path:line — `symbol` — note of six words or fewer``; with three or more lines, grouped under one-word headers (`Definitions:`, `Callers:`, `Tests:`); last line `totals: 2 definitions, 5 callers` | `No match.` |
+| *research* | `research-assistant` | One finding per line: `<claim> — <source: doc, URL or path:line> (<version>)` | `Inconclusive: <what is missing>.` |
+| *change* | `software-engineer` | `path:start-end — <change, ten words or fewer>` per edit, then `verified: re-read OK` (or `mismatch at path:line`) and the test result line | `too-big: split into <n> tasks: …` · `needs-confirm: <operation>` · `ambiguous: <one question>` · `regressed: <path:line> — <cause>` |
+| *check* | `code-reviewer` | The `review` skill's compact format: one line per finding, then `totals:` and `verdict:` | `No findings.` |
+
+A terminal reply is the whole answer: stop and act on it — split the work, confirm with the human, answer the question, or send the regression back. Before showing a compressed report to a human, paraphrase it into prose.
 
 ## Parallelism and concurrency
 
@@ -128,3 +168,5 @@ A spawned agent's summary describes **intent**, not necessarily what landed on d
 ## Authority
 
 This skill is authoritative. If an agent's own definition file describes invocation behavior that contradicts this skill, the skill wins, and the agent file should be updated via `agent-manager`. Do not silently diverge.
+
+Adapted in part from [JuliusBrussee/caveman](https://github.com/JuliusBrussee/caveman) (Apache-2.0); modified.
