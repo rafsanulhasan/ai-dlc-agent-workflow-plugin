@@ -8,7 +8,7 @@ Maintained by `product-manager` through the `product-planning` skill. Priorities
 - **Type**: Feature | Bug | Security | TechDebt | Release
 - **Priority**: P0 | P1 | P2 | P3
 - **Status**: Backlog | In Progress | Review | Done | Cancelled
-- **Lifecycle**: PDLC | ASDLC | STBLC | FDLC | BFLC | RLC | TLC | CRLC
+- **Lifecycle**: AI-DLC | PDLC | ASDLC | STBLC | FDLC | BFLC | RLC | TLC | CRLC
 - **Milestone**: <version or "Unplanned">
 - **Added**: YYYY-MM-DD
 - **Agent Chain**: <e.g. requirement-analyst → software-architect → software-engineer → sqa-engineer>

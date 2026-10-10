@@ -94,8 +94,11 @@ Agents name the `opus` and `sonnet` aliases rather than pinned model ids, so eac
 
 The `ai-dlc` skill is the catalogue of lifecycles. `request-routing` picks a lifecycle for each work item, `agent-invocation` spawns the agents, and `handoff` records the artifact at every stage boundary.
 
+**AI-DLC**, the full lifecycle, is the default for feature work: Plan → G1 → Architect & Design → G2 → Breakdown → G3 → Build · Test · Review → G4 → Release. A run enters at the earliest missing artifact and continues to release. The other eight lifecycles are its segments (PDLC to FDLC) or focused entry points for bugs, refactors, test gaps and reviews (BFLC to CRLC).
+
 | Lifecycle | Exit artifact |
 |---|---|
+| **AI-DLC** Full lifecycle | A released feature, traceable from the brief to the release notes |
 | **PDLC** Product Design | Stories with numbered acceptance criteria |
 | **ASDLC** Architecture & Design | ADRs and a frozen `docs/specs/<slug>.spec.md` |
 | **STBLC** Story & Task Breakdown | Dependency-ordered tasks with a technical definition of done (DoD) |
@@ -114,7 +117,7 @@ Humans approve four gates:
 | **G3** | The task plan |
 | **G4** | The review report |
 
-If you name a lifecycle in your request, the orchestrator runs that one. Otherwise it picks one from the state of each work item.
+If you name a lifecycle in your request, the orchestrator runs that one. Otherwise feature work runs AI-DLC, and other work gets the lifecycle that fits the state of each item.
 
 No agent guesses. When an input is unclear, the receiving agent asks the agents that produced it (the *Clarify loop*): for example, the software engineer asks the architect or the system engineer, and the SQA engineer asks the engineer, the product owner, the system engineer or the architect. The orchestrator relays the batched questions and the answers, records them in the handoff, and brings the question to you when no agent can answer it or three rounds have not settled it. The full consultation matrix is in the `ai-dlc` skill.
 

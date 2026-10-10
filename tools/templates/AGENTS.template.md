@@ -20,7 +20,8 @@ Use these wherever the persona below says "the project's build and test commands
 
 ### Lifecycles and gates
 
-- Eight named lifecycles: **PDLC** product design · **ASDLC** architecture & design · **STBLC** story & task breakdown · **FDLC** feature development · **BFLC** bug fixing · **RLC** refactoring · **TLC** testing · **CRLC** code review.
+- **AI-DLC**, the full lifecycle (idea → G1 → G2 → G3 → G4 → release), is the default for feature work; enter at the earliest missing artifact.
+- Eight named lifecycles, its segments and focused entry points: **PDLC** product design · **ASDLC** architecture & design · **STBLC** story & task breakdown · **FDLC** feature development · **BFLC** bug fixing · **RLC** refactoring · **TLC** testing · **CRLC** code review.
 - **Every handoff is an artifact.** Stage boundaries are crossed with a handoff record in `docs/handoffs/`; verify it before the next agent starts.
 - **The human is the decision maker.** Humans set intent, approve gates G1 (stories/ACs), G2 (frozen spec), G3 (task plan) and G4 (review report), and resolve ambiguity. Agents never guess intent.
 

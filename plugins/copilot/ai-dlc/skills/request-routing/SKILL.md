@@ -55,7 +55,7 @@ Otherwise identify all task types present:
 
 A single request may contain multiple types.
 
-Record whether the user **explicitly named a workflow** — a lifecycle by name or code (PDLC, ASDLC, STBLC, FDLC, BFLC, RLC, TLC, CRLC) or an unambiguous equivalent ("run a code review on PR 42", "just write the tests", "only design it, don't build"). An explicit choice is binding in Step 2.
+Record whether the user **explicitly named a workflow** — a lifecycle by name or code (AI-DLC, PDLC, ASDLC, STBLC, FDLC, BFLC, RLC, TLC, CRLC) or an unambiguous equivalent ("full lifecycle", "end to end", "take it from idea to release" for AI-DLC; "run a code review on PR 42", "just write the tests", "only design it, don't build"). An explicit choice is binding in Step 2.
 
 Decide whether the request needs a work breakdown from `product-manager` (`task-triage`):
 
@@ -85,17 +85,18 @@ Load `Skill("ai-dlc")` and use its lifecycle table — never pick from memory.
 
 | The work item… | Workflow |
 |---|---|
-| is a vague idea, epic or business goal | **PDLC** |
-| has stories with ACs but no agreed design or frozen spec | **ASDLC** |
-| has a frozen spec but no task plan | **STBLC** |
-| has a task plan and code must land | **FDLC** |
+| is a feature, epic or idea that must reach release | **AI-DLC** (enter at its earliest missing artifact) |
+| is scoped to product design only, or is the Plan segment of a split AI-DLC run | **PDLC** |
+| is scoped to design only (has stories, no frozen spec), or is that segment of a split AI-DLC run | **ASDLC** |
+| is scoped to task breakdown only (has a frozen spec, no task plan), or is that segment of a split AI-DLC run | **STBLC** |
+| is scoped to building already-planned tasks, or is that segment of a split AI-DLC run | **FDLC** |
 | is incorrect behaviour, a failing test or a regression | **BFLC** (P0 security: BFLC with `security-review` first) |
 | must change structure without changing behaviour | **RLC** |
 | lacks coverage, AC traceability or mutation strength | **TLC** |
 | is an open change / PR to drive to merge-ready | **CRLC** |
 | is a release | Release phase (`product-manager` checklist → `product-owner` go / no-go → `devops-engineer`) |
 
-A feature that starts as an idea usually becomes a sequence of work items (PDLC → ASDLC → STBLC → FDLC), each gated by the human.
+Feature work defaults to **AI-DLC**: one item that runs from its earliest missing artifact through G1–G4 to Release, gated by the human at each boundary. Pick a segment lifecycle (PDLC, ASDLC, STBLC, FDLC) only when the user limits scope to it or `product-manager` split the AI-DLC run into separate items. A bug or refactor that turns out to need new behaviour forks an AI-DLC item.
 
 3. **No lifecycle needed** → hand the item to one agent instead:
 
@@ -130,13 +131,13 @@ Run this once per planning cycle over the whole batch, so cross-item dependencie
 | **1. Direct single-agent delegation** | One agent's expertise fully covers the item; no collaboration or lifecycle traversal needed | Hand off with a self-contained brief (`agent-invocation`). Done. |
 | **2. Parallel independent subagents** | The item splits into sub-tasks that do not need each other (research angles, independent reviews or analyses) | Spawn them in one message; the orchestrator synthesizes. For broad research, 3–5 `research-assistant` subagents, each with a distinct angle. |
 | **3. Sequential agent team** | Roles must collaborate — design informs implementation, implementation informs testing | Run the lifecycle's stages in order with explicit handoffs (`handoff`). |
-| **4. Full lifecycle traversal** | The work is large enough to cross several lifecycles (requirements → architecture → implementation → test/docs → review) | Use the `product-manager`'s breakdown; run one sequential team per work item, in waves; coordinate inter-team handoffs. |
+| **4. Full lifecycle traversal** | The item is an **AI-DLC** run, or otherwise crosses several lifecycles (requirements → architecture → implementation → test/docs → review → release) | Run the AI-DLC stages in order from the earliest missing artifact, gate by gate; use the `product-manager`'s breakdown for FDLC waves; coordinate inter-team handoffs. |
 
 Decision tree:
 
 1. Can one agent fully own the item? → **Mode 1**.
 2. Do its sub-tasks need no collaboration? → **Mode 2**.
-3. Otherwise → **Mode 3** for one lifecycle, **Mode 4** when the item spans several lifecycles.
+3. Otherwise → **Mode 3** for one lifecycle, **Mode 4** for an AI-DLC run or any item that spans several lifecycles.
 
 Rules:
 

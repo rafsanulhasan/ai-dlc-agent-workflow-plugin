@@ -1,6 +1,6 @@
 ---
 name: ai-dlc
-description: "AI-DLC lifecycle router and operating model. Use FIRST for any non-trivial request to pick which of the eight named lifecycles applies (PDLC, ASDLC, STBLC, FDLC, BFLC, RLC, TLC, CRLC), which agents own each stage, which artifact each stage must hand off, which gates a human must approve, and which upstream agents a stage consults when an input is unclear (the Clarify loop). The orchestrator's request-routing skill chooses each work item's lifecycle from this catalogue (unless the user named one), and the orchestrator follows it to run each stage."
+description: "AI-DLC lifecycle router and operating model. Defines the full AI-DLC lifecycle — idea to release through every gate (Plan → G1 → Architect & Design → G2 → Breakdown → G3 → Build · Test · Review → G4 → Release) — the default for feature work, plus eight named lifecycles that are its segments (PDLC, ASDLC, STBLC, FDLC) or focused entry points (BFLC, RLC, TLC, CRLC). Use FIRST for any non-trivial request to pick which lifecycle applies, which agents own each stage, which artifact each stage must hand off, which gates a human must approve, and which upstream agents a stage consults when an input is unclear (the Clarify loop). The orchestrator's request-routing skill chooses each work item's lifecycle from this catalogue (unless the user named one), and the orchestrator follows it to run each stage."
 ---
 
 # AI-DLC — Lifecycle Router
@@ -51,20 +51,38 @@ In Claude Code every agent id is prefixed `ai-dlc:` (for example `software-engin
 | Review | CR | Severity-ranked findings report (Blocker / Warning / Suggestion) |
 | Release | PO (go / no-go) + `product-manager` (checklist) + OPS | Release notes, release gate checklist, published package |
 
+## The AI-DLC lifecycle — the full lifecycle
+
+**AI-DLC** is the primary lifecycle: one run takes a feature from intent to release through every gate. The eight named lifecycles below are its segments (PDLC, ASDLC, STBLC, FDLC) or focused entry points (BFLC, RLC, TLC, CRLC).
+
+| # | Stage | Segment | Owner(s) | Exit artifact | Gate |
+|---|---|---|---|---|---|
+| 1 | Plan | PDLC | PO | Brief, stories with numbered ACs | **G1** |
+| 2 | Architect & Design | ASDLC | SA + SDE | ADRs, frozen spec, architecture narrative | **G2** |
+| 3 | Breakdown | STBLC | SA + SDE + SWE, PO orders | Task plan | **G3** |
+| 4 | Build · Test · Review | FDLC, once per task or wave of tasks | SWE, SQA, SA, CR | Code, tests, docs, review report with zero Blockers | **G4** |
+| 5 | Release | Release phase | `product-manager` checklist → PO go / no-go → OPS CD | Release notes, published package | go / no-go |
+
+- Every stage boundary is crossed with `handoff`, every document gets DW ↔ BC, and the Clarify loop applies across the whole run.
+- **Exit artifact:** a released (or release-ready) feature traceable from brief → stories / ACs → ADRs / spec → tasks → code / tests / docs → review report → release notes.
+- **Entry rule:** enter at the **earliest missing artifact** and run to the end. A feature that already has stories enters at Architect & Design; one with a frozen spec enters at Breakdown. The run does not stop after one segment unless the human says so at a gate.
+- **Execution:** an AI-DLC run is executed as `request-routing` Mode 4, *Full lifecycle traversal*.
+
 ## Step 1 — Classify into one lifecycle
 
-The `orchestrator` picks exactly one primary lifecycle per work item and runs the stages. A request may produce several work items in different lifecycles (for example a feature that first needs PDLC, then ASDLC, STBLC and FDLC).
+The `orchestrator` picks exactly one primary lifecycle per work item and runs the stages. A new feature, epic or idea with no named workflow is **AI-DLC**. Pick a segment lifecycle on its own only when the user explicitly limits scope ("only design it", "just write the stories") or the item is one segment of an AI-DLC run that `product-manager` split into separate work items. Bugs, refactors, test gaps and PR reviews take a focused lifecycle; one that turns out to need new behaviour forks an AI-DLC item.
 
-| # | Lifecycle | Pick it when… | Agents | Exit artifact |
-|---|---|---|---|---|
-| 1 | **PDLC** · Product Design | The input is a vague idea, epic or business goal | PO · DW ↔ BC | Feature list, use-case diagrams, user stories with numbered ACs in `docs/product/` and `docs/backlog/backlog.md` |
-| 2 | **ASDLC** · Architecture & Design | Stories exist but no agreed design / spec | PO ↔ SA ↔ SDE ↔ RA · DW ↔ BC | ADRs in `docs/architecture/decisions/` plus a **frozen** `docs/specs/<slug>.spec.md` per story, co-owned by SA and SDE |
-| 3 | **STBLC** · Story & Task Breakdown | A frozen spec exists but no task plan | PO ↔ SA ↔ SDE ↔ SWE · DW ↔ BC | `docs/plans/<slug>.tasks.md`: estimated, dependency-ordered tasks, each with its own technical Definition of Done |
-| 4 | **FDLC** · Feature Development | Tasks exist and code must land | SA + SDE ↔ SWE ↔ SQA ↔ CR · DW ↔ BC | Merged-ready change: code, tests, docs, review report with zero Blockers |
-| 5 | **BFLC** · Bug Fixing | Incorrect behaviour, failing test, regression | SA ↔ SDE ↔ SWE ↔ SQA ↔ CR ↔ RA · DW ↔ BC | Root cause statement, minimal fix, a regression test that **failed before and passes after** |
-| 6 | **RLC** · Refactoring | Structure must change, behaviour must not | SA ↔ SDE ↔ SWE ↔ SQA ↔ CR ↔ RA | Refactor diff, unchanged public behaviour, mutation score **not lower** than baseline |
-| 7 | **TLC** · Testing | Existing code lacks coverage, AC traceability or mutation strength | PO ↔ SA ↔ SDE ↔ SWE ↔ SQA ↔ CR · DW ↔ BC | Test plan, new tests, AC-traceability table, mutation report |
-| 8 | **CRLC** · Code Review | An open change / PR must be driven to merge-ready | PO ↔ CR ↔ SWE ↔ SQA | Findings report; CR approves **only at zero Blockers** |
+| # | Lifecycle | Kind | Pick it when… | Agents | Exit artifact |
+|---|---|---|---|---|---|
+| 0 | **AI-DLC** · Full lifecycle | Primary | A feature, epic or idea must go from intent to release (the default for feature work) | All stage owners below, plus PO, `product-manager` and OPS for Release · DW ↔ BC | Released (or release-ready) feature, traceable brief → release notes |
+| 1 | **PDLC** · Product Design | AI-DLC segment | The input is a vague idea, epic or business goal | PO · DW ↔ BC | Feature list, use-case diagrams, user stories with numbered ACs in `docs/product/` and `docs/backlog/backlog.md` |
+| 2 | **ASDLC** · Architecture & Design | AI-DLC segment | Stories exist but no agreed design / spec | PO ↔ SA ↔ SDE ↔ RA · DW ↔ BC | ADRs in `docs/architecture/decisions/` plus a **frozen** `docs/specs/<slug>.spec.md` per story, co-owned by SA and SDE |
+| 3 | **STBLC** · Story & Task Breakdown | AI-DLC segment | A frozen spec exists but no task plan | PO ↔ SA ↔ SDE ↔ SWE · DW ↔ BC | `docs/plans/<slug>.tasks.md`: estimated, dependency-ordered tasks, each with its own technical Definition of Done |
+| 4 | **FDLC** · Feature Development | AI-DLC segment | Tasks exist and code must land | SA + SDE ↔ SWE ↔ SQA ↔ CR · DW ↔ BC | Merged-ready change: code, tests, docs, review report with zero Blockers |
+| 5 | **BFLC** · Bug Fixing | Focused | Incorrect behaviour, failing test, regression | SA ↔ SDE ↔ SWE ↔ SQA ↔ CR ↔ RA · DW ↔ BC | Root cause statement, minimal fix, a regression test that **failed before and passes after** |
+| 6 | **RLC** · Refactoring | Focused | Structure must change, behaviour must not | SA ↔ SDE ↔ SWE ↔ SQA ↔ CR ↔ RA | Refactor diff, unchanged public behaviour, mutation score **not lower** than baseline |
+| 7 | **TLC** · Testing | Focused | Existing code lacks coverage, AC traceability or mutation strength | PO ↔ SA ↔ SDE ↔ SWE ↔ SQA ↔ CR · DW ↔ BC | Test plan, new tests, AC-traceability table, mutation report |
+| 8 | **CRLC** · Code Review | Focused | An open change / PR must be driven to merge-ready | PO ↔ CR ↔ SWE ↔ SQA | Findings report; CR approves **only at zero Blockers** |
 
 Shortcuts:
 
@@ -74,6 +92,9 @@ Shortcuts:
 - Releases: Release phase — `product-manager` runs its release-gate checklist, `product-owner` gives go / no-go, then `devops-engineer` runs CD.
 
 ## Step 2 — Run the lifecycle's stages
+
+### AI-DLC
+Run the segment stages below in order, gate by gate: PDLC → G1 → ASDLC → G2 → STBLC → G3 → FDLC (once per task or wave of tasks) → G4 → Release (`product-manager` checklist → `product-owner` go / no-go → `devops-engineer` CD). Start at the earliest missing artifact. Re-anchor on the frozen spec at every boundary after G2.
 
 ### PDLC
 1. `product-owner` writes the product brief (`docs/product/<slug>/brief.md`: outcomes, features, use cases) and returns a delegation list.
@@ -176,11 +197,11 @@ The same agents **answer** questions about their own artifacts and **own any rev
 Return, per work item:
 
 ```
-WI-NNN · <lifecycle> · <one-line goal>
+WI-NNN · <lifecycle: AI-DLC | PDLC | … | CRLC> · <one-line goal>
 Stages: <ordered agents for this item>
-Entry artifact: <path or "none — PDLC starts from intent">
+Entry artifact: <path or "none — starts from intent at Plan">
 Exit artifact: <path(s)>
-Human gates: <G1..G4 that apply>
+Human gates: <G1..G4 that apply; AI-DLC adds the release go / no-go>
 Parallel opportunities: <which stages fan out>
 ```
 
