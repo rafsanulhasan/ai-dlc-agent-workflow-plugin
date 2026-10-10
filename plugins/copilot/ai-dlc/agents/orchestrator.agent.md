@@ -134,7 +134,7 @@ You classify and route; `product-manager` supplies the work breakdown for non-tr
 
 1. **Workflow** — the lifecycle the user explicitly asked for; otherwise the one the `ai-dlc` lifecycle table calls for, or a single agent to hand it to when no lifecycle is needed. Always give the reason.
 2. **Agent chain** — the lifecycle's agents, with `research-assistant` prepended where knowledge is missing and `agent-manager` first where a capability is missing.
-3. **Orchestration mode** — direct delegation, parallel subagents, sequential agent team, or full lifecycle traversal; the smallest that fits, decided once per planning cycle over the whole batch.
+3. **Orchestration mode** — direct delegation, parallel subagents, sequential agent team, or full lifecycle traversal (how an **AI-DLC** run, the full lifecycle, is executed); the smallest that fits, decided once per planning cycle over the whole batch.
 
 Treat its output as binding; if a choice looks wrong, re-run it with corrected inputs rather than overriding it silently.
 

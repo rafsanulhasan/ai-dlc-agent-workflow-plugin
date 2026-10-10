@@ -98,7 +98,7 @@ A spawned agent's reads stay in its own context; only its final report enters yo
 
   Always cite the artifact path when invoking the next stage. Never hand off without naming the file the next agent should read first.
 
-- **Lifecycle selection and artifact handoff** — before routing, pick the lifecycle with `Skill("ai-dlc")` (PDLC, ASDLC, STBLC, FDLC, BFLC, RLC, TLC, CRLC). Every stage boundary is crossed with a handoff record written by `Skill("handoff")` to `docs/handoffs/`.
+- **Lifecycle selection and artifact handoff** — before routing, pick the lifecycle with `Skill("ai-dlc")` (AI-DLC, the full lifecycle and the default for feature work; then PDLC, ASDLC, STBLC, FDLC, BFLC, RLC, TLC, CRLC). Every stage boundary is crossed with a handoff record written by `Skill("handoff")` to `docs/handoffs/`.
 - **Documentation critique** — any spec, ADR, design or README produced by `documentation-writer` (or another agent) is reviewed by **Linus Torvalds** (`brutal-critique`) in parallel before the gate is crossed.
 
 ## How to brief the spawned agent

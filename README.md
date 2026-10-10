@@ -35,12 +35,15 @@ Full reference for both plugins (agents, skills, lifecycles, hooks, the build an
 
 Agents use the `opus` and `sonnet` aliases, and nothing pins `haiku`, so every role follows the newest model in its family (Opus 5.5 / Sonnet 5.5 / Haiku 5.5 on the Anthropic API today) without edits. To freeze a version, set `ANTHROPIC_DEFAULT_OPUS_MODEL` / `_SONNET_` / `_HAIKU_` in `.claude/settings.json`.
 
-## Eight lifecycles
+## Lifecycles
 
 `request-routing` decides each work item's workflow (the lifecycle you asked for, else one chosen from `ai-dlc`), agent chain and orchestration mode → `agent-invocation` spawns → `handoff` carries the artifact. The orchestrator only delegates; it never does the engineering work itself.
 
+**AI-DLC**, the full lifecycle, is the default for feature work: Plan → G1 → Architect & Design → G2 → Breakdown → G3 → Build · Test · Review → G4 → Release, entered at the earliest missing artifact. The eight named lifecycles are its segments (PDLC to FDLC) or focused entry points (BFLC to CRLC).
+
 | Lifecycle | Exit artifact |
 |---|---|
+| **AI-DLC** Full lifecycle | Released feature, traceable from brief to release notes |
 | **PDLC** Product Design | Stories with numbered acceptance criteria |
 | **ASDLC** Architecture & Design | ADRs + frozen `docs/specs/<slug>.spec.md` |
 | **STBLC** Story & Task Breakdown | Dependency-ordered tasks with technical DoD |
@@ -50,7 +53,7 @@ Agents use the `opus` and `sonnet` aliases, and nothing pins `haiku`, so every r
 | **TLC** Testing | AC traceability, new tests, mutation report |
 | **CRLC** Code Review | Change driven to merge-ready |
 
-Human gates: **G1** stories/ACs · **G2** frozen spec · **G3** task plan · **G4** review report.
+Human gates: **G1** stories/ACs · **G2** frozen spec · **G3** task plan · **G4** review report · release go / no-go.
 
 ## Install
 

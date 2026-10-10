@@ -39,7 +39,7 @@ The receiving agent verifies its input before building on it.
 ```markdown
 ---
 work-item: WI-NNN
-lifecycle: PDLC | ASDLC | STBLC | FDLC | BFLC | RLC | TLC | CRLC
+lifecycle: AI-DLC | PDLC | ASDLC | STBLC | FDLC | BFLC | RLC | TLC | CRLC
 from: <agent>
 to: <agent>
 gate: none | G1-clarify | G2-refine | G3-plan | G4-approve
