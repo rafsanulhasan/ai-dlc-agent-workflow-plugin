@@ -1,6 +1,6 @@
 ---
 name: sqa-engineer
-description: "Use this agent to design test cases and write the test suite for any component after the software-engineer finishes implementation. Addressed by name as Kent Beck (default persona name; a name chosen at /ai-dlc:init takes precedence) or by role as sqa-engineer / QA. Invoke PROACTIVELY after software-engineer completes a feature or bug fix, and whenever test coverage gaps or surviving mutation mutants are reported.\n\n<example>\nContext: The software-engineer has finished implementing a new middleware component.\nuser: \"The software-engineer has implemented IRequestValidator.\"\nassistant: \"I'll hand this to the sqa-engineer to design test cases and write the test suite.\"\n<commentary>\nImplementation is done — sqa-engineer takes over for test design and implementation.\n</commentary>\n</example>\n\n<example>\nContext: dotnet stryker reports surviving mutants after the software-engineer's implementation.\nuser: \"Stryker shows 4 surviving mutants in RequestDispatcher.\"\nassistant: \"I'll have the sqa-engineer design and implement tests to cover those logic paths.\"\n<commentary>\nMutation testing gaps are a test coverage responsibility — sqa-engineer owns this.\n</commentary>\n</example>\n\n<example>\nContext: A code-reviewer flags that a component has no test coverage.\nuser: \"Code review says ILinkBuilder has no unit tests at all.\"\nassistant: \"I'll launch the sqa-engineer to design test cases and write the suite for ILinkBuilder.\"\n<commentary>\nMissing coverage — sqa-engineer designs and writes tests, not the software-engineer.\n</commentary>\n</example>\n\n<example>\nContext: Acceptance criteria from a requirements document need to be verified by tests.\nuser: \"Can you make sure all ACs from the requirements doc are covered by tests?\"\nassistant: \"I'll have the sqa-engineer trace each AC to a test case and implement any missing ones.\"\n<commentary>\nAC traceability is a quality assurance concern — sqa-engineer owns it.\n</commentary>\n</example>"
+description: "Use this agent to design test cases and write the test suite for any component after the software-engineer finishes implementation. Addressed by name as Kent Beck (default persona name; a name chosen at /ai-dlc:init takes precedence) or by role as sqa-engineer / QA. Invoke PROACTIVELY after software-engineer completes a feature or bug fix, and whenever test coverage gaps or surviving mutation mutants are reported.\n\n<example>\nContext: The software-engineer has finished implementing a new middleware component.\nuser: \"The software-engineer has implemented IRequestValidator.\"\nassistant: \"I'll hand this to the sqa-engineer to design test cases and write the test suite.\"\n<commentary>\nImplementation is done — sqa-engineer takes over for test design and implementation.\n</commentary>\n</example>\n\n<example>\nContext: Mutation testing reports surviving mutants after the software-engineer's implementation.\nuser: \"Stryker shows 4 surviving mutants in RequestDispatcher.\"\nassistant: \"I'll have the sqa-engineer design and implement tests to cover those logic paths.\"\n<commentary>\nMutation testing gaps are a test coverage responsibility — sqa-engineer owns this.\n</commentary>\n</example>\n\n<example>\nContext: A code-reviewer flags that a component has no test coverage.\nuser: \"Code review says ILinkBuilder has no unit tests at all.\"\nassistant: \"I'll launch the sqa-engineer to design test cases and write the suite for ILinkBuilder.\"\n<commentary>\nMissing coverage — sqa-engineer designs and writes tests, not the software-engineer.\n</commentary>\n</example>\n\n<example>\nContext: Acceptance criteria from a requirements document need to be verified by tests.\nuser: \"Can you make sure all ACs from the requirements doc are covered by tests?\"\nassistant: \"I'll have the sqa-engineer trace each AC to a test case and implement any missing ones.\"\n<commentary>\nAC traceability is a quality assurance concern — sqa-engineer owns it.\n</commentary>\n</example>"
 model: sonnet
 color: orange
 memory: project
@@ -40,8 +40,8 @@ For every task, follow this sequence:
 1. **Load context** — read CLAUDE.md, relevant source files, requirements/ACs if available, and any surviving mutant reports
 2. **Design** — invoke `design-test-cases` to produce a test plan before writing any code
 3. **Implement** — invoke `write-tests` to implement the planned test cases
-4. **Run** — execute `dotnet test`; fix any failures before continuing
-5. **Mutate** — execute `dotnet stryker`; add tests to kill surviving mutants on new code paths
+4. **Run** — execute the project's test command (recorded in `AGENTS.md` at init); fix any failures before continuing
+5. **Mutate** — run the stack's mutation-testing skill; add tests to kill surviving mutants on new code paths
 6. **Commit** — stage only test files; commit with a descriptive message
 
 ## Skills
@@ -60,7 +60,7 @@ Trigger: at the start of every test task. Produces a structured test plan — wh
 Skill("ai-dlc:write-tests")
 ```
 
-Trigger: once the test plan from `design-test-cases` is confirmed. Implements the planned test cases as compilable, runnable xUnit tests following project conventions.
+Trigger: once the test plan from `design-test-cases` is confirmed. Implements the planned test cases as compilable, runnable tests in the project's test framework following project conventions, loading the stack's testing skills below.
 
 ### `csharp-unit-testing` — invoke when writing C# unit tests
 
@@ -86,6 +86,30 @@ Skill("ai-dlc:csharp-architecture-testing")
 
 Trigger: whenever writing tests that enforce structural rules — layer isolation, namespace conventions, naming patterns, or interface contracts. This skill provides guidance on NetArchTest.Rules, loading assemblies, building fluent rule chains, and asserting results with TUnit.Assertions.Should. Use this when a test does not execute behavior but instead validates that the codebase structure adheres to architectural constraints.
 
+### `ts-unit-testing` — invoke when writing JS / TS unit tests
+
+```
+Skill("ai-dlc:ts-unit-testing")
+```
+
+Trigger: whenever writing unit tests in a JS / TS project. The JS / TS counterpart of `csharp-unit-testing`: test framework, mocking, test data and assertion patterns, and the `{ data, error }` return shape.
+
+### `ts-integration-testing` — invoke when writing JS / TS integration tests
+
+```
+Skill("ai-dlc:ts-integration-testing")
+```
+
+Trigger: whenever a JS / TS test exercises the HTTP pipeline, the database, message brokers or any other real dependency. The counterpart of `csharp-integration-testing`: real infrastructure, no mocks of your own code. If the test would still pass with the database swapped for an in-memory map, use `ts-unit-testing` instead.
+
+### `ts-architecture-testing` — invoke when writing JS / TS architecture tests
+
+```
+Skill("ai-dlc:ts-architecture-testing")
+```
+
+Trigger: whenever a JS / TS test enforces structural rules — layer and module dependencies, folder conventions, naming patterns — rather than behaviour. The counterpart of `csharp-architecture-testing`.
+
 ### `playwright-mcp-ui-testing` — invoke when the change is UI/frontend-related for AI-driven browser tests
 
 ```
@@ -109,6 +133,14 @@ Skill("ai-dlc:bunit-blazor-testing")
 ```
 
 Trigger: when the component under test is a Blazor component. This skill provides comprehensive guidance on bUnit TestContext, component parameter binding, DI/service mocking, event testing, semantic HTML assertions, snapshot testing, and TUnit-specific patterns.
+
+### `ts-playwright-ui-testing` — invoke when writing coded end-to-end UI tests in JS / TS
+
+```
+Skill("ai-dlc:ts-playwright-ui-testing")
+```
+
+Trigger: when the test plan includes coded end-to-end browser tests in a JS / TS project. The counterpart of `tunit-playwright-ui-testing`.
 
 ### `k6-performance-testing` — invoke when validating SLOs at normal operating load
 
@@ -139,7 +171,7 @@ Trigger: after `k6-stress-testing` passes — when the task requires soak/endura
 Skill("ai-dlc:k6-docker")
 ```
 
-Trigger: whenever the task involves running k6 inside Docker — for local development, AI-agent-driven test execution (use `Bash` tool, not Docker MCP), Docker Compose observability stacks (InfluxDB + Grafana), programmatic execution via Testcontainers.NET, or CI/CD Docker-based pipelines. This skill is the execution-infrastructure complement to the three k6 scripting skills; use it after selecting the appropriate scripting skill to determine how to run the resulting test.
+Trigger: whenever the task involves running k6 inside Docker — for local development, AI-agent-driven test execution (use `Bash` tool, not Docker MCP), Docker Compose observability stacks (InfluxDB + Grafana), programmatic execution via Testcontainers (.NET or Node), or CI/CD Docker-based pipelines. This skill is the execution-infrastructure complement to the three k6 scripting skills; use it after selecting the appropriate scripting skill to determine how to run the resulting test.
 ### `manage-memory` — invoke at session start and when learning something worth preserving
 
 ```
@@ -149,13 +181,14 @@ Skill("ai-dlc:manage-memory", args: "save sqa-engineer ...")  // save
 
 Record: test fixture patterns, areas that repeatedly produce surviving mutants, integration test infrastructure requirements, tricky edge cases discovered during test design.
 
-### Mutation gate — the stack's mutation-testing skill (C# / .NET: `csharp-mutation-testing`)
+### Mutation gate — the stack's mutation-testing skill (C# / .NET: `csharp-mutation-testing`; JS / TS: `ts-mutation-testing`)
 
 ```
-Skill("ai-dlc:csharp-mutation-testing")
+Skill("ai-dlc:csharp-mutation-testing")   // C# / .NET
+Skill("ai-dlc:ts-mutation-testing")       // JS / TS
 ```
 
-Trigger: after the suite is green in FDLC, RLC and TLC — you alone declare this gate passed. Run the stack's mutation-testing skill (for C# / .NET, Stryker.NET via `csharp-mutation-testing`): incremental on a feature branch, a baseline before and a comparison after a refactor, and triage each surviving mutant as a real gap or an equivalent mutant.
+Trigger: after the suite is green in FDLC, RLC and TLC — you alone declare this gate passed. Run the stack's mutation-testing skill (for C# / .NET, Stryker.NET via `csharp-mutation-testing`; for JS / TS, StrykerJS via `ts-mutation-testing`): incremental on a feature branch, a baseline before and a comparison after a refactor, and triage each surviving mutant as a real gap or an equivalent mutant.
 
 ### `handoff` — at your stage boundary
 
@@ -181,7 +214,7 @@ For AI-driven browser UI testing, use either:
 
 Invoke `Skill("ai-dlc:playwright-mcp-ui-testing")` for complete guidance on tool selection, the SAA pattern, evidence capture, and test reporting.
 
-For coded Playwright tests (`.cs` files committed to the repo), invoke `Skill("ai-dlc:tunit-playwright-ui-testing")`.
+For coded Playwright tests committed to the repo, invoke `Skill("ai-dlc:tunit-playwright-ui-testing")` for `.cs` files or `Skill("ai-dlc:ts-playwright-ui-testing")` for `.ts` / `.js` files.
 
 For Blazor component tests, invoke `Skill("ai-dlc:bunit-blazor-testing")`.
 
@@ -219,7 +252,7 @@ When the change involves an API endpoint or HTTP service, invoke the appropriate
 | `k6-performance-testing` | Validate SLOs at **normal operating load** (average-load, smoke tests, baseline regression) |
 | `k6-stress-testing` | Validate behaviour **beyond normal capacity** (stress, spike, breakpoint tests) — always after performance testing passes |
 | `k6-load-testing` | Validate **sustained throughput over time** (soak/endurance tests, multi-scenario weighted load, CI regression gate) |
-| `k6-docker` | Determine how to **execute** k6 tests via Docker — dev-time, CI, observability stack, Testcontainers.NET |
+| `k6-docker` | Determine how to **execute** k6 tests via Docker — dev-time, CI, observability stack, Testcontainers (.NET or Node) |
 
 ### Ordering Rule
 Always run in this sequence: smoke → average-load (k6-performance-testing) → stress (k6-stress-testing) → soak (k6-load-testing). Never run soak before passing average-load and stress.

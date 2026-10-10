@@ -2,7 +2,7 @@
 
 An agentic engineering team that runs the **AI-DLC**: role-scoped agents own each phase of the lifecycle, hand off explicit artifacts, and stop at hard gates. The human sets intent, approves gates and resolves ambiguity — reviewing artifacts, not every line of code.
 
-The lifecycle, agents and gates are language-agnostic. .NET is the first supported stack (C# testing skills, Stryker.NET, NuGet and a `dotnet test` gate); support for more languages will follow.
+The lifecycle, agents and gates are language-agnostic. Two stacks are supported: .NET (C# testing skills, Stryker.NET, NuGet and a `dotnet test` gate) and JS / TS — Node.js, TypeScript and plain JavaScript (TypeScript testing skills, StrykerJS, npm and a test gate that runs the repository's test command). Support for more languages will follow.
 
 One source, two plugins:
 
@@ -30,7 +30,7 @@ Full reference for both plugins (agents, skills, lifecycles, hooks, the build an
 | `presentation-manager` | Slide decks — creates, updates and reviews .pptx presentations, keeping them true to the project | sonnet |
 | `brutal-critique` | Adversarial read-only critique of every document | sonnet |
 | `research-assistant` | All external research; owns the knowledge base | opus |
-| `devops-engineer` | CI/CD, NuGet, SonarQube PR gates, releases | sonnet |
+| `devops-engineer` | CI/CD, NuGet and npm publishing, SonarQube PR gates, releases | sonnet |
 | `agent-manager` | The only agent that changes agents, skills, hooks or rules | opus |
 
 Agents use the `opus` and `sonnet` aliases, and nothing pins `haiku`, so every role follows the newest model in its family (Opus 5.5 / Sonnet 5.5 / Haiku 5.5 on the Anthropic API today) without edits. To freeze a version, set `ANTHROPIC_DEFAULT_OPUS_MODEL` / `_SONNET_` / `_HAIKU_` in `.claude/settings.json`.
@@ -79,7 +79,7 @@ VS Code's agent-plugin support reads the same Copilot/Claude plugin formats; add
 
 ## Use it in a project
 
-1. **Bootstrap once:** `/ai-dlc:init` (Claude) or the `init` skill (Copilot). It scaffolds `AGENTS.md` — the orchestrator persona for your project, with all its routing rules and skills, plus your build/test commands, gates and artifact paths — `CLAUDE.md`, recommended `.claude/settings.json` permissions and the `docs/` folders the lifecycles write to. In a .NET repository it also installs the C# coding-style, GlobalUsings and testing rules (`.claude/rules/*` with `.github/instructions/*` twins, via `dotnet-rules`), the `dotnet test` gate hook (via `dotnet-test-gate`) and `stryker-config.json`. It shows a diff before touching any existing file.
+1. **Bootstrap once:** `/ai-dlc:init` (Claude) or the `init` skill (Copilot). It scaffolds `AGENTS.md` — the orchestrator persona for your project, with all its routing rules and skills, plus your build/test commands, gates and artifact paths — `CLAUDE.md`, recommended `.claude/settings.json` permissions and the `docs/` folders the lifecycles write to. In a .NET repository it also installs the C# coding-style, GlobalUsings and testing rules (`.claude/rules/*` with `.github/instructions/*` twins, via `dotnet-rules`), the `dotnet test` gate hook (via `dotnet-test-gate`) and `stryker-config.json`. In a JS / TS repository (a `package.json`) it installs the `node-coding-style`, `node-modules`, `node-async-errors` and `node-testing` rules (via `node-rules`) and the test gate hook (via `node-test-gate`). It shows a diff before touching any existing file.
 2. **Talk to the orchestrator.** `init` sets `"agent": "ai-dlc:orchestrator"` in the repo's `.claude/settings.json`, so every request reaches it first (one-off: `claude --agent ai-dlc:orchestrator`). On Copilot, select the `orchestrator` custom agent.
 3. The orchestrator classifies your request, gets a work breakdown from `product-manager`, routes each item to a lifecycle and agent chain, confirms the plan with you, then runs the lifecycle and stops at each human gate.
 
@@ -91,19 +91,30 @@ If a project still has its own copies of these agents in `.claude/agents` / `.gi
 
 - For .NET projects: .NET SDK (`dotnet test`, `dotnet stryker` via a local tool manifest)
 - For the .NET test gate: PowerShell 7 (`pwsh`) on PATH — on any OS
+- For JS / TS projects and their test gate: Node.js 18 or later, and the project's package manager (npm, pnpm, yarn or bun)
 - Optional MCP servers the agents use when present: GitHub, SonarQube, Playwright, context7. Agents that need them (`product-manager`, `software-engineer`, `sqa-engineer`, `devops-engineer`, `code-reviewer`, `research-assistant`) inherit whatever MCP tools your session has instead of hard-coding one gateway's tool names.
 
-## The test gate
+## The test gates
 
-The plugin ships no hooks. When `/ai-dlc:init` detects a .NET project (a `.sln`, `.slnx` or `.csproj`), it installs the gate through the `dotnet-test-gate` skill: `.claude/hooks/enforce-tests.ps1`, a `Stop` hook in `.claude/settings.json` and `.github/hooks/ai-dlc-test-gate.json` for Copilot. Run `/ai-dlc:dotnet-test-gate` to add, repair or remove it later.
+The plugin ships no hooks. `init` installs the gate for each stack it detects; a repository with both stacks gets both.
+
+### .NET
+
+When `/ai-dlc:init` detects a .NET project (a `.sln`, `.slnx` or `.csproj`), it installs the gate through the `dotnet-test-gate` skill: `.claude/hooks/enforce-tests.ps1`, a `Stop` hook in `.claude/settings.json` and `.github/hooks/ai-dlc-test-gate.json` for Copilot. Run `/ai-dlc:dotnet-test-gate` to add, repair or remove it later.
 
 The gate runs on Claude Code `Stop` / Copilot `agentStop`. It blocks the agent from finishing while `dotnet test` fails, and stays silent when:
 
 - the repo has no `.sln`/`.slnx`/`.csproj`, or `dotnet` is not installed;
-- nothing changed, or only artifacts changed (`.claude/`, `.github/agents|skills|prompts|instructions|hooks/`, `docs/`, `*.md`);
+- nothing changed, or only artifacts changed (`.claude/`, `.github/agents|skills|prompts|instructions|hooks/`, `docs/`, `*.md`), or only JS/TS files changed (`*.ts`, `*.js` …, `package.json`, lockfiles, `tsconfig*.json`), when the JS/TS gate is installed;
 - it already blocked once in this stop cycle (loop guard), or `AI_DLC_ENFORCE_TESTS=false`.
 
 The test target is `AI_DLC_TEST_TARGET`, else a `*.Testing.slnx` / `*.Tests.sln` at the repo root.
+
+### JS / TS
+
+When `init` detects a Node.js project (a `package.json` outside `node_modules/`), it installs the gate through the `node-test-gate` skill: `.claude/hooks/enforce-tests.mjs` (dependency-free, Node 18+), a `Stop` hook in `.claude/settings.json` and `.github/hooks/ai-dlc-node-test-gate.json` for Copilot. Run `/ai-dlc:node-test-gate` to add, repair or remove it later.
+
+It blocks the agent from finishing while the repository's test command fails, with the same silent cases as the .NET gate, plus: only .NET files changed, or `package.json` has no real `test` script. The command is `AI_DLC_NODE_TEST_CMD`, else the one confirmed at `init`, else `<pm> test` for the package manager the lockfile shows.
 
 ## Develop the plugin
 

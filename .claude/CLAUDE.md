@@ -1,6 +1,6 @@
 # Project: AI-DLC Agent Workflow
 
-A Claude Code and GitHub Copilot plugin that ships the AI-DLC agentic engineering team. The lifecycle, agents and gates are language-agnostic; .NET is the first supported stack, with more languages to follow.
+A Claude Code and GitHub Copilot plugin that ships the AI-DLC agentic engineering team. The lifecycle, agents and gates are language-agnostic; .NET and JS / TS (Node.js, TypeScript, JavaScript) are the supported stacks, with more languages to follow.
 
 ## Agents and skills in this repo
 
@@ -26,7 +26,7 @@ Agents are then `ai-dlc:<name>` and skills `/ai-dlc:<name>`, read straight from 
 - `plugins/copilot/ai-dlc/` — generated; never hand-edit
 - `tools/build-copilot.mjs` — Claude → Copilot projection
 - `.claude-plugin/marketplace.json`, `.github/plugin/marketplace.json` — marketplaces
-- Stack-specific rules and hooks (e.g. `dotnet-rules`, `dotnet-test-gate`) are installed into target repositories by skills that `/ai-dlc:init` runs; the plugin itself ships no hooks or rules.
+- Stack-specific rules and hooks (`dotnet-rules` and `dotnet-test-gate` for .NET, `node-rules` and `node-test-gate` for JS / TS) are installed into target repositories by skills that `/ai-dlc:init` runs; the plugin itself ships no hooks or rules.
 - `.claude/rules/plugin-development.md` — the workflow rule for this repository.
 - `.claude/skills/` — generated mirrors of the plugin skills listed in `tools/project-skills.json` (currently `presentation-authoring`); edit the plugin copy, then rebuild.
 

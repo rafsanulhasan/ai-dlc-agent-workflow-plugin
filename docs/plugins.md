@@ -13,9 +13,14 @@ This repository ships the **ai-dlc** plugin, an agentic engineering team that ru
 | Agent id | `ai-dlc:<name>` | `<name>` |
 | Skill call | `/ai-dlc:<name>` | the `<name>` skill |
 
-Both marketplaces are named `ai-dlc-agent-workflow`, and both list one plugin, `ai-dlc`, at version **1.0.0**. The two plugins carry the same 15 agents and 47 skills. Only the platform wiring differs.
+Both marketplaces are named `ai-dlc-agent-workflow`, and both list one plugin, `ai-dlc`, at version **1.0.0**. The two plugins carry the same 15 agents and 56 skills. Only the platform wiring differs.
 
-The lifecycle, agents and gates are language-agnostic. .NET is the first supported stack: it has C# testing skills, Stryker.NET mutation testing, NuGet publishing and a `dotnet test` gate. More languages will follow.
+The lifecycle, agents and gates are language-agnostic. Two stacks are supported:
+
+- **.NET (C#)**: C# testing skills, Stryker.NET mutation testing, NuGet publishing, the .NET rules and a `dotnet test` gate.
+- **JS / TS (Node.js, TypeScript and plain JavaScript)**: TypeScript testing skills, StrykerJS mutation testing, npm publishing, the Node rules and a test gate that runs the repository's test command.
+
+More languages will follow.
 
 ## Install
 
@@ -50,6 +55,9 @@ You can also install the plugin directly, without the marketplace: `copilot plug
      - The C# coding-style, GlobalUsings and testing rules, installed by `dotnet-rules`.
      - The `dotnet test` gate hook, installed by `dotnet-test-gate`.
      - `stryker-config.json`.
+   - **JS / TS repositories only** (detected from a `package.json` file):
+     - The coding-style, modules, async-and-errors and testing rules, installed by `node-rules`.
+     - The test gate hook, installed by `node-test-gate`.
 2. **Talk to the orchestrator.** In Claude Code, the `agent` setting makes the orchestrator the main agent, so every request reaches it first. For a single session, run `claude --agent ai-dlc:orchestrator`. In Copilot, select the `orchestrator` custom agent.
 3. The orchestrator handles each request in this order:
    1. It classifies the request.
@@ -77,7 +85,7 @@ The orchestrator has to be the **main** agent, because subagents cannot spawn ot
 | `brutal-critique` | Adversarial, read-only critique of every document, run in parallel with the writer | sonnet |
 | `presentation-manager` | Creates, updates and reviews `.pptx` decks so they stay true to the project | sonnet |
 | `research-assistant` | All external research and wide codebase exploration | opus |
-| `devops-engineer` | CI/CD, NuGet, SonarQube PR gates, releases | sonnet |
+| `devops-engineer` | CI/CD, NuGet and npm publishing, SonarQube PR gates, releases | sonnet |
 | `agent-manager` | The only agent that may change agents, skills, hooks, rules, commands and agent memory. It also creates new Claude and Copilot plugins | opus |
 
 Agents name the `opus` and `sonnet` aliases rather than pinned model ids, so each role follows the newest model in its family. To pin a version, set `ANTHROPIC_DEFAULT_OPUS_MODEL` or `ANTHROPIC_DEFAULT_SONNET_MODEL` in `.claude/settings.json`.
@@ -122,14 +130,15 @@ Every skill is also a slash command: `/ai-dlc:<name>` in Claude Code, or the `<n
 | Engineering | `implement-feature`, `fix-bug`, `review`, `security-review` | software-engineer, code-reviewer |
 | Testing (general) | `design-test-cases`, `write-tests`, `playwright-mcp-ui-testing` | sqa-engineer |
 | Testing (C# / .NET) | `csharp-unit-testing`, `csharp-integration-testing`, `csharp-architecture-testing`, `csharp-mutation-testing`, `bunit-blazor-testing`, `tunit-playwright-ui-testing` | sqa-engineer |
+| Testing (JS / TS) | `ts-unit-testing`, `ts-integration-testing`, `ts-architecture-testing`, `ts-mutation-testing`, `ts-playwright-ui-testing` | sqa-engineer |
 | Performance testing | `k6-performance-testing`, `k6-load-testing`, `k6-stress-testing`, `k6-docker` | sqa-engineer |
-| DevOps | `github-ci-automation`, `github-cd-automation`, `nuget-package-deployment`, `sonarqube-pr-quality-gate` | devops-engineer |
+| DevOps | `github-ci-automation`, `github-cd-automation`, `nuget-package-deployment`, `npm-package-deployment`, `sonarqube-pr-quality-gate` | devops-engineer |
 | Communication | `write-documentation`, `presentation-authoring`, `terse-output` | documentation-writer, presentation-manager; `terse-output`: the user and every agent |
 | Research | `research` | research-assistant |
 | Team management | `agent-management`, `skill-management`, `hook-management`, `rules-management`, `command-management`, `plugin-management`, `manage-memory` | agent-manager (all agents use `manage-memory`) |
-| Project setup | `init`, `dotnet-rules`, `dotnet-test-gate` | the user |
+| Project setup | `init`, `dotnet-rules`, `dotnet-test-gate`, `node-rules`, `node-test-gate` | the user |
 
-`init`, `dotnet-rules` and `dotnet-test-gate` are **user-invocable only**: they set `disable-model-invocation: true`. `init` reads the other two skills' `SKILL.md` files and follows them, rather than calling them. Run `/ai-dlc:dotnet-test-gate` or `/ai-dlc:dotnet-rules` yourself to add, repair or remove them later.
+`init`, `dotnet-rules`, `dotnet-test-gate`, `node-rules` and `node-test-gate` are **user-invocable only**: they set `disable-model-invocation: true`. `init` reads the stack skills' `SKILL.md` files and follows them, rather than calling them. Run `/ai-dlc:dotnet-test-gate`, `/ai-dlc:dotnet-rules`, `/ai-dlc:node-test-gate` or `/ai-dlc:node-rules` yourself to add, repair or remove them later.
 
 ### Which agent uses which skill
 
@@ -166,14 +175,19 @@ The **lifecycle agents** own a stage and hand an artifact on: James Montemagno (
 | `playwright-mcp-ui-testing` | Role | Kent Beck (`sqa-engineer`) |
 | `csharp-unit-testing`, `csharp-integration-testing`, `csharp-architecture-testing`, `bunit-blazor-testing`, `tunit-playwright-ui-testing` | Role (C# / .NET) | Kent Beck (`sqa-engineer`) |
 | `csharp-mutation-testing` | Role (C# / .NET) | Kent Beck (`sqa-engineer`), who alone declares the mutation gate passed |
+| `ts-unit-testing`, `ts-integration-testing`, `ts-architecture-testing`, `ts-playwright-ui-testing` | Role (JS / TS) | Kent Beck (`sqa-engineer`) |
+| `ts-mutation-testing` | Role (JS / TS) | Kent Beck (`sqa-engineer`), who alone declares the mutation gate passed |
 | `k6-performance-testing`, `k6-stress-testing`, `k6-load-testing`, `k6-docker` | Role | Kent Beck (`sqa-engineer`) |
-| `github-ci-automation`, `github-cd-automation`, `nuget-package-deployment`, `sonarqube-pr-quality-gate` | Role | Gene Kim (`devops-engineer`) |
+| `github-ci-automation`, `github-cd-automation`, `sonarqube-pr-quality-gate` | Role | Gene Kim (`devops-engineer`) |
+| `nuget-package-deployment` | Role (C# / .NET) | Gene Kim (`devops-engineer`) |
+| `npm-package-deployment` | Role (JS / TS) | Gene Kim (`devops-engineer`) |
 | `write-documentation` | Role | Daniele Procida (`documentation-writer`); Linus Torvalds (`brutal-critique`) reads |
 | `presentation-authoring` | Role | Nancy Duarte (`presentation-manager`) |
 | `agent-management`, `command-management`, `hook-management`, `rules-management`, `plugin-management` | Role | Boris Cherny (`agent-manager`) |
 | `skill-management` | Role | Boris Cherny (`agent-manager`); Linus Torvalds (`brutal-critique`) reads its writing guide for agent and skill files; every other agent asks Boris Cherny (`agent-manager`) for skill changes |
 | `init` | Init-only | The user (`/ai-dlc:init`); no agent |
 | `dotnet-rules`, `dotnet-test-gate` | Init-only | Followed by `init` in .NET repositories, or run by the user; no agent |
+| `node-rules`, `node-test-gate` | Init-only | Followed by `init` in JS / TS repositories, or run by the user; no agent |
 
 ## Hooks and rules
 
@@ -186,6 +200,7 @@ The plugin ships **no hooks and no rules**. A plugin hook would run in every pro
 
   The hook blocks the agent from finishing while `dotnet test` fails after a change to runtime code. It stays silent when:
   - only artifacts changed: `.claude/`, `.github/agents|skills|prompts|instructions|hooks/`, `docs/`, or `*.md` files;
+  - only JS/TS files changed (`*.ts`, `*.js` …, `package.json`, lockfiles, `tsconfig*.json`), when the JS/TS gate is installed;
   - it has already blocked once in this stop cycle;
   - `AI_DLC_ENFORCE_TESTS=false` is set.
 
@@ -193,6 +208,8 @@ The plugin ships **no hooks and no rules**. A plugin hook would run in every pro
 - **`dotnet-rules`** installs the C# coding-style, GlobalUsings and testing rules. Each rule goes in two places with identical content:
   - `.claude/rules/*.md` for Claude Code.
   - `.github/instructions/*.instructions.md` for Copilot.
+- **`node-test-gate`** installs `.claude/hooks/enforce-tests.mjs`, a `Stop` hook in `.claude/settings.json` and `.github/hooks/ai-dlc-node-test-gate.json` for Copilot. The dependency-free Node.js script (Node 18 or later) blocks the agent from finishing while the repository's test command fails after a change to runtime code. It stays silent on the same conditions as the .NET gate, and also when only .NET files changed or `package.json` has no real `test` script. The command is `AI_DLC_NODE_TEST_CMD`, else the one confirmed at `init`, else `<pm> test` for the package manager its lockfile shows.
+- **`node-rules`** installs the `node-coding-style`, `node-modules`, `node-async-errors` and `node-testing` rules, as Claude rules with identical Copilot instruction twins. Their `node-` prefix lets them sit next to the .NET rules in a repository with both stacks.
 
 ## How the Copilot plugin is generated
 

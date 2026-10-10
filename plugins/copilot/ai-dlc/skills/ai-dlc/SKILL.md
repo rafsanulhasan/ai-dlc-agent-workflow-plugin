@@ -46,7 +46,7 @@ In Claude Code every agent id is prefixed `ai-dlc:` (for example `software-engin
 | Plan | PO | User stories with numbered acceptance criteria |
 | Architect | SA | Specs + ADRs |
 | Design | SDE | Low-level design (modules, patterns, DI plan) |
-| Build | SWE | Implementation diff, green `dotnet build` / `dotnet test` |
+| Build | SWE | Implementation diff, green build and tests (the project's commands, recorded in `AGENTS.md` at init) |
 | Test | SQA | Test suite, AC-traceability table, mutation report |
 | Review | CR | Severity-ranked findings report (Blocker / Warning / Suggestion) |
 | Release | PO (go / no-go) + `product-manager` (checklist) + OPS | Release notes, release gate checklist, published package |
@@ -95,7 +95,7 @@ Shortcuts:
 
 ### FDLC — the build loop
 1. SWE → `Skill("implement-feature")`: every behaviour traces to a numbered AC; anything outside the spec goes back to ASDLC.
-2. In parallel after SWE: SQA (`design-test-cases` → `write-tests` → `csharp-mutation-testing`), DW (`write-documentation`), BC on the docs.
+2. In parallel after SWE: SQA (`design-test-cases` → `write-tests` → the stack's mutation-testing skill: `csharp-mutation-testing` or `ts-mutation-testing`), DW (`write-documentation`), BC on the docs.
 3. SA → `Skill("architecture-review")` — **Architecture Conformance** gate.
 4. CR → `Skill("review")` — **Code Audit & Refinement** loop: Blockers return to SWE (or SQA for test code) until zero remain.
 5. **Gate G4 — approve:** human signs off the review report, not the diff.
@@ -107,13 +107,13 @@ Shortcuts:
 4. CR reviews. DW updates docs if behaviour visible to users changed.
 
 ### RLC
-1. SQA captures a mutation baseline (`csharp-mutation-testing`, baseline mode) **before** any change.
+1. SQA captures a mutation baseline (the stack's mutation-testing skill, baseline mode) **before** any change.
 2. SA/SDE define the target structure (and any ADR); SWE refactors in small steps with tests green after each.
 3. SQA re-runs mutation testing — the score must not regress; CR confirms no behaviour change.
 
 ### TLC
 1. PO and SA identify the ACs and risk areas; SQA → `design-test-cases` with an AC-traceability table.
-2. SQA → `write-tests` and `csharp-mutation-testing`; SWE only touches production code if a test reveals a bug (which forks a BFLC item).
+2. SQA → `write-tests` and the stack's mutation-testing skill; SWE only touches production code if a test reveals a bug (which forks a BFLC item).
 3. CR reviews test quality.
 
 ### CRLC
@@ -125,10 +125,10 @@ Shortcuts:
 
 - **Every handoff is an artifact.** Cross a stage boundary only with `Skill("handoff")`, which records the artifact paths and the verification result in `docs/handoffs/`.
 - **Trust, but verify.** The orchestrator reads the artifact before the next agent starts. An agent's summary is a claim, not evidence.
-- **Hard gates beat confidence.** Build and tests must be green before Build ends (in .NET repositories `init` installs a Stop hook that enforces `dotnet test`); mutation testing is the SQA's gate.
+- **Hard gates beat confidence.** Build and tests must be green before Build ends (`init` installs the stack's Stop hook that enforces the test command: `dotnet-test-gate` in .NET repositories, `node-test-gate` in JS / TS repositories); mutation testing is the SQA's gate.
 - **Ask upstream, then the human.** When an input is unclear, the stage agent consults the agents that produced it (*Clarify loop* below). Intent, scope or AC questions that no upstream agent can answer go to the human as one targeted question. Never let an agent guess.
 - **Re-anchor long runs** on the frozen spec at each stage boundary to stop drift.
-- **Skip gates only for artifact-only changes** (planning, agents, skills, hooks, prompts, rules): `dotnet test` and `dotnet stryker` may be skipped when no runtime code, test code, runtime configuration or build logic changed.
+- **Skip gates only for artifact-only changes** (planning, agents, skills, hooks, prompts, rules): the test and mutation commands may be skipped when no runtime code, test code, runtime configuration or build logic changed.
 
 ## Clarify loop — consult upstream
 

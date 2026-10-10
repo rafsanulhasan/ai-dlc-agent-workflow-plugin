@@ -65,7 +65,7 @@ export const options = {
     http_req_duration: [
       'p(90)<400',   // 90th percentile under 400ms
       'p(95)<800',   // 95th percentile under 800ms
-      'p(99)<2000',  // 99th percentile under 2s (handles .NET GC pauses)
+      'p(99)<2000',  // 99th percentile under 2s (handles GC pauses)
       { threshold: 'p(99)<2000', abortOnFail: true, delayAbortEval: '30s' },
     ],
     http_req_failed: ['rate<0.01'],  // <1% error rate

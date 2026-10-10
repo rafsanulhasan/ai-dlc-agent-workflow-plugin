@@ -31,11 +31,10 @@ Before designing anything, ground yourself in the existing architecture:
 
 Extract constraints from the project conventions:
 - Return shape must always be `{ data, error }`
-- Explicit type declarations with target-typed new or collection expressions
-- Async disposal over sync disposal
+- The stack's coding rules installed under `.claude/rules/` (`dotnet-rules` or `node-rules`); for C#: explicit type declarations with target-typed new or collection expressions, async disposal over sync disposal
 - No stack traces exposed to clients
 - Logger module, not console output
-- Must fit within: Middlewares, Dependency Injection, Endpoint Filters / Result Filters
+- Must fit within the project's composition points: middlewares, dependency injection, and the framework's request filters (e.g. ASP.NET Core endpoint / result filters)
 
 ### Step 3 — Select Patterns
 

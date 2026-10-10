@@ -19,7 +19,7 @@ Every AI-DLC stage boundary is crossed with a handoff record. The record is what
 
 ## Procedure
 
-1. **Collect the evidence.** List every artifact the stage produced, by path. Run the cheap checks the stage claims (for build stages: `dotnet build`, `dotnet test`; for test stages: the mutation report path). Record the actual results, not the agent's summary.
+1. **Collect the evidence.** List every artifact the stage produced, by path. Run the cheap checks the stage claims (for build stages: the project's build and test commands recorded in `AGENTS.md`, e.g. `dotnet build` / `dotnet test` or `npm run build` / `npm test`; for test stages: the mutation report path). Record the actual results, not the agent's summary.
 2. **Write the record** at `docs/handoffs/<work-item-id>/<NN>-<from>-to-<to>.md` (`NN` is the next sequence number in that folder) using the template below.
 3. **Verify.** The orchestrator (or the sending agent when no orchestrator is running) opens each listed artifact and confirms it exists and matches its claim. Set `Verification` to `passed` or `failed` with the reason.
 4. **Gate.** If the boundary is a human gate, stop and ask the human to approve the record. Otherwise continue.
