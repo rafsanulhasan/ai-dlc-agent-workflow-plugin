@@ -143,11 +143,10 @@ Apply the fix following all project conventions:
 
 #### Convention Checklist
 
-- [ ] Explicit type declarations (`FileStream stream = new();` not `var`)
-- [ ] `await using` for disposable resources
+- [ ] The stack's coding rules installed under `.claude/rules/` (`dotnet-rules` or `node-rules`) — for C#: explicit type declarations (`FileStream stream = new();` not `var`) and `await using` for disposable resources
 - [ ] `{ data, error }` return shape at boundaries — no unhandled exceptions crossing component lines
 - [ ] No stack trace in any response body — catch at boundary, log internally, return sanitized error
-- [ ] Logger (`ILogger<T>`), not `Console.Write*`
+- [ ] The project logger (C#: `ILogger<T>`), not console output (`Console.Write*`, `console.log`)
 - [ ] No new concrete dependencies — constructor-injected abstractions only
 
 After applying the fix, re-read the changed file to confirm no unintended side effects.
@@ -158,17 +157,13 @@ After applying the fix, re-read the changed file to confirm no unintended side e
 
 ### Build
 
-```
-dotnet build
-```
+Run the project's build command (recorded in `AGENTS.md` at init; for example `dotnet build`, or `npm run build` / `tsc --noEmit` for TypeScript).
 
 Fix all compilation errors before continuing.
 
 ### Run tests
 
-```
-dotnet test
-```
+Run the project's test command (for example `dotnet test` or `npm test`).
 
 - All previously passing tests must still pass — a fix that breaks other tests is a regression
 - The regression test from Phase 5 must now pass
@@ -210,8 +205,8 @@ Do not mark the bug fixed until:
 
 - [ ] A red-capable feedback loop was built and shown failing before the fix, and passes after it
 - [ ] Root cause is stated with file path and line number, and named as the confirmed hypothesis
-- [ ] `dotnet build` exits with 0 errors
-- [ ] `dotnet test` exits with 0 failures, including a regression test that failed before the fix and passes after it (or the missing seam is documented and flagged)
+- [ ] The build command exits with 0 errors
+- [ ] The test command exits with 0 failures, including a regression test that failed before the fix and passes after it (or the missing seam is documented and flagged)
 - [ ] No previously passing test was broken by the fix
 - [ ] Stack traces cannot escape to clients via any changed code path
 - [ ] The fix touches only what the root cause requires, in the layer that owns the defect — no unrelated changes, and surrounding behaviour is unchanged

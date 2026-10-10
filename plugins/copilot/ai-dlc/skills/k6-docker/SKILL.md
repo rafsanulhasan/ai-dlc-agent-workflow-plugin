@@ -16,7 +16,7 @@ Trigger scenarios:
 - "How do I run k6 in Docker Compose with InfluxDB + Grafana dashboards?"
 - "How do I run k6 from an AI agent session (Bash tool)?"
 - "How do I set up CI with Docker-based k6?"
-- "How do I run k6 programmatically from a .NET Testcontainers fixture?"
+- "How do I run k6 programmatically from a Testcontainers fixture (.NET or Node)?"
 
 ## Official Docker Image
 
@@ -61,7 +61,7 @@ docker run --rm -i `
   grafana/k6 run script.js
 ```
 
-### Reaching the Host's ASP.NET Core API from the Container
+### Reaching the Host's API from the Container
 
 The k6 container cannot reach `localhost` on the host directly — use these patterns:
 
@@ -202,6 +202,10 @@ Assert.That(exitCode, Is.EqualTo(0));
 - `WithOutputConsumer(Consume.RedirectStdoutAndStderrToConsole())` streams k6 output in real time.
 - On Linux, pass `--add-host=host.docker.internal:host-gateway` via `.WithCreateParameterModifier(...)`.
 
+### From Node (Testcontainers for Node)
+
+The `testcontainers` npm package has no k6 module either. Use its `GenericContainer` the same way: copy the script into the container, set `BASE_URL`, run `run /scripts/script.js`, wait for the one-shot container to exit, and fail the test when the exit code is not 0 (99 = threshold failure). Check the current `testcontainers` API with **Jon Skeet** (`research-assistant`) before writing the fixture.
+
 ## CI: GitHub Actions — Native k6 (Recommended)
 
 Use `grafana/setup-k6-action@v1` + `grafana/run-k6-action@v1`. **Do NOT use the archived `grafana/k6-action`** (deprecated July 2024).
@@ -296,7 +300,7 @@ networks:
   perf:
 
 services:
-  dotnet-api:
+  api:
     build: .
     networks: [perf]
     ports: ["8080:8080"]
@@ -318,7 +322,7 @@ services:
     volumes: ["./tests/load:/scripts"]
     command: run --out influxdb=http://influxdb:8086/k6 /scripts/load-test.js
     depends_on:
-      dotnet-api:
+      api:
         condition: service_healthy  # k6 waits for API healthcheck to pass
 ```
 
@@ -334,11 +338,13 @@ services:
 
 `--exit-code-from k6` forwards k6's exit code (99 on threshold failure) to the step.
 
-**ASP.NET Core healthcheck endpoint** (maps to `/healthz`):
+**Healthcheck endpoint** (maps to `/healthz`) — ASP.NET Core:
 ```csharp
 builder.Services.AddHealthChecks();
 app.MapHealthChecks("/healthz");
 ```
+
+Node (Express): `app.get('/healthz', (_req, res) => res.sendStatus(200));` — the compose healthcheck uses `wget`, so a Node image without it (for example a distroless one) needs a `node -e` fetch instead.
 
 ## Recommended CLI Flags for CI Load Tests
 

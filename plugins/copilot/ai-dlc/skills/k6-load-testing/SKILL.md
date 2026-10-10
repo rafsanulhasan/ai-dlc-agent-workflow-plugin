@@ -100,11 +100,12 @@ export const options = {
 - Standard: 8–12 hours
 - Extended: 24–72 hours
 
-**What to watch for in .NET during soak**:
+**What to watch for during soak**:
 - `http_req_duration` p99 trending upward continuously (memory leak / GC pressure)
 - `http_req_failed` rate climbing over time (degrading reliability)
 - `dropped_iterations` counter growing (open model only — indicates saturation)
-- Gen 2 GC collection rate increasing (monitor via Application Insights / dotnet-counters)
+- .NET: Gen 2 GC collection rate increasing (monitor via Application Insights / dotnet-counters)
+- Node: heap used growing without returning to baseline after GC, and event-loop lag rising (monitor via the APM or `--inspect` heap snapshots)
 - Thread pool queue length increasing (connection pool exhaustion)
 
 ## Multi-Scenario Weighted Load (Realistic Traffic Mix)
@@ -182,7 +183,7 @@ export default function () { /* not used when scenarios define exec */ }
 
 **Throughput formula**: `RPS = http_reqs.count / test_duration_seconds`
 
-## SLO Thresholds for .NET REST APIs
+## SLO Thresholds for REST APIs
 
 Starting point (adjust from production APM data):
 
@@ -192,7 +193,7 @@ thresholds: {
   http_req_duration: [
     'p(90)<400',    // 90th percentile
     'p(95)<800',    // 95th percentile (primary SLO)
-    'p(99)<2000',   // 99th — allows for .NET GC pauses
+    'p(99)<2000',   // 99th — allows for GC pauses (.NET, Node)
   ],
   http_req_waiting:  ['p(95)<600'],           // TTFB guard
   checks:            ['rate>0.99'],           // functional correctness

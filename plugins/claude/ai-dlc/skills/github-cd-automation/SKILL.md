@@ -1,28 +1,39 @@
 ---
 name: github-cd-automation
-description: Structured workflow for designing GitHub Actions continuous deployment for .NET projects. Covers release workflows triggered by tags or manual dispatch, environments and environment secrets, approval gates, NuGet package deployment, GitHub Releases with changelogs, and separating preview vs production deployment flows. Invoked by the devops-engineer agent when release/deploy workflows must be created or updated.
+description: Structured workflow for designing GitHub Actions continuous deployment for .NET and JavaScript/TypeScript projects. Covers release workflows triggered by tags or manual dispatch, environments and environment secrets, approval gates, package deployment (NuGet to nuget.org; npm with provenance and OIDC trusted publishing), GitHub Releases with changelogs, and separating preview vs production deployment flows. Invoked by the devops-engineer agent when release/deploy workflows must be created or updated.
 ---
 
 # GitHub CD Automation
 
-You are executing the `github-cd-automation` skill on behalf of **Gene Kim** (`devops-engineer`). Your job is to produce or modify release workflow files that publish the project's packages and create GitHub Releases — with safeguards (approval, environment-scoped secrets) that distinguish preview from production flows.
+You are executing the `github-cd-automation` skill on behalf of **Gene Kim** (`devops-engineer`). Your job is to produce or modify release workflow files that publish the project's packages and create GitHub Releases — with safeguards (approval, environment-scoped credentials) that distinguish preview from production flows.
 
 > Agent names are the defaults; a name chosen at `/ai-dlc:init` (the agent's `persona-name` memory, roster in the orchestrator's `project_team-roster`) takes precedence.
+
+## Stack Detection
+
+This file holds the stack-neutral release flow. The `build` and `publish` jobs live in one reference per stack, and each `publish` job must satisfy that stack's deployment skill. Detect the stack (ignore `bin/`, `obj/`, `node_modules/`) and read the matching reference:
+
+| Detected | Stack | Reference | Deployment skill |
+|----------|-------|-----------|------------------|
+| `*.sln`, `*.slnx` or `*.csproj` | .NET | [references/dotnet.md](references/dotnet.md) | `nuget-package-deployment` |
+| `package.json` | JavaScript / TypeScript (Node) | [references/node.md](references/node.md) | `npm-package-deployment` |
+
+A repository that publishes both kinds of package uses both references: a `build-<stack>` and `publish-<stack>` job per stack, each with its own environment, and a single `release` job that `needs:` every publish job.
 
 ## When to Invoke
 
 - A new release workflow must be created (e.g., `release.yml`, `preview.yml`)
 - An existing release workflow needs new steps (changelog generation, GitHub Release creation, attestation)
-- Approval gates or environments must be added before NuGet publishing
-- Migrating from manual `dotnet nuget push` to fully automated tag-driven deploys
+- Approval gates or environments must be added before package publishing
+- Migrating from manual publishing (`dotnet nuget push`, `npm publish` from a laptop) to fully automated tag-driven deploys
 
 ## Prerequisites
 
 - A working CI workflow already validates every push (see `github-ci-automation`)
-- NuGet API key stored as an environment-scoped secret (e.g., `NUGET_API_KEY` in the `nuget-org-production` environment)
-- Repository configured with GitHub Environments (`Settings → Environments`) for at least: `nuget-preview`, `nuget-production`
-- Required reviewers configured on the `nuget-production` environment
-- Tag convention defined: `vMAJOR.MINOR.PATCH` for stable, `vMAJOR.MINOR.PATCH-preview.N` for previews
+- Repository configured with GitHub Environments (`Settings → Environments`) for a preview and a production flow per registry (names in the stack reference)
+- Required reviewers configured on the production environment
+- Registry credentials scoped to the environment: an environment secret, or OIDC trusted publishing where the registry supports it (stack reference)
+- Tag convention defined: `vMAJOR.MINOR.PATCH` for stable, `vMAJOR.MINOR.PATCH-<pre>.N` for previews
 
 ## Workflow Structure — Production Release
 
@@ -40,45 +51,19 @@ on:
 
 permissions:
   contents: write   # required to create a GitHub Release
-  id-token: write   # for OIDC if used
+  id-token: write   # for OIDC (trusted publishing, provenance)
 
 jobs:
   build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '9.0.x'
-      - run: dotnet restore
-      - run: dotnet build --configuration Release --no-restore
-      - run: dotnet test --configuration Release --no-build
-      - name: Pack
-        run: dotnet pack --configuration Release --no-build --output ./artifacts --include-symbols -p:SymbolPackageFormat=snupkg
-      - uses: actions/upload-artifact@v4
-        with:
-          name: nupkg
-          path: ./artifacts/*.*nupkg
+    # stack reference: checkout, setup, install, build, test, pack, upload-artifact
 
   publish:
     needs: build
     runs-on: ubuntu-latest
     environment:
-      name: nuget-production
-      url: https://www.nuget.org/packages/MyProduct
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: nupkg
-          path: ./artifacts
-      - name: Push to nuget.org
-        run: |
-          dotnet nuget push ./artifacts/*.nupkg \
-            --api-key ${{ secrets.NUGET_API_KEY }} \
-            --source https://api.nuget.org/v3/index.json \
-            --skip-duplicate
+      name: <registry>-production
+      url: <package page>
+    # stack reference: download-artifact, publish
 
   release:
     needs: publish
@@ -109,19 +94,21 @@ jobs:
 
 Differences from production:
 
-- Trigger on tag pattern `v[0-9]+.[0-9]+.[0-9]+-(preview|alpha|beta|rc).*` or `workflow_dispatch`
-- Use `environment: nuget-preview` (no required reviewers, or lighter approval)
+- Trigger on tag pattern `v[0-9]+.[0-9]+.[0-9]+-(preview|alpha|beta|rc|next).*` or `workflow_dispatch`
+- Use the preview environment (no required reviewers, or lighter approval)
+- Publish to the registry's prerelease channel (NuGet prerelease version; npm dist-tag other than `latest`)
 - `prerelease: true` on the GitHub Release
-- Optionally publish to a private feed first, then nuget.org
+- Optionally publish to a private feed first, then the public registry
 
 ## Workflow
 
 ### Phase 0 — Context Load
 
 1. Read `CLAUDE.md` for project conventions.
-2. List `.github/workflows/` to see existing workflows.
-3. Confirm which Environments exist in `Settings → Environments` (ask the user if uncertain).
-4. Read the `nuget-package-deployment` skill — your `publish` job must satisfy its protocol.
+2. Detect the stack(s) and read the matching reference(s).
+3. List `.github/workflows/` to see existing workflows.
+4. Confirm which Environments exist in `Settings → Environments` (ask the user if uncertain).
+5. Read the stack's deployment skill (`nuget-package-deployment` or `npm-package-deployment`) — your `publish` job must satisfy its protocol.
 
 ### Phase 1 — Triggers
 
@@ -134,7 +121,7 @@ Always also provide `workflow_dispatch` for manual republish/retry.
 ### Phase 2 — Environments and Approvals
 
 Each `publish` job must declare `environment:`. This:
-- Scopes the `NUGET_API_KEY` secret to that environment only
+- Scopes the registry secret (or the trusted-publisher binding) to that environment only
 - Enforces required reviewers configured in the environment settings
 - Records the deployment on the repo's Deployments page
 
@@ -146,30 +133,28 @@ Use `needs:` to enforce ordering. Never combine build and publish in one job —
 
 ### Phase 4 — Changelog Generation
 
-Generate a changelog from `git log` between the previous tag and the current tag. For richer notes, integrate `release-drafter` or `git-cliff` — both available as GitHub Actions.
+Generate a changelog from `git log` between the previous tag and the current tag. For richer notes, integrate `release-drafter` or `git-cliff` — both available as GitHub Actions. A JS/TS repository that uses changesets already has curated notes; see the node reference.
 
 ### Phase 5 — GitHub Release Creation
 
 Use `softprops/action-gh-release@v2`:
 - Stable: `prerelease: false`
 - Preview: `prerelease: true`
-- Attach the `.nupkg` and `.snupkg` artifacts if useful for offline consumers
+- Attach the built packages if useful for offline consumers (stack reference names them)
 
 ### Phase 6 — Verification
 
-Add a post-publish smoke step (in production releases):
-- `dotnet add package <PackageId> --version ${VERSION}` in a fresh folder
-- Assert exit code zero
+Add a post-publish smoke step (in production releases) that installs the just-published version into a fresh folder and asserts exit code zero. The stack reference gives the command.
 
 ## Stable vs Preview Flow Summary
 
 | Aspect | Stable (`release.yml`) | Preview (`preview.yml`) |
 |--------|------------------------|-------------------------|
 | Trigger | Tag `v1.4.0` | Tag `v1.5.0-preview.2` |
-| Environment | `nuget-production` (required reviewers) | `nuget-preview` (auto-approve) |
+| Environment | Production (required reviewers) | Preview (auto-approve) |
 | GitHub Release `prerelease:` | `false` | `true` |
 | Changelog scope | Since last stable tag | Since last preview tag |
-| Audience | Default consumers | Opt-in via `--prerelease` |
+| Audience | Default consumers | Opt-in (stack reference) |
 
 ## Common Pitfalls
 
@@ -177,15 +162,16 @@ Add a post-publish smoke step (in production releases):
 - **Publishing untested artifacts**: rebuild in the publish job loses traceability. Always download the build artifact.
 - **Missing `contents: write`**: `action-gh-release` fails silently with permission denied.
 - **Tag-pattern overlap**: a single workflow trying to handle both stable and preview tags often leaks preview secrets. Separate workflows are safer.
-- **Forgotten `--skip-duplicate`**: retry runs fail when re-pushing matching `.snupkg`.
 - **Changelog includes merge commits noise**: filter `--no-merges` or use a curated tool.
-- **No rollback plan**: document the unlist procedure on nuget.org in the workflow README.
+- **No rollback plan**: document the registry's rollback procedure (stack reference) in the workflow README.
+- Stack-specific pitfalls are listed at the end of each stack reference.
 
 ## Output
 
 Return to the calling agent:
 - Workflow files created or modified
-- Environments and secrets required
+- Detected stack(s) and the reference(s) applied
+- Environments and secrets (or trusted-publisher bindings) required
 - Approval gate configuration steps for the maintainer
 - Tag patterns that trigger each workflow
 - Verification step status

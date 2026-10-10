@@ -49,7 +49,7 @@ Use these wherever the persona below says "the project's build and test commands
 
 ### Quality gates
 
-- After any change to runtime code, test code, runtime configuration or build logic: `{{TEST_CMD}}` must pass (enforced by the test gate hook in .NET repositories), then `{{MUTATION_CMD}}` is run by `sqa-engineer`. Mutation break threshold: **{{MUTATION_BREAK}}%**.
+- After any change to runtime code, test code, runtime configuration or build logic: `{{TEST_CMD}}` must pass (enforced by the test gate hook that `init` installs for .NET and JavaScript / TypeScript), then `{{MUTATION_CMD}}` is run by `sqa-engineer`. Mutation break threshold: **{{MUTATION_BREAK}}%**.
 - Artifact-only changes (planning, agents, skills, hooks, prompts/commands, rules/instructions) may skip both gates.
 - `code-reviewer` approves only at **zero Blockers**.
 

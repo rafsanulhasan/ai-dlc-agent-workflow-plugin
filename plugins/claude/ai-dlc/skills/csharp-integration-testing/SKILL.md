@@ -1,11 +1,11 @@
 ---
 name: csharp-integration-testing
-description: Comprehensive guidance for writing C# integration tests using TUnit, TestWebApplicationFactory, Testcontainers, Bogus, and TUnit.Assertions.Should — no mocks, real infrastructure
+description: Comprehensive guidance for writing C# integration tests using TUnit, TestWebApplicationFactory, Testcontainers, Bogus, and TUnit.Assertions.Should — real infrastructure, no mocks of your own code
 ---
 
 # csharp-integration-testing
 
-This skill encodes best practices for writing C# integration tests in the project. Integration tests exercise the system end-to-end through real infrastructure — they do not use mocks. The standardized stack is **TUnit** for the test framework, **TUnit's `TestWebApplicationFactory<TEntryPoint>`** for ASP.NET Core hosting, **Testcontainers** for spinning up real databases, queues, caches, and other dependencies, **Bogus** for test data generation, and **TUnit.Assertions.Should** for assertions. Project conventions like the `{ data, error }` return shape and `Assert.Multiple()` failure collection still apply.
+This skill encodes best practices for writing C# integration tests in the project. Integration tests exercise the system end-to-end through real infrastructure; doubles follow `test-doubles`. The standardized stack is **TUnit** for the test framework, **TUnit's `TestWebApplicationFactory<TEntryPoint>`** for ASP.NET Core hosting, **Testcontainers** for spinning up real databases, queues, caches, and other dependencies, **Bogus** for test data generation, and **TUnit.Assertions.Should** for assertions. Project conventions like the `{ data, error }` return shape and `Assert.Multiple()` failure collection still apply.
 
 ---
 
@@ -17,7 +17,7 @@ This skill encodes best practices for writing C# integration tests in the projec
    - All API responses use `{ data, error }` shape
    - Test framework: TUnit
    - Integration test host: TUnit.AspNet (`TestWebApplicationFactory<TEntryPoint>`) — never plain `WebApplicationFactory`
-   - Infrastructure: Testcontainers (PostgreSQL, Redis, Kafka, etc.) — never mocks in integration tests
+   - Infrastructure: Testcontainers (PostgreSQL, Redis, Kafka, etc.) — never mocks of infrastructure you own
    - Test data: Bogus
    - Assertions: TUnit.Assertions.Should
 
@@ -30,14 +30,14 @@ Before writing any integration test, confirm it belongs in the integration suite
 | Concern | Unit test | Integration test |
 | --- | --- | --- |
 | Scope | One class, one method | HTTP request → middleware pipeline → DB → response |
-| Dependencies | Mocked with `TUnit.Mocks` | **Real**, started via Testcontainers |
+| Dependencies | Real collaborators; owned I/O ports mocked with `TUnit.Mocks` (`test-doubles`) | **Real**, started via Testcontainers |
 | Hosting | None — direct construction | `TestWebApplicationFactory<Program>` |
 | Cost | Microseconds | Seconds (container startup amortised across session) |
 | Failure signal | Logic regression | Wiring, configuration, contract, or schema regression |
 
 **Rule:** if a test would still pass with the database swapped for an in-memory dictionary, it is a unit test — write it in the unit suite using `csharp-unit-testing`. Integration tests must exercise the real wire.
 
-**No mocks in integration tests.** If you find yourself reaching for `IFoo.Mock()` in an integration test, you are writing the wrong kind of test. Stop, decide whether the behaviour belongs in the unit suite or whether the dependency needs a Testcontainer.
+**No mocks of your own code.** If you find yourself reaching for `IFoo.Mock()` of a type you own in an integration test, you are writing the wrong kind of test. Stop, decide whether the behaviour belongs in the unit suite or whether the dependency needs a Testcontainer. The doubles `test-doubles` allows (a fixed clock, a third-party client, a documented unproducible failure) go in through `ConfigureTestServices`.
 
 ---
 
@@ -247,7 +247,7 @@ Same discipline as unit tests:
 ### What NOT to do
 
 - Do **not** seed test data with raw SQL when a repository exists — round-trip through the real code path.
-- Do **not** mock anything in an integration test. If you need a deterministic clock or a fake email sender, use `ConfigureTestServices` to replace it with a real test double, not a mock.
+- Do **not** `Mock()` your own types in an integration test. Register any double `test-doubles` allows (a fixed clock, a fake email provider) through `ConfigureTestServices`.
 - Do **not** share mutable state between tests via static fields — use TUnit's isolation helpers instead.
 - Do **not** skip `Assert.Multiple()` because "the test only has two assertions". The discipline is uniform.
 
@@ -259,7 +259,7 @@ When writing C# integration tests for .NET projects:
 
 1. **Host with `TestWebApplicationFactory<Program>`** — never the vanilla ASP.NET factory.
 2. **Use Testcontainers for real infrastructure** — Postgres, Redis, Kafka, all of it.
-3. **No mocks** — if you need one, the test belongs in the unit suite.
+3. **No mocks of your own code** — doubles only where `test-doubles` allows, registered through `ConfigureTestServices`.
 4. **Share containers across the session, isolate state per test** — `PerTestSession` + `GetIsolatedName`.
 5. **Use Aspire fixtures** when the system is already composed with Aspire.
 6. **Generate test data with Bogus** — round-trip seeds through the production repository.

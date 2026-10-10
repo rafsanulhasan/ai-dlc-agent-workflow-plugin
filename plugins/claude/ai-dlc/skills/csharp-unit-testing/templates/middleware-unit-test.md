@@ -9,48 +9,35 @@ public class RequestValidationMiddlewareTests
     [Test]
     public async Task InvokeAsync_WithValidRequest_CallsNext()
     {
-        // Arrange
-        IRequestValidator mockValidator = IRequestValidator.Mock();
-        mockValidator.ValidateAsync(Any()).Returns(new ValidationResult { IsValid = true });
-
+        // Arrange — the validator is plain in-process logic, so it runs for real;
+        // next is the framework boundary, and calling it is the behaviour under test
+        RequiredHeaderValidator validator = new("X-Request-Id");
         RequestDelegate mockNext = RequestDelegate.Mock();
-        RequestValidationMiddleware middleware = new(mockNext, mockValidator);
+        RequestValidationMiddleware middleware = new(mockNext, validator);
 
-        Faker<HttpRequest> requestFaker = new()
-            .RuleFor(r => r.Method, "POST")
-            .RuleFor(r => r.Path, "/api/users");
-
-        HttpRequest request = requestFaker.Generate();
         DefaultHttpContext httpContext = new();
-        httpContext.Request.CopyFrom(request);
+        httpContext.Request.Method = "POST";
+        httpContext.Request.Path = "/api/users";
+        httpContext.Request.Headers["X-Request-Id"] = "req-1";
 
         // Act
         await middleware.InvokeAsync(httpContext);
 
         // Assert
-        using (Assert.Multiple())
-        {
-            mockValidator.ValidateAsync(Any()).WasCalled(Times.Once);
-            mockNext.Invoke(Any<HttpContext>()).WasCalled(Times.Once);
-        }
+        mockNext.Invoke(Any<HttpContext>()).WasCalled(Times.Once);
     }
 
     [Test]
     public async Task InvokeAsync_WithInvalidRequest_ReturnsErrorResponse()
     {
-        // Arrange
-        IRequestValidator mockValidator = IRequestValidator.Mock();
-        mockValidator.ValidateAsync(Any()).Returns(new ValidationResult { IsValid = false, Error = "Missing required header" });
-
+        // Arrange — the request has no X-Request-Id header, so the real validator rejects it
+        RequiredHeaderValidator validator = new("X-Request-Id");
         RequestDelegate mockNext = RequestDelegate.Mock();
-        RequestValidationMiddleware middleware = new(mockNext, mockValidator);
-
-        HttpRequest request = new Faker<HttpRequest>()
-            .RuleFor(r => r.Method, "POST")
-            .Generate();
+        RequestValidationMiddleware middleware = new(mockNext, validator);
 
         DefaultHttpContext httpContext = new();
-        httpContext.Request.CopyFrom(request);
+        httpContext.Request.Method = "POST";
+        httpContext.Request.Path = "/api/users";
 
         // Act
         await middleware.InvokeAsync(httpContext);
@@ -58,7 +45,6 @@ public class RequestValidationMiddlewareTests
         // Assert
         using (Assert.Multiple())
         {
-            mockValidator.ValidateAsync(Any()).WasCalled(Times.Once);
             mockNext.Invoke(Any<HttpContext>()).WasCalled(Times.Never);
             await httpContext.Response.StatusCode.Should().BeEqualTo(400);
         }

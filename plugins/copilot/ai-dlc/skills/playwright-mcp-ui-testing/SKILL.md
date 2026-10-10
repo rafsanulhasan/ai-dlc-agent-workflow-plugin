@@ -16,8 +16,8 @@ This skill guides **Kent Beck** (`sqa-engineer`) to perform AI-driven UI tests u
 Before invoking this skill:
 1. Confirm the change is UI/frontend-related. If not, skip this skill entirely.
 2. The Playwright MCP server is already available via the **docker MCP gateway** (configured in `.mcp.json`). No additional setup is required — all browser tools are available with the `mcp__docker-mcp-gateway__` prefix.
-3. Ensure the application is running (start via `dotnet run` or via the Aspire AppHost in `samples/AppHost`).
-4. Discover the service URL (check Aspire dashboard at `http://localhost:15888` or use the configured `launchUrl`).
+3. Ensure the application is running with the project's run command from `AGENTS.md` (for example `dotnet run` or the Aspire AppHost for .NET, `npm run dev` or `npm start` for JS / TS).
+4. Discover the service URL (the Aspire dashboard at `http://localhost:15888`, the configured `launchUrl`, or the URL the dev server prints).
 
 ---
 
@@ -129,7 +129,7 @@ Produce a structured test report:
 - **Flaky timing**: always use `browser_wait_for` after navigation/form submission — never assume instant rendering.
 - **ARIA anchoring**: if UI elements lack proper ARIA labels/roles, surface it as a bug to the software-engineer and request semantic markup fixes before retesting.
 - **Screenshots are mandatory evidence** — never submit a test report without screenshot files.
-- **This skill produces a report, not test code.** The `write-tests` skill produces `.cs` test files. This skill produces browser interaction results and a markdown report.
+- **This skill produces a report, not test code.** The `write-tests` skill produces committed test files (`.cs` or `.ts` / `.js`). This skill produces browser interaction results and a markdown report.
 
 ---
 

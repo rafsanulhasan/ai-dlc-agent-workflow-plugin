@@ -1,11 +1,11 @@
 ---
 name: write-tests
-description: Test implementation skill for .NET projects. Takes a confirmed test plan from design-test-cases and produces compilable, runnable xUnit tests following project conventions, one test case at a time in a red-green-refactor loop (test-first when the code does not exist yet). Every test is seen failing before it is trusted, tests behaviour through public seams, and avoids implementation-coupled and tautological assertions. Validates coverage quality through mutation testing. Invoked by the sqa-engineer agent after the test plan is approved.
+description: Stack-neutral test implementation skill. Takes a confirmed test plan from design-test-cases and produces compilable, runnable tests in the project's test framework following project conventions, routing to the stack's testing skills (C# / .NET or JS / TS), one test case at a time in a red-green-refactor loop (test-first when the code does not exist yet). Every test is seen failing before it is trusted, tests behaviour through public seams, and avoids implementation-coupled and tautological assertions. Validates coverage quality through mutation testing. Invoked by the sqa-engineer agent after the test plan is approved.
 ---
 
 # Write Tests
 
-You are executing the `write-tests` skill on behalf of **Kent Beck** (`sqa-engineer`). Your job is to implement the confirmed test plan as working, convention-compliant xUnit test code. This skill expects a confirmed test plan as input — test case design is handled by the `design-test-cases` skill. Do not redesign test strategy here; implement what the plan specifies.
+You are executing the `write-tests` skill on behalf of **Kent Beck** (`sqa-engineer`). Your job is to implement the confirmed test plan as working, convention-compliant test code in the project's test framework. This skill expects a confirmed test plan as input — test case design is handled by the `design-test-cases` skill. Do not redesign test strategy here; implement what the plan specifies.
 
 > Agent names are the defaults; a name chosen at `/init` (the agent's `persona-name` memory, roster in the orchestrator's `project_team-roster`) takes precedence.
 
@@ -14,6 +14,22 @@ You are executing the `write-tests` skill on behalf of **Kent Beck** (`sqa-engin
 The calling agent will pass:
 - A confirmed test plan produced by the `design-test-cases` skill
 - The component under test (file path and class name)
+
+## Stack skills
+
+This skill owns the loop and the quality bar; the stack's testing skill owns the framework, mocking, assertion, fixture and naming details. Load the one that matches each TC's type:
+
+| Test type | C# / .NET | JS / TS |
+|---|---|---|
+| Unit | `csharp-unit-testing` | `ts-unit-testing` |
+| Integration | `csharp-integration-testing` | `ts-integration-testing` |
+| Architecture | `csharp-architecture-testing` | `ts-architecture-testing` |
+| Coded E2E UI | `tunit-playwright-ui-testing` (Blazor components: `bunit-blazor-testing`) | `ts-playwright-ui-testing` |
+| Mutation | `csharp-mutation-testing` | `ts-mutation-testing` |
+
+The project's build, test and mutation commands are recorded in `AGENTS.md` at init; the stack's coding conventions are in the rules `dotnet-rules` or `node-rules` installed under `.claude/rules/`.
+
+Whether a test may use a double (mock, stub, fake, spy, route, fake clock), and which kind, is decided by `test-doubles`; the stack skill shows how to write it.
 
 ## Process
 
@@ -24,13 +40,14 @@ Before writing any code:
 1. Read `CLAUDE.md` to internalize conventions.
 2. Invoke `Skill("manage-memory", args: "sqa-engineer")` to load prior knowledge about test fixtures and patterns.
 3. Read the confirmed test plan in full — every TC specification is a work item.
-4. Locate the test project using Glob. Read several existing test files to internalize:
-   - Test framework (xUnit)
+4. Identify the stack and load its testing skill from the table above. Read the build / test / mutation commands from `AGENTS.md`.
+5. Locate the test project using Glob. Read several existing test files to internalize:
+   - Test framework and runner
    - Assertion library in use
-   - Test double approach (NSubstitute, hand-rolled, etc.)
+   - Test double approach (the framework's mocks, hand-rolled fakes, etc.)
    - Naming convention
-   - Fixture and setup patterns (`IClassFixture`, constructors, `[ClassFixture]`)
-5. Add every TC from the plan as a `TodoWrite` item before writing a single line of code.
+   - Fixture and setup patterns
+6. Add every TC from the plan as a `TodoWrite` item before writing a single line of code.
 
 ---
 
@@ -57,54 +74,34 @@ Read [references/test-quality.md](references/test-quality.md) before the first c
 - Tests observe behaviour through the **public seam** the plan names — the interface a caller uses — never private members or internal state. A test should survive a refactor that does not change behaviour.
 - Verify through the interface, not a side channel: create a user and then fetch it through the API, rather than querying the table directly.
 - Expected values come from an **independent source** — a literal, a worked example, the AC. Never recompute the expected value the way the code does; that test passes by construction.
-- Mock at **system boundaries** (external services, clock, randomness, sometimes the database or file system), not collaborators you own. Assert on outcomes; assert on calls only when the call *is* the behaviour (the email was sent, the message was published).
+- Use a double only where `test-doubles` allows one, and classify it before you write it.
 - If a TC can only be checked by reaching inside the component, do not test the internals. Report the missing seam to the calling agent so **Zoran Horvat** (`system-engineer`) can address testability.
 
 #### Structure
 
-Use Arrange / Act / Assert in every test method:
-
-```csharp
-[Fact]
-public async Task MethodName_StateUnderTest_ExpectedBehavior()
-{
-    // Arrange
-    ...
-
-    // Act
-    ResultType result = await sut.MethodNameAsync(input, ct);
-
-    // Assert
-    ...
-}
-```
+Use Arrange / Act / Assert in every test, with the three blocks visibly separated. The stack's testing skill shows the exact shape (attributes or `describe` / `it`, async patterns).
 
 #### Naming
 
-Three-part names that read as a specification: `MethodName_StateUnderTest_ExpectedBehavior`
-
-- `Validate_WhenAuthHeaderIsMissing_ReturnsErrorResult`
-- `Dispatch_WhenHandlerSucceeds_ReturnsPopulatedData`
-- `Process_WhenTokenIsCancelled_ThrowsOperationCanceledException`
+Names that read as a specification: the unit, the state under test and the expected behaviour, for example `Validate_WhenAuthHeaderIsMissing_ReturnsErrorResult` in C#, or `describe('validate')` / `it('returns an error result when the auth header is missing')` in JS / TS. Follow the convention the stack's testing skill and the existing tests use.
 
 #### Convention checklist (apply to every test file)
 
-- [ ] Explicit type declarations: `MyService sut = new(mockDep);` not `var sut = ...`
-- [ ] `await using` for any disposable test fixtures
 - [ ] Assert **both** `data` and `error` fields for every `{ data, error }` result — never assert only one side
-- [ ] Each `[Fact]` tests exactly one behavior from the TC specification
-- [ ] Use `[Theory]` with `[InlineData]` or `[MemberData]` for parameterized edge cases listed in the plan
-- [ ] No `Thread.Sleep` or arbitrary delays — use `CancellationToken` properly
-- [ ] Mock only the dependencies the TC exercises — minimal mock configuration
-- [ ] Never mock the system under test itself
+- [ ] Each test exercises exactly one behavior from the TC specification
+- [ ] Use the framework's parameterised tests for the edge cases listed in the plan
+- [ ] Dispose or tear down every fixture that holds a resource (async disposal where the stack has it)
+- [ ] No sleeps or arbitrary delays — use cancellation, fake timers or awaited conditions
+- [ ] Every double passes the `test-doubles` review checklist, and configures only what the TC exercises
 - [ ] No shared mutable state between test cases
+- [ ] The stack's coding conventions apply to test code too (C# / .NET: explicit types and `await using`, from `dotnet-rules`; JS / TS: the conventions `node-rules` installs)
 
 #### Integration tests
 
-For TCs marked as integration type in the plan:
+For TCs marked as integration type in the plan, follow the stack's integration-testing skill (`csharp-integration-testing` or `ts-integration-testing`):
 
-- Use `WebApplicationFactory<T>` or an in-memory `IHost`
-- Register test doubles in the test host's DI — do not modify production registrations
+- Host the application in-process through the stack's test host
+- Register test doubles in the test host's composition root — do not modify production registrations
 - Each test must leave shared infrastructure in a clean state
 
 Mark each `TodoWrite` TC item complete immediately after its test has been seen red and then green.
@@ -113,9 +110,7 @@ Mark each `TodoWrite` TC item complete immediately after its test has been seen 
 
 ### Phase 2 — Run and Verify
 
-```shell
-dotnet test
-```
+Run the project's test command (recorded in `AGENTS.md` at init; for example `dotnet test` or `npm test`).
 
 - All new tests must pass
 - No previously passing test may fail — a test that breaks existing tests is itself a defect; report it to **David Fowler** (`software-engineer`) rather than modifying production code
@@ -126,15 +121,13 @@ dotnet test
 
 ### Phase 3 — Mutation Testing
 
-```shell
-dotnet stryker
-```
+Run the stack's mutation-testing skill (`csharp-mutation-testing` for C# / .NET, `ts-mutation-testing` for JS / TS) with the project's mutation command from `AGENTS.md`.
 
 For each surviving mutant in code covered by the new tests:
 
 1. Map the mutant back to the TC that should have caught it
 2. Strengthen or add a test case that produces observably different output when the mutation is present
-3. Re-run `dotnet stryker` to confirm the mutant is killed
+3. Re-run the mutation command to confirm the mutant is killed
 
 Acceptable reasons to leave a mutant alive (add a comment in the test file):
 
@@ -153,8 +146,8 @@ Do not mark the test suite complete until:
 - [ ] Every new test was seen failing for the TC's reason before it was seen passing, and production files were restored afterwards
 - [ ] No test asserts on private members, internal state or a side channel, and no expected value is recomputed from the implementation
 - [ ] Every AC listed in the plan maps to at least one passing test
-- [ ] `dotnet test` exits with 0 failures
-- [ ] `dotnet stryker` produces no surviving mutants on new code paths (or each survivor is commented and justified)
+- [ ] The project's test command exits with 0 failures
+- [ ] The mutation run produces no surviving mutants on new code paths (or each survivor is commented and justified)
 - [ ] Both `data` and `error` are asserted in every `{ data, error }` result test
 - [ ] No previously passing test was broken
 - [ ] No production code was modified
@@ -163,6 +156,6 @@ Do not mark the test suite complete until:
 
 Report completion with:
 
-> **Tests implemented for**: [component name] — [N tests written, dotnet test: pass, dotnet stryker: N survivors / all killed]
+> **Tests implemented for**: [component name] — [N tests written, tests: pass, mutation: N survivors / all killed]
 
 Adapted in part from [mattpocock/skills](https://github.com/mattpocock/skills) (MIT).

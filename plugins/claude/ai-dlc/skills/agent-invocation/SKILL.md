@@ -91,7 +91,7 @@ A spawned agent's reads stay in its own context; only its final report enters yo
   | 1 | `requirement-analyst` | James Montemagno | Finalized spec at `docs/specs/<feature-slug>.spec.md` with numbered acceptance criteria |
   | 2 | `software-architect` | Mark Richards | Architecture Design Document + ADR under `docs/architecture/decisions/`, plus Implementation Guidance section |
   | 3 | `system-engineer` | Zoran Horvat | Low-level design notes (class/module structure, design-pattern choices, DI registration plan) |
-  | 4 | `software-engineer` | David Fowler | Implementation diff + `dotnet test` green + `dotnet stryker` survivors triaged |
+  | 4 | `software-engineer` | David Fowler | Implementation diff + the project's test command green + mutation survivors triaged (commands recorded in `AGENTS.md` at init) |
   | 5 | `sqa-engineer` (in parallel with `documentation-writer`) | Kent Beck | Test plan, implemented tests, mutation report with surviving-mutant rationale, AC-traceability table |
   | 5 | `documentation-writer` (in parallel with `sqa-engineer`) | Daniele Procida | New or updated `README.md` files reflecting the change |
   | 6 | `code-reviewer` | Robert C. Martin (Uncle Bob) | Severity-ranked findings report (Blocker / Warning / Suggestion) with file:line specificity |

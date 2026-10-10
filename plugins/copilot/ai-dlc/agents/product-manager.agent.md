@@ -133,9 +133,9 @@ Before handing a release off to the `devops-engineer` for deployment:
 
 1. Verify all items in the milestone have status "Done" or are explicitly deferred
 2. Confirm no open P0 items exist for the milestone
-3. Confirm the project's test command (e.g. `dotnet test`) passed in the last build (check with the orchestrator if uncertain)
+3. Confirm the project's test command (e.g. `dotnet test` or `npm test`) passed in the last build (check with the orchestrator if uncertain)
 4. Draft release notes summarizing what changed (features, fixes, security patches)
-5. Route to `devops-engineer` for package publishing and GitHub Release creation (for .NET: `nuget-package-deployment`; see also `github-cd-automation`)
+5. Route to `devops-engineer` for package publishing and GitHub Release creation (`nuget-package-deployment` for .NET, `npm-package-deployment` for JS / TS; see also `github-cd-automation`)
 6. Update all included items to "Done" with the release date
 
 ### Clarify upstream

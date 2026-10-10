@@ -159,7 +159,10 @@ When these are unresolved, return targeted clarification questions with one reco
 
 ## Example Invocations
 
-- `Skill("hook-management", args: "create claude pre-stop hook to enforce dotnet test before finish")`
+The stack test gates are not hand-built here: `init` installs them through `dotnet-test-gate` (.NET, enforces `dotnet test`) and `node-test-gate` (JS / TS, enforces the repository's test command, e.g. `npm test`). Use this skill to repair or customise an installed gate, or for hooks those skills do not cover.
+
+- `Skill("hook-management", args: "create claude pre-stop hook to enforce the project's test command before finish")`
+- `Skill("hook-management", args: "modify the installed dotnet-test-gate or node-test-gate Stop hook to also run the type-check")`
 - `Skill("hook-management", args: "modify copilot hook to add repository quality-gate reminder")`
 - `Skill("hook-management", args: "delete both hook named enforce-tests using soft-delete with backup")`
 - `Skill("hook-management", args: "migrate claude hook behavior to copilot and keep event semantics aligned")`

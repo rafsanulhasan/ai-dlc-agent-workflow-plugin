@@ -17,7 +17,7 @@ You implement features in six phases. Complete each phase fully before advancing
 
 Before writing any code:
 
-1. Read `CLAUDE.md` to internalize all conventions: explicit type declarations, `await using` disposal, `{ data, error }` return shape, no stack trace exposure, logger module.
+1. Read `CLAUDE.md`, `AGENTS.md` and the stack's coding rules under `.claude/rules/` (installed by `dotnet-rules` or `node-rules`) to internalize all conventions — `{ data, error }` return shape, no stack trace exposure, logger module, plus the stack's own (for C#: explicit type declarations, `await using` disposal) — and the project's build / test / mutation commands.
 2. Invoke `Skill("manage-memory", args: "software-engineer")` to load any prior institutional knowledge about this codebase area.
 3. If an architecture design document or system design output was provided as an argument, read it fully — especially Interface Contracts, DI Registration Plan, and Implementation Handoff Notes.
 4. Glob the solution structure to understand project boundaries and locate files to create or modify.
@@ -74,16 +74,17 @@ A failure caught at the step that caused it is a one-line fix; the same failure 
 
 ### Convention Checklist (apply to every file)
 
-- [ ] **Explicit type declarations**: `FileStream stream = new();` not `var stream = new FileStream()`
-  - Exception: `Stream stream = new FileStream()` (interface/base type on left)
-  - Exception: `IEnumerable<int> items = new List<int>()` (interface on left, concrete on right)
-- [ ] **Async disposal**: `await using ResourceType resource = new();` not `using`
+- [ ] **Stack conventions**: the coding rules installed under `.claude/rules/` (`dotnet-rules` or `node-rules`). For C#:
+  - **Explicit type declarations**: `FileStream stream = new();` not `var stream = new FileStream()`
+    - Exception: `Stream stream = new FileStream()` (interface/base type on left)
+    - Exception: `IEnumerable<int> items = new List<int>()` (interface on left, concrete on right)
+  - **Async disposal**: `await using ResourceType resource = new();` not `using`
 - [ ] **Return shape**: all boundary-crossing operations return `{ data, error }` — use `Result<T, Error>` or equivalent discriminated union; no `throw` across boundaries
 - [ ] **No stack trace exposure**: catch at the outermost boundary, log the exception internally, return a sanitized `{ data: null, error: <message> }` to the caller
-- [ ] **Logger, not console**: inject `ILogger<T>` via DI; never call `Console.Write*`
-- [ ] **DI compatibility**: all dependencies are constructor-injected abstractions; no `new ConcreteService()` inside components
+- [ ] **Logger, not console**: use the project logger, injected (C#: `ILogger<T>` via DI); never call `Console.Write*` or `console.log`
+- [ ] **DI compatibility**: all dependencies are injected abstractions; no `new ConcreteService()` inside components
 - [ ] **Lifetime correctness**: verify no captive dependencies (scoped injected into singleton, etc.)
-- [ ] **Functional patterns**: use `LanguageExt.Core` monads or `OneOf` discriminated unions where they reduce null-check noise and improve pipeline composability
+- [ ] **Functional patterns**: use the project's result / discriminated-union types (C#: `LanguageExt.Core` monads or `OneOf`) where they reduce null-check noise and improve pipeline composability
 - [ ] **No speculative code**: implement exactly what the design specifies — no extra overloads, no future-proofing layers
 
 After implementing each step, mark its `TodoWrite` task complete before moving to the next.
@@ -92,32 +93,24 @@ After implementing each step, mark its `TodoWrite` task complete before moving t
 
 ## Phase 3 — Build
 
-Run:
-
-```
-dotnet build
-```
+Run the project's build command (recorded in `AGENTS.md` at init; for example `dotnet build`, or `npm run build` / `tsc --noEmit` for TypeScript).
 
 If build fails:
 - Fix every error before continuing — do not proceed to test with a broken build
-- Re-run `dotnet build` after fixes to confirm clean output
+- Re-run the build after fixes to confirm clean output
 - If an error reveals a design ambiguity, note it and ask the user before guessing
 
 ---
 
 ## Phase 4 — Test
 
-Run:
-
-```
-dotnet test
-```
+Run the project's test command (for example `dotnet test` or `npm test`).
 
 If tests fail:
 - Read each failing test to understand what contract it verifies
 - Fix the implementation (not the test) unless the test is demonstrably wrong
 - Never delete or skip a test to make the suite pass
-- Re-run `dotnet test` after fixes to confirm all tests pass
+- Re-run the tests after fixes to confirm all tests pass
 
 If no tests exist for the new code, note the gap — test design and implementation are the SQA engineer's responsibility. Do not write tests yourself.
 
@@ -125,11 +118,7 @@ If no tests exist for the new code, note the gap — test design and implementat
 
 ## Phase 5 — Mutation Testing
 
-Run:
-
-```
-dotnet stryker
-```
+Run the project's mutation command (for example `dotnet stryker` or `npx stryker run`; the stack's mutation-testing skill — `csharp-mutation-testing` or `ts-mutation-testing` — covers setup and triage).
 
 For each surviving mutant:
 
@@ -157,9 +146,9 @@ Do not self-approve. The stage ends with a handoff record (`Skill("handoff")`) l
 
 Do not mark the feature complete until:
 
-- [ ] `dotnet build` exits with 0 errors
-- [ ] `dotnet test` exits with 0 failures
-- [ ] `dotnet stryker` produces no surviving mutants on new logic (or each survivor is justified in a comment)
+- [ ] The build command exits with 0 errors
+- [ ] The test command exits with 0 failures
+- [ ] The mutation run produces no surviving mutants on new logic (or each survivor is justified in a comment)
 - [ ] Every new interface and public method follows the `{ data, error }` return shape
 - [ ] No stack traces can escape to a client
 - [ ] All conventions from the checklist in Phase 2 are satisfied

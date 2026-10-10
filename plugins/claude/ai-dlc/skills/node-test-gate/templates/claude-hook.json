@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/enforce-tests.mjs",
+            "timeout": 900
+          }
+        ]
+      }
+    ]
+  }
+}

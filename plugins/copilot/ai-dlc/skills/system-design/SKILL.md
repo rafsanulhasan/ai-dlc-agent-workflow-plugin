@@ -81,7 +81,7 @@ Judge every module by how much it gives callers for what it asks them to learn. 
 4. Apply the minimum necessary abstraction — justify every layer (YAGNI/KISS).
 5. Model errors as data using discriminated unions or result monads.
 6. Dependencies that cross a real seam must be injectable and replaceable in tests (DI compatibility); classify each by category (in-process, local stand-in, remote but owned, truly external) to decide how.
-7. Provide concrete, compilable C# examples following project conventions.
+7. Provide concrete, compilable examples in the project's language (C#, TypeScript or JavaScript) following project conventions.
 
 ---
 
@@ -96,8 +96,7 @@ Judge every module by how much it gives callers for what it asks them to learn. 
 - [ ] No speculative abstractions or unused extension points (YAGNI)
 - [ ] Simplest possible design satisfying requirements (KISS)
 - [ ] All operations return `{ data, error }` — no exception-based control flow across boundaries
-- [ ] Explicit type declarations per project convention (`FileStream stream = new();`)
-- [ ] `await using` for disposable resources
+- [ ] The stack's coding rules (`dotnet-rules` or `node-rules`) are followed — for C#: explicit type declarations (`FileStream stream = new();`) and `await using` for disposable resources
 - [ ] All components unit-testable in isolation
 - [ ] Every module passes the deletion test — no pass-through layers
 - [ ] Every seam with an abstraction has at least two justified adapters (production and test)
@@ -108,7 +107,7 @@ Judge every module by how much it gives callers for what it asks them to learn. 
 
 ## Output Standards
 
-- Provide **concrete C# code examples** that compile against project conventions.
+- Provide **concrete code examples** in the project's language that compile against project conventions.
 - Show **before and after** side by side when refactoring.
 - When multiple valid design options exist, present **explicit tradeoffs** — never hide complexity.
 - Flag any deviation from project conventions and justify it explicitly.

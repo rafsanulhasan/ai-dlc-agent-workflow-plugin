@@ -53,7 +53,7 @@ Never document a class, method, or option you have not read in source. Cross-che
 - Root `README.md` — project overview, quick-start, architecture summary, links to sub-component docs
 - Component `README.md` — purpose, installation/registration, configuration options table, usage examples, public API reference
 - Use `## Installation`, `## Configuration`, `## Usage`, `## API Reference` as standard section headings
-- Code samples must use the correct language identifier (e.g., ` ```csharp `, ` ```json `)
+- Code samples must use the correct language identifier (e.g., ` ```csharp `, ` ```ts `, ` ```json `)
 - Link between README files using relative paths (e.g., `[EntityTagCaching](src/EntityTagCaching/README.md)`)
 
 ## Skills

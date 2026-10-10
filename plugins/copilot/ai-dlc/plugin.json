@@ -1,6 +1,6 @@
 {
   "name": "ai-dlc",
-  "description": "An agentic engineering team that runs the AI-DLC: 15 role-scoped agents (orchestrator, product owner, product, requirements, architecture, system design, engineering, SQA, review, docs, presentations, critique, research, DevOps, agent management), eight named lifecycles, artifact handoffs and hard quality gates. .NET is the first supported stack (init installs a dotnet test gate in .NET repos); more languages will follow.",
+  "description": "An agentic engineering team that runs the AI-DLC: 15 role-scoped agents (orchestrator, product owner, product, requirements, architecture, system design, engineering, SQA, review, docs, presentations, critique, research, DevOps, agent management), eight named lifecycles, artifact handoffs and hard quality gates. .NET and JS / TS (Node.js, TypeScript, JavaScript) are supported: init installs the stack's rules and test gate in .NET and Node.js repos; more languages will follow.",
   "version": "1.0.0",
   "author": {
     "name": "Rafsanul Hasan",
@@ -14,6 +14,9 @@
     "multi-agent",
     "dotnet",
     "csharp",
+    "nodejs",
+    "typescript",
+    "javascript",
     "tdd",
     "mutation-testing",
     "spec-driven-development"

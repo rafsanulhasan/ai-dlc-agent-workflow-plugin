@@ -2,7 +2,8 @@
 # enforce-tests.ps1 — AI-DLC .NET test gate (Claude Code "Stop" / Copilot "agentStop" hook).
 # Installed into a .NET repository by the ai-dlc `dotnet-test-gate` skill (run by /ai-dlc:init).
 # Blocks the agent from finishing while `dotnet test` fails, but only when runtime code,
-# test code, runtime configuration or build logic changed (artifact-only changes are exempt).
+# test code, runtime configuration or build logic changed (artifact-only changes are exempt, and
+# changes that touch only JS/TS files are left to the JS/TS gate when it is installed).
 #
 # Configuration (first match wins):
 #   Test target : AI_DLC_TEST_TARGET | *.Testing.slnx / *.Tests.sln* at repo root | `dotnet test` in repo root
@@ -59,6 +60,13 @@ if ($gitRoot) {
     $artifactOnly = '^(\.claude/|\.github/(agents|skills|prompts|instructions|hooks)/|docs/|AGENTS\.md$|CLAUDE\.md$)|\.md$'
     $runtime = $changed | Where-Object { $_ -notmatch $artifactOnly }
     if (-not $runtime) { exit 0 }
+
+    # JS/TS-only changes are left to the JS/TS gate, but only when it is installed.
+    $nodeGate = @('.claude/hooks/enforce-tests.mjs', '.github/hooks/ai-dlc-node-test-gate.json') |
+        Where-Object { Test-Path -LiteralPath (Join-Path $repoRoot $_) -PathType Leaf }
+    $jsOnly = '\.(ts|tsx|js|jsx|mjs|cjs|mts|cts)$|(^|/)(package\.json|package-lock\.json|npm-shrinkwrap\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|yarn\.lock|bun\.lockb?|tsconfig[^/]*\.json|jsconfig[^/]*\.json|\.npmrc|\.nvmrc|\.node-version|\.yarnrc(\.yml)?|\.eslintrc[^/]*|\.eslintignore|\.prettierrc[^/]*|\.prettierignore|\.babelrc[^/]*|\.swcrc|biome\.jsonc?)$'
+    $nonJs = $runtime | Where-Object { $_ -notmatch $jsOnly }
+    if ($nodeGate -and -not $nonJs) { exit 0 }
 }
 
 # --- choose the test target ---------------------------------------------------

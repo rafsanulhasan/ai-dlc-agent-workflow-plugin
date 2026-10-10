@@ -35,11 +35,11 @@ Identify which README.md files need to be created or updated:
 
 For each README.md in scope:
 
-1. Read the relevant source files in the target directory (`.cs` files, project files, `appsettings*.json`)
+1. Read the relevant source files in the target directory (source files, project or package manifests such as `.csproj` or `package.json`, and configuration such as `appsettings*.json` or `.env.example`)
 2. Read all ADRs in `docs/architecture/decisions/` that relate to the component
 3. Read `docs/backlog/backlog.md` for feature descriptions and acceptance criteria
 4. Read existing README.md (if updating) to identify what sections need to change
-5. Identify public API surface: public classes, interfaces, extension methods, middleware registrations, endpoint filters
+5. Identify public API surface: public classes, interfaces and functions, module exports, extension methods, middleware registrations, endpoint filters
 
 ---
 
@@ -60,11 +60,11 @@ Describe how this component fits into the application's pipeline. Reference rele
 
 ## Getting Started
 
-Minimal setup steps: package reference, DI registration, middleware registration.
+Minimal setup steps: package reference or install command, DI registration, middleware registration.
 
 ## Usage
 
-Code examples showing the primary use cases. Use fenced C# code blocks.
+Code examples showing the primary use cases, in fenced code blocks in the component's language.
 
 ## Configuration
 
@@ -77,7 +77,7 @@ Link to root CONTRIBUTING.md or describe component-specific contribution notes.
 
 Rules:
 - Use ATX headings (`#`, `##`, `###`) — never Setext
-- Use fenced code blocks with language identifiers (` ```csharp `, ` ```json `, etc.)
+- Use fenced code blocks with language identifiers (` ```csharp `, ` ```ts `, ` ```json `, etc.)
 - Use relative links for cross-references within the repo
 - Never expose internal implementation details not reflected in the public API
 - Keep README.md files in sync with actual code structure — no aspirational documentation

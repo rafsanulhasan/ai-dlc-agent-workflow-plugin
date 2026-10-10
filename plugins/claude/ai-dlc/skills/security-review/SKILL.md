@@ -23,14 +23,14 @@ List every entry point the scope touches: HTTP endpoints, middleware, message co
 
 | Area | Check |
 |---|---|
-| **AuthN / AuthZ** | Every endpoint has an explicit policy; no `[AllowAnonymous]` by accident; resource-level authorisation (IDOR) checked, not only role checks |
+| **AuthN / AuthZ** | Every endpoint has an explicit policy; no anonymous access by accident (ASP.NET Core `[AllowAnonymous]`, a Node route registered outside the auth middleware); resource-level authorisation (IDOR) checked, not only role checks |
 | **Input validation** | All external input validated (type, length, range, format) at the boundary; no trust in client-supplied IDs, prices, roles |
-| **Injection** | Parameterised queries only; no string-built SQL, LDAP, OS commands, or dynamic LINQ from input; safe deserialisation settings (no polymorphic type handling from untrusted input) |
+| **Injection** | Parameterised queries only; no string-built SQL, LDAP, OS commands, or dynamic LINQ from input; no `eval` / `new Function` / `child_process` with input; safe deserialisation settings (no polymorphic type handling from untrusted input) and, in JS / TS, no prototype pollution from merged input objects |
 | **Data exposure** | No stack traces, internal exception messages, connection strings or PII in responses or logs; DTOs do not over-expose entity fields |
 | **Secrets** | No secrets in source, config files or test fixtures; secrets from a vault / user-secrets / environment; never echoed in CI logs |
 | **Crypto & transport** | HTTPS enforced; no custom crypto; current algorithms; tokens validated (issuer, audience, lifetime, signature) |
 | **Resilience / DoS** | Request size limits, pagination caps, timeouts, rate limiting on expensive or anonymous endpoints |
-| **Dependencies** | `dotnet list package --vulnerable --include-transitive` clean, or each finding triaged |
+| **Dependencies** | .NET: `dotnet list package --vulnerable --include-transitive` clean, or each finding triaged. JS / TS: `npm audit` (or the pnpm / yarn equivalent) clean or triaged; the lockfile is committed and installs use it (`npm ci`); new packages checked for typosquatting, maintainer and install-script risk (`preinstall` / `postinstall`) |
 | **Logging & audit** | Security-relevant events logged without sensitive values; correlation ids present |
 
 Use **Jon Skeet** (`research-assistant`) for any CVE, library-version or protocol detail you are not certain of.

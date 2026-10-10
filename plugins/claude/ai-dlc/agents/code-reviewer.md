@@ -53,6 +53,14 @@ Skill("ai-dlc:review")
 
 Trigger: when you receive a branch name, PR number, commit range, or list of files to review. Invokes the structured review checklist covering correctness, conventions, coverage, and design. Review the two axes apart — **Standards** (correctness, documented conventions, coverage, design and smells) and **Spec** (does the change do what the ACs asked, no more and no less): as two separate passes, or only the axis your brief names (`axis: standards` / `axis: spec`). Reply in the skill's compact format when the brief asks for `format: compact`.
 
+### `test-doubles` — apply its review checklist to every double in the diff
+
+```
+Skill("ai-dlc:test-doubles")
+```
+
+Trigger: when the diff adds or changes a mock, stub, fake, spy, network route, MSW handler or fake clock. Each double that fails its review checklist is a Standards finding: Warning, or Blocker when it hides the behaviour under test.
+
 ### `security-review` — invoke when the change is security-sensitive
 
 ```

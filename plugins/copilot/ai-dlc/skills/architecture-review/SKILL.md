@@ -40,14 +40,14 @@ Evaluate each dimension systematically:
 4. **Extensibility** — Can the system accommodate foreseeable changes without major restructuring?
 5. **Reliability** — Are there single points of failure? Is error handling sound? Does the `{ data, error }` return shape propagate correctly through all paths?
 6. **Security Boundaries** — Are sensitive operations properly isolated? Are there information leakage risks in the API surface?
-7. **Testability** — Is the architecture designed to support unit, integration, and mutation testing (`dotnet stryker`)? Do tests exercise modules through their interfaces, or reach past them into internals?
+7. **Testability** — Is the architecture designed to support unit, integration, and mutation testing (the stack's mutation tool, e.g. Stryker.NET or StrykerJS)? Do tests exercise modules through their interfaces, or reach past them into internals?
 8. **Scalability** — Only flag when realistic load increases would degrade this design.
 
 ### Step 3 — Check Convention Compliance
 
-Verify adherence to project conventions:
-- Explicit type declarations with target-typed new expressions or collection expressions
-- Async disposal preferred over sync disposal (`await using`)
+Verify adherence to project conventions (the stack's coding rules that `dotnet-rules` or `node-rules` installed under `.claude/rules/` are authoritative):
+- C# / .NET: explicit type declarations with target-typed new expressions or collection expressions; async disposal preferred over sync disposal (`await using`)
+- JS / TS: the module, typing and async conventions in the installed `node-rules`
 - Return shape is always `{ data, error }`
 - No stack traces exposed to clients
 - Logger module used, not console output

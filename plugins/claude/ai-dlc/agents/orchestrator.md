@@ -195,15 +195,16 @@ As soon as `software-engineer` completes and returns its output, immediately spa
 
 #### Subagent 2 — SQA Engineer: Code-Driven Tests
 - **Instruction:** "You are the SQA Engineer responsible for coded test suites. The software-engineer has completed: [handoff context]. Design unit, integration, and UI test cases using `Skill("ai-dlc:design-test-cases")`. Then spawn **three parallel sub-sqa-engineers** to implement the three test suites:
-  1. Unit tests — `Skill("ai-dlc:csharp-unit-testing")` + `Skill("ai-dlc:write-tests")`
-  2. Integration tests — `Skill("ai-dlc:csharp-integration-testing")` + `Skill("ai-dlc:write-tests")`
-  3. UI/component tests — for Blazor components use `Skill("ai-dlc:bunit-blazor-testing")`; for web app E2E use `Skill("ai-dlc:tunit-playwright-ui-testing")` + `Skill("ai-dlc:write-tests")`
+  1. Unit tests — the stack's unit-testing skill (`csharp-unit-testing` or `ts-unit-testing`) + `Skill("ai-dlc:write-tests")`
+  2. Integration tests — `csharp-integration-testing` or `ts-integration-testing` + `Skill("ai-dlc:write-tests")`
+  3. UI/component tests — for Blazor components use `Skill("ai-dlc:bunit-blazor-testing")`; for web app E2E use `tunit-playwright-ui-testing` or `ts-playwright-ui-testing` + `Skill("ai-dlc:write-tests")`
   
-  After all three test suites pass `dotnet test`, run `dotnet stryker` and kill surviving mutants."
-- **Expected output:** Committed test files, `dotnet test` passing, mutation report.
+  After all three test suites pass the project's test command, run the stack's mutation-testing skill and kill surviving mutants."
+- **Expected output:** Committed test files, the test command passing, mutation report.
 - **Success criteria:** All ACs covered, no surviving mutants on new code paths.
 
 #### Subagent 3 — Documentation Writer
+
 - **Instruction:** "The software-engineer has completed: [handoff context]. Invoke `Skill("ai-dlc:write-documentation")` to update or create README.md files for all changed components."
 - **Expected output:** Updated `README.md` files.
 - **Success criteria:** Every changed public API and component has updated docs.
@@ -211,6 +212,7 @@ As soon as `software-engineer` completes and returns its output, immediately spa
 ### Handoff to Code Reviewer
 
 After all three parallel subagents complete, route to `code-reviewer` with:
+
 - Software-engineer diff/summary
 - SQA AI-driven UI test report (if applicable)
 - SQA code-driven test summary (test count, mutation report)

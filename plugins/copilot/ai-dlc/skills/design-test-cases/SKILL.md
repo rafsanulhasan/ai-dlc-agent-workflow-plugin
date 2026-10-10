@@ -14,7 +14,7 @@ You are executing the `design-test-cases` skill on behalf of **Kent Beck** (`sqa
 The calling agent will pass one of:
 - A component or feature implementation to design tests for
 - A requirements document or acceptance criteria
-- A surviving mutant report from `dotnet stryker`
+- A surviving mutant report from the stack's mutation tool (Stryker.NET for C# / .NET, StrykerJS for JS / TS)
 - Any combination of the above
 
 ## Process
@@ -27,7 +27,7 @@ Before designing anything:
 2. Invoke `Skill("manage-memory", args: "sqa-engineer")` to load prior knowledge about test patterns and recurring gaps in this codebase.
 3. Read every public interface and method on the component under test — understand what each one promises.
 4. If a requirements document or acceptance criteria were provided, read them fully. Map each AC to the method(s) that implement it.
-5. If a surviving mutant report from `dotnet stryker` was provided, read it — each mutant is a gap in the existing test suite.
+5. If a surviving mutant report was provided, read it — each mutant is a gap in the existing test suite.
 6. Locate the existing test projects with Glob. Read a sample of existing tests to understand naming conventions and fixture patterns.
 
 ---
@@ -47,14 +47,26 @@ For each public method or boundary operation, enumerate:
 
 Fill this table completely before moving on. A method with no row is untested by design — that is a decision, not an accident.
 
+For each error path, note whether the failure can be produced for real. Only one that cannot may be faked, under the rules in `test-doubles`.
+
 #### 1.2 Test type assignment
 
 For each method, decide the test type:
 
-- **Unit test**: component is isolated with injected test doubles; no I/O, no pipeline
+- **Unit test**: the component runs with its real collaborators except owned I/O ports (repositories, gateways, clock / ID providers, publishers), which are doubled; no I/O, no pipeline (`test-doubles`)
 - **Integration test**: component is exercised inside the real DI container or middleware pipeline; use only when behavior cannot be verified without the surrounding infrastructure
 
 Justify every integration test — they are slower and harder to maintain. Default to unit tests.
+
+Name the stack testing skill `write-tests` will load for each type, so the plan's fixture notes match the stack:
+
+| Test type | C# / .NET | JS / TS |
+|---|---|---|
+| Unit | `csharp-unit-testing` | `ts-unit-testing` |
+| Integration | `csharp-integration-testing` | `ts-integration-testing` |
+| Architecture (structural rules) | `csharp-architecture-testing` | `ts-architecture-testing` |
+| Coded E2E UI | `tunit-playwright-ui-testing` (Blazor components: `bunit-blazor-testing`) | `ts-playwright-ui-testing` |
+| Mutation gap analysis | `csharp-mutation-testing` | `ts-mutation-testing` |
 
 #### 1.3 Mutant gap analysis
 
@@ -92,7 +104,7 @@ Rules for specifications:
 - Every AC must be covered by at least one TC — mark it explicitly
 - Edge cases must be specified as separate TCs, not lumped into the happy path
 - `{ data, error }` assertions must appear in every TC — assert both fields, never just one
-- Do not write C# code here — this is a specification, not an implementation
+- Do not write test code here — this is a specification, not an implementation
 
 ---
 
@@ -105,7 +117,8 @@ Produce the complete **Test Plan** and present it to the user:
 
 ## Scope
 - Component under test: <ClassName / IInterfaceName>
-- File: <path/to/file.cs>
+- File: <path/to/source/file>
+- Stack: <C# / .NET | JS / TS> — stack testing skill(s): <from the table in 1.2>
 - Test project: <path/to/test/project>
 
 ## AC Traceability
@@ -122,14 +135,14 @@ Produce the complete **Test Plan** and present it to the user:
 
 ## Fixture Requirements
 
-- Test doubles needed: <list interfaces that need mocking>
-- Integration test infrastructure: <in-memory host, WebApplicationFactory, etc. — only if integration tests are planned>
-- Shared setup: <anything that belongs in a constructor or [ClassFixture]>
+- Test doubles: <each double and its `test-doubles` category — unowned boundary, owned port (unit tests only), controlled non-determinism, or unproducible failure (name the failure and why it cannot be produced for real)>
+- Integration test infrastructure: <in-process test host, containers, etc. — only if integration tests are planned>
+- Shared setup: <anything that belongs in a shared fixture or setup hook>
 
 ## Implementation Notes for write-tests
 
 - Naming convention observed in existing tests: <pattern>
-- Test double library in use: <NSubstitute / hand-rolled / etc.>
+- Test double library in use: <the framework's mocks / hand-rolled / etc.>
 - Any tricky setup the implementer should know about
 ```
 
@@ -146,7 +159,7 @@ Do not present the test plan until:
 - [ ] Every surviving mutant (if provided) maps to a new TC
 - [ ] Every TC specifies assertions for both `data` and `error` fields
 - [ ] Test type (unit vs. integration) is stated and justified for every TC
-- [ ] No C# code appears in the plan — this is specification only
+- [ ] No test code appears in the plan — this is specification only
 
 ## Output
 

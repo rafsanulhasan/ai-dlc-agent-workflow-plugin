@@ -13,6 +13,8 @@ This skill guides **Kent Beck** (`sqa-engineer`) to write coded, repeatable UI t
 
 > **When to use:** Use this skill for end-to-end tests that must be committed as `.cs` test files and run in CI via `dotnet test`. For one-time AI-driven exploratory browser tests (no `.cs` files), use `playwright-mcp-ui-testing` instead. For Blazor component-level tests, use `bunit-blazor-testing`.
 
+> **Doubles:** which requests a test may route (`Page.RouteAsync`) or which services it may replace is decided by `test-doubles`.
+
 ---
 
 ## Phase 0 — Context Load (silent)
