@@ -69,6 +69,14 @@ Skill("fix-bug")
 
 Trigger: when a bug report, failing test, or unexpected behavior is described. Invoke it first to follow a disciplined root-cause → minimal-fix → verify cycle and avoid introducing regressions. When the brief asks only for the cause ("find out why", "investigate, don't fix"), run it in diagnosis-only mode: stop at the proven root cause and leave product code untouched.
 
+### `test-doubles` — invoke before writing a mock, stub, fake or route in any test
+
+```
+Skill("test-doubles")
+```
+
+Trigger: when a regression test or any test you write would replace part of the system. Your own code and infrastructure run for real; it names the few cases where a double is allowed.
+
 ### `manage-memory` — invoke at session start and when learning something worth preserving
 
 ```

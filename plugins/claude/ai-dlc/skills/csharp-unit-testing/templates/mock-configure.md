@@ -2,8 +2,8 @@
 
 ```csharp
 // Wildcard matching — matches any argument value
-mockValidator.ValidateAsync(Any()).Returns(new ValidationResult { IsValid = true });
+mockUserRepository.GetByIdAsync(Any()).Returns((User?)null);
 
 // Exact argument matching
-mockValidator.GetUser(42).Returns(alice);
+mockUserRepository.GetByIdAsync(42).Returns(alice);
 ```

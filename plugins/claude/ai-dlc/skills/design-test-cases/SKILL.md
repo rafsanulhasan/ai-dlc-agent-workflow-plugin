@@ -47,11 +47,13 @@ For each public method or boundary operation, enumerate:
 
 Fill this table completely before moving on. A method with no row is untested by design — that is a decision, not an accident.
 
+For each error path, note whether the failure can be produced for real. Only one that cannot may be faked, under the rules in `test-doubles`.
+
 #### 1.2 Test type assignment
 
 For each method, decide the test type:
 
-- **Unit test**: component is isolated with injected test doubles; no I/O, no pipeline
+- **Unit test**: the component runs with its real collaborators except owned I/O ports (repositories, gateways, clock / ID providers, publishers), which are doubled; no I/O, no pipeline (`test-doubles`)
 - **Integration test**: component is exercised inside the real DI container or middleware pipeline; use only when behavior cannot be verified without the surrounding infrastructure
 
 Justify every integration test — they are slower and harder to maintain. Default to unit tests.
@@ -133,7 +135,7 @@ Produce the complete **Test Plan** and present it to the user:
 
 ## Fixture Requirements
 
-- Test doubles needed: <list interfaces that need mocking>
+- Test doubles: <each double and its `test-doubles` category — unowned boundary, owned port (unit tests only), controlled non-determinism, or unproducible failure (name the failure and why it cannot be produced for real)>
 - Integration test infrastructure: <in-process test host, containers, etc. — only if integration tests are planned>
 - Shared setup: <anything that belongs in a shared fixture or setup hook>
 

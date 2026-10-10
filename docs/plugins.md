@@ -13,7 +13,7 @@ This repository ships the **ai-dlc** plugin, an agentic engineering team that ru
 | Agent id | `ai-dlc:<name>` | `<name>` |
 | Skill call | `/ai-dlc:<name>` | the `<name>` skill |
 
-Both marketplaces are named `ai-dlc-agent-workflow`, and both list one plugin, `ai-dlc`, at version **1.0.0**. The two plugins carry the same 15 agents and 56 skills. Only the platform wiring differs.
+Both marketplaces are named `ai-dlc-agent-workflow`, and both list one plugin, `ai-dlc`, at version **1.0.0**. The two plugins carry the same 15 agents and 57 skills. Only the platform wiring differs.
 
 The lifecycle, agents and gates are language-agnostic. Two stacks are supported:
 
@@ -128,7 +128,7 @@ Every skill is also a slash command: `/ai-dlc:<name>` in Claude Code, or the `<n
 | Product | `product-planning`, `task-triage`, `requirement-analysis`, `spec-driven-development` | product-manager (`product-planning`, `task-triage`), requirement-analyst (`requirement-analysis`, `spec-driven-development`); product-owner reads `product-planning` and `requirement-analysis` |
 | Architecture and design | `architecture-design`, `architecture-review`, `architecture-narrative`, `write-adr`, `system-design` | software-architect (architecture skills and `write-adr`); system-engineer (`system-design` only) |
 | Engineering | `implement-feature`, `fix-bug`, `review`, `security-review` | software-engineer, code-reviewer |
-| Testing (general) | `design-test-cases`, `write-tests`, `playwright-mcp-ui-testing` | sqa-engineer |
+| Testing (general) | `design-test-cases`, `write-tests`, `test-doubles`, `playwright-mcp-ui-testing` | sqa-engineer; software-engineer and code-reviewer also use `test-doubles` |
 | Testing (C# / .NET) | `csharp-unit-testing`, `csharp-integration-testing`, `csharp-architecture-testing`, `csharp-mutation-testing`, `bunit-blazor-testing`, `tunit-playwright-ui-testing` | sqa-engineer |
 | Testing (JS / TS) | `ts-unit-testing`, `ts-integration-testing`, `ts-architecture-testing`, `ts-mutation-testing`, `ts-playwright-ui-testing` | sqa-engineer |
 | Performance testing | `k6-performance-testing`, `k6-load-testing`, `k6-stress-testing`, `k6-docker` | sqa-engineer |
@@ -172,6 +172,7 @@ The **lifecycle agents** own a stage and hand an artifact on: James Montemagno (
 | `review` | Role | Robert C. Martin (`code-reviewer`); Scott Hanselman (`orchestrator`) fans out its two axes (Standards, Spec) to two reviewers |
 | `design-test-cases` | Role | Kent Beck (`sqa-engineer`); Linus Torvalds (`brutal-critique`) reads |
 | `write-tests` | Role | Kent Beck (`sqa-engineer`) |
+| `test-doubles` | Role | Kent Beck (`sqa-engineer`) when planning and writing tests; David Fowler (`software-engineer`) for the tests it writes; Robert C. Martin (`code-reviewer`) applies its review checklist to every double in a diff |
 | `playwright-mcp-ui-testing` | Role | Kent Beck (`sqa-engineer`) |
 | `csharp-unit-testing`, `csharp-integration-testing`, `csharp-architecture-testing`, `bunit-blazor-testing`, `tunit-playwright-ui-testing` | Role (C# / .NET) | Kent Beck (`sqa-engineer`) |
 | `csharp-mutation-testing` | Role (C# / .NET) | Kent Beck (`sqa-engineer`), who alone declares the mutation gate passed |

@@ -29,6 +29,8 @@ This skill owns the loop and the quality bar; the stack's testing skill owns the
 
 The project's build, test and mutation commands are recorded in `AGENTS.md` at init; the stack's coding conventions are in the rules `dotnet-rules` or `node-rules` installed under `.claude/rules/`.
 
+Whether a test may use a double (mock, stub, fake, spy, route, fake clock), and which kind, is decided by `test-doubles`; the stack skill shows how to write it.
+
 ## Process
 
 ### Phase 0 — Context Load (silent, no user interaction)
@@ -72,7 +74,7 @@ Read [references/test-quality.md](references/test-quality.md) before the first c
 - Tests observe behaviour through the **public seam** the plan names — the interface a caller uses — never private members or internal state. A test should survive a refactor that does not change behaviour.
 - Verify through the interface, not a side channel: create a user and then fetch it through the API, rather than querying the table directly.
 - Expected values come from an **independent source** — a literal, a worked example, the AC. Never recompute the expected value the way the code does; that test passes by construction.
-- Mock at **system boundaries** (external services, clock, randomness, sometimes the database or file system), not collaborators you own. Assert on outcomes; assert on calls only when the call *is* the behaviour (the email was sent, the message was published).
+- Use a double only where `test-doubles` allows one, and classify it before you write it.
 - If a TC can only be checked by reaching inside the component, do not test the internals. Report the missing seam to the calling agent so **Zoran Horvat** (`system-engineer`) can address testability.
 
 #### Structure
@@ -90,8 +92,7 @@ Names that read as a specification: the unit, the state under test and the expec
 - [ ] Use the framework's parameterised tests for the edge cases listed in the plan
 - [ ] Dispose or tear down every fixture that holds a resource (async disposal where the stack has it)
 - [ ] No sleeps or arbitrary delays — use cancellation, fake timers or awaited conditions
-- [ ] Mock only the dependencies the TC exercises — minimal mock configuration
-- [ ] Never mock the system under test itself
+- [ ] Every double passes the `test-doubles` review checklist, and configures only what the TC exercises
 - [ ] No shared mutable state between test cases
 - [ ] The stack's coding conventions apply to test code too (C# / .NET: explicit types and `await using`, from `dotnet-rules`; JS / TS: the conventions `node-rules` installs)
 

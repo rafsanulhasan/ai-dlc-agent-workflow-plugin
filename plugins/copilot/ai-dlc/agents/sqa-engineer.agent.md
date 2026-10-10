@@ -61,6 +61,14 @@ Skill("write-tests")
 
 Trigger: once the test plan from `design-test-cases` is confirmed. Implements the planned test cases as compilable, runnable tests in the project's test framework following project conventions, loading the stack's testing skills below.
 
+### `test-doubles` — invoke before planning or writing any mock, stub, fake, spy, route or fake clock
+
+```
+Skill("test-doubles")
+```
+
+Trigger: when a test plan lists doubles, before a test replaces any part of the system, and whenever you ask "can I mock this?". It decides whether a double is allowed and which kind; the stack testing skills below show only the mechanics.
+
 ### `csharp-unit-testing` — invoke when writing C# unit tests
 
 ```
@@ -75,7 +83,7 @@ Trigger: whenever writing C# unit tests. This skill provides comprehensive guida
 Skill("csharp-integration-testing")
 ```
 
-Trigger: whenever writing C# integration tests. This skill provides comprehensive guidance on TUnit's `TestWebApplicationFactory<TEntryPoint>`, Testcontainers (PostgreSQL, Redis, Kafka, etc.), `AspireFixture<TAppHost>`, Bogus, and TUnit.Assertions.Should — with no mocks, real infrastructure, `SharedType.PerTestSession` containers, and per-test state isolation via `GetIsolatedName()` / `GetIsolatedPrefix()`. Use this whenever a test exercises the HTTP pipeline, the database, message brokers, or any other real dependency. If a test would still pass with the database swapped for an in-memory dictionary, use `csharp-unit-testing` instead.
+Trigger: whenever writing C# integration tests. This skill provides comprehensive guidance on TUnit's `TestWebApplicationFactory<TEntryPoint>`, Testcontainers (PostgreSQL, Redis, Kafka, etc.), `AspireFixture<TAppHost>`, Bogus, and TUnit.Assertions.Should — with real infrastructure, no mocks of your own code, `SharedType.PerTestSession` containers, and per-test state isolation via `GetIsolatedName()` / `GetIsolatedPrefix()`. Use this whenever a test exercises the HTTP pipeline, the database, message brokers, or any other real dependency. If a test would still pass with the database swapped for an in-memory dictionary, use `csharp-unit-testing` instead.
 
 ### `csharp-architecture-testing` — invoke when writing C# architecture tests
 

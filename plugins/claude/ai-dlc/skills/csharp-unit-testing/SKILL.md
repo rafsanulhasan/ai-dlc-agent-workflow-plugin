@@ -35,7 +35,7 @@ TUnit is the project's testing framework. Use it for:
 
 ### Mocking Framework: TUnit.Mocks
 
-TUnit.Mocks handles mock creation and behavior configuration. Always use it when a unit test needs to isolate the system under test (SUT) from its dependencies.
+TUnit.Mocks isolates the system under test (SUT) from its owned I/O ports — repositories, gateways, clock and ID providers, message publishers — and from boundaries you don't own. Plain in-process collaborators (pure logic, value objects, validators, domain services without I/O) run for real. The policy is `test-doubles`.
 
 **Pattern 1: Create a mock**
 
@@ -169,7 +169,7 @@ Here is a complete example testing a middleware component using all conventions 
 When writing C# unit tests for .NET projects:
 
 1. **Use TUnit** — it's the project's test framework
-2. **Mock with TUnit.Mocks** — fluent, intuitive, and integrated with TUnit
+2. **Mock owned I/O ports with TUnit.Mocks** — never the SUT or plain logic (`test-doubles`)
 3. **Generate test data with Bogus** — realistic, varied, maintainable
 4. **Assert with TUnit.Assertions.Should** — readable, fluent, powerful
 5. **Collect failures with Assert.Multiple()** — see all problems at once

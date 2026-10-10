@@ -93,7 +93,7 @@ _ctx.RenderComponent<MyComponent>(parameters => parameters
 
 ## Phase 4 — Service Mocking and DI
 
-Register services in the bUnit TestContext's `Services` collection before rendering:
+Register services in the bUnit TestContext's `Services` collection before rendering. Which services may be mocked or stubbed (owned I/O ports, unowned boundaries) is decided by `test-doubles`.
 
 ```csharp
 // Register a real service

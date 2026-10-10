@@ -30,7 +30,7 @@ test "checkout with a valid cart is confirmed"
     assert result.status == Confirmed
 ```
 
-Red flags: mocks of classes you own, tests of private methods, assertions on call counts or call order, names that describe the mechanism.
+Red flags: doubles that `test-doubles` forbids, tests of private methods, assertions on call counts or call order, names that describe the mechanism.
 
 ### Side-channel verification
 
@@ -68,15 +68,9 @@ Expected values must come from somewhere the code cannot influence: a hand-worke
 
 Writing every test up front and then implementing (or running) them all at once. The tests end up checking imagined behaviour and the shape of the code. Work one test case at a time and let each cycle inform the next.
 
-## Where to mock
+## Test doubles
 
-Mock or fake at **system boundaries** only:
-
-- external services (payment, email, third-party APIs);
-- the clock and random number generators;
-- the database or file system — *sometimes*; prefer a real test instance where the plan calls for integration tests.
-
-Do not mock code you own or control. When a unit-level TC isolates one component behind an injected abstraction, a test double for that abstraction is fine — but assert on the component's outcome, and assert on the interaction only when the interaction is the behaviour the TC specifies.
+Whether a test may use a mock, stub, fake, spy or route, and which kind, is decided by the `test-doubles` skill. Classify every double with it before writing the test.
 
 ## Testable boundaries (feedback for the engineer)
 

@@ -115,6 +115,7 @@ The stack's coding rules (`dotnet-rules` or `node-rules`, under `.claude/rules/`
 2. Run the project's build command (recorded in `AGENTS.md` at init; for example `dotnet build` or `npm run build`) to confirm the code compiles.
 3. Run the project's test command (for example `dotnet test` or `npm test`) to confirm the test suite passes.
 4. Identify any new logic paths not covered by the existing test suite and flag them as **Warning** items for **Kent Beck** (`sqa-engineer`).
+5. For every double the diff adds, changes or newly reaches (mock, stub, fake, spy, route, MSW handler, fake clock), apply the `test-doubles` review checklist. Each double that fails it is a Standards finding at the severity that checklist sets.
 
 ---
 
