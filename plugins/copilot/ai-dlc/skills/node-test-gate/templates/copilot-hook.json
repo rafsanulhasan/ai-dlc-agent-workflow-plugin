@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "hooks": {
+    "agentStop": [
+      {
+        "type": "command",
+        "bash": "node .claude/hooks/enforce-tests.mjs",
+        "powershell": "node .claude/hooks/enforce-tests.mjs",
+        "timeoutSec": 900
+      }
+    ]
+  }
+}

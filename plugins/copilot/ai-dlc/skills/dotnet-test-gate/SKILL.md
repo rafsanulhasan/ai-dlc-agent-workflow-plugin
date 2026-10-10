@@ -20,7 +20,7 @@ If the repository has no .NET project file, stop and say so — do not install t
 `enforce-tests.ps1` runs when the agent stops (Claude `Stop`, Copilot `agentStop`). It runs `dotnet test` and returns `{"decision":"block","reason":…}` with the last 40 lines of output while tests fail. It stays silent when:
 
 - the repo has no `.sln`/`.slnx`/`.csproj`, or `dotnet` is not on PATH;
-- nothing changed, or only artifacts changed (`.claude/`, `.github/agents|skills|prompts|instructions|hooks/`, `docs/`, `AGENTS.md`, `CLAUDE.md`, `*.md`);
+- nothing changed, or only artifacts changed (`.claude/`, `.github/agents|skills|prompts|instructions|hooks/`, `docs/`, `AGENTS.md`, `CLAUDE.md`, `*.md`), or only JS/TS files changed (`*.ts`, `*.tsx`, `*.js`, `*.mjs`, `*.cjs` …, `package.json`, lockfiles, `tsconfig*.json`, JS tooling configs such as `.eslintrc*` or `.prettierrc*`), when the JS/TS gate is installed (`.claude/hooks/enforce-tests.mjs` or `.github/hooks/ai-dlc-node-test-gate.json` exists under the repo root) — without it, JS/TS-only changes still run `dotnet test`;
 - the hook already blocked once in this stop cycle (`stop_hook_active` loop guard);
 - `AI_DLC_ENFORCE_TESTS` is `false`, `0`, `no` or `off`.
 
