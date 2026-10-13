@@ -30,15 +30,16 @@ Use these wherever the persona below says "the project's build and test commands
 - **AI-DLC**, the full lifecycle (idea → G1 → G2 → G3 → G4 → release), is the default for feature work; enter at the earliest missing artifact.
 - Eight named lifecycles, its segments and focused entry points: **PDLC** product design · **ASDLC** architecture & design · **STBLC** story & task breakdown · **FDLC** feature development · **BFLC** bug fixing · **RLC** refactoring · **TLC** testing · **CRLC** code review.
 - **Every handoff is an artifact.** Stage boundaries are crossed with a handoff record in `docs/handoffs/`; verify it before the next agent starts.
+- **Runs survive a lost session.** Each work item keeps its run state in `docs/handoffs/<work-item>/run.md` (stages and their status, gate decisions, open clarifications, the next action), written before every spawn and after every return or gate. A new session offers to resume unfinished runs from there.
 - **The human is the decision maker.** Humans set intent, approve gates G1 (stories/ACs), G2 (frozen spec), G3 (task plan) and G4 (review report), and resolve ambiguity. Agents never guess intent.
-- **The team's workflow is in `.ai-dlc/workflow.json`** — lifecycles and stages, who hands off to whom, gates and their approvers, the clarify matrix and routing. It overrides the defaults above wherever they differ. `node .ai-dlc/workflow.mjs show` prints it (`--mermaid` for diagrams) and `validate` checks it; change it with `/ai-dlc:workflow edit <change>` (`agent-manager`).
+- **The team's workflow is in `.ai-dlc/workflow.json`** — lifecycles and stages, who hands off to whom, gates and their approvers, the clarify matrix and routing. It overrides the defaults above wherever they differ. `node .ai-dlc/workflow.mjs show` prints it (`--mermaid` for diagrams) and `validate` checks it against `.ai-dlc/catalog.json` (the installed plugin's agents and skills) and the project's own; a Stop hook blocks finishing while it is invalid. Change it with `/ai-dlc:workflow edit <change>` (`agent-manager`).
 
 ### Who owns what
 
 | Request touches | Goes to |
 |---|---|
-| Agent definitions, skills, hooks, rules/instructions, commands/prompts, agent memory | `agent-manager` — the only agent allowed to change them |
-| External knowledge (library/API/SDK behaviour, versions, standards) or wide codebase exploration | `research-assistant` |
+| Agent definitions, skills, hooks, rules/instructions, commands/prompts, agent memory, the workflow file | `agent-manager` — the only agent allowed to change them; `brutal-critique` critiques every change (PASS / REVISE) before it is done |
+| External knowledge (library/API/SDK behaviour, versions, standards), and any exploration of the code or docs — including what the repository does and what a request touches | `research-assistant` — the orchestrator never explores; it only verifies claimed artifacts and runs gate commands |
 | Product scope, priority, story acceptance, release go / no-go | `product-owner` (directs `requirement-analyst` and `product-manager`) |
 | Work breakdown, backlog records, milestones, release-gate checklist | `product-manager` |
 | Any document at a gate | `documentation-writer` writes, `brutal-critique` critiques in parallel |
@@ -54,13 +55,13 @@ Use these wherever the persona below says "the project's build and test commands
 | ADRs | `docs/architecture/decisions/` |
 | Architecture narratives | `docs/architecture/narratives/<feature-slug>.md` |
 | Task plans | `docs/plans/<feature-slug>.tasks.md` |
-| Handoff records | `docs/handoffs/<work-item>/` |
+| Handoff records and run state | `docs/handoffs/<work-item>/` (`run.md` is the run state) |
 | Team workflow | `.ai-dlc/workflow.json` (its `artifacts` section overrides the paths above) |
 
 ### Quality gates
 
 - After any change to runtime code, test code, runtime configuration or build logic: `{{TEST_CMD}}` must pass (enforced by the test gate hook that `init` installs for .NET and JavaScript / TypeScript), then `{{MUTATION_CMD}}` is run by `sqa-engineer`. Mutation break threshold: **{{MUTATION_BREAK}}%**.
-- Artifact-only changes (planning, agents, skills, hooks, prompts/commands, rules/instructions) may skip both gates.
+- Artifact-only changes (planning, agents, skills, hooks, prompts/commands, rules/instructions, the workflow file) may skip both gates; a workflow-file change must pass `node .ai-dlc/workflow.mjs validate` (the workflow gate enforces it).
 - `code-reviewer` approves only at **zero Blockers**.
 
 ### Memory protocol (all agents)

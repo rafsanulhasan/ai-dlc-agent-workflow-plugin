@@ -21,15 +21,16 @@ This skill is the single source of truth for how any agent in the AI-DLC multi-a
 - A simple factual question already answered by the current agent's own context.
 - A follow-up inside an already-triaged workflow where the receiving agent is already running.
 - A task that is fully within the current agent's own responsibilities — do the work, do not subcontract it.
-- Trivial one-shot lookups already resolved inline by **Scott Hanselman** (`orchestrator`) during classification.
 
 ## Delegate a lookup, or do it inline?
 
 A spawned agent's reads stay in its own context; only its final report enters yours. Delegate when the reads would cost you more context than the compressed answer, and work inline when you must read the code yourself anyway to act on it.
 
+**The orchestrator is the exception.** **Scott Hanselman** (`orchestrator`) never explores or looks anything up inline, however small: every question about the code, the docs or the repository goes to `research-assistant`, and the table below does not apply to it. Its own reads are verification only — opening the artifacts and handoff records an agent claims, reading run state and the workflow file, and running the gate commands. Every other agent keeps the guidance below.
+
 | Situation | Do |
 |---|---|
-| You already know the file or symbol, or one `Grep` / `Read` answers it | Inline |
+| You already know the file or symbol, or one `Grep` / `Read` answers it (never the orchestrator) | Inline |
 | "Where is X defined", "what calls Y", "list every use of Z", cold-start orientation in an unfamiliar area, or a direct search already failed | Spawn **Jon Skeet** (`research-assistant`) with a *locate* brief |
 | The locate question has several angles (definitions, callers, tests) | 2–3 `research-assistant` spawns in one message, one angle each; merge their lists yourself |
 | You want explanation, options or design commentary, not locations | `research-assistant` with a prose deliverable, or **Mark Richards** (`software-architect`) / **Zoran Horvat** (`system-engineer`) for design |
@@ -79,8 +80,8 @@ A spawned agent's reads stay in its own context; only its final report enters yo
 ## Routing rules every caller must respect
 
 - **Every human request → `orchestrator` first.** The orchestrator gets intent and classifies the request; for non-trivial / multi-step / ambiguous requests it gets a work breakdown from **James Montemagno** (`product-manager`) (work items, dependencies, priorities, waves), then routes each item (lifecycle, mode, chain) into a Routing Plan, confirms it with the human and executes it. Skipping classification and breakdown to save time costs more than it saves.
-- **Any agent / skill / command / prompt / rules / instructions / hook file lifecycle work → `agent-manager`.** No other agent edits files under `.claude/agents/`, `.github/agents/`, `.github/skills/`, `.claude/skills/`, `.claude/commands/`, `.github/prompts/`, `.claude/rules/`, `.github/instructions/`, or any hook configuration. `agent-manager` is the single authority.
-- **External knowledge (library / API / SDK docs, framework conventions, version-specific behavior, current best practices) and non-trivial cross-cutting codebase exploration → `research-assistant`.** Prefer **context7** over web search for library docs. Never run ad-hoc `WebSearch` / `WebFetch` / library-docs tools yourself when a `research-assistant` call would do the job.
+- **Any agent / skill / command / prompt / rules / instructions / hook file lifecycle work → `agent-manager`.** No other agent edits files under `.claude/agents/`, `.github/agents/`, `.github/skills/`, `.claude/skills/`, `.claude/commands/`, `.github/prompts/`, `.claude/rules/`, `.github/instructions/`, or any hook configuration. `agent-manager` is the single authority. The orchestrator has **Linus Torvalds** (`brutal-critique`) critique every change it makes (the `AAW` lifecycle: PASS / REVISE, back to `agent-manager` on REVISE, at most 3 rounds), so `agent-manager` ends its report with the changed paths and the intent; the orchestrator re-runs the checks and gives the critic their output. A change to `agent-manager`'s own definition or a skill it owns is briefed to a freshly spawned `agent-manager`.
+- **External knowledge (library / API / SDK docs, framework conventions, version-specific behavior, current best practices) and non-trivial cross-cutting codebase exploration → `research-assistant`.** For the orchestrator, *every* lookup in the code or docs goes there, however small; other agents may still do a one-shot `Grep` / `Read` inline. Prefer **context7** over web search for library docs. Never run ad-hoc `WebSearch` / `WebFetch` / library-docs tools yourself when a `research-assistant` call would do the job.
 - **Product scope, priority, acceptance of stories, release go / no-go → James Montemagno (`product-owner`)**, which directs **James Montemagno** (`requirement-analyst`) and `product-manager`.
 - **Backlog management, milestone planning, and the release-gate checklist → `product-manager`.** The `orchestrator` gets the PM's work breakdown before routing any non-trivial batch; the PM's priorities and waves feed the routing decision, and Feature/TechDebt scope or priority decisions go to `product-owner`.
 - **SDLC forward chain** — implementation work flows through this order, with each role producing an explicit artifact for the next:
@@ -118,7 +119,7 @@ Required elements in every brief:
 
 Anti-patterns to avoid:
 
-- **Do not delegate synthesis.** "Look into X and fix whatever you find" outsources the *understanding* — that is your job. Do the diagnostic work first, then hand off a scoped task with a clear acceptance criterion.
+- **Do not delegate synthesis to the implementer.** "Look into X and fix whatever you find" hands the *understanding* to the agent that should only make the change. Get the diagnosis first — yourself, or for the orchestrator from `research-assistant` (or `fix-bug`'s diagnosis phase) — then hand off a scoped task with a clear acceptance criterion.
 - **Do not assume shared context.** If the spawned agent needs a file path, a line number, or a prior finding, include it explicitly. A cold agent re-reading the entire repo is wasted tokens.
 - **Do not skip the next-hop hint.** Without it, the receiver cannot shape its output for the next stage.
 

@@ -414,6 +414,33 @@
         }
       ]
     },
+    "AAW": {
+      "name": "Agent Artifact Work",
+      "kind": "focused",
+      "pickWhen": "The request changes agents, skills, hooks, rules / instructions, commands / prompts, agent memory or the workflow file (agent-artifact work)",
+      "exitArtifact": "The changed agent artifacts, their platform checks green, and a PASS verdict from brutal-critique",
+      "note": "No work breakdown and no handoff records; the run state records each round. A change to agent-manager's own definition, or to a skill it owns, is made by a freshly spawned agent-manager, never by a running instance.",
+      "stages": [
+        {
+          "id": "change",
+          "agent": "agent-manager",
+          "produces": ["The changed paths", "The intent of the change", "The checks run and their results"],
+          "after": [],
+          "note": "Uses the management skill for each artifact kind; ends with the twin or build checks (harness-sync --check, or the plugin build --check)."
+        },
+        {
+          "id": "critique",
+          "agent": "brutal-critique",
+          "produces": ["Critique of the change set with a PASS / REVISE verdict"],
+          "loop": {
+            "to": "change",
+            "on": "A REVISE verdict: the critique goes back to agent-manager with the same changed paths and intent",
+            "maxRounds": 3
+          },
+          "note": "Reviews the changed paths against the intent, using the skill-management writing guide; read-only."
+        }
+      ]
+    },
     "Release": {
       "name": "Release",
       "kind": "segment",
@@ -451,7 +478,8 @@
       "TechDebt": "RLC",
       "Testing": "TLC",
       "Review": "CRLC",
-      "Release": "Release"
+      "Release": "Release",
+      "Agent Artifact": "AAW"
     },
     "handOff": {
       "agent-artifact work": "agent-manager",

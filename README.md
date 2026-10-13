@@ -17,7 +17,7 @@ Full reference for both plugins (agents, skills, lifecycles, hooks, the build an
 
 | Agent | Role | Model |
 |---|---|---|
-| `orchestrator` | Receives every human request first; classifies and routes it (lifecycle, mode, agent chain), drives the flow, verifies artifacts, runs human gates | opus |
+| `orchestrator` | Receives every human request first; classifies and routes it (lifecycle, mode, agent chain), drives the flow, verifies artifacts, runs human gates. Delegates everything else, understanding the code and docs included (to `research-assistant`) | opus |
 | `product-owner` | Owns Plan and Release — product brief, scope and priority, acceptance, release go / no-go | opus |
 | `requirement-analyst` | Specialist under the product owner — elicitation, stories, numbered ACs, frozen specs | opus |
 | `product-manager` | Specialist under the product owner — work breakdown (work items, dependencies, priorities, waves), backlog, release-gate checklist | opus |
@@ -31,7 +31,7 @@ Full reference for both plugins (agents, skills, lifecycles, hooks, the build an
 | `brutal-critique` | Adversarial read-only critique of every document | sonnet |
 | `research-assistant` | All external research; owns the knowledge base | opus |
 | `devops-engineer` | CI/CD, NuGet and npm publishing, SonarQube PR gates, releases | sonnet |
-| `agent-manager` | The only agent that changes agents, skills, hooks or rules | opus |
+| `agent-manager` | The only agent that changes agents, skills, hooks, rules or the workflow file; `brutal-critique` critiques every change | opus |
 
 Agents use the `opus` and `sonnet` aliases, and nothing pins `haiku`, so every role follows the newest model in its family (Opus 5.5 / Sonnet 5.5 / Haiku 5.5 on the Anthropic API today) without edits. To freeze a version, set `ANTHROPIC_DEFAULT_OPUS_MODEL` / `_SONNET_` / `_HAIKU_` in `.claude/settings.json`.
 
@@ -54,6 +54,8 @@ Agents use the `opus` and `sonnet` aliases, and nothing pins `haiku`, so every r
 | **CRLC** Code Review | Change driven to merge-ready |
 
 Human gates: **G1** stories/ACs · **G2** frozen spec · **G3** task plan · **G4** review report · release go / no-go.
+
+Changes to agents, skills, hooks, rules, commands and the workflow file run **AAW**: `agent-manager` makes the change, `brutal-critique` returns PASS or REVISE, and REVISE goes back to `agent-manager` (at most three rounds). Every work item keeps a committed run state, `docs/handoffs/<work-item>/run.md`, written before each spawn and after each return or gate, so a new session can resume a run after a crash or a lost context.
 
 ## Install
 
@@ -82,7 +84,7 @@ VS Code's agent-plugin support reads the same Copilot/Claude plugin formats; add
 
 ## Use it in a project
 
-1. **Bootstrap once:** `/ai-dlc:init` (Claude) or the `init` skill (Copilot). It scaffolds `AGENTS.md` — the orchestrator persona for your project, with all its routing rules and skills, plus your build/test commands, gates and artifact paths — `CLAUDE.md` (an `@AGENTS.md` import plus Claude Code specifics), `.github/copilot-instructions.md` (the Copilot specifics), recommended `.claude/settings.json` permissions and the `docs/` folders the lifecycles write to, plus the worktree and scratch roots (via `workspace-folders`; `/ai-dlc:workspace-folders` changes them later). It also installs `.ai-dlc/workflow.json`, the team's workflow — stages, who hands off to whom, gates and their approvers, the clarify matrix and routing — which the orchestrator follows instead of the plugin default; `/ai-dlc:workflow show` prints it with diagrams and `/ai-dlc:workflow edit <change>` customises it. In a .NET repository it also installs the C# coding-style, GlobalUsings and testing rules (`.claude/rules/*` with `.github/instructions/*` twins, via `dotnet-rules`), the `dotnet test` gate hook (via `dotnet-test-gate`) and `stryker-config.json`. In a JS / TS repository (a `package.json`) it installs the `node-coding-style`, `node-modules`, `node-async-errors` and `node-testing` rules (via `node-rules`) and the test gate hook (via `node-test-gate`). It shows a diff before touching any existing file, and merges into an existing `AGENTS.md`, `CLAUDE.md` or `.github/copilot-instructions.md` instead of replacing it: its content sits in `<!-- ai-dlc:begin … -->` blocks and your own lines stay as they are.
+1. **Bootstrap once:** `/ai-dlc:init` (Claude) or the `init` skill (Copilot). It scaffolds `AGENTS.md` — the orchestrator persona for your project, with all its routing rules and skills, plus your build/test commands, gates and artifact paths — `CLAUDE.md` (an `@AGENTS.md` import plus Claude Code specifics), `.github/copilot-instructions.md` (the Copilot specifics), recommended `.claude/settings.json` permissions and the `docs/` folders the lifecycles write to, plus the worktree and scratch roots (via `workspace-folders`; `/ai-dlc:workspace-folders` changes them later). It also installs `.ai-dlc/workflow.json`, the team's workflow — stages, who hands off to whom, gates and their approvers, the clarify matrix and routing — which the orchestrator follows instead of the plugin default, with `.ai-dlc/catalog.json` (the installed plugin's agents and skills, which `validate` checks every stage against) and a workflow gate hook that blocks finishing while the file is invalid; `/ai-dlc:workflow show` prints it with diagrams and `/ai-dlc:workflow edit <change>` customises it. In a .NET repository it also installs the C# coding-style, GlobalUsings and testing rules (`.claude/rules/*` with `.github/instructions/*` twins, via `dotnet-rules`), the `dotnet test` gate hook (via `dotnet-test-gate`) and `stryker-config.json`. In a JS / TS repository (a `package.json`) it installs the `node-coding-style`, `node-modules`, `node-async-errors` and `node-testing` rules (via `node-rules`) and the test gate hook (via `node-test-gate`). It shows a diff before touching any existing file, and merges into an existing `AGENTS.md`, `CLAUDE.md` or `.github/copilot-instructions.md` instead of replacing it: its content sits in `<!-- ai-dlc:begin … -->` blocks and your own lines stay as they are.
 2. **Talk to the orchestrator.** `init` sets `"agent": "ai-dlc:orchestrator"` in the repo's `.claude/settings.json`, so every request reaches it first (one-off: `claude --agent ai-dlc:orchestrator`). On Copilot, select the `orchestrator` custom agent.
 3. The orchestrator classifies your request, gets a work breakdown from `product-manager`, routes each item to a lifecycle and agent chain, confirms the plan with you, then runs the lifecycle and stops at each human gate.
 
@@ -99,7 +101,7 @@ If a project still has its own copies of these agents in `.claude/agents` / `.gi
 
 ## The test gates
 
-The plugin ships no hooks. `init` installs the gate for each stack it detects; a repository with both stacks gets both.
+The plugin ships no hooks. `init` installs the gate for each stack it detects; a repository with both stacks gets both. In every repository it also installs the **workflow gate** (`.claude/hooks/check-workflow.mjs`, a `Stop` hook and `.github/hooks/ai-dlc-workflow-gate.json`), which blocks finishing — once per stop cycle, like the test gates — while `.ai-dlc/` has uncommitted changes that fail `node .ai-dlc/workflow.mjs validate`; `AI_DLC_WORKFLOW_GATE=false` pauses it.
 
 ### .NET
 

@@ -1,6 +1,6 @@
 # Edit recipes
 
-How common requests map to `.ai-dlc/workflow.json`. Keys and their meaning are in `workflow.schema.json`; this file covers the moves that touch several keys at once. Agent ids are bare (`software-engineer`, never `ai-dlc:software-engineer`).
+How common requests map to `.ai-dlc/workflow.json`. Changes are made by **Boris Cherny** (`agent-manager`) and critiqued by **Linus Torvalds** (`brutal-critique`); stages are owned by agents such as **Zoran Horvat** (`system-engineer`), **Robert C. Martin** (`code-reviewer`) and **David Fowler** (`software-engineer`). Keys and their meaning are in `workflow.schema.json`; this file covers the moves that touch several keys at once. Agent ids are bare (`software-engineer`, never `ai-dlc:software-engineer`).
 
 | Request | Edit |
 |---|---|
@@ -10,7 +10,7 @@ How common requests map to `.ai-dlc/workflow.json`. Keys and their meaning are i
 | "Skip <gate> / no sign-off at <gate>" | `gates.<id>.approver: "none"`. The handoff record is still written. For one run only, it is a request instruction, not a file edit. |
 | "<gate> approved by the orchestrator" | `gates.<id>.approver: "orchestrator"`. |
 | "Add a gate after <stage>" | Add `gates.<new id>` with `name`, `approves`, `approver`; set `gate` on the stage. |
-| "Skip brutal-critique" / "no critique" | `documents.critic: null`. To drop the agent everywhere, also add it to `agents.disabled` and remove its clarify row. |
+| "Skip brutal-critique" / "no critique" | `documents.critic: null` skips the critique of documents only. `brutal-critique` cannot be disabled, and the `critique` stage of `AAW` (the lifecycle `routing.byType["Agent Artifact"]` names) stays: every agent-artifact change is critiqued, and `validate` fails without that stage. Refuse the rest as a fixed guardrail. |
 | "Run without <agent>" | Add it to `agents.disabled`; then reassign or remove every stage, `routing.handOff` entry, clarify row and clarify target that names it. `validate` lists each one. |
 | "Only run <stage> when …" | `when: "<condition in plain words>"` on the stage. |
 | "Loop back to <stage> on …, at most N times" | `loop: { "to": "<stage>", "on": "…", "maxRounds": N }` on the stage that finds the problem. |
@@ -25,4 +25,5 @@ How common requests map to `.ai-dlc/workflow.json`. Keys and their meaning are i
 
 - Every stage that followed a moved or removed stage still has a valid `after` (no dangling ids, no cycles).
 - A lifecycle that still builds code keeps a `code-reviewer` stage, or the developer accepted the warning.
+- Every `skills` entry names a plugin skill from `.ai-dlc/catalog.json` or a project skill (`.claude/skills/<name>/`, `.github/skills/<name>/`); a skill the project still needs is created first, through `skill-management`.
 - A removed stage's `gate` moved to the stage that now ends that part of the flow, unless the developer dropped the gate.

@@ -1,6 +1,6 @@
 ---
 name: handoff
-description: "Records and verifies the artifact that crosses an AI-DLC stage boundary. Use whenever one agent's stage ends and another's begins (spec → design, design → build, build → test, test → review, review → release) so the receiving agent starts from a verified, self-contained handoff file instead of chat history. Also use mid-stage, when a session must pass unfinished work to a fresh agent or session (context running out, pausing, switching machines), to write a compact session handoff. Also use for verification-only work (\"check it's done\", \"run the gates\", last-mile proof before a gate), which proves the acceptance criteria without expanding scope and then stops."
+description: "Records and verifies the artifact that crosses an AI-DLC stage boundary. Use whenever one agent's stage ends and another's begins (spec → design, design → build, build → test, test → review, review → release) so the receiving agent starts from a verified, self-contained handoff file instead of chat history. Also keeps each work item's run state (docs/handoffs/<work-item>/run.md: request, intent, Routing Plan, stage status, gate decisions, open clarifications, next action), written before every spawn and after every return or gate, so a new session can resume a run after a crash or lost context. Also use mid-stage, when a session must pass unfinished work to a fresh agent or session (context running out, pausing, switching machines), to write a compact session handoff. Also use for verification-only work (\"check it's done\", \"run the gates\", last-mile proof before a gate), which proves the acceptance criteria without expanding scope and then stops."
 ---
 
 # Handoff
@@ -14,6 +14,7 @@ Every AI-DLC stage boundary is crossed with a handoff record. The record is what
 - A stage in any lifecycle from the `ai-dlc` skill finishes and the next agent is about to be spawned.
 - A loop returns work to an earlier stage (review Blockers back to the engineer, spec change back to ASDLC).
 - A human gate (G1–G4) needs a single document to approve.
+- The orchestrator is about to spawn a stage agent, or one has returned, or a gate was decided: update the work item's run state (see *Run state* below).
 - A session has to stop **mid-stage** and a fresh agent or session will continue the same work: write a session handoff instead (see *Session handoff* below).
 - The task is **verification only** — prove that existing work meets its acceptance criteria before a boundary or gate: follow *Verification-only work* below.
 
@@ -21,7 +22,7 @@ Every AI-DLC stage boundary is crossed with a handoff record. The record is what
 
 1. **Collect the evidence.** List every artifact the stage produced, by path. Run the cheap checks the stage claims (for build stages: the project's build and test commands recorded in `AGENTS.md`, e.g. `dotnet build` / `dotnet test` or `npm run build` / `npm test`; for test stages: the mutation report path). Record the actual results, not the agent's summary.
 2. **Write the record** at `docs/handoffs/<work-item-id>/<NN>-<from>-to-<to>.md` (the folder is `artifacts.handoffs` of the effective workflow when `.ai-dlc/workflow.json` sets it) (`NN` is the next sequence number in that folder) using the template below.
-3. **Verify.** The orchestrator (or the sending agent when no orchestrator is running) opens each listed artifact and confirms it exists and matches its claim. Set `Verification` to `passed` or `failed` with the reason.
+3. **Verify.** The orchestrator (or, when no orchestrator is running, the session's main agent — for example `agent-manager` run directly — or else the sending agent) opens each listed artifact and confirms it exists and matches its claim. Set `Verification` to `passed` or `failed` with the reason.
 4. **Gate.** If the stage ends at a gate, follow the gate's `approver` in the effective workflow (default: `human` for every gate): `human` — stop and ask the human to approve the record; `orchestrator` — the orchestrator approves it and writes `approved by orchestrator` under *Gate evidence*; `none` — continue. Otherwise continue.
 5. **Brief the receiver.** Spawn the next agent with `Skill("agent-invocation")` and pass the handoff file path as the first item of *Required context*.
 
@@ -90,7 +91,72 @@ date: YYYY-MM-DD
 - Name the skills the receiver should load under *Suggested skills*, so a cold-started agent does not have to rediscover which workflow applies.
 - One record per boundary crossing; loops create new records rather than editing old ones, so the history of a work item stays auditable.
 - Every clarification the stage asked, and its answer, appears under *Clarifications*; write `none` when there were none.
-- Artifact-only lifecycles (agent/skill changes) do not need handoff records.
+- Artifact-only work (the `AAW` lifecycle: agent, skill, hook, rule, command and workflow changes) writes no handoff records; its run state records each round, the changed paths and the critic's verdict.
+
+## Run state
+
+A run must survive a crash, a dropped connection or a lost context. Every work item keeps one checkpoint file, `docs/handoffs/<work-item-id>/run.md` (the `artifacts.handoffs` folder of the effective workflow), next to its handoff records. Handoff records say what crossed each boundary; the run state says where the run is and what happens next. Agent-artifact work that has no work item uses `AAW-<YYYYMMDD>-<slug>` as its id.
+
+**Who writes it.** The orchestrator. When no orchestrator is running, the session's main agent does — for example `agent-manager` run directly by a developer. A subagent never writes it; it reports, and the caller records.
+
+**When it is written** — always before acting, so a crash leaves the last intention on disk:
+
+- **before the first spawn of the run**, whatever the lifecycle (create it: request, clarified intent, Routing Plan row or "AAW", every stage `pending`). Normally that is when the human confirms the Routing Plan; a route-immediately item (P0, security fix) gets it at route time, before confirmation; an `AAW` run gets it before the first `agent-manager` spawn;
+- **before** each spawn: the stage `in-progress`, the brief's source, and *Next action* = what to do when the agent returns or if it never does;
+- **after** each return: verification result, the handoff record path, the stage `done` or `blocked`, the next action;
+- after each gate decision, loop round and clarification round;
+- at the end: `status: done` (or `abandoned`, with the human's reason).
+
+**Committing it.** Every checkpoint is written to disk at once; that alone survives a crash or a dropped connection. The writer (the orchestrator, or the main agent when there is none) commits `run.md` at each gate and when the work item closes, with the handoff records of that boundary, so the run also survives a lost machine and is visible to the team.
+
+**Ownership.** `owner` is the agent that writes the file (`orchestrator` or the main agent), `session` identifies the session that last wrote it, and `branch` is the branch the run works on. Two sessions never drive one run at the same time.
+
+**Resuming.** At the start of every session the orchestrator lists `run.md` files whose `status` is `active` or `blocked`. It offers to resume only runs whose `branch` is the current branch; for a run on another branch, or one another session wrote last, it asks the human before taking it over and then records its own `session`. Before going on it re-verifies the last handoff record the file names (each artifact still exists and matches; the branch and commit still hold) and, for a stage left `in-progress`, checks whether that agent's output landed before spawning it again.
+
+```markdown
+---
+work-item: WI-NNN
+status: active | blocked | done | abandoned
+lifecycle: <lifecycle code from the effective workflow>
+current-stage: <stage id>
+owner: orchestrator | <main agent id when there is no orchestrator>
+session: <session id, or host + start time>
+branch: <branch>
+commit: <sha at the last checkpoint>
+updated: YYYY-MM-DD HH:MM
+---
+
+# Run: WI-NNN — <one-line summary>
+
+## Request
+<the human's request as given, redacted>
+
+## Clarified intent
+<goal, constraints and what "done" means, as confirmed with the human>
+
+## Routing Plan
+<this item's row of the Routing Plan; confirmed by the human on YYYY-MM-DD; one-off overrides; other items of the same plan with their run.md paths>
+
+## Stages
+| Stage | Owner | Status | Handoff record | Updated |
+|---|---|---|---|---|
+| <stage id> | <agent> | pending / in-progress / done / blocked / skipped (`when`) | `<NN>-<from>-to-<to>.md` / — | YYYY-MM-DD HH:MM |
+
+## Gates and loops
+| Gate or loop | Approver / round | Decision | By | Date |
+|---|---|---|---|---|
+| G2 | human | approved | <name> | YYYY-MM-DD |
+| review → build | round 1 / 3 | Blockers sent back | orchestrator | YYYY-MM-DD |
+
+## Open clarifications
+| # | Asker → upstream | Question | Round | Status |
+|---|---|---|---|---|
+
+## Next action
+<exactly one action: spawn <agent> for <stage> with the brief from `<handoff record>` · verify `<record>` · relay Q<n> to <agent> · ask the human to approve <gate> — and what to check first when resuming>
+```
+
+Keep it short: link artifacts and records by path, never paste them, and redact exactly as for stage records.
 
 ## Verification-only work
 
@@ -115,11 +181,13 @@ When a session must stop before its stage is finished — the context window is 
 1. **Ask what the next session is for**, if the caller has not said. Tailor the document to that focus and leave out what it will not need.
 2. **Write it to the scratch folder**, `<scratchpad root>/<work-item-id>/` (the gitignored root recorded in AGENTS.md "Workspace folders"), named `<work-item-id>-session-<YYYYMMDD-HHMM>.md`. It is a working note, not an audit record, so it does not belong in `docs/handoffs/` and is never committed. Give the caller the full path.
 3. **Reference, don't copy.** Link the spec, plan, ADRs, earlier handoff records, branch and commits by path, URL or SHA.
-4. **Redact** exactly as for stage records.
+4. **Point to the run state.** Update the work item's `run.md` first (the orchestrator, or the main agent when there is none) (*Next action* = continue this stage from the session handoff, with its path), and link the run state at the top of the session handoff. The run state is committed and survives; the session handoff is a working note.
+5. **Redact** exactly as for stage records.
 
 ```markdown
 # Session handoff: <work item> — <one-line goal>
 
+- Run state: `docs/handoffs/<work-item-id>/run.md`
 - Lifecycle / stage: <lifecycle> / <stage>, agent `<agent>`
 - Branch and last commit: <branch> @ <sha>
 - Next session focus: <what the caller said the next session is for>

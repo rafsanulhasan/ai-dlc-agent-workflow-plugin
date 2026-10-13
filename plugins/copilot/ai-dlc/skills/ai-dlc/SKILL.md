@@ -90,9 +90,9 @@ The `orchestrator` picks exactly one primary lifecycle per work item and runs th
 
 Shortcuts:
 
-- Agent/skill/hook/rule/command changes are **not** a lifecycle — route straight to `agent-manager`.
+- Agent/skill/hook/rule/command and workflow-file changes are **not** an AI-DLC lifecycle. They run the agent-artifact lifecycle **AAW** (`routing.byType["Agent Artifact"]` in the workflow file): ARM makes the change and hands back the changed paths and the intent, BC critiques it (PASS / REVISE, back to ARM on REVISE, at most 3 rounds, then the human). No work breakdown and no handoff records; the run state records the rounds. A change to ARM's own definition or a skill it owns goes to a freshly spawned ARM.
 - P0 security issues: BFLC with `security-review` run by SA/CR before the fix lands; notify PO afterwards.
-- Pure questions: answer, or delegate to `research-assistant`; no lifecycle.
+- Pure questions, including "what does this repository do": delegate to `research-assistant` (the orchestrator does not explore code or docs to answer them); no lifecycle.
 - Releases: Release phase — `product-manager` runs its release-gate checklist, `product-owner` gives go / no-go, then `devops-engineer` runs CD.
 
 ## Step 2 — Run the lifecycle's stages
@@ -149,7 +149,8 @@ Run the segment stages below in order, gate by gate: PDLC → G1 → ASDLC → G
 ## Step 3 — Gates, verification and the human
 
 - **Every handoff is an artifact.** Cross a stage boundary only with `Skill("handoff")`, which records the artifact paths and the verification result in `docs/handoffs/`.
-- **Trust, but verify.** The orchestrator reads the artifact before the next agent starts. An agent's summary is a claim, not evidence.
+- **Trust, but verify.** The orchestrator reads the artifact before the next agent starts. An agent's summary is a claim, not evidence. Verification is the only reading the orchestrator does itself; understanding code or docs is delegated to `research-assistant`.
+- **Durable runs.** The orchestrator keeps each work item's run state (`handoff`, *Run state*) current before every spawn and after every return or gate, and offers to resume unfinished runs at the start of every session.
 - **Hard gates beat confidence.** Build and tests must be green before Build ends (`init` installs the stack's Stop hook that enforces the test command: `dotnet-test-gate` in .NET repositories, `node-test-gate` in JS / TS repositories); mutation testing is the SQA's gate.
 - **Ask upstream, then the human.** When an input is unclear, the stage agent consults the agents that produced it (*Clarify loop* below). Intent, scope or AC questions that no upstream agent can answer go to the human as one targeted question. Never let an agent guess.
 - **Re-anchor long runs** on the frozen spec at each stage boundary to stop drift.

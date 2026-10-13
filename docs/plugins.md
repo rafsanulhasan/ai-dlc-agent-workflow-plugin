@@ -13,7 +13,7 @@ This repository ships the **ai-dlc** plugin, an agentic engineering team that ru
 | Agent id | `ai-dlc:<name>` | `<name>` |
 | Skill call | `/ai-dlc:<name>` | the `<name>` skill |
 
-Both marketplaces are named `ai-dlc-agent-workflow`, and both list one plugin, `ai-dlc`, at version **1.0.0**. The two plugins carry the same 15 agents and 60 skills; the Copilot plugin adds `scratchpad`. Only the platform wiring differs.
+Both marketplaces are named `ai-dlc-agent-workflow`, and both list one plugin, `ai-dlc`, at version **1.0.0-preview1** (unreleased preview). The two plugins carry the same 15 agents and 60 skills; the Copilot plugin adds `scratchpad`. Only the platform wiring differs.
 
 The lifecycle, agents and gates are language-agnostic. Two stacks are supported:
 
@@ -52,7 +52,7 @@ You can also install the plugin directly, without the marketplace: `copilot plug
    - `.github/copilot-instructions.md`: the GitHub Copilot specifics `AGENTS.md` does not carry (Copilot loads `AGENTS.md` itself). It comes from the same source as `CLAUDE.md`, with Copilot content in the same blocks.
    - `.claude/settings.json`, merged into any existing file. It includes `"agent": "ai-dlc:orchestrator"`.
    - `docs/backlog/backlog.md` and the empty `docs/` folders the lifecycles write to: `specs/`, `architecture/decisions/`, `architecture/narratives/`, `plans/`, `handoffs/`, `product/`.
-   - `.ai-dlc/workflow.json`, the team's workflow, with `workflow.schema.json` and the `workflow.mjs` CLI, installed from the `workflow` skill. The orchestrator follows it instead of the plugin default (see *Customising the workflow*). An existing `workflow.json` is kept; `/ai-dlc:workflow upgrade` brings in a newer default.
+   - `.ai-dlc/workflow.json`, the team's workflow, with `workflow.schema.json`, the `workflow.mjs` CLI and `catalog.json` (generated from the installed plugin: its version, agent IDs and skill names), installed from the `workflow` skill, plus the workflow gate hook (see *Hooks and rules*). The orchestrator follows the workflow instead of the plugin default (see *Customising the workflow*). An existing `workflow.json` is kept; `/ai-dlc:workflow upgrade` brings in a newer default and regenerates the catalog.
    - The worktree root and the scratch root, installed by `workspace-folders`: recorded in `AGENTS.md`, `CLAUDE.md` and `.github/copilot-instructions.md`, added to `.gitignore`, and a Claude `WorktreeCreate` / `WorktreeRemove` hook pair that creates worktrees under the root. Run `/ai-dlc:workspace-folders` to change them later.
    - **.NET repositories only** (detected from a `.sln`, `.slnx` or `.csproj` file):
      - The C# coding-style, GlobalUsings and testing rules, installed by `dotnet-rules`.
@@ -63,11 +63,11 @@ You can also install the plugin directly, without the marketplace: `copilot plug
      - The test gate hook, installed by `node-test-gate`.
 2. **Talk to the orchestrator.** In Claude Code, the `agent` setting makes the orchestrator the main agent, so every request reaches it first. For a single session, run `claude --agent ai-dlc:orchestrator`. In Copilot, select the `orchestrator` custom agent.
 3. The orchestrator handles each request in this order:
-   1. It classifies the request.
+   1. It classifies the request. Any context it needs about your code or docs comes from `research-assistant`; the orchestrator never explores the repository itself, it only verifies what agents claim.
    2. It gets a work breakdown from `product-manager`.
    3. It picks a lifecycle, or a single agent, for each work item.
    4. It confirms the plan with you.
-   5. It runs the work and stops at each human gate.
+   5. It runs the work and stops at each human gate. Before the first spawn, before every spawn and after every return or gate it updates the work item's run state, `docs/handoffs/<work-item>/run.md`, and commits it at each gate and when the item closes; after a crash, a dropped connection or a lost context, the next session offers to resume each unfinished run from its recorded next action, re-verifying the last handoff first.
 
 The orchestrator has to be the **main** agent, because subagents cannot spawn other subagents. If you invoke it from inside another agent, it cannot run the team.
 
@@ -75,7 +75,7 @@ The orchestrator has to be the **main** agent, because subagents cannot spawn ot
 
 | Agent | Role | Model |
 |---|---|---|
-| `orchestrator` | First point of contact. Classifies and routes every request and drives the flow. Only delegates; never does engineering work | opus |
+| `orchestrator` | First point of contact. Classifies and routes every request and drives the flow. Only delegates, understanding included (code and doc questions go to `research-assistant`); it verifies artifacts itself | opus |
 | `product-owner` | Owns Plan and Release: product brief, scope, priority, acceptance, release go / no-go | opus |
 | `requirement-analyst` | Elicitation, user stories, numbered acceptance criteria, frozen specs | opus |
 | `product-manager` | Work breakdown and bug triage, backlog, milestones, release-gate checklist | opus |
@@ -89,7 +89,7 @@ The orchestrator has to be the **main** agent, because subagents cannot spawn ot
 | `presentation-manager` | Creates, updates and reviews `.pptx` decks so they stay true to the project | sonnet |
 | `research-assistant` | All external research and wide codebase exploration | opus |
 | `devops-engineer` | CI/CD, NuGet and npm publishing, SonarQube PR gates, releases | sonnet |
-| `agent-manager` | The only agent that may change agents, skills, hooks, rules, commands and agent memory. It also creates new Claude and Copilot plugins | opus |
+| `agent-manager` | The only agent that may change agents, skills, hooks, rules, commands, agent memory and the workflow file; `brutal-critique` critiques every change. It also creates new Claude and Copilot plugins | opus |
 
 Agents name the `opus` and `sonnet` aliases rather than pinned model ids, so each role follows the newest model in its family. To pin a version, set `ANTHROPIC_DEFAULT_OPUS_MODEL` or `ANTHROPIC_DEFAULT_SONNET_MODEL` in `.claude/settings.json`.
 
@@ -122,6 +122,8 @@ Humans approve four gates:
 
 If you name a lifecycle in your request, the orchestrator runs that one. Otherwise feature work runs AI-DLC, and other work gets the lifecycle that fits the state of each item.
 
+Changes to agents, skills, hooks, rules, commands and the workflow file run the agent-artifact lifecycle, **AAW**: `agent-manager` makes the change and hands back the changed paths and the intent, the orchestrator re-runs the checks (`validate`, or the plugin build check), then `brutal-critique` reviews the change with that output and returns PASS or REVISE; on REVISE the work goes back to `agent-manager`, for at most three rounds before the open Blockers come to you. The critique cannot be switched off: `brutal-critique` cannot be disabled, and `validate` fails without the critique stage. A change to `agent-manager`'s own definition, or to a skill it owns, is made by a freshly spawned `agent-manager`.
+
 No agent guesses. When an input is unclear, the receiving agent asks the agents that produced it (the *Clarify loop*): for example, the software engineer asks the architect or the system engineer, and the SQA engineer asks the engineer, the product owner, the system engineer or the architect. The orchestrator relays the batched questions and the answers, records them in the handoff, and brings the question to you when no agent can answer it or three rounds have not settled it. The full consultation matrix is in the `ai-dlc` skill.
 
 ### Customising the workflow
@@ -137,9 +139,9 @@ Everything above is the default. Each repository can change it in `.ai-dlc/workf
 | `clarify` | Whom each agent may ask, about what, and the round limit |
 | `documents`, `review`, `artifacts` | Document writer and critic (or no critic), the review axes, artifact paths |
 
-`workflow.schema.json` documents every key (VS Code shows it on hover). `node .ai-dlc/workflow.mjs validate` checks the file, including unknown or disabled agents, dangling or cyclic hand-offs and undefined gates; `show [<lifecycle>] [--mermaid]` prints stage tables or flowcharts; `diff --against <file>` compares two workflow files. `/ai-dlc:workflow edit <change in plain words>` makes a change through `agent-manager`, validates it and shows the diff and the new diagram before writing.
+`workflow.schema.json` documents every key (VS Code shows it on hover). `node .ai-dlc/workflow.mjs validate` checks the file, including unknown or disabled agents, stage skills that do not exist (each must be a plugin skill or a project skill in `.claude/skills/` or `.github/skills/`, with a "did you mean" for near misses), dangling or cyclic hand-offs and undefined gates. It checks names against `.ai-dlc/catalog.json`, which `/ai-dlc:workflow install` and `upgrade` (and `init`) generate from the installed plugin with `workflow.mjs catalog --plugin <plugin root>`, plus the project's own agents and skills; without the catalog it fails. The workflow gate hook blocks an agent from finishing, once per stop cycle, while `.ai-dlc/` has uncommitted changes that do not validate. `show [<lifecycle>] [--mermaid]` prints stage tables or flowcharts; `diff --against <file>` compares two workflow files. `/ai-dlc:workflow edit <change in plain words>` makes a change through `agent-manager`, validates it and shows the diff and the new diagram before writing.
 
-These stay fixed: `agent-manager` alone changes agents, skills, hooks, rules and the workflow file; every stage boundary gets a verified handoff record; the test gate hook stays in force; the orchestrator only delegates; a stage owner never does another agent's job.
+These stay fixed: `agent-manager` alone changes agents, skills, hooks, rules and the workflow file, and `Agent Artifact` work runs a lifecycle that starts with it; every stage boundary gets a verified handoff record; the test gate hook stays in force; the orchestrator only delegates; a stage owner never does another agent's job.
 
 ## Skills
 
@@ -224,6 +226,8 @@ The plugin ships **no hooks and no rules**. A plugin hook would run in every pro
 
 - **`workspace-folders`** (every stack) installs `.claude/hooks/worktree-create.mjs` and `worktree-remove.mjs` with `WorktreeCreate` / `WorktreeRemove` entries in `.claude/settings.json`, so Claude Code creates its worktrees under the configured worktree root instead of `.claude/worktrees/`. Copilot has no worktree location setting; it follows the `AGENTS.md` instruction.
 
+- **`workflow`** (every stack) installs the workflow gate: `.claude/hooks/check-workflow.mjs`, a `Stop` hook in `.claude/settings.json` and `.github/hooks/ai-dlc-workflow-gate.json` for Copilot. When `.ai-dlc/` has uncommitted changes, it runs `node .ai-dlc/workflow.mjs validate` and blocks the agent from finishing while that fails. It blocks **once per stop cycle**, like the test gates: if the agent stops again right after a block, the hook lets it through, so it catches mistakes rather than making an invalid file impossible. It stays silent when nothing under `.ai-dlc/` changed, or with `AI_DLC_WORKFLOW_GATE=false`. When the catalog is missing (repositories set up before it existed), its message says to run `/ai-dlc:workflow upgrade`.
+
 - **`dotnet-test-gate`** installs three things:
   - `.claude/hooks/enforce-tests.ps1`.
   - A `Stop` hook in `.claude/settings.json`.
@@ -297,7 +301,7 @@ Changes to agents, skills, hooks or rules go through `ai-dlc:agent-manager`. Its
 
 **Releasing:**
 
-1. Bump `version` in `plugins/claude/ai-dlc/.claude-plugin/plugin.json`. Also bump it in the `.github/plugin/marketplace.json` entry, which is maintained by hand.
+1. Bump `version` in `plugins/claude/ai-dlc/.claude-plugin/plugin.json`. Also bump it in the `.github/plugin/marketplace.json` entry, which is maintained by hand. Prerelease versions use a SemVer suffix (the current `1.0.0-preview1`); `plugin validate --strict` accepts them.
 2. Rebuild and run both validations.
 3. Tag the release `v<version>` and push.
 

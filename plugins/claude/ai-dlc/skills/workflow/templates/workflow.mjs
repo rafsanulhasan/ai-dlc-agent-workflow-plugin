@@ -6,15 +6,19 @@
 //   node .ai-dlc/workflow.mjs validate [--file <path>]           structural and semantic checks
 //   node .ai-dlc/workflow.mjs show [<lifecycle>] [--mermaid]     stage tables and gates, or flowcharts
 //   node .ai-dlc/workflow.mjs diff --against <path> [--file <p>]  what differs from another workflow file
+//   node .ai-dlc/workflow.mjs catalog --plugin <dir> [--out <p>]  record the plugin's agents and skills
 //
 // Options:
-//   --file <path>   the workflow file to read (default: <root>/.ai-dlc/workflow.json)
-//   --root <dir>    repository root, where custom agents are looked up (default: git root, else cwd)
+//   --file <path>     the workflow file to read (default: <root>/.ai-dlc/workflow.json)
+//   --root <dir>      repository root, where project agents and skills are found (default: git root, else cwd)
+//   --catalog <path>  the plugin catalog (default: <root>/.ai-dlc/catalog.json, written by `catalog`)
+//   --plugin <dir>    the plugin root (agents/, skills/); validate and show build the catalog from it in memory
+//   --out <path>      where `catalog` writes (default: <root>/.ai-dlc/catalog.json)
 //
-// Exit codes: 0 ok (no errors; diff: no differences) · 1 problems (errors; diff: differences)
+// Exit codes: 0 ok (no errors; diff: no differences) · 1 problems (errors or no catalog; diff: differences)
 //             2 usage error or unreadable file.
-// Warnings never fail validate. Agent ids are bare (software-engineer); the orchestrator adds the
-// ai-dlc: prefix for plugin agents.
+// Warnings never fail validate. Agent ids and skill names are bare (software-engineer, write-tests);
+// the orchestrator adds the ai-dlc: prefix for plugin ones.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -23,31 +27,94 @@ import { execSync } from "node:child_process";
 // ---- options --------------------------------------------------------------------
 const argv = process.argv.slice(2);
 if (argv.length === 0 || argv.includes("--help") || argv.includes("-h")) {
-  console.log(fs.readFileSync(new URL(import.meta.url), "utf8").split("\n").slice(1, 17).map((l) => l.replace(/^\/\/ ?/, "")).join("\n"));
+  console.log(fs.readFileSync(new URL(import.meta.url), "utf8").split("\n").slice(1, 21).map((l) => l.replace(/^\/\/ ?/, "")).join("\n"));
   process.exit(argv.length === 0 ? 2 : 0);
 }
 const opt = (name) => { const i = argv.indexOf(name); return i > -1 ? argv[i + 1] : undefined; };
-const VALUE_OPTS = ["--file", "--root", "--against"];
+const VALUE_OPTS = ["--file", "--root", "--against", "--catalog", "--plugin", "--out"];
 const positional = argv.filter((a, i) => !a.startsWith("--") && !VALUE_OPTS.includes(argv[i - 1]));
 const COMMAND = positional[0];
-if (!["validate", "show", "diff"].includes(COMMAND)) usage(`unknown command "${COMMAND ?? ""}" (use validate, show or diff)`);
+if (!["validate", "show", "diff", "catalog"].includes(COMMAND)) usage(`unknown command "${COMMAND ?? ""}" (use validate, show, diff or catalog)`);
 for (const a of argv) if (a.startsWith("--") && ![...VALUE_OPTS, "--mermaid"].includes(a)) usage(`unknown option ${a}`);
 for (const o of VALUE_OPTS) if (argv.includes(o) && (!opt(o) || opt(o).startsWith("--"))) usage(`${o} needs a value`);
 const ROOT = path.resolve(opt("--root") ?? gitRoot() ?? process.cwd());
 const FILE = path.resolve(opt("--file") ?? path.join(ROOT, ".ai-dlc", "workflow.json"));
+const CATALOG_FILE = path.resolve(opt("--catalog") ?? path.join(ROOT, ".ai-dlc", "catalog.json"));
 
 function gitRoot() {
   try { return execSync("git rev-parse --show-toplevel", { stdio: ["ignore", "pipe", "ignore"] }).toString().trim(); } catch { return null; }
 }
 function usage(msg) { console.error(`error: ${msg}\nRun with --help for usage.`); process.exit(2); }
 
-// The AI-DLC plugin's agents. Keep in step with plugins/claude/ai-dlc/agents/.
-const PLUGIN_AGENTS = [
-  "orchestrator", "product-owner", "product-manager", "requirement-analyst", "software-architect",
-  "system-engineer", "software-engineer", "sqa-engineer", "code-reviewer", "documentation-writer",
-  "brutal-critique", "presentation-manager", "research-assistant", "devops-engineer", "agent-manager",
-];
-const UNDISABLEABLE = ["orchestrator", "agent-manager"];
+// ---- catalog --------------------------------------------------------------------
+// The plugin's agents and skills are never hard-coded here. `catalog` reads them from the installed
+// plugin into .ai-dlc/catalog.json (run by /ai-dlc:workflow install and upgrade, and by /ai-dlc:init);
+// validate reads that file, or builds the same catalog in memory from --plugin.
+const listDir = (dir) => { try { return fs.readdirSync(dir, { withFileTypes: true }); } catch { return []; } };
+const isDeprecated = (file) => {
+  try {
+    const fm = /^---\r?\n([\s\S]*?)\r?\n---/.exec(fs.readFileSync(file, "utf8"));
+    return Boolean(fm && /^status:\s*deprecated\s*$/m.test(fm[1]));
+  } catch { return false; }
+};
+
+function buildCatalog(pluginDir) {
+  const root = path.resolve(pluginDir);
+  const manifest = [path.join(root, ".claude-plugin", "plugin.json"), path.join(root, "plugin.json")].find((f) => fs.existsSync(f));
+  if (!manifest) usage(`--plugin ${pluginDir}: no .claude-plugin/plugin.json or plugin.json, so it is not a plugin root`);
+  let meta;
+  try { meta = JSON.parse(fs.readFileSync(manifest, "utf8")); } catch (e) { usage(`${manifest} is not valid JSON: ${e.message}`); }
+  // Claude agents are agents/<id>.md, Copilot agents agents/<id>.agent.md. Deprecated ones are left out.
+  const agents = listDir(path.join(root, "agents"))
+    .filter((e) => e.isFile() && e.name.endsWith(".md") && !isDeprecated(path.join(root, "agents", e.name)))
+    .map((e) => e.name.replace(/(\.agent)?\.md$/, ""));
+  const skills = listDir(path.join(root, "skills"))
+    .filter((e) => e.isDirectory() && fs.existsSync(path.join(root, "skills", e.name, "SKILL.md")) && !isDeprecated(path.join(root, "skills", e.name, "SKILL.md")))
+    .map((e) => e.name);
+  if (!agents.length) usage(`--plugin ${pluginDir}: no agents in ${path.join(root, "agents")}`);
+  return { plugin: { name: meta.name ?? null, version: meta.version ?? null }, agents: [...new Set(agents)].sort(), skills: [...new Set(skills)].sort() };
+}
+
+function loadCatalog() {
+  if (opt("--plugin")) return buildCatalog(opt("--plugin"));
+  let text;
+  try { text = fs.readFileSync(CATALOG_FILE, "utf8"); } catch { return null; }
+  let c;
+  try { c = JSON.parse(text); } catch (e) { console.error(`error: ${CATALOG_FILE} is not valid JSON: ${e.message}`); process.exit(2); }
+  if (!isObj(c) || !isStrArr(c.agents) || !isStrArr(c.skills)) {
+    console.error(`error: ${CATALOG_FILE} needs "agents" and "skills" arrays; regenerate it with /ai-dlc:workflow upgrade`);
+    process.exit(2);
+  }
+  return c;
+}
+
+// The project's own agents and skills, on either platform.
+function projectRoster() {
+  const agents = new Set(), skills = new Set();
+  for (const [dir, re] of [[".claude/agents", /\.md$/], [".github/agents", /\.agent\.md$/]])
+    for (const e of listDir(path.join(ROOT, dir))) if (e.isFile() && re.test(e.name)) agents.add(e.name.replace(/(\.agent)?\.md$/, ""));
+  for (const dir of [".claude/skills", ".github/skills"])
+    for (const e of listDir(path.join(ROOT, dir))) if (e.isDirectory() && fs.existsSync(path.join(ROOT, dir, e.name, "SKILL.md"))) skills.add(e.name);
+  return { agents, skills };
+}
+
+// "Did you mean": the closest known name within a small edit distance, or "".
+function didYouMean(word, names) {
+  const dist = (a, b) => {
+    let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+    for (let i = 1; i <= a.length; i++) {
+      const cur = [i];
+      for (let j = 1; j <= b.length; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      prev = cur;
+    }
+    return prev[b.length];
+  };
+  let best = null, bestD = Infinity;
+  for (const n of names) { const d = dist(word, n); if (d < bestD) { best = n; bestD = d; } }
+  return best && bestD <= Math.max(2, Math.floor(word.length / 3)) ? ` (did you mean "${best}"?)` : "";
+}
+
+const UNDISABLEABLE = ["orchestrator", "agent-manager", "brutal-critique"];
 const APPROVERS = ["human", "orchestrator", "none"];
 const KINDS = ["primary", "segment", "focused", "custom"];
 const AXES = ["standards", "spec"];
@@ -70,9 +137,15 @@ function load(file) {
 const isObj = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
 const isStr = (v) => typeof v === "string" && v.trim().length > 0;
 const isStrArr = (v) => Array.isArray(v) && v.every((x) => typeof x === "string");
+const dupes = (arr) => [...new Set(arr.filter((x, i) => arr.indexOf(x) !== i))];
 
-function validate(wf) {
+function validate(wf, catalog) {
   const errors = [], warnings = [];
+  // Without a catalog the plugin's agents and skills are unknown: name checks are skipped here, and
+  // the validate command reports the missing catalog as an error (show does not).
+  const PLUGIN_AGENTS = catalog ? catalog.agents : [];
+  const PLUGIN_SKILLS = catalog ? catalog.skills : [];
+  const project = projectRoster();
   const err = (p, m) => errors.push(`${p}: ${m}`);
   const wrn = (p, m) => warnings.push(`${p}: ${m}`);
   const unknownKeys = (obj, allowed, p) => { for (const k of Object.keys(obj)) if (!allowed.includes(k)) err(`${p}.${k}`, "unknown key"); };
@@ -87,9 +160,10 @@ function validate(wf) {
   if (isObj(wf.agents)) {
     unknownKeys(wf.agents, ["disabled", "custom"], "agents");
     if (!isStrArr(wf.agents.disabled)) err("agents.disabled", "must be an array of agent ids");
-    else for (const a of wf.agents.disabled) {
-      if (!PLUGIN_AGENTS.includes(a)) err("agents.disabled", `"${a}" is not a plugin agent`);
-      else if (UNDISABLEABLE.includes(a)) err("agents.disabled", `"${a}" cannot be disabled (fixed guardrail)`);
+    else for (const d of dupes(wf.agents.disabled)) err("agents.disabled", `"${d}" is listed twice`);
+    if (isStrArr(wf.agents.disabled)) for (const a of wf.agents.disabled) {
+      if (catalog && !PLUGIN_AGENTS.includes(a)) err("agents.disabled", `"${a}" is not a plugin agent${didYouMean(a, PLUGIN_AGENTS)}`);
+      else if (UNDISABLEABLE.includes(a)) err("agents.disabled", `"${a}" cannot be disabled (fixed guardrail${a === "brutal-critique" ? ": it critiques every agent-artifact change" : ""})`);
       else disabled.add(a);
     }
     if (!isObj(wf.agents.custom)) err("agents.custom", "must be an object of { <id>: { description } }");
@@ -100,8 +174,7 @@ function validate(wf) {
       if (id === "human") err(p, `"human" is reserved`);
       if (!isObj(def) || !isStr(def.description)) err(p, "needs a description");
       else unknownKeys(def, ["description"], p);
-      const files = [path.join(ROOT, ".claude", "agents", `${id}.md`), path.join(ROOT, ".github", "agents", `${id}.agent.md`)];
-      if (!files.some((f) => fs.existsSync(f))) err(p, `no agent file: expected .claude/agents/${id}.md or .github/agents/${id}.agent.md`);
+      if (!project.agents.has(id)) err(p, `no agent file: expected .claude/agents/${id}.md or .github/agents/${id}.agent.md`);
       custom.add(id);
     }
   } else if ("agents" in wf) err("agents", "must be an object");
@@ -111,7 +184,15 @@ function validate(wf) {
     if (typeof a !== "string") return err(p, "must be an agent id");
     if (a.includes(":")) return err(p, `"${a}": use the bare id, without a namespace prefix`);
     if (disabled.has(a)) return err(p, `"${a}" is disabled in agents.disabled — reassign or remove`);
-    if (!PLUGIN_AGENTS.includes(a) && !custom.has(a)) err(p, `unknown agent "${a}" (not a plugin agent, not in agents.custom)`);
+    if (!catalog || PLUGIN_AGENTS.includes(a) || custom.has(a)) return;
+    if (project.agents.has(a)) return err(p, `"${a}" is a project agent but not declared in agents.custom`);
+    err(p, `unknown agent "${a}" (not a plugin agent, not in agents.custom)${didYouMean(a, [...PLUGIN_AGENTS, ...custom])}; if a newer plugin added it, run /ai-dlc:workflow upgrade`);
+  };
+  // A stage skill must be a plugin skill (catalog) or a project skill (.claude/skills, .github/skills).
+  const usedSkill = (k, p) => {
+    if (k.includes(":")) return err(p, `"${k}": use the bare skill name, without a namespace prefix`);
+    if (!catalog || PLUGIN_SKILLS.includes(k) || project.skills.has(k)) return;
+    err(p, `unknown skill "${k}" (not a plugin skill, not in .claude/skills or .github/skills)${didYouMean(k, [...PLUGIN_SKILLS, ...project.skills])}; if a newer plugin added it, run /ai-dlc:workflow upgrade`);
   };
 
   // gates
@@ -160,6 +241,8 @@ function validate(wf) {
       else ids.add(st.id);
       if (!("agent" in st)) err(sp, "needs an agent"); else usedAgent(st.agent, `${sp}.agent`);
       for (const k of ["skills", "produces", "after"]) if (k in st && !isStrArr(st[k])) err(`${sp}.${k}`, "must be an array of strings");
+      if (isStrArr(st.skills)) for (const k of st.skills) usedSkill(k, `${sp}.skills`);
+      for (const k of ["skills", "after"]) if (isStrArr(st[k])) for (const d of dupes(st[k])) err(`${sp}.${k}`, `"${d}" is listed twice`);
       for (const k of ["when", "note"]) if (k in st && !isStr(st[k])) err(`${sp}.${k}`, "must be a non-empty string");
       if ("critique" in st && typeof st.critique !== "boolean") err(`${sp}.critique`, "must be true or false");
       if ("gate" in st) {
@@ -170,6 +253,7 @@ function validate(wf) {
         if (!isObj(st.loop)) err(`${sp}.loop`, "must be an object { to, on, maxRounds? }");
         else {
           unknownKeys(st.loop, ["to", "on", "maxRounds"], `${sp}.loop`);
+          if (!isStr(st.loop.to)) err(`${sp}.loop`, "needs `to` (the stage work returns to)");
           if (!isStr(st.loop.on)) err(`${sp}.loop`, "needs `on` (what sends work back)");
           if ("maxRounds" in st.loop && !(Number.isInteger(st.loop.maxRounds) && st.loop.maxRounds >= 1)) err(`${sp}.loop.maxRounds`, "must be a positive integer");
         }
@@ -183,7 +267,7 @@ function validate(wf) {
         if (!ids.has(a)) err(`${sp}.after`, `"${a}" is not a stage of ${code}`);
         else if (a === st.id) err(`${sp}.after`, "a stage cannot follow itself");
       }
-      if (isObj(st.loop) && "to" in st.loop) {
+      if (isObj(st.loop) && isStr(st.loop.to)) {
         if (!ids.has(st.loop.to)) err(`${sp}.loop.to`, `"${st.loop.to}" is not a stage of ${code}`);
       }
     });
@@ -192,7 +276,7 @@ function validate(wf) {
       if (cycle) err(`${p}.stages`, `cycle in \`after\`: ${cycle.join(" -> ")}`);
       // "Builds code": a software-engineer stage that runs a build skill or produces a diff / fix / code.
       const builds = lc.stages.some((s) => s.agent === "software-engineer" &&
-        ((s.skills ?? []).some((k) => ["implement-feature", "fix-bug"].includes(k)) || /diff|fix|code|implement|refactor/i.test((s.produces ?? []).join(" "))));
+        ((isStrArr(s.skills) && s.skills.some((k) => ["implement-feature", "fix-bug"].includes(k))) || (isStrArr(s.produces) && /diff|fix|code|implement|refactor/i.test(s.produces.join(" ")))));
       const reviews = lc.stages.some((s) => s.agent === "code-reviewer");
       if (builds && !reviews) wrn(p, "builds code (a software-engineer stage) but has no code-reviewer stage");
     }
@@ -217,13 +301,27 @@ function validate(wf) {
   if (isObj(r)) {
     unknownKeys(r, ["byType", "handOff", "routeImmediately"], "routing");
     if (!isObj(r.byType)) err("routing.byType", "must be an object { <request type>: <lifecycle code> }");
-    else for (const [t, lc] of Object.entries(r.byType)) if (!(lc in lifecycles)) err(`routing.byType.${t}`, `"${lc}" is not a defined lifecycle`);
+    else for (const [t, lc] of Object.entries(r.byType)) if (t !== "Agent Artifact" && !(lc in lifecycles)) err(`routing.byType.${t}`, `"${lc}" is not a defined lifecycle`);
     if (!isObj(r.handOff)) err("routing.handOff", "must be an object { <work kind>: <agent id> }");
     else {
       for (const [k, a] of Object.entries(r.handOff)) usedAgent(a, `routing.handOff["${k}"]`);
       if ("agent-artifact work" in r.handOff && r.handOff["agent-artifact work"] !== "agent-manager") err(`routing.handOff["agent-artifact work"]`, "must stay agent-manager (fixed guardrail)");
     }
+    // The lifecycle agent-artifact work runs: agent-manager makes the change, a critic reviews it.
+    const aaw = isObj(r.byType) ? r.byType["Agent Artifact"] : undefined;
+    const lc = typeof aaw === "string" ? lifecycles[aaw] : undefined;
+    if (isObj(r.byType) && aaw === undefined) err(`routing.byType["Agent Artifact"]`, `missing: agent-artifact work needs its lifecycle (default "AAW": agent-manager, then brutal-critique) — run /ai-dlc:workflow upgrade to bring it in`);
+    else if (isObj(r.byType) && !isObj(lc)) err(`routing.byType["Agent Artifact"]`, `lifecycle "${aaw}" is not defined — run /ai-dlc:workflow upgrade to bring in the default AAW`);
+    else if (isObj(lc) && !Array.isArray(lc.stages)) err(`routing.byType["Agent Artifact"]`, `"${aaw}" must be a lifecycle with stages, not segments`);
+    else if (isObj(lc) && lc.stages.length && lc.stages.every(isObj)) {
+      const st = lc.stages;
+      if (st.some((s, i) => afterOf(st, i).length === 0 && s.agent !== "agent-manager"))
+        err(`lifecycles.${aaw}`, `agent-artifact work runs this lifecycle (routing.byType["Agent Artifact"]), so every starting stage must be agent-manager (fixed guardrail)`);
+      const critiqued = st.some((s) => s.agent === "brutal-critique" && isObj(s.loop) && st.some((t) => t.id === s.loop.to && t.agent === "agent-manager"));
+      if (!critiqued) err(`lifecycles.${aaw}`, "needs a brutal-critique stage that loops back to the agent-manager stage on REVISE: every agent-artifact change is critiqued (fixed guardrail)");
+    }
     if (!isStrArr(r.routeImmediately)) err("routing.routeImmediately", "must be an array of request types");
+    else for (const d of dupes(r.routeImmediately)) err("routing.routeImmediately", `"${d}" is listed twice`);
   } else if ("routing" in wf) err("routing", "must be an object");
 
   // clarify
@@ -257,7 +355,10 @@ function validate(wf) {
   if (isObj(wf.review)) {
     unknownKeys(wf.review, ["axes"], "review");
     if (!isStrArr(wf.review.axes) || !wf.review.axes.length) err("review.axes", "must be a non-empty array");
-    else for (const a of wf.review.axes) if (!AXES.includes(a)) err("review.axes", `"${a}" is not an axis (${AXES.join(", ")})`);
+    else {
+      for (const a of wf.review.axes) if (!AXES.includes(a)) err("review.axes", `"${a}" is not an axis (${AXES.join(", ")})`);
+      for (const d of dupes(wf.review.axes)) err("review.axes", `"${d}" is listed twice`);
+    }
   } else if ("review" in wf) err("review", "must be an object");
   if (isObj(wf.artifacts)) {
     unknownKeys(wf.artifacts, ARTIFACTS, "artifacts");
@@ -411,11 +512,30 @@ function diff(a, b, p, out) {
 const short = (v) => { const s = JSON.stringify(v); return s.length > 100 ? `${s.slice(0, 97)}...` : s; };
 
 // ---- main -----------------------------------------------------------------------
+if (COMMAND === "catalog") {
+  if (!opt("--plugin")) usage("catalog needs --plugin <plugin root> (the folder with agents/ and skills/)");
+  const out = path.resolve(opt("--out") ?? path.join(ROOT, ".ai-dlc", "catalog.json"));
+  const c = buildCatalog(opt("--plugin"));
+  const doc = { $comment: "Generated by `workflow.mjs catalog` from the installed AI-DLC plugin. Do not edit; /ai-dlc:workflow upgrade regenerates it.", ...c };
+  fs.mkdirSync(path.dirname(out), { recursive: true });
+  fs.writeFileSync(out, JSON.stringify(doc, null, 2) + "\n");
+  console.log(`${path.relative(process.cwd(), out) || out}: ${c.plugin.name} ${c.plugin.version ?? "(no version)"} · ${c.agents.length} agents · ${c.skills.length} skills`);
+  process.exit(0);
+}
+
 const wf = load(FILE);
 const relFile = path.relative(process.cwd(), FILE) || FILE;
+const catalog = loadCatalog();
 
 if (COMMAND === "validate") {
-  const { errors, warnings } = validate(wf);
+  const { errors, warnings } = validate(wf, catalog);
+  if (opt("--plugin") && fs.existsSync(CATALOG_FILE)) {
+    let stored = null;
+    try { stored = JSON.parse(fs.readFileSync(CATALOG_FILE, "utf8")); } catch { /* reported by a run without --plugin */ }
+    if (stored?.plugin?.version !== catalog.plugin.version)
+      warnings.push(`catalog: ${path.relative(process.cwd(), CATALOG_FILE) || CATALOG_FILE} is for plugin version ${stored?.plugin?.version ?? "(unknown)"}, the plugin at --plugin is ${catalog.plugin.version ?? "(no version)"} — run /ai-dlc:workflow upgrade to regenerate it`);
+  }
+  if (!catalog) errors.unshift(`catalog: ${path.relative(process.cwd(), CATALOG_FILE) || CATALOG_FILE} is missing, so plugin agents and skills cannot be checked — run /ai-dlc:workflow upgrade to generate it (repositories set up before the catalog existed need this once; a new setup runs /ai-dlc:workflow install)`);
   for (const e of errors) console.log(`error: ${e}`);
   for (const w of warnings) console.log(`warning: ${w}`);
   console.log(errors.length ? `${relFile}: ${errors.length} error(s), ${warnings.length} warning(s)` : `${relFile}: valid${warnings.length ? `, ${warnings.length} warning(s)` : ""}`);
@@ -423,7 +543,7 @@ if (COMMAND === "validate") {
 }
 
 if (COMMAND === "show") {
-  const { errors } = validate(wf);
+  const { errors } = validate(wf, catalog);
   if (errors.length) {
     for (const e of errors) console.log(`error: ${e}`);
     console.log(`${relFile} is invalid; fix it before showing it (node .ai-dlc/workflow.mjs validate).`);

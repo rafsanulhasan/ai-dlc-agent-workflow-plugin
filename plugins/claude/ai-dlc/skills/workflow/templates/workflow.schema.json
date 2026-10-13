@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/rafsanulhasan/ai-dlc-agent-workflow-plugin/workflow.schema.json",
   "title": "AI-DLC project workflow",
-  "description": "The AI-DLC team's workflow for this repository: lifecycles and their stages, who hands off to whom, gates and their approvers, the clarify matrix and request routing. The orchestrator reads it on every request; when it is absent the plugin default applies. Check it with `node .ai-dlc/workflow.mjs validate`; change it with `/ai-dlc:workflow edit <change>`. Fixed guardrails (agent-manager's exclusive authority over agent artifacts, trust-but-verify and a handoff record at every boundary, the test gate hook, an orchestrator that only delegates, stage owners that never do another agent's job) are not configurable here.",
+  "description": "The AI-DLC team's workflow for this repository: lifecycles and their stages, who hands off to whom, gates and their approvers, the clarify matrix and request routing. The orchestrator reads it on every request; when it is absent the plugin default applies. Check it with `node .ai-dlc/workflow.mjs validate`; change it with `/ai-dlc:workflow edit <change>`. Fixed guardrails (agent-manager's exclusive authority over agent artifacts, a freshly spawned agent-manager for changes to its own definition and skills, trust-but-verify and a handoff record at every boundary, the test gate hooks and the workflow gate, an orchestrator that only delegates, stage owners that never do another agent's job) are not configurable here.",
   "type": "object",
   "additionalProperties": false,
   "required": ["version", "agents", "gates", "lifecycles", "routing", "clarify", "documents", "review", "artifacts"],
@@ -25,7 +25,7 @@
           "type": "array",
           "uniqueItems": true,
           "items": { "$ref": "#/$defs/agentId" },
-          "description": "Plugin agents this project runs without (bare ids, e.g. `brutal-critique`). Every stage, routing entry and clarify entry that names a disabled agent must be removed or reassigned. `orchestrator` and `agent-manager` cannot be disabled."
+          "description": "Plugin agents this project runs without (bare ids, e.g. `brutal-critique`). Every stage, routing entry and clarify entry that names a disabled agent must be removed or reassigned. `orchestrator`, `agent-manager` and `brutal-critique` (which critiques every agent-artifact change) cannot be disabled."
         },
         "custom": {
           "type": "object",
@@ -67,7 +67,8 @@
       "properties": {
         "byType": {
           "type": "object",
-          "description": "Request type (Feature, Bug Fix, Security Fix, TechDebt, Testing, Review, Release) -> lifecycle code it runs by default. Custom lifecycles are also picked by their `pickWhen`.",
+          "required": ["Agent Artifact"],
+          "description": "Request type (Feature, Bug Fix, Security Fix, TechDebt, Testing, Review, Release, Agent Artifact) -> lifecycle code it runs by default. Custom lifecycles are also picked by their `pickWhen`. `Agent Artifact` is required: its lifecycle (default `AAW`) must start with `agent-manager` and have a `brutal-critique` stage that loops back to it on REVISE.",
           "additionalProperties": { "type": "string", "minLength": 1 }
         },
         "handOff": {
@@ -132,7 +133,7 @@
         },
         "critic": {
           "anyOf": [{ "$ref": "#/$defs/agentId" }, { "type": "null" }],
-          "description": "The agent that critiques documents in parallel with the writer before a gate (default `brutal-critique`). `null` skips critique — documents then reach gates unreviewed."
+          "description": "The agent that critiques documents in parallel with the writer before a gate (default `brutal-critique`). `null` skips document critique — documents then reach gates unreviewed. It never removes the critique of agent-artifact changes (the `AAW` lifecycle)."
         }
       }
     },
@@ -163,7 +164,7 @@
         "decisions": { "type": "string", "minLength": 1, "description": "Folder for ADRs." },
         "narratives": { "type": "string", "minLength": 1, "description": "Architecture narrative per feature." },
         "plans": { "type": "string", "minLength": 1, "description": "Task plan per feature." },
-        "handoffs": { "type": "string", "minLength": 1, "description": "Folder for handoff records per work item; `<work-item>` is replaced." }
+        "handoffs": { "type": "string", "minLength": 1, "description": "Folder for handoff records per work item; `<work-item>` is replaced. It also holds each work item's run state, `run.md`, which the orchestrator writes before every spawn and after every return or gate, so a new session can resume the run." }
       }
     }
   },
@@ -233,7 +234,7 @@
           "type": "array",
           "uniqueItems": true,
           "items": { "type": "string", "minLength": 1 },
-          "description": "Skills the owner runs in this stage, named in its brief (bare skill names)."
+          "description": "Skills the owner runs in this stage, named in its brief (bare skill names). Each must be a plugin skill listed in `.ai-dlc/catalog.json` or a project skill in `.claude/skills/` or `.github/skills/`; `validate` fails otherwise."
         },
         "produces": {
           "type": "array",
