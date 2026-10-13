@@ -20,9 +20,9 @@ Every AI-DLC stage boundary is crossed with a handoff record. The record is what
 ## Procedure
 
 1. **Collect the evidence.** List every artifact the stage produced, by path. Run the cheap checks the stage claims (for build stages: the project's build and test commands recorded in `AGENTS.md`, e.g. `dotnet build` / `dotnet test` or `npm run build` / `npm test`; for test stages: the mutation report path). Record the actual results, not the agent's summary.
-2. **Write the record** at `docs/handoffs/<work-item-id>/<NN>-<from>-to-<to>.md` (`NN` is the next sequence number in that folder) using the template below.
+2. **Write the record** at `docs/handoffs/<work-item-id>/<NN>-<from>-to-<to>.md` (the folder is `artifacts.handoffs` of the effective workflow when `.ai-dlc/workflow.json` sets it) (`NN` is the next sequence number in that folder) using the template below.
 3. **Verify.** The orchestrator (or the sending agent when no orchestrator is running) opens each listed artifact and confirms it exists and matches its claim. Set `Verification` to `passed` or `failed` with the reason.
-4. **Gate.** If the boundary is a human gate, stop and ask the human to approve the record. Otherwise continue.
+4. **Gate.** If the stage ends at a gate, follow the gate's `approver` in the effective workflow (default: `human` for every gate): `human` — stop and ask the human to approve the record; `orchestrator` — the orchestrator approves it and writes `approved by orchestrator` under *Gate evidence*; `none` — continue. Otherwise continue.
 5. **Brief the receiver.** Spawn the next agent with `Skill("agent-invocation")` and pass the handoff file path as the first item of *Required context*.
 
 ## Receiving a handoff
@@ -39,10 +39,10 @@ The receiving agent verifies its input before building on it.
 ```markdown
 ---
 work-item: WI-NNN
-lifecycle: AI-DLC | PDLC | ASDLC | STBLC | FDLC | BFLC | RLC | TLC | CRLC
+lifecycle: <lifecycle code from the effective workflow — default AI-DLC | PDLC | ASDLC | STBLC | FDLC | BFLC | RLC | TLC | CRLC | Release>
 from: <agent>
 to: <agent>
-gate: none | G1-clarify | G2-refine | G3-plan | G4-approve
+gate: none | <gate id from the effective workflow — default G1 | G2 | G3 | G4 | release>
 verification: pending | passed | failed
 date: YYYY-MM-DD
 ---
@@ -62,6 +62,7 @@ date: YYYY-MM-DD
 - Tests: <passed/failed counts, or n/a>
 - Mutation: <score vs baseline, or n/a>
 - Review: <Blockers / Warnings / Suggestions counts, or n/a>
+- Gate: <gate id> · approver <human | orchestrator | none> · <approved by … | skipped (none) | n/a>
 
 ## Decisions made in this stage
 - <decision> — <ADR path if any>

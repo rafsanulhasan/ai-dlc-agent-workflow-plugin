@@ -31,6 +31,7 @@ Use these wherever the persona below says "the project's build and test commands
 - Eight named lifecycles, its segments and focused entry points: **PDLC** product design · **ASDLC** architecture & design · **STBLC** story & task breakdown · **FDLC** feature development · **BFLC** bug fixing · **RLC** refactoring · **TLC** testing · **CRLC** code review.
 - **Every handoff is an artifact.** Stage boundaries are crossed with a handoff record in `docs/handoffs/`; verify it before the next agent starts.
 - **The human is the decision maker.** Humans set intent, approve gates G1 (stories/ACs), G2 (frozen spec), G3 (task plan) and G4 (review report), and resolve ambiguity. Agents never guess intent.
+- **The team's workflow is in `.ai-dlc/workflow.json`** — lifecycles and stages, who hands off to whom, gates and their approvers, the clarify matrix and routing. It overrides the defaults above wherever they differ. `node .ai-dlc/workflow.mjs show` prints it (`--mermaid` for diagrams) and `validate` checks it; change it with `/ai-dlc:workflow edit <change>` (`agent-manager`).
 
 ### Who owns what
 
@@ -54,6 +55,7 @@ Use these wherever the persona below says "the project's build and test commands
 | Architecture narratives | `docs/architecture/narratives/<feature-slug>.md` |
 | Task plans | `docs/plans/<feature-slug>.tasks.md` |
 | Handoff records | `docs/handoffs/<work-item>/` |
+| Team workflow | `.ai-dlc/workflow.json` (its `artifacts` section overrides the paths above) |
 
 ### Quality gates
 

@@ -13,7 +13,7 @@ This repository ships the **ai-dlc** plugin, an agentic engineering team that ru
 | Agent id | `ai-dlc:<name>` | `<name>` |
 | Skill call | `/ai-dlc:<name>` | the `<name>` skill |
 
-Both marketplaces are named `ai-dlc-agent-workflow`, and both list one plugin, `ai-dlc`, at version **1.0.0**. The two plugins carry the same 15 agents and 57 skills. Only the platform wiring differs.
+Both marketplaces are named `ai-dlc-agent-workflow`, and both list one plugin, `ai-dlc`, at version **1.0.0**. The two plugins carry the same 15 agents and 60 skills; the Copilot plugin adds `scratchpad`. Only the platform wiring differs.
 
 The lifecycle, agents and gates are language-agnostic. Two stacks are supported:
 
@@ -52,6 +52,7 @@ You can also install the plugin directly, without the marketplace: `copilot plug
    - `.github/copilot-instructions.md`: the GitHub Copilot specifics `AGENTS.md` does not carry (Copilot loads `AGENTS.md` itself). It comes from the same source as `CLAUDE.md`, with Copilot content in the same blocks.
    - `.claude/settings.json`, merged into any existing file. It includes `"agent": "ai-dlc:orchestrator"`.
    - `docs/backlog/backlog.md` and the empty `docs/` folders the lifecycles write to: `specs/`, `architecture/decisions/`, `architecture/narratives/`, `plans/`, `handoffs/`, `product/`.
+   - `.ai-dlc/workflow.json`, the team's workflow, with `workflow.schema.json` and the `workflow.mjs` CLI, installed from the `workflow` skill. The orchestrator follows it instead of the plugin default (see *Customising the workflow*). An existing `workflow.json` is kept; `/ai-dlc:workflow upgrade` brings in a newer default.
    - The worktree root and the scratch root, installed by `workspace-folders`: recorded in `AGENTS.md`, `CLAUDE.md` and `.github/copilot-instructions.md`, added to `.gitignore`, and a Claude `WorktreeCreate` / `WorktreeRemove` hook pair that creates worktrees under the root. Run `/ai-dlc:workspace-folders` to change them later.
    - **.NET repositories only** (detected from a `.sln`, `.slnx` or `.csproj` file):
      - The C# coding-style, GlobalUsings and testing rules, installed by `dotnet-rules`.
@@ -123,6 +124,23 @@ If you name a lifecycle in your request, the orchestrator runs that one. Otherwi
 
 No agent guesses. When an input is unclear, the receiving agent asks the agents that produced it (the *Clarify loop*): for example, the software engineer asks the architect or the system engineer, and the SQA engineer asks the engineer, the product owner, the system engineer or the architect. The orchestrator relays the batched questions and the answers, records them in the handoff, and brings the question to you when no agent can answer it or three rounds have not settled it. The full consultation matrix is in the `ai-dlc` skill.
 
+### Customising the workflow
+
+Everything above is the default. Each repository can change it in `.ai-dlc/workflow.json`, which `init` creates as a full copy of the default. The orchestrator reads the file on every request and follows it wherever it differs from the `ai-dlc` skill; an invalid file stops the run with the validator's output.
+
+| Section | What you can change |
+|---|---|
+| `lifecycles` | Each lifecycle's stages: owner agent, skills, artifacts, `after` (who hands off to whom; equal `after` means parallel), `when` (conditional stages), `loop` (send work back, with an optional round limit), `gate`, `critique`. Add your own lifecycles (`kind: "custom"`) |
+| `gates` | Name, the artifact approved, and the approver: `human`, `orchestrator` or `none` (no stop, but the handoff record is still written) |
+| `agents` | Run without a plugin agent (`disabled`), or bring the project's own agents into stages (`custom`) |
+| `routing` | Request type → lifecycle, work kind → single agent, types routed before confirmation |
+| `clarify` | Whom each agent may ask, about what, and the round limit |
+| `documents`, `review`, `artifacts` | Document writer and critic (or no critic), the review axes, artifact paths |
+
+`workflow.schema.json` documents every key (VS Code shows it on hover). `node .ai-dlc/workflow.mjs validate` checks the file, including unknown or disabled agents, dangling or cyclic hand-offs and undefined gates; `show [<lifecycle>] [--mermaid]` prints stage tables or flowcharts; `diff --against <file>` compares two workflow files. `/ai-dlc:workflow edit <change in plain words>` makes a change through `agent-manager`, validates it and shows the diff and the new diagram before writing.
+
+These stay fixed: `agent-manager` alone changes agents, skills, hooks, rules and the workflow file; every stage boundary gets a verified handoff record; the test gate hook stays in force; the orchestrator only delegates; a stage owner never does another agent's job.
+
 ## Skills
 
 Every skill is also a slash command: `/ai-dlc:<name>` in Claude Code, or the `<name>` skill in Copilot. The plugin ships no separate `commands/` folder, because a command and a skill with the same name would collide.
@@ -140,7 +158,7 @@ Every skill is also a slash command: `/ai-dlc:<name>` in Claude Code, or the `<n
 | DevOps | `github-ci-automation`, `github-cd-automation`, `nuget-package-deployment`, `npm-package-deployment`, `sonarqube-pr-quality-gate` | devops-engineer |
 | Communication | `write-documentation`, `presentation-authoring`, `terse-output` | documentation-writer, presentation-manager; `terse-output`: the user and every agent |
 | Research | `research` | research-assistant |
-| Team management | `agent-management`, `skill-management`, `hook-management`, `rules-management`, `command-management`, `plugin-management`, `manage-memory` | agent-manager (all agents use `manage-memory`) |
+| Team management | `agent-management`, `skill-management`, `hook-management`, `rules-management`, `command-management`, `harness-sync`, `workflow`, `plugin-management`, `manage-memory` | agent-manager (all agents use `manage-memory`); the orchestrator reads `workflow` |
 | Workspace (Copilot only) | `scratchpad` | every agent on Copilot, before its first temporary file (Claude Code has a built-in scratchpad, so the Claude plugin does not ship it) |
 | Project setup | `init`, `workspace-folders`, `dotnet-rules`, `dotnet-test-gate`, `node-rules`, `node-test-gate` | the user |
 
@@ -192,6 +210,8 @@ The **lifecycle agents** own a stage and hand an artifact on: James Montemagno (
 | `write-documentation` | Role | Daniele Procida (`documentation-writer`); Linus Torvalds (`brutal-critique`) reads |
 | `presentation-authoring` | Role | Nancy Duarte (`presentation-manager`) |
 | `agent-management`, `command-management`, `hook-management`, `rules-management`, `plugin-management` | Role | Boris Cherny (`agent-manager`) |
+| `harness-sync` | Role | Boris Cherny (`agent-manager`); `init` installs its script; developers run `node .claude/scripts/sync-harness.mjs` themselves |
+| `workflow` | Role | Boris Cherny (`agent-manager`) installs, edits, upgrades and resets `.ai-dlc/workflow.json`; Scott Hanselman (`orchestrator`) reads it with `show`; `init` installs its files; developers may run `/ai-dlc:workflow` themselves |
 | `skill-management` | Role | Boris Cherny (`agent-manager`); Linus Torvalds (`brutal-critique`) reads its writing guide for agent and skill files; every other agent asks Boris Cherny (`agent-manager`) for skill changes |
 | `init` | Init-only | The user (`/ai-dlc:init`); no agent |
 | `workspace-folders` | Init-only | Followed by `init` in every repository, or run by the user to change the worktree or scratch root; no agent |

@@ -149,12 +149,12 @@ Any stage agent, under any contract, may also end with a **clarification request
 
 ## Clarification requests
 
-The Clarify loop in the `ai-dlc` skill lets a stage agent ask the agents that produced its inputs. A subagent cannot spawn another agent, so it returns its questions to the orchestrator, which relays them. Whom an agent may ask, the rules and the round limit live in the `ai-dlc` skill's consultation matrix; this section is only the format and the relay.
+The Clarify loop in the `ai-dlc` skill lets a stage agent ask the agents that produced its inputs. A subagent cannot spawn another agent, so it returns its questions to the orchestrator, which relays them. Whom an agent may ask and the round limit come from the effective workflow's `clarify` section (`.ai-dlc/workflow.json`; default: the `ai-dlc` skill's consultation matrix and 3 rounds); the rules live in the `ai-dlc` skill. This section is only the format and the relay.
 
 **Request** — returned by the asker, all open questions in one batch:
 
 ```
-clarify: round <r>/3 · <n> questions · blocked: <what waits> · continuing: <what proceeds | nothing>
+clarify: round <r>/<max> · <n> questions · blocked: <what waits> · continuing: <what proceeds | nothing>
 Q1 → <upstream-agent | human> · <path or AC-n> — <question> · default: <recommended answer>
 Q2 → <upstream-agent> · <path:line> — <question> · default: <recommended answer>
 ```
@@ -173,7 +173,7 @@ A2 · pass → <its own upstream agent | human> · <why it cannot answer>
 3. Ask the human, with the recommended defaults, any question marked `human` or passed up with no agent left to answer it.
 4. Verify every `revised:` artifact on disk before relaying (trust but verify).
 5. Return all answers to the asker with one `SendMessage`, which resumes its stage. If the asker's instance is gone, spawn a fresh one with its original brief plus the answers.
-6. Count rounds per stage; when a question is still open after round 3, block the stage and escalate to the human.
+6. Count rounds per stage; when a question is still open after the last round (`clarify.maxRounds`, default 3), block the stage and escalate to the human.
 
 When the session's main agent is itself a stage agent, it skips the relay and spawns or messages the upstream agent directly, with the same request and answer formats.
 

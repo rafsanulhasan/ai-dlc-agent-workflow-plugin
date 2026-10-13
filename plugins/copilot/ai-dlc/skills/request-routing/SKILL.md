@@ -55,7 +55,7 @@ Otherwise identify all task types present:
 
 A single request may contain multiple types.
 
-Record whether the user **explicitly named a workflow** — a lifecycle by name or code (AI-DLC, PDLC, ASDLC, STBLC, FDLC, BFLC, RLC, TLC, CRLC) or an unambiguous equivalent ("full lifecycle", "end to end", "take it from idea to release" for AI-DLC; "run a code review on PR 42", "just write the tests", "only design it, don't build"). An explicit choice is binding in Step 2.
+Record whether the user **explicitly named a workflow** — a lifecycle by name or code (AI-DLC, PDLC, ASDLC, STBLC, FDLC, BFLC, RLC, TLC, CRLC, or a custom lifecycle of the project's `.ai-dlc/workflow.json`) or an unambiguous equivalent ("full lifecycle", "end to end", "take it from idea to release" for AI-DLC; "run a code review on PR 42", "just write the tests", "only design it, don't build"). An explicit choice is binding in Step 2.
 
 Decide whether the request needs a work breakdown from `product-manager` (`task-triage`):
 
@@ -78,7 +78,11 @@ Security fixes and regressions are flagged `route-immediately`; send them for br
 
 ## Step 2 — Decide the workflow for each work item
 
-Load `Skill("ai-dlc")` and use its lifecycle table — never pick from memory.
+Load `Skill("ai-dlc")` and use its lifecycle table — never pick from memory. When the repository has `.ai-dlc/workflow.json` (the effective workflow, see the `ai-dlc` skill's *Project workflow*), it overrides that table and the two tables below:
+
+- the lifecycles to choose from, their stages and agents come from its `lifecycles`; a `custom` lifecycle is picked when its `pickWhen` matches the item;
+- the default lifecycle per request type comes from `routing.byType`, the single-agent hand-offs from `routing.handOff`, and the types routed before confirmation from `routing.routeImmediately`;
+- an agent in `agents.disabled` is never routed to; a work kind whose hand-off agent is disabled goes to the human as a question.
 
 1. **The user named a workflow** → run exactly that lifecycle for the items it covers. If it cannot work as asked (for example FDLC requested but no stories or spec exist), do not silently switch: tell the human what is missing and propose the earlier lifecycle that produces it.
 2. **No workflow named** → decide per work item from its state, earliest missing artifact first:
@@ -95,6 +99,7 @@ Load `Skill("ai-dlc")` and use its lifecycle table — never pick from memory.
 | lacks coverage, AC traceability or mutation strength | **TLC** |
 | is an open change / PR to drive to merge-ready | **CRLC** |
 | is a release | Release phase (`product-manager` checklist → `product-owner` go / no-go → `devops-engineer`) |
+| fits a project's `custom` lifecycle's `pickWhen` | that lifecycle |
 
 Feature work defaults to **AI-DLC**: one item that runs from its earliest missing artifact through G1–G4 to Release, gated by the human at each boundary. Pick a segment lifecycle (PDLC, ASDLC, STBLC, FDLC) only when the user limits scope to it or `product-manager` split the AI-DLC run into separate items. A bug or refactor that turns out to need new behaviour forks an AI-DLC item.
 
@@ -116,7 +121,7 @@ State the reason for every choice in the Routing Plan, so the human can correct 
 
 ## Step 3 — Assign the agent chain
 
-Within the chosen workflow, use the agents the `ai-dlc` lifecycle lists for its stages. For work handed to one agent, the chain is that agent. Then apply:
+Within the chosen workflow, use the agents the effective workflow lists for its stages (default: the `ai-dlc` lifecycle). For work handed to one agent, the chain is that agent. Then apply:
 
 - **Research-prepend rule** — if the item is marked *needs research* in the breakdown, or its design or implementation depends on external technology the team has not recently verified, prepend `research-assistant`; the next agent waits for the cited findings report.
 - **Scope decision first** — Feature or TechDebt items flagged for a `product-owner` decision get `product-owner` before the build chain.

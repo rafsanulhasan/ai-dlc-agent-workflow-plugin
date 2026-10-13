@@ -1,6 +1,6 @@
 ---
 name: ai-dlc
-description: "AI-DLC lifecycle router and operating model. Defines the full AI-DLC lifecycle — idea to release through every gate (Plan → G1 → Architect & Design → G2 → Breakdown → G3 → Build · Test · Review → G4 → Release) — the default for feature work, plus eight named lifecycles that are its segments (PDLC, ASDLC, STBLC, FDLC) or focused entry points (BFLC, RLC, TLC, CRLC). Use FIRST for any non-trivial request to pick which lifecycle applies, which agents own each stage, which artifact each stage must hand off, which gates a human must approve, and which upstream agents a stage consults when an input is unclear (the Clarify loop). The orchestrator's request-routing skill chooses each work item's lifecycle from this catalogue (unless the user named one), and the orchestrator follows it to run each stage."
+description: "AI-DLC lifecycle router and operating model. Defines the full AI-DLC lifecycle — idea to release through every gate (Plan → G1 → Architect & Design → G2 → Breakdown → G3 → Build · Test · Review → G4 → Release) — the default for feature work, plus eight named lifecycles that are its segments (PDLC, ASDLC, STBLC, FDLC) or focused entry points (BFLC, RLC, TLC, CRLC). Use FIRST for any non-trivial request to pick which lifecycle applies, which agents own each stage, which artifact each stage must hand off, which gates a human must approve, and which upstream agents a stage consults when an input is unclear (the Clarify loop). The orchestrator's request-routing skill chooses each work item's lifecycle from this catalogue (unless the user named one), and the orchestrator follows it to run each stage. This catalogue is the default; a project's .ai-dlc/workflow.json overrides it."
 ---
 
 # AI-DLC — Lifecycle Router
@@ -15,6 +15,10 @@ The routing layer has four parts, used in this order:
 2. **`ai-dlc`** (this skill) — the lifecycle catalogue: stages, owners, exit artifacts and human gates.
 3. **`agent-invocation`** — spawns agents with self-contained briefs.
 4. **`handoff`** — records and verifies the artifact that crosses each stage boundary.
+
+## Project workflow
+
+Everything below is the **default** workflow. Its machine-readable form is `templates/workflow.json` of the `workflow` skill. A repository's `.ai-dlc/workflow.json` overrides it, and wherever the two differ the file wins: lifecycles and their stages, stage owners and who hands off to whom, parallel stages, loops, gates and their approvers (`human`, `orchestrator` or `none`), the clarify matrix and round limit, routing, disabled and custom agents, and artifact paths. `node .ai-dlc/workflow.mjs show` prints the effective workflow; changes go through `/workflow edit` (**Boris Cherny** (`agent-manager`)). The guardrails in Step 3 hold whatever the file says.
 
 ## Roles
 
