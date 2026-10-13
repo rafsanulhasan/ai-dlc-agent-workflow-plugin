@@ -51,6 +51,7 @@ You can also install the plugin directly, without the marketplace: `copilot plug
    - `CLAUDE.md`.
    - `.claude/settings.json`, merged into any existing file. It includes `"agent": "ai-dlc:orchestrator"`.
    - `docs/backlog/backlog.md` and the empty `docs/` folders the lifecycles write to: `specs/`, `architecture/decisions/`, `architecture/narratives/`, `plans/`, `handoffs/`, `product/`.
+   - The worktree root and the scratch root, installed by `workspace-folders`: recorded in `AGENTS.md` and `CLAUDE.md`, added to `.gitignore`, and a Claude `WorktreeCreate` / `WorktreeRemove` hook pair that creates worktrees under the root. Run `/ai-dlc:workspace-folders` to change them later.
    - **.NET repositories only** (detected from a `.sln`, `.slnx` or `.csproj` file):
      - The C# coding-style, GlobalUsings and testing rules, installed by `dotnet-rules`.
      - The `dotnet test` gate hook, installed by `dotnet-test-gate`.
@@ -139,9 +140,10 @@ Every skill is also a slash command: `/ai-dlc:<name>` in Claude Code, or the `<n
 | Communication | `write-documentation`, `presentation-authoring`, `terse-output` | documentation-writer, presentation-manager; `terse-output`: the user and every agent |
 | Research | `research` | research-assistant |
 | Team management | `agent-management`, `skill-management`, `hook-management`, `rules-management`, `command-management`, `plugin-management`, `manage-memory` | agent-manager (all agents use `manage-memory`) |
-| Project setup | `init`, `dotnet-rules`, `dotnet-test-gate`, `node-rules`, `node-test-gate` | the user |
+| Workspace (Copilot only) | `scratchpad` | every agent on Copilot, before its first temporary file (Claude Code has a built-in scratchpad, so the Claude plugin does not ship it) |
+| Project setup | `init`, `workspace-folders`, `dotnet-rules`, `dotnet-test-gate`, `node-rules`, `node-test-gate` | the user |
 
-`init`, `dotnet-rules`, `dotnet-test-gate`, `node-rules` and `node-test-gate` are **user-invocable only**: they set `disable-model-invocation: true`. `init` reads the stack skills' `SKILL.md` files and follows them, rather than calling them. Run `/ai-dlc:dotnet-test-gate`, `/ai-dlc:dotnet-rules`, `/ai-dlc:node-test-gate` or `/ai-dlc:node-rules` yourself to add, repair or remove them later.
+`init`, `workspace-folders`, `dotnet-rules`, `dotnet-test-gate`, `node-rules` and `node-test-gate` are **user-invocable only**: they set `disable-model-invocation: true`. `init` reads these skills' `SKILL.md` files and follows them, rather than calling them. Run `/ai-dlc:workspace-folders`, `/ai-dlc:dotnet-test-gate`, `/ai-dlc:dotnet-rules`, `/ai-dlc:node-test-gate` or `/ai-dlc:node-rules` yourself to add, repair or remove them later.
 
 ### Which agent uses which skill
 
@@ -156,6 +158,7 @@ The **lifecycle agents** own a stage and hand an artifact on: James Montemagno (
 | `agent-invocation` | All agents | Every agent, before it spawns or briefs another agent |
 | `manage-memory` | All agents | Every agent: load at session start, save durable learnings |
 | `terse-output` | All agents | Every agent, for the compressed report it returns to its caller; by default for Jon Skeet (`research-assistant`), whose reader is another agent; Scott Hanselman (`orchestrator`) when the human asks for shorter answers |
+| `scratchpad` | All agents (Copilot only) | Every agent on Copilot, before it writes its first temporary file; on Claude Code agents use the scratch root from `AGENTS.md` directly |
 | `handoff` | Lifecycle agents | Scott Hanselman (`orchestrator`) and every lifecycle agent, at each stage boundary; Robert C. Martin (`code-reviewer`) and Linus Torvalds (`brutal-critique`) verify records but never write one |
 | `ai-dlc` | Role | Scott Hanselman (`orchestrator`) |
 | `request-routing` | Role | Scott Hanselman (`orchestrator`) |
@@ -190,12 +193,15 @@ The **lifecycle agents** own a stage and hand an artifact on: James Montemagno (
 | `agent-management`, `command-management`, `hook-management`, `rules-management`, `plugin-management` | Role | Boris Cherny (`agent-manager`) |
 | `skill-management` | Role | Boris Cherny (`agent-manager`); Linus Torvalds (`brutal-critique`) reads its writing guide for agent and skill files; every other agent asks Boris Cherny (`agent-manager`) for skill changes |
 | `init` | Init-only | The user (`/ai-dlc:init`); no agent |
+| `workspace-folders` | Init-only | Followed by `init` in every repository, or run by the user to change the worktree or scratch root; no agent |
 | `dotnet-rules`, `dotnet-test-gate` | Init-only | Followed by `init` in .NET repositories, or run by the user; no agent |
 | `node-rules`, `node-test-gate` | Init-only | Followed by `init` in JS / TS repositories, or run by the user; no agent |
 
 ## Hooks and rules
 
 The plugin ships **no hooks and no rules**. A plugin hook would run in every project that enables the plugin, and stack-specific checks do not belong everywhere. Instead, `init` installs them only into repositories of the matching stack.
+
+- **`workspace-folders`** (every stack) installs `.claude/hooks/worktree-create.mjs` and `worktree-remove.mjs` with `WorktreeCreate` / `WorktreeRemove` entries in `.claude/settings.json`, so Claude Code creates its worktrees under the configured worktree root instead of `.claude/worktrees/`. Copilot has no worktree location setting; it follows the `AGENTS.md` instruction.
 
 - **`dotnet-test-gate`** installs three things:
   - `.claude/hooks/enforce-tests.ps1`.
@@ -223,6 +229,7 @@ The plugin ships **no hooks and no rules**. A plugin hook would run in every pro
 |---|---|
 | `agents/<a>.md` | `agents/<a>.agent.md` with a platform note. Tools are mapped (see below). Claude-only tools are dropped. `mcp__*` tools are kept. Agents marked `status: deprecated` are skipped |
 | `skills/**` | Copied, with the `ai-dlc:` namespace and the `${CLAUDE_SKILL_DIR}/` prefix stripped from Markdown |
+| `tools/overlays/non-claude/skills/**` | Added to `skills/` the same way (Copilot only, e.g. `scratchpad`); a name shared with a Claude skill fails the build |
 | `scripts/**` | Copied verbatim |
 | `hooks/hooks.json` (none today) | `hooks.json` in Copilot's `version: 1` format (`Stop` → `agentStop`) |
 | `.claude-plugin/plugin.json` | `plugin.json` and `GENERATED.md` |

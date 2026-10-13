@@ -61,7 +61,7 @@ ask MESSAGE "Paste the error text shown, or 'none':"
 printf '\n--- result ---\nFAILED=%s\nMESSAGE=%s\n' "$FAILED" "$MESSAGE"
 ```
 
-Keep the script in the scratch or temp area, not in the repository, and delete it during cleanup.
+Keep the script in this session's scratch folder (`<scratchpad root>/<session-or-task>/`, the root recorded in AGENTS.md "Workspace folders"), never in tracked files, and delete it during cleanup.
 
 ## When no loop is possible
 

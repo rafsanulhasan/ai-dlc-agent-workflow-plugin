@@ -14,6 +14,9 @@
 // - if skills/plugin-management/ exists: skills/plugin-management/templates/build-copilot.mjs,
 //   a copy of this script for new plugins.
 // Never hand-edit generated files either.
+//
+// Optional non-Claude overlay: skills under tools/overlays/non-claude/skills/ are added to the
+// Copilot plugin only (see the overlay section below).
 
 import fs from "node:fs";
 import path from "node:path";
@@ -199,6 +202,25 @@ if (fs.existsSync(MIRRORS)) {
 for (const p of walk(path.join(SRC, "skills"))) {
   const rel = path.relative(SRC, p).split(path.sep).join("/");
   files.set(rel, p.endsWith(".md") ? stripNamespace(fs.readFileSync(p, "utf8")) : fs.readFileSync(p));
+}
+
+// ---- non-Claude overlay skills ------------------------------------------------
+// tools/overlays/non-claude/skills/<skill>/ holds skills that only non-Claude plugins
+// ship (for example `scratchpad`, which stands in for Claude Code's built-in
+// per-session scratchpad). The Claude plugin never contains them. The folder is
+// provider-neutral on purpose: a future build for another provider (Codex, …) reads
+// the same overlay. An overlay skill may not reuse a Claude plugin skill's name.
+const OVERLAY_SKILLS = path.join(ROOT, "tools", "overlays", "non-claude", "skills");
+if (fs.existsSync(OVERLAY_SKILLS)) {
+  for (const e of fs.readdirSync(OVERLAY_SKILLS, { withFileTypes: true }).filter((e) => e.isDirectory())) {
+    if (fs.existsSync(path.join(SRC, "skills", e.name))) {
+      throw new Error(`tools/overlays/non-claude/skills/${e.name} collides with the Claude plugin skill "${e.name}" — rename one`);
+    }
+    for (const p of walk(path.join(OVERLAY_SKILLS, e.name))) {
+      const rel = `skills/${path.relative(OVERLAY_SKILLS, p).split(path.sep).join("/")}`;
+      files.set(rel, p.endsWith(".md") ? stripNamespace(fs.readFileSync(p, "utf8")) : fs.readFileSync(p));
+    }
+  }
 }
 
 // ---- scripts (copied verbatim) ------------------------------------------------

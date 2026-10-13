@@ -112,7 +112,7 @@ Sometimes the whole task is to prove that work already done meets its acceptance
 When a session must stop before its stage is finished — the context window is nearly full, the human is pausing, or the work moves to another machine or tool — compact the conversation into a session handoff so a fresh agent can continue without the chat history.
 
 1. **Ask what the next session is for**, if the caller has not said. Tailor the document to that focus and leave out what it will not need.
-2. **Write it outside the repository**, in the operating system's temp directory (`$TMPDIR`, else `/tmp`; `%TEMP%` on Windows), named `<work-item-id>-session-<YYYYMMDD-HHMM>.md`. It is a working note, not an audit record, so it does not belong in `docs/handoffs/` and is never committed. Give the caller the full path.
+2. **Write it to the scratch folder**, `<scratchpad root>/<work-item-id>/` (the gitignored root recorded in AGENTS.md "Workspace folders"), named `<work-item-id>-session-<YYYYMMDD-HHMM>.md`. It is a working note, not an audit record, so it does not belong in `docs/handoffs/` and is never committed. Give the caller the full path.
 3. **Reference, don't copy.** Link the spec, plan, ADRs, earlier handoff records, branch and commits by path, URL or SHA.
 4. **Redact** exactly as for stage records.
 

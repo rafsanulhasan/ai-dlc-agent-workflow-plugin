@@ -1,6 +1,6 @@
 ---
 name: init
-description: "Bootstraps a repository for the AI-DLC agent team: scaffolds AGENTS.md (the orchestrator persona with all its skills, plus the project's commands and gates), CLAUDE.md, recommended .claude/settings.json permissions and the docs/ skeleton the lifecycles write to, and lets the developer name the agent team (each renamed agent remembers its name; the orchestrator keeps the roster). For each supported stack it detects it also installs the stack's coding and testing rules with their Copilot twins, a test gate hook and a Stryker config: .NET via dotnet-rules and dotnet-test-gate, JavaScript / TypeScript (Node.js) via node-rules and node-test-gate. A repository with both stacks gets both. Use once per repository, or to repair a partial setup. Never overwrites existing files without showing a diff first."
+description: "Bootstraps a repository for the AI-DLC agent team: scaffolds AGENTS.md (the orchestrator persona with all its skills, plus the project's commands, gates and workspace folders), CLAUDE.md, recommended .claude/settings.json permissions and the docs/ skeleton the lifecycles write to; sets the worktree root and the gitignored scratch root via workspace-folders; and lets the developer name the agent team (each renamed agent remembers its name; the orchestrator keeps the roster). For each supported stack it detects it also installs the stack's coding and testing rules with their Copilot twins, a test gate hook and a Stryker config: .NET via dotnet-rules and dotnet-test-gate, JavaScript / TypeScript (Node.js) via node-rules and node-test-gate. A repository with both stacks gets both. Use once per repository, or to repair a partial setup. Never overwrites existing files without showing a diff first."
 disable-model-invocation: true
 ---
 
@@ -23,7 +23,8 @@ Plugins cannot ship project rules, hooks, permissions or `AGENTS.md`, so this sk
      - an existing Stryker config (`stryker.config.*`, `stryker.conf.*`, `.stryker.conf.*`), a pre-commit setup (`.husky/`, a lint-staged config), and whether the JS/TS rules (`.claude/rules/node-*.md`) and the test gate (`enforce-tests.mjs` in `hooks.Stop`) are already installed.
    - Any other stack is recorded as "other" by name (for example Python or Go).
 3. List which of these already exist: `AGENTS.md`, `CLAUDE.md`, `.claude/settings.json`, `.claude/rules/*`, `.github/instructions/*`, `.github/hooks/*`, `docs/backlog/backlog.md`.
-4. Read the default team roster: for each `../../agents/*.md` (the plugin's `agents/` folder), the agent ID (file name) and the name in its `Persona name: **<Name>**` line. Overlay any existing `.claude/agent-memory/<agent>/user_persona-name.md` so a re-run shows the current names.
+4. Workspace folders: read `../workspace-folders/SKILL.md` and follow its **Inspect** section (roots from an earlier init, `.gitignore`, existing worktrees, worktree hooks). It runs even when `AGENTS.md` does not exist yet; then the mode is create.
+5. Read the default team roster: for each `../../agents/*.md` (the plugin's `agents/` folder), the agent ID (file name) and the name in its `Persona name: **<Name>**` line. Overlay any existing `.claude/agent-memory/<agent>/user_persona-name.md` so a re-run shows the current names.
 
 ## Phase 1 — Confirm (one message)
 
@@ -38,6 +39,7 @@ Show the user a table of files to **create**, files that **exist** (will be diff
 - Per supported stack: the rules and test gate hook that will be installed, and what the gate will run (.NET: the test solution, a `*.Testing.slnx` / `*.Tests.sln` if present; JS/TS: the confirmed test command and folder)
 - JS/TS only: the Stryker test runner (`vitest` → `vitest`, `jest` → `jest`, `mocha` → `mocha`, `node:test` → `tap`, else `command`), and whether to offer the optional pre-commit hook from `node-rules`
 - Mutation break threshold (default 60)
+- Workspace folders: the worktree root and scratch root, validated, with the `.gitignore` lines and hook entries — the **Confirm** section of `workspace-folders`, inside this same message
 - Team names: a table agent ID → current name (default, or the name chosen at an earlier init). Ask whether to rename any agents; the developer replies with `agent → new name` pairs, or "keep". Validate:
   - names are unique across the team (case-insensitive) and never equal an agent ID or a role alias (the ID with spaces, or a short form in the role-alias table under "Addressing agents by name or role" in `../../agents/orchestrator.md`, e.g. "architect", "QA");
   - `product-owner`, `product-manager` and `requirement-analyst` share one default name, so addressing that name is ambiguous — suggest distinct names, but do not force them.
@@ -58,6 +60,8 @@ For each template, replace the `{{PLACEHOLDERS}}` and write it. For a file that 
 | `templates/stryker-config.json` | test project folder (.NET only, and only if no Stryker.NET config exists) |
 | `templates/stryker.config.json` | the folder whose `package.json` runs the confirmed test command, usually the repository root (JS/TS only, and only if no StrykerJS config exists) — see the JS/TS steps below |
 | `templates/docs/backlog.md` | `docs/backlog/backlog.md` |
+
+**Workspace folders** (every stack): fill `{{WORKTREE_ROOT}}` and `{{SCRATCHPAD_ROOT}}` in `AGENTS.md` and `CLAUDE.md` with the roots confirmed in Phase 1, then follow the **Write** section of `../workspace-folders/SKILL.md` (`.gitignore`, the Claude worktree hooks and `.claude/settings.json`).
 
 In a repository with both stacks, fill each command placeholder in `AGENTS.md` and `CLAUDE.md` once per stack: one table row or list line per stack, labelled (for example "Test (.NET)" and "Test (JS/TS)").
 
@@ -98,7 +102,7 @@ Also create empty folders with a `.gitkeep`: `docs/specs/`, `docs/architecture/d
 
 ## Phase 3 — Report
 
-List every file created or changed and the team roster (agent ID → name), then the next step:
+List every file created or changed, the items of the `workspace-folders` **Report**, and the team roster (agent ID → name). Say that `/workspace-folders` changes the roots later. Then the next step:
 
 > The orchestrator is now the default agent for this repo (`"agent": "orchestrator"` in `.claude/settings.json`), so every request reaches it first. One-off alternative: `claude --agent orchestrator`. On Copilot, select the `orchestrator` custom agent.
 

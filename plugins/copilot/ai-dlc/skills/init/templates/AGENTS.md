@@ -297,6 +297,20 @@ Whenever you need external knowledge — library/API/SDK behavior, framework con
 | Task plans | `docs/plans/<feature-slug>.tasks.md` |
 | Handoff records | `docs/handoffs/<work-item>/` |
 
+### Workspace folders
+
+| Folder | Root | One folder per |
+|---|---|---|
+| Worktrees | `{{WORKTREE_ROOT}}` | branch or task: `{{WORKTREE_ROOT}}/<branch-or-task-slug>/` |
+| Scratch | `{{SCRATCHPAD_ROOT}}` | session or task: `{{SCRATCHPAD_ROOT}}/<session-or-task>/` |
+
+Both roots are relative to the repository root unless absolute. Change them with the `workspace-folders` skill (`/workspace-folders` on Claude Code); it also moves existing worktrees and scratch folders.
+
+- **Worktrees.** Create each one with `git worktree add {{WORKTREE_ROOT}}/<slug> -b <branch>`: one worktree per task or branch. Remove it with `git worktree remove {{WORKTREE_ROOT}}/<slug>` once its branch is merged.
+- **Scratch.** Every temporary file — throwaway scripts, repro programs, intermediate outputs, deck copies, packed tarballs, session notes — goes in `{{SCRATCHPAD_ROOT}}/<session-or-task>/`. The scratch root is gitignored and stays inside the repository; it replaces the operating system's temp directory and any other spot in the tree, and nothing in it is committed.
+  - **GitHub Copilot and other providers:** load the `scratchpad` skill before writing the first scratch file.
+  - **Claude Code:** use this root in place of the harness's per-session scratchpad directory.
+
 ### Quality gates
 
 - After any change to runtime code, test code, runtime configuration or build logic: `{{TEST_CMD}}` must pass (enforced by the test gate hook that `init` installs for .NET and JavaScript / TypeScript), then `{{MUTATION_CMD}}` is run by `sqa-engineer`. Mutation break threshold: **{{MUTATION_BREAK}}%**.
