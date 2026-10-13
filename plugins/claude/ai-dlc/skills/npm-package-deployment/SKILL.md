@@ -94,7 +94,7 @@ Before publishing:
 1. `npm pack --dry-run` (or `npm publish --dry-run --tag <tag>`) and read the file list and the unpacked size.
 2. Confirm the tarball contains **only**: built output, `package.json`, `README.md`, `LICENSE` (plus `CHANGELOG.md` if wanted).
 3. Confirm it contains **none** of: `.env*`, `.npmrc`, keys or certificates (`*.pem`, `*.key`), CI files, `src/` (unless intentional), tests, fixtures, coverage, Stryker reports, unintended `*.map` files, or anything over the expected size.
-4. Pack for real (`npm pack`), install the tarball into a scratch folder and import every `exports` entry (ESM and CJS where both are offered). For TypeScript consumers, typecheck a one-line import. Tools such as `publint` and `@arethetypeswrong/cli` catch `exports` / types mistakes.
+4. Pack for real (`npm pack --pack-destination <scratch folder>`, where the scratch folder is `<scratchpad root>/<session-or-task>/` from AGENTS.md "Workspace folders"), install the tarball into a consumer project in that same folder and import every `exports` entry (ESM and CJS where both are offered). For TypeScript consumers, typecheck a one-line import. Tools such as `publint` and `@arethetypeswrong/cli` catch `exports` / types mistakes.
 
 ### Phase 5 — Publish
 

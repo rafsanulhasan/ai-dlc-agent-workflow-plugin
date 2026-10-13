@@ -25,6 +25,7 @@ Agents are then `ai-dlc:<name>` and skills `/ai-dlc:<name>`, read straight from 
 - `plugins/claude/ai-dlc/` — source of truth (agents, skills)
 - `plugins/copilot/ai-dlc/` — generated; never hand-edit
 - `tools/build-copilot.mjs` — Claude → Copilot projection
+- `tools/overlays/non-claude/skills/` — skills only non-Claude plugins ship (currently `scratchpad`); the build adds them to the Copilot plugin, never to the Claude one
 - `.claude-plugin/marketplace.json`, `.github/plugin/marketplace.json` — marketplaces
 - Stack-specific rules and hooks (`dotnet-rules` and `dotnet-test-gate` for .NET, `node-rules` and `node-test-gate` for JS / TS) are installed into target repositories by skills that `/ai-dlc:init` runs; the plugin itself ships no hooks or rules.
 - `.claude/rules/plugin-development.md` — the workflow rule for this repository.

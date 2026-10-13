@@ -17,7 +17,7 @@ Helpers in `${CLAUDE_SKILL_DIR}/scripts/` (Python standard library and PowerShel
 
 ## 1. Work on a copy
 
-- Copy the deck to a scratch folder and work there; write back to the original path only after QA passes.
+- Copy the deck to this session's scratch folder (`<scratchpad root>/<session-or-task>/`, the root recorded in AGENTS.md "Workspace folders") and work there; write back to the original path only after QA passes.
 - If the deck is not committed yet, tell the user — an overwritten deck cannot be recovered otherwise.
 
 ## 2. Read it
