@@ -1,0 +1,3 @@
+# `node tools/build-copilot.mjs --check` compares generated files byte for byte, so every
+# text file is checked out with LF line endings whatever core.autocrlf says.
+* text=auto eol=lf
