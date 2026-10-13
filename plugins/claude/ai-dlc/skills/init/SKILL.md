@@ -1,6 +1,6 @@
 ---
 name: init
-description: "Bootstraps a repository for the AI-DLC agent team: scaffolds AGENTS.md (the orchestrator persona with all its skills, plus the project's commands, gates and workspace folders), CLAUDE.md (an @AGENTS.md import plus Claude Code specifics), .github/copilot-instructions.md (the GitHub Copilot specifics), recommended .claude/settings.json permissions and the docs/ skeleton the lifecycles write to; sets the worktree root and the gitignored scratch root via workspace-folders; and lets the developer name the agent team (each renamed agent remembers its name; the orchestrator keeps the roster). For each supported stack it detects it also installs the stack's coding and testing rules with their Copilot twins, a test gate hook and a Stryker config: .NET via dotnet-rules and dotnet-test-gate, JavaScript / TypeScript (Node.js) via node-rules and node-test-gate. A repository with both stacks gets both. Use once per repository, to repair a partial setup, or to refresh after a plugin update. An existing AGENTS.md or CLAUDE.md is merged, not replaced: init owns only its marked blocks. Never overwrites existing files without showing a diff first."
+description: "Bootstraps a repository for the AI-DLC agent team: scaffolds AGENTS.md (the orchestrator persona with all its skills, plus the project's commands, gates and workspace folders), CLAUDE.md (an @AGENTS.md import plus Claude Code specifics), .github/copilot-instructions.md (the GitHub Copilot specifics), recommended .claude/settings.json permissions and the docs/ skeleton the lifecycles write to; sets the worktree root and the gitignored scratch root via workspace-folders; installs the two-way Claude Code ↔ GitHub Copilot harness sync script (.claude/scripts/sync-harness.mjs); and lets the developer name the agent team (each renamed agent remembers its name; the orchestrator keeps the roster). For each supported stack it detects it also installs the stack's coding and testing rules with their Copilot twins, a test gate hook and a Stryker config: .NET via dotnet-rules and dotnet-test-gate, JavaScript / TypeScript (Node.js) via node-rules and node-test-gate. A repository with both stacks gets both. Use once per repository, to repair a partial setup, or to refresh after a plugin update. An existing AGENTS.md or CLAUDE.md is merged, not replaced: init owns only its marked blocks. Never overwrites existing files without showing a diff first."
 disable-model-invocation: true
 ---
 
@@ -23,7 +23,7 @@ Plugins cannot ship project rules, hooks, permissions or `AGENTS.md`, so this sk
      - an existing Stryker config (`stryker.config.*`, `stryker.conf.*`, `.stryker.conf.*`), a pre-commit setup (`.husky/`, a lint-staged config), and whether the JS/TS rules (`.claude/rules/node-*.md`) and the test gate (`enforce-tests.mjs` in `hooks.Stop`) are already installed.
    - Any other stack is recorded as "other" by name (for example Python or Go).
 3. Existing `AGENTS.md`, `CLAUDE.md` and `.github/copilot-instructions.md` (any case; `CLAUDE.md` also in `.claude/`; note `CLAUDE.local.md` and never touch it): follow "Inspect an existing file" in [references/managed-blocks.md](references/managed-blocks.md). Reuse the commands and notes they state as Phase 1 defaults.
-4. List which of these already exist: `.claude/settings.json`, `.claude/rules/*`, `.github/instructions/*`, `.github/hooks/*`, `docs/backlog/backlog.md`.
+4. List which of these already exist: `.claude/settings.json`, `.claude/rules/*`, `.github/instructions/*`, `.github/hooks/*`, `.claude/scripts/sync-harness.mjs`, `docs/backlog/backlog.md`.
 5. Workspace folders: read `${CLAUDE_SKILL_DIR}/../workspace-folders/SKILL.md` and follow its **Inspect** section (roots from an earlier init, `.gitignore`, existing worktrees, worktree hooks). It runs even when `AGENTS.md` does not exist yet; then the mode is create.
 6. Read the default team roster: for each `${CLAUDE_SKILL_DIR}/../../agents/*.md` (the plugin's `agents/` folder), the agent ID (file name) and the name in its `Persona name: **<Name>**` line. Overlay any existing `.claude/agent-memory/<agent>/user_persona-name.md` so a re-run shows the current names.
 
@@ -69,6 +69,8 @@ For each template, replace the `{{PLACEHOLDERS}}` and write it. For a file that 
 
 In a repository with both stacks, fill each command placeholder in `AGENTS.md` once per stack: one table row or list line per stack, labelled (for example "Test (.NET)" and "Test (JS/TS)").
 
+**Harness sync script** (every stack): copy `${CLAUDE_SKILL_DIR}/../harness-sync/templates/sync-harness.mjs` to `.claude/scripts/sync-harness.mjs`; an existing different copy is diffed first, like every other file. Run it last, after every other file in this phase is written, with `node .claude/scripts/sync-harness.mjs --check`, and report its output in Phase 3. Done when it exits 0, or when every line it prints is in the report. Developers run it themselves after hand-made changes; `/ai-dlc:harness-sync install` installs or refreshes it later.
+
 Also create empty folders with a `.gitkeep`: `docs/specs/`, `docs/architecture/decisions/`, `docs/architecture/narratives/`, `docs/plans/`, `docs/handoffs/`, `docs/product/`.
 
 **.NET projects only:**
@@ -106,7 +108,7 @@ Also create empty folders with a `.gitkeep`: `docs/specs/`, `docs/architecture/d
 
 ## Phase 3 — Report
 
-List every file created or changed, the items of the `workspace-folders` **Report**, and the team roster (agent ID → name). Say that `/ai-dlc:workspace-folders` changes the roots later. Then the next step:
+List every file created or changed, the items of the `workspace-folders` **Report**, and the team roster (agent ID → name). Say that `/ai-dlc:workspace-folders` changes the roots later, and that `node .claude/scripts/sync-harness.mjs` syncs agents, skills, commands, rules and hooks made on either platform to the other (`--check` only reports). Then the next step:
 
 > The orchestrator is now the default agent for this repo (`"agent": "ai-dlc:orchestrator"` in `.claude/settings.json`), so every request reaches it first. One-off alternative: `claude --agent ai-dlc:orchestrator`. On Copilot, select the `orchestrator` custom agent.
 

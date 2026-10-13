@@ -65,6 +65,7 @@ Trigger: any time an agent definition needs to be created, modified, synced, or 
 Skill("skill-management", args: "list")
 Skill("skill-management", args: "create-skill <name>")
 Skill("skill-management", args: "update-skill <name> <change-description>")
+Skill("skill-management", args: "sync-skill <name>")
 ```
 
 Trigger: any time a skill file or command file needs to be created, modified, or deprecated. Always use this skill — never edit skill or command files directly without it.

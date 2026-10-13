@@ -17,7 +17,7 @@ This skill is platform-aware and actionable. It always discovers existing comman
 
 ## Inputs Expected
 
-- Operation: `create` | `modify` | `delete`
+- Operation: `create` | `modify` | `delete` | `sync`
 - Platform target: `claude` | `copilot` | `both` (default: `both`)
 - Command/prompt name: kebab-case identifier matching the linked skill name
 - Description: what the command does (used in frontmatter `description`)
@@ -96,36 +96,15 @@ description: <one-line description>
 <list any destructive-action guardrails>
 ```
 
-**Copilot prompt** — write `.github/prompts/<name>.prompt.md`:
+Add `argument-hint: <short arg hint>` when the command takes arguments, and write them in the body as `$ARGUMENTS`.
 
-```markdown
----
-description: "<one-line description>"
-agent: "agent"
-argument-hint: "<short arg hint>"
----
-
-<concise summary paragraph>
-
-## Modes
-
-<list of supported modes/args>
-
-## Expected Workflow
-
-<numbered summary mirroring the SKILL.md phases>
-
-## Safety Defaults
-
-<list any destructive-action guardrails>
-```
+**Copilot prompt** — generate `.github/prompts/<name>.prompt.md` from the command with `Skill("ai-dlc:harness-sync", args: "sync --only commands --name <name> --prefer claude")`. It writes the same body with `$ARGUMENTS` as `${input:arguments}`, the same `description` and `argument-hint`, and `agent: agent`. Positional `$1…` arguments have no Copilot form; use `$ARGUMENTS`.
 
 ### modify
 
-1. Read both existing files.
-2. Apply requested changes to `description`, body sections, or usage examples.
-3. Keep both files in sync unless a platform-specific change is explicitly requested.
-4. Preserve all unrelated content.
+1. Apply requested changes to the Claude command's `description`, `argument-hint` or body. A change to a Copilot-only key (`agent`, `model`, `tools`) goes to the prompt file directly.
+2. Bring the prompt in step as in `create`, unless a platform-specific change is explicitly requested.
+3. Preserve all unrelated content.
 
 ### delete
 
@@ -135,9 +114,7 @@ argument-hint: "<short arg hint>"
 
 ### sync
 
-1. Diff the Claude command and Copilot prompt for the same name.
-2. Identify which is authoritative (typically the one most recently updated, or the one linked to a living skill).
-3. Reconcile the non-authoritative file to match, preserving platform-specific frontmatter fields.
+Run `Skill("ai-dlc:harness-sync", args: "sync --only commands --name <name>")`, adding `--prefer claude|copilot` when the user named the authoritative side; otherwise the side edited last wins. Done when its `--check` exits 0.
 
 ---
 

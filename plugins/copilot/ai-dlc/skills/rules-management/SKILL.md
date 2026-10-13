@@ -23,7 +23,7 @@ This skill is invoked by `agent-manager` for rules and instructions lifecycle op
 - Platform target: `claude` | `copilot` | `both` (default: `both`)
 - Rule/instruction name: kebab-case identifier
 - Description: what the rule or instruction enforces
-- Scope pattern: `globs` for Claude rules and `applyTo` for Copilot instructions
+- Scope pattern: `paths` (a list of globs) for Claude rules and `applyTo` (the same globs, comma-separated) for Copilot instructions; none means the rule always applies
 - Body: the markdown guidance content to enforce
 
 If any required input is missing, ask only the minimum clarifying questions needed to proceed.
@@ -80,8 +80,8 @@ Decision rule:
 ```markdown
 ---
 description: <one-line description>
-globs: "**/*"
-alwaysApply: false
+paths:
+  - "src/**/*.ts"
 ---
 
 # <Rule Title>
@@ -89,24 +89,15 @@ alwaysApply: false
 <rule body>
 ```
 
-**Copilot instruction** - write `.github/instructions/<name>.instructions.md`:
+Omit `paths` for a rule that always applies.
 
-```markdown
----
-applyTo: "**/*"
-description: "<one-line description>"
----
-
-# <Instruction Title>
-
-<instruction body>
-```
+**Copilot instruction** - generate `.github/instructions/<name>.instructions.md` from the rule with `Skill("harness-sync", args: "sync --only rules --name <name> --prefer claude")`. It writes the same body with `applyTo: "src/**/*.ts"` (comma-separated for several globs; `"**"` when the rule has no `paths`) and keeps Copilot-only keys such as `excludeAgent`.
 
 ### modify
 
 1. Read both existing files.
-2. Apply requested changes to frontmatter fields (`description`, `globs`/`applyTo`, `alwaysApply`) and body sections.
-3. Keep both files in sync unless a platform-specific change is explicitly requested.
+2. Apply requested changes to the frontmatter (`description`, `paths`) and body of the Claude rule. A rule that still has the older `globs` key: rename it to `paths`, as a list.
+3. Bring the Copilot twin in step as in `create`, unless a platform-specific change is explicitly requested.
 4. Preserve all unrelated content.
 
 ### delete
@@ -117,9 +108,7 @@ description: "<one-line description>"
 
 ### sync
 
-1. Diff the Claude rule and Copilot instruction for the same name.
-2. Identify which is authoritative (typically the one most recently updated, or the one intentionally specified by the user).
-3. Reconcile the non-authoritative file to match, preserving platform-specific frontmatter fields.
+Run `Skill("harness-sync", args: "sync --only rules --name <name>")`, adding `--prefer claude|copilot` when the user named the authoritative side; otherwise the side edited last wins. Done when its `--check` exits 0.
 
 ---
 
@@ -127,14 +116,14 @@ description: "<one-line description>"
 
 1. Confirm all written files parse as valid Markdown with correct YAML frontmatter.
 2. Verify frontmatter contains at minimum a `description` field.
-3. Verify frontmatter contains scope fields (`globs` for Claude, `applyTo` for Copilot).
+3. Verify the scope fields: `paths` (or none, to always apply) for Claude, `applyTo` for Copilot, naming the same globs.
 4. Report any drift found (for example, rule exists but no matching instruction, or vice versa).
 
 ---
 
 ## Quality Gate
 
-- No rule or instruction is written without frontmatter and a `description` field.
+- No rule or instruction is written without a `description` field.
 - Soft delete is always the default for `delete` operations.
 - Both platform files must be written or updated together unless scope is explicitly restricted.
 - Never read or modify `.env` or sensitive configuration files.

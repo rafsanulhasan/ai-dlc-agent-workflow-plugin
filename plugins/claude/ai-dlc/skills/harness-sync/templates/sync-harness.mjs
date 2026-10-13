@@ -206,6 +206,12 @@ function syncPairs(spec) {
     const gPath = copilot.get(name) ?? path.join(spec.copilotDir, name + spec.copilotExt);
     const cDoc = claude.has(name) ? splitDoc(readText(cPath)) : null;
     const gDoc = copilot.has(name) ? splitDoc(readText(gPath)) : null;
+    // A soft-deleted twin (renamed to *.deprecated by agent-manager) is never recreated.
+    const retired = !gDoc ? gPath : !cDoc ? cPath : null;
+    if (retired && exists(retired + ".deprecated")) {
+      note(`${spec.kind}/${name}: ${rel(retired)}.deprecated exists — not recreated; deprecate ${rel(retired === gPath ? cPath : gPath)} too`);
+      continue;
+    }
     try {
       if (!gDoc) { emit(spec.toCopilot(cDoc, null, name), null, gPath, cPath, "missing on Copilot"); continue; }
       if (!cDoc) { emit(spec.toClaude(gDoc, null, name), null, cPath, gPath, "missing on Claude"); continue; }

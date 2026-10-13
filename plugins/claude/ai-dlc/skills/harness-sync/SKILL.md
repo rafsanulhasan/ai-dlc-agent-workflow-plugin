@@ -33,7 +33,7 @@ What the script does, so you can explain its report:
 
 ## Mode: install
 
-**Args:** `install`. Also run it first in `sync` or `check` mode when the script is missing or out of date.
+**Args:** `install`. `/ai-dlc:init` installs the script; this mode installs or refreshes it later, when a developer types `/ai-dlc:harness-sync install` partway through a project. Also run it first in `sync` or `check` mode when the script is missing or out of date.
 
 1. Copy `${CLAUDE_SKILL_DIR}/templates/sync-harness.mjs` to `.claude/scripts/sync-harness.mjs`. If a different copy exists, show the diff and write only with the developer's consent.
 2. Offer, and add only on consent:
