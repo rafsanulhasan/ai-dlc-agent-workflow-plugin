@@ -1,21 +1,14 @@
 # {{PRODUCT}}
 
-> Agent orchestration, routing, gates and memory rules live in [AGENTS.md](AGENTS.md). Read it first.
+<!-- ai-dlc:begin pointer -->
+@AGENTS.md
 
-## Commands
+> Agent orchestration, routing, gates and memory rules live in [AGENTS.md](AGENTS.md), imported above. Claude Code reads `AGENTS.md` on its own only when there is no `CLAUDE.md`, so the import is what loads it here.
+<!-- ai-dlc:end pointer -->
 
-- `{{BUILD_CMD}}` — build
-- `{{TEST_CMD}}` — run tests
-- `{{MUTATION_CMD}}` — run mutation tests
+<!-- ai-dlc:begin workspace-folders -->
+## Workspace folders (Claude Code)
 
-## Workspace folders
-
-Details in AGENTS.md "Workspace folders"; change the roots with `/ai-dlc:workspace-folders`.
-
-- Scratch files go in `{{SCRATCHPAD_ROOT}}/<session-or-task>/`. This root overrides Claude Code's built-in per-session scratchpad and the system temp directory.
-- Worktrees go under `{{WORKTREE_ROOT}}/` (the `WorktreeCreate` hook in `.claude/settings.json` puts `--worktree` sessions there too).
-
-## Watch out for
-
-- Run tests after every functional change; run mutation tests after tests pass.
-- Artifact-only changes (agents, skills, hooks, prompts, rules, planning) may skip both gates.
+- Write scratch files to `{{SCRATCHPAD_ROOT}}/<session-or-task>/` instead of Claude Code's built-in per-session scratchpad directory or the system temp directory.
+- `claude --worktree`, `EnterWorktree` and agents with `isolation: "worktree"` get their worktree under `{{WORKTREE_ROOT}}/` through the `WorktreeCreate` hook in `.claude/settings.json`. Claude Code keeps the worktrees it creates for subagents; remove each with `git worktree remove` once its branch is merged.
+<!-- ai-dlc:end workspace-folders -->
