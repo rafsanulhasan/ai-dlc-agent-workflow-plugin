@@ -1,6 +1,6 @@
 ---
 name: skill-management
-description: Creates, updates, and lists skill files (.claude/skills/*/SKILL.md) and (.github/skills/*/SKILL.md) for the AI-DLC multi-agent system, and holds the writing guide and review checklist for any agent-facing document (skills, agent bodies, rules, AGENTS.md, CLAUDE.md). Invoked exclusively by the agent-manager agent.
+description: Creates, updates, syncs, and lists skill files (.claude/skills/*/SKILL.md) and (.github/skills/*/SKILL.md) for the AI-DLC multi-agent system, and holds the writing guide and review checklist for any agent-facing document (skills, agent bodies, rules, AGENTS.md, CLAUDE.md). Invoked exclusively by the agent-manager agent.
 ---
 
 # Skill Management
@@ -30,18 +30,13 @@ Every skill you write or change is read by an agent, not a person. Write and rev
 1. Validate `<name>` is kebab-case; fail if 
    a. `.claude/skills/<name>/SKILL.md` already exists
    b. `.claude/commands/<name>.md` already exists
-   c. `.github/skills/<name>.agent.md` already exists
+   c. `.github/skills/<name>/SKILL.md` already exists
 2. Ask for: model (default sonnet), tools list, primary operation modes, the trigger situations (branches) that should fire the skill, and whether it is model-invoked or user-only (`disable-model-invocation: true`) — see *Invocation choice* in [references/writing-for-agents.md](references/writing-for-agents.md). Write the `description` from these: lead with the trigger word, one phrase per branch for a model-invoked skill; a one-line human summary for a user-only skill.
-3. Create Directories: 
-   a. `.claude/skills/<name>/` directory via Bash: `mkdir -p .claude/skills/<name>`
-   b. `.github/skills/<name>/` directory via Bash: `mkdir -p .github/skills/<name>`
-4. Write `.claude/skills/<name>/SKILL.md` using the Skill File Template below
-   a. Write to the `.claude/skills/<name>/SKILL.md` file with the same content for Claude Code discoverability. 
-   b. Write to the `.github/skills/<name>/SKILL.md` file with the same content for Copilot/VS Code discoverability
-5. Write `.claude/commands/<name>.md` using the Command File Template below
-6. If some branches need material the others do not (long templates, examples, per-case rules), put it in `references/<topic>.md` beside `SKILL.md` on both platforms and link it from the step that needs it.
-7. Run the **Review checklist** in [references/writing-for-agents.md](references/writing-for-agents.md) on the new `SKILL.md`; fix every unchecked item.
-8. Confirm: "Skill '<name>' created. Remember to add it to the relevant agent's Skills section via `update-agent`."
+3. Write `.claude/skills/<name>/SKILL.md` using the Skill File Template below. Link files with paths relative to `SKILL.md`, not `${CLAUDE_SKILL_DIR}`, which Copilot does not expand.
+4. If some branches need material the others do not (long templates, examples, per-case rules), put it in `references/<topic>.md` beside `SKILL.md` and link it from the step that needs it.
+5. Run the **Review checklist** in [references/writing-for-agents.md](references/writing-for-agents.md) on the new `SKILL.md`; fix every unchecked item.
+6. Copy the skill to `.github/skills/<name>/` as in **Mode: sync-skill**. Skills are slash-invocable on both platforms, so a command / prompt file is needed only when the developer asks for one; create it through `command-management`.
+7. Confirm: "Skill '<name>' created. Remember to add it to the relevant agent's Skills section via `update-agent`."
 
 ### Skill File Template
 
@@ -78,16 +73,24 @@ description: <one-line description>
 
 **Args:** `update-skill <name> <change-description>`
 
-1. Read files; fail if it does not exist
-   a. `.claude/skills/<name>/SKILL.md`
-   b. `.github/skills/<name>/SKILL.md`
-2. Read `.claude/commands/<name>.md`
+1. Read `.claude/skills/<name>/SKILL.md`; fail if it does not exist. If only `.github/skills/<name>/SKILL.md` exists, run **Mode: sync-skill** first.
+2. Read `.claude/commands/<name>.md` if it exists.
 3. Parse `<change-description>` to determine what to change
-4. Apply the change using Edit on the relevant file(s), including any `references/` files. Replace or remove what the change supersedes rather than appending beside it, so each meaning keeps a single source.
+4. Apply the change using Edit on the Claude copy, including any `references/` files. Replace or remove what the change supersedes rather than appending beside it, so each meaning keeps a single source.
 5. Validate that Phase 0 still loads CLAUDE.md and calls `manage-memory`
 6. Validate that the frontmatter still contains: `name`, `description`, and that `description` still names every trigger the skill now handles
 7. Run the **Review checklist** in [references/writing-for-agents.md](references/writing-for-agents.md) on the changed sections
-8. Confirm: "Skill '<name>' updated."
+8. Copy the change to Copilot as in **Mode: sync-skill**, with `--prefer claude`.
+9. Confirm: "Skill '<name>' updated."
+
+## Mode: sync-skill
+
+**Args:** `sync-skill <name>`
+
+Use when a skill exists on one platform only, or its files differ between `.claude/skills/<name>/` and `.github/skills/<name>/`, in either direction.
+
+1. Run `Skill("harness-sync", args: "sync --only skills --name <name>")`, adding `--prefer claude|copilot` when the caller named the authoritative side. Files are copied one by one; the side edited last wins otherwise.
+2. Done when `node .claude/scripts/sync-harness.mjs --check --only skills --name <name>` exits 0.
 
 ---
 
@@ -96,7 +99,7 @@ description: <one-line description>
 - Agent files must have frontmatter: `name`, `description`
 - Skill files must have frontmatter: `name`, `description`
 - All skill files must have a Phase 0 that reads CLAUDE.md and calls `manage-memory`
-- Command files (.claude/commands/*.md) must always pair with a skill file in .claude/skills/
+- A command file (`.claude/commands/<name>.md`) that calls a skill must name one that exists in `.claude/skills/`
 - Every link from `SKILL.md` to a `references/` file must resolve, on both platforms
 
 Adapted in part from [mattpocock/skills](https://github.com/mattpocock/skills) (MIT).

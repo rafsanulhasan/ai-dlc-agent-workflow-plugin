@@ -45,7 +45,7 @@ You scaffold and maintain all agent definitions across both platforms. Parse the
    - One-line purpose describing the agent's domain
    - 2–4 bullet responsibilities
 4. Write `.claude/agents/<name>.md` using the **Claude Agent Template** below.
-5. Write `.github/agents/<name>.agent.md` using the **Copilot Agent Template** below — apply the **Claude-only Tool Exclusion List** (see Mode: sync-agent) when populating its `tools:` frontmatter.
+5. Generate the Copilot twin `.github/agents/<name>.agent.md` as in **Mode: sync-agent**. Done when that mode's check passes for `<name>`.
 6. Create `.claude/agent-memory/<name>/` directory:
 	a. Windows: `mkdir -p ".claude/agent-memory/<name>"`
 	b. Linux/Mac: `mkdir -p ".claude/agent-memory/<name>/"`
@@ -107,26 +107,6 @@ Agent("agent-manager", prompt: "update-agent <name> <change-description>")
 - [Protocol 2]
 ```
 
-### Copilot Agent Template
-
-```markdown
----
-name: "<name>"
-description: "<one-line description for Copilot agent picker>"
-tools: [read, edit, search, todo]
-user-invocable: true
----
-You are the <Title> for the project.
-
-## Responsibilities
-1. [Responsibility 1]
-2. [Responsibility 2]
-
-## Preferred Skills
-- `<primary-skill>`
-- `manage-memory`
-```
-
 ### Memory Index Template
 
 ```markdown
@@ -142,14 +122,11 @@ You are the <Title> for the project.
 
 1. Validate that both `.claude/agents/<name>.md` and `.github/agents/<name>.agent.md` exist; warn on missing platform file.
 2. Parse `<change-description>` to determine what to change (frontmatter field, responsibilities, skills section, protocols, etc.).
-3. Apply changes to `.claude/agents/<name>.md` using Edit.
-4. Apply equivalent changes to `.github/agents/<name>.agent.md` using Edit.
-5. If the change touches the `tools:` frontmatter, apply the **Claude-only Tool Exclusion List** (see Mode: sync-agent) before writing the Copilot file — never propagate excluded tools.
-6. Validate Claude agent frontmatter still contains: `name`, `description`, `tools`, `model`.
-7. Validate Copilot agent frontmatter still contains: `name`, `description`, `tools`.
-8. Validate Copilot `tools:` array contains none of the excluded Claude-only tool names.
-9. Check that the `description` still names every situation the agent now handles and that the change replaced superseded text instead of adding beside it (see **Writing the definition**).
-10. Confirm: "Agent '<name>' updated on both platforms."
+3. Apply changes to `.claude/agents/<name>.md` using Edit. A change to a Copilot-only key (`user-invocable`, `handoffs`, `target`, …) goes to `.github/agents/<name>.agent.md` directly.
+4. Bring the Copilot twin in step as in **Mode: sync-agent**, with `--prefer claude`.
+5. Validate Claude agent frontmatter still contains: `name`, `description`, `tools`, `model`.
+6. Check that the `description` still names every situation the agent now handles and that the change replaced superseded text instead of adding beside it (see **Writing the definition**).
+7. Confirm: "Agent '<name>' updated on both platforms."
 
 ---
 
@@ -157,49 +134,28 @@ You are the <Title> for the project.
 
 **Args:** `sync-agent <name>`
 
-Use when a Claude agent definition exists but the Copilot counterpart is missing or out of date.
+Use when one platform's file is missing or the two have drifted, in either direction.
 
-1. Read `.claude/agents/<name>.md`.
-2. Derive the equivalent `.github/agents/<name>.agent.md` content from it using the **Copilot Agent Template**.
-3. **Apply the Claude-only Tool Exclusion List** (see below) when translating the `tools:` frontmatter — strip excluded tools and substitute Copilot-native equivalents where appropriate.
-4. Write or overwrite `.github/agents/<name>.agent.md`.
-5. Confirm: "Agent '<name>' synced to `.github/agents/<name>.agent.md`."
+1. Run `Skill("harness-sync", args: "sync --only agents --name <name>")`, adding `--prefer claude` or `--prefer copilot` when the caller named the authoritative side. It installs `.claude/scripts/sync-harness.mjs` if missing. The twin gets the same body; only `name`, `description`, `tools` and `status` are synced, and platform-only keys stay.
+2. Resolve each `note:` it prints for this agent (a tool with no counterpart: keep it on its own platform, or replace it with one that has a counterpart).
+3. Confirm: "Agent '<name>' synced." Done when `node .claude/scripts/sync-harness.mjs --check --only agents --name <name>` exits 0.
 
-### Claude-only Tool Exclusion List (sync, create, update)
+### Tool translation (Claude ↔ Copilot)
 
-When projecting the `tools:` array from a Claude agent definition into a Copilot agent file, the following Claude Code-specific built-in tool names MUST be removed. They do not exist in the GitHub Copilot / VS Code custom agent environment, and including them produces an invalid Copilot agent configuration.
+The same table as the plugin build (`tools/build-copilot.mjs`) and `sync-harness.mjs`:
 
-**Excluded tools — never copy to `.github/agents/*.agent.md`:**
+| Claude Code | Copilot |
+|---|---|
+| `Read`, `NotebookRead` | `read` |
+| `Edit`, `Write`, `MultiEdit`, `NotebookEdit` | `edit` |
+| `Glob`, `Grep` | `search` |
+| `Bash`, `PowerShell` | `execute` |
+| `TodoWrite` | `todo` |
+| `Agent`, `Task` | `agent` |
+| `WebFetch`, `WebSearch` | `web` |
+| `mcp__*` | kept as written |
 
-- `Bash`
-- `Glob`
-- `Grep`
-- `Read`
-- `TodoWrite`
-- `WebFetch`
-- `WebSearch`
-- `PushNotification`
-- `ToolSearch`
-
-**Tools that are kept or translated:**
-
-- MCP tools (any tool whose name contains `mcp__` or that maps to an MCP server, e.g. `mcp__docker-mcp-gateway__search`, `microsoft_docs_search`) — keep verbatim, they are platform-portable.
-- Skill / Agent invocations — keep verbatim.
-- Translate Claude built-ins to Copilot-native equivalents where there is a 1:1 match (apply during sync only when the Copilot file currently lacks the equivalent):
-   - `Read` → `read`
-   - `Edit` / `Write` → `edit`
-   - `Glob` / `Grep` → `search`
-   - `Bash` → `execute`
-   - `TodoWrite` → `todo`
-   - `Agent` → `agent`
-
-**Procedure for translating `tools:`:**
-
-1. Read the Claude `tools:` array.
-2. For each tool, look it up in the Excluded list — if matched, drop it.
-3. For each remaining tool, look it up in the translation map — if matched, substitute the Copilot-native alias.
-4. Preserve all MCP and Skill/Agent entries verbatim.
-5. Emit the translated array as the Copilot file's `tools:` frontmatter.
+Claude tools with no Copilot counterpart (`Skill`, `AskUserQuestion`, `SendMessage`, `ToolSearch`, `PushNotification`, `Task*`, `Cron*`, `Monitor`, plan-mode and worktree tools, `mcp__ide__*`) stay on the Claude side only. Copilot-only tools (`githubRepo`, VS Code tool sets, …) stay on the Copilot side only. An agent with no `tools` inherits every tool on both platforms; `disallowedTools` maps to the Copilot aliases it leaves.
 
 ---
 
@@ -219,9 +175,9 @@ When projecting the `tools:` array from a Claude agent definition into a Copilot
 
 - Agent files must never be deleted — only deprecated via `status: deprecated` in frontmatter.
 - Claude agent files (`.claude/agents/*.md`) must have: `name`, `description`, `tools`, `model`.
-- Copilot agent files (`.github/agents/*.agent.md`) must have: `name`, `description`, `tools`.
-- Copilot agent `tools:` arrays MUST NOT contain any of the Claude-only excluded tools: `Bash`, `Glob`, `Grep`, `Read`, `TodoWrite`, `WebFetch`, `WebSearch`, `PushNotification`, `ToolSearch`. Reject the write if any are present.
-- Every Claude agent must have a matching Copilot agent of the same name — warn when they are out of sync.
+- Copilot agent files (`.github/agents/*.agent.md`) must have: `name`, `description`; `tools` only when the agent does not inherit every tool.
+- Copilot agent `tools:` hold Copilot names only (the right-hand column of **Tool translation**, `mcp__*`, or Copilot-only tools), never Claude names such as `Read` or `Bash`.
+- Every Claude agent must have a matching Copilot agent of the same name: `node .claude/scripts/sync-harness.mjs --check --only agents` exits 0.
 - Agent names must be kebab-case and match across both platform files.
 - Never read or modify `.env` files or sensitive configuration.
 

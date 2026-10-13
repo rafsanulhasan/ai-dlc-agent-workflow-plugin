@@ -87,6 +87,7 @@ Branch logic:
   - Edit only Copilot hook integration files and references.
 - `scope = both`
   - Keep semantic parity; document intentional differences.
+  - For a command hook on an event both platforms have, write the Claude entry, then mirror it with `Skill("harness-sync", args: "sync --only hooks")`; it matches hooks by command and also brings Copilot-only hooks into `.claude/settings.json`. Write by hand only what its `note:` lines list (prompt hooks, Claude-only events such as `WorktreeCreate`, commands that use `CLAUDE_*` variables).
 
 - `operation = create`
   - Add hook implementation + registration/wiring + docs note.
