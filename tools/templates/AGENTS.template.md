@@ -1,9 +1,12 @@
 # AGENTS.md — {{PRODUCT}}
 
+<!-- ai-dlc:begin intro -->
 This file makes the main agent in this repository the **AI-DLC orchestrator** for {{PRODUCT}}. It is read by every AI agent platform that loads `AGENTS.md` (Claude Code via `CLAUDE.md`, GitHub Copilot CLI, VS Code). The rest of the team — product owner, specialists, engineers, reviewers — ships in the **ai-dlc** plugin; this file holds the orchestrator persona plus the facts specific to this repository.
 
 **Platform forms.** `Agent("ai-dlc:<name>", prompt)` means: in Claude Code, spawn the `ai-dlc:<name>` subagent; in GitHub Copilot / VS Code, delegate to the `<name>` custom agent with the `agent` tool. `Skill("ai-dlc:<name>")` means: in Claude Code, run the `/ai-dlc:<name>` skill; in Copilot, load and follow the `<name>` skill from the ai-dlc plugin. `TodoWrite` is the `todo` tool on Copilot.
+<!-- ai-dlc:end intro -->
 
+<!-- ai-dlc:begin commands -->
 ## Project commands
 
 | Purpose | Command |
@@ -13,9 +16,13 @@ This file makes the main agent in this repository the **AI-DLC orchestrator** fo
 | Mutation test | `{{MUTATION_CMD}}` |
 
 Use these wherever the persona below says "the project's build and test commands".
+<!-- ai-dlc:end commands -->
 
+<!-- ai-dlc:begin persona -->
 <!-- ai-dlc:orchestrator-persona -->
+<!-- ai-dlc:end persona -->
 
+<!-- ai-dlc:begin project-facts -->
 ## Project facts
 
 ### Lifecycles and gates
@@ -48,20 +55,6 @@ Use these wherever the persona below says "the project's build and test commands
 | Task plans | `docs/plans/<feature-slug>.tasks.md` |
 | Handoff records | `docs/handoffs/<work-item>/` |
 
-### Workspace folders
-
-| Folder | Root | One folder per |
-|---|---|---|
-| Worktrees | `{{WORKTREE_ROOT}}` | branch or task: `{{WORKTREE_ROOT}}/<branch-or-task-slug>/` |
-| Scratch | `{{SCRATCHPAD_ROOT}}` | session or task: `{{SCRATCHPAD_ROOT}}/<session-or-task>/` |
-
-Both roots are relative to the repository root unless absolute. Change them with the `workspace-folders` skill (`/ai-dlc:workspace-folders` on Claude Code); it also moves existing worktrees and scratch folders.
-
-- **Worktrees.** Create each one with `git worktree add {{WORKTREE_ROOT}}/<slug> -b <branch>`: one worktree per task or branch. Remove it with `git worktree remove {{WORKTREE_ROOT}}/<slug>` once its branch is merged.
-- **Scratch.** Every temporary file — throwaway scripts, repro programs, intermediate outputs, deck copies, packed tarballs, session notes — goes in `{{SCRATCHPAD_ROOT}}/<session-or-task>/`. The scratch root is gitignored and stays inside the repository; it replaces the operating system's temp directory and any other spot in the tree, and nothing in it is committed.
-  - **GitHub Copilot and other providers:** load the `scratchpad` skill before writing the first scratch file.
-  - **Claude Code:** use this root in place of the harness's per-session scratchpad directory.
-
 ### Quality gates
 
 - After any change to runtime code, test code, runtime configuration or build logic: `{{TEST_CMD}}` must pass (enforced by the test gate hook that `init` installs for .NET and JavaScript / TypeScript), then `{{MUTATION_CMD}}` is run by `sqa-engineer`. Mutation break threshold: **{{MUTATION_BREAK}}%**.
@@ -73,9 +66,29 @@ Both roots are relative to the repository root unless absolute. Change them with
 - Each agent keeps persistent memory under `.claude/agent-memory/<agent-name>/` with a `MEMORY.md` index, managed through the `manage-memory` skill.
 - Load at the start of a task; save durable learnings (decisions, recurring pitfalls, conventions) at the end. Never store secrets.
 - If an agent's memory holds `persona-name`, that name replaces its default persona name. The team roster lives in the orchestrator's memory (`project_team-roster.md`).
+<!-- ai-dlc:end project-facts -->
 
+<!-- ai-dlc:begin workspace-folders -->
+### Workspace folders
+
+| Folder | Root | One folder per |
+|---|---|---|
+| Worktrees | `{{WORKTREE_ROOT}}` | branch or task: `{{WORKTREE_ROOT}}/<branch-or-task-slug>/` |
+| Scratch | `{{SCRATCHPAD_ROOT}}` | session or task: `{{SCRATCHPAD_ROOT}}/<session-or-task>/` |
+
+Both roots are relative to the repository root unless absolute. Change them with the `workspace-folders` skill (`/ai-dlc:workspace-folders` on Claude Code); it also moves existing worktrees and scratch folders.
+
+- **Worktrees.** Create each one with `git worktree add {{WORKTREE_ROOT}}/<slug> -b <branch>`: one worktree per task or branch. Remove it with `git worktree remove {{WORKTREE_ROOT}}/<slug>` once its branch is merged.
+- **Scratch.** Every temporary file — throwaway scripts, repro programs, intermediate outputs, deck copies, packed tarballs, session notes — goes in `{{SCRATCHPAD_ROOT}}/<session-or-task>/`. The scratch root is gitignored and stays inside the repository; it replaces the operating system's temp directory and any other spot in the tree, and nothing in it is committed.
+  - **Claude Code:** see `CLAUDE.md` "Workspace folders (Claude Code only)".
+  - **GitHub Copilot:** see `.github/copilot-instructions.md` "Workspace folders (GitHub Copilot only)".
+  - **Other providers:** load the `scratchpad` skill before writing the first scratch file.
+<!-- ai-dlc:end workspace-folders -->
+
+<!-- ai-dlc:begin conventions -->
 ### Repository conventions
 
 Stack-specific rules live in `.claude/rules/` (Claude) and `.github/instructions/` (Copilot) when `init` installed them — identical content. Project-specific architecture notes:
+<!-- ai-dlc:end conventions -->
 
 - {{ARCHITECTURE_NOTES}}

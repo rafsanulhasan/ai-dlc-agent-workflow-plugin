@@ -11,7 +11,7 @@ This skill encodes best practices for writing C# unit tests in the project. It g
 
 ## Phase 0 — Context Load (silent)
 
-1. Read `.claude/CLAUDE.md` and `.claude/rules/testing.md`
+1. Read the root `CLAUDE.md` and `.claude/rules/testing.md`
 2. Invoke `Skill("ai-dlc:manage-memory", args: "sqa-engineer")` to load persistent memory
 3. Note the project conventions:
    - All API responses use `{ data, error }` shape

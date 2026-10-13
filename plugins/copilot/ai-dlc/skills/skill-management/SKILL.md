@@ -57,7 +57,7 @@ description: <one-line description>
 
 ## Phase 0 — Context Load (silent)
 
-1. Read `.claude/CLAUDE.md` and `AGENTS.md`
+1. Read the root `CLAUDE.md` and `AGENTS.md`
 2. Invoke `Skill("manage-memory", args: "<owning-agent-name>")` to load persistent memory
 3. Read relevant source files identified from memory or task input
 

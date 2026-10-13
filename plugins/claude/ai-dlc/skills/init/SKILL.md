@@ -1,6 +1,6 @@
 ---
 name: init
-description: "Bootstraps a repository for the AI-DLC agent team: scaffolds AGENTS.md (the orchestrator persona with all its skills, plus the project's commands, gates and workspace folders), CLAUDE.md, recommended .claude/settings.json permissions and the docs/ skeleton the lifecycles write to; sets the worktree root and the gitignored scratch root via workspace-folders; and lets the developer name the agent team (each renamed agent remembers its name; the orchestrator keeps the roster). For each supported stack it detects it also installs the stack's coding and testing rules with their Copilot twins, a test gate hook and a Stryker config: .NET via dotnet-rules and dotnet-test-gate, JavaScript / TypeScript (Node.js) via node-rules and node-test-gate. A repository with both stacks gets both. Use once per repository, or to repair a partial setup. Never overwrites existing files without showing a diff first."
+description: "Bootstraps a repository for the AI-DLC agent team: scaffolds AGENTS.md (the orchestrator persona with all its skills, plus the project's commands, gates and workspace folders), CLAUDE.md (an @AGENTS.md import plus Claude Code specifics), .github/copilot-instructions.md (the GitHub Copilot specifics), recommended .claude/settings.json permissions and the docs/ skeleton the lifecycles write to; sets the worktree root and the gitignored scratch root via workspace-folders; and lets the developer name the agent team (each renamed agent remembers its name; the orchestrator keeps the roster). For each supported stack it detects it also installs the stack's coding and testing rules with their Copilot twins, a test gate hook and a Stryker config: .NET via dotnet-rules and dotnet-test-gate, JavaScript / TypeScript (Node.js) via node-rules and node-test-gate. A repository with both stacks gets both. Use once per repository, to repair a partial setup, or to refresh after a plugin update. An existing AGENTS.md or CLAUDE.md is merged, not replaced: init owns only its marked blocks. Never overwrites existing files without showing a diff first."
 disable-model-invocation: true
 ---
 
@@ -22,17 +22,18 @@ Plugins cannot ship project rules, hooks, permissions or `AGENTS.md`, so this sk
      - the `build`, `test`, `typecheck` scripts, the source root (`src/`, `lib/`, or the workspace packages), and any formatter / linter config (ESLint, Prettier, Biome);
      - an existing Stryker config (`stryker.config.*`, `stryker.conf.*`, `.stryker.conf.*`), a pre-commit setup (`.husky/`, a lint-staged config), and whether the JS/TS rules (`.claude/rules/node-*.md`) and the test gate (`enforce-tests.mjs` in `hooks.Stop`) are already installed.
    - Any other stack is recorded as "other" by name (for example Python or Go).
-3. List which of these already exist: `AGENTS.md`, `CLAUDE.md`, `.claude/settings.json`, `.claude/rules/*`, `.github/instructions/*`, `.github/hooks/*`, `docs/backlog/backlog.md`.
-4. Workspace folders: read `${CLAUDE_SKILL_DIR}/../workspace-folders/SKILL.md` and follow its **Inspect** section (roots from an earlier init, `.gitignore`, existing worktrees, worktree hooks). It runs even when `AGENTS.md` does not exist yet; then the mode is create.
-5. Read the default team roster: for each `${CLAUDE_SKILL_DIR}/../../agents/*.md` (the plugin's `agents/` folder), the agent ID (file name) and the name in its `Persona name: **<Name>**` line. Overlay any existing `.claude/agent-memory/<agent>/user_persona-name.md` so a re-run shows the current names.
+3. Existing `AGENTS.md`, `CLAUDE.md` and `.github/copilot-instructions.md` (any case; `CLAUDE.md` also in `.claude/`; note `CLAUDE.local.md` and never touch it): follow "Inspect an existing file" in [references/managed-blocks.md](references/managed-blocks.md). Reuse the commands and notes they state as Phase 1 defaults.
+4. List which of these already exist: `.claude/settings.json`, `.claude/rules/*`, `.github/instructions/*`, `.github/hooks/*`, `docs/backlog/backlog.md`.
+5. Workspace folders: read `${CLAUDE_SKILL_DIR}/../workspace-folders/SKILL.md` and follow its **Inspect** section (roots from an earlier init, `.gitignore`, existing worktrees, worktree hooks). It runs even when `AGENTS.md` does not exist yet; then the mode is create.
+6. Read the default team roster: for each `${CLAUDE_SKILL_DIR}/../../agents/*.md` (the plugin's `agents/` folder), the agent ID (file name) and the name in its `Persona name: **<Name>**` line. Overlay any existing `.claude/agent-memory/<agent>/user_persona-name.md` so a re-run shows the current names.
 
 ## Phase 1 — Confirm (one message)
 
-Show the user a table of files to **create**, files that **exist** (will be diffed, not overwritten) and the values you detected:
+Show the user a table of files to **create**, files to **merge** (an existing `AGENTS.md`, `CLAUDE.md` or `.github/copilot-instructions.md`: any rename, or the move of `.claude/CLAUDE.md` to the root, from "Location and name"; each managed block as add / update / skip / remove, and each section of theirs that is reused — the "Decide per block" step of [references/managed-blocks.md](references/managed-blocks.md)), other files that **exist** (diffed, not overwritten) and the values you detected:
 
 - Detected stacks (.NET, JavaScript / TypeScript, both, or other), and for JS/TS: the package manager, monorepo / workspaces, TypeScript or JavaScript, and the test runner
 - Product name (from the solution file name, else the root `package.json` `name`, else the repository folder name)
-- Build / test / mutation commands, one set per detected stack. Always confirm them with the user; never install them unconfirmed.
+- Build / test / mutation commands, one set per detected stack. Always confirm them with the user; never install them unconfirmed. Commands an existing `AGENTS.md` (or an older init's `CLAUDE.md`) already states are the defaults; list every one that conflicts with a detected value and ask which to use.
   - .NET defaults: `dotnet build`, `dotnet test`, `dotnet stryker`.
   - JS/TS defaults, from the `package.json` scripts and the package manager (`<pm>`): build = `<pm> run build` if a `build` script exists, else `tsc --noEmit` for TypeScript (none for plain JavaScript); test = `<pm> test` (`bun run test` for bun; in a monorepo, the root script or the manager's run-in-every-workspace form); mutation = `npx stryker run` (pnpm: `pnpm exec stryker run`, bun: `bunx stryker run`).
   - Other stacks: ask.
@@ -54,16 +55,19 @@ For each template, replace the `{{PLACEHOLDERS}}` and write it. For a file that 
 
 | Template | Destination |
 |---|---|
-| `templates/AGENTS.md` | `AGENTS.md` — the **orchestrator persona** for this project (the full **Scott Hanselman** (`orchestrator`) agent definition, its routing rules and skills) followed by the project's commands, gates, artifact locations and conventions. Fill every `{{PLACEHOLDER}}`; do not edit the persona sections. If an `AGENTS.md` exists, keep its project-specific notes and show the diff. |
-| `templates/CLAUDE.md` | `CLAUDE.md` (or `.claude/CLAUDE.md` if the repo already keeps it there) |
+| `templates/AGENTS.md` | `AGENTS.md` — the **orchestrator persona** for this project (the full **Scott Hanselman** (`orchestrator`) agent definition, its routing rules and skills) with the project's commands, gates, artifact locations and conventions. Fill every `{{PLACEHOLDER}}`; do not edit the persona. An existing file is **merged**, not replaced (below). |
+| `templates/CLAUDE.md` | `CLAUDE.md` in the repository root, next to `AGENTS.md`. An existing file is **merged**; a `.claude/CLAUDE.md` is moved or merged into it (below) |
+| `templates/copilot-instructions.md` | `.github/copilot-instructions.md` — the repository-level GitHub Copilot instructions (Copilot also loads `AGENTS.md` itself). An existing file is **merged** (below). Both templates are rendered from one source, so they carry the same managed blocks with per-platform content |
 | `templates/settings.json` | `.claude/settings.json` — **merge** `agent`, `permissions` and `env` keys into any existing file; never drop existing entries. Keep only the `permissions.allow` entries for the detected stacks: `Bash(dotnet …)` for .NET; `Bash(node …)`, `Bash(npx …)` and the entries of the detected package manager (`npm` / `pnpm` / `yarn` / `bun`) for JS/TS. Keep the `git` entries and `deny` always. |
 | `templates/stryker-config.json` | test project folder (.NET only, and only if no Stryker.NET config exists) |
 | `templates/stryker.config.json` | the folder whose `package.json` runs the confirmed test command, usually the repository root (JS/TS only, and only if no StrykerJS config exists) — see the JS/TS steps below |
 | `templates/docs/backlog.md` | `docs/backlog/backlog.md` |
 
-**Workspace folders** (every stack): fill `{{WORKTREE_ROOT}}` and `{{SCRATCHPAD_ROOT}}` in `AGENTS.md` and `CLAUDE.md` with the roots confirmed in Phase 1, then follow the **Write** section of `${CLAUDE_SKILL_DIR}/../workspace-folders/SKILL.md` (`.gitignore`, the Claude worktree hooks and `.claude/settings.json`).
+**Workspace folders** (every stack): fill `{{WORKTREE_ROOT}}` and `{{SCRATCHPAD_ROOT}}` in `AGENTS.md`, `CLAUDE.md` and `.github/copilot-instructions.md` with the roots confirmed in Phase 1, then follow the **Write** section of `${CLAUDE_SKILL_DIR}/../workspace-folders/SKILL.md` (`.gitignore`, the Claude worktree hooks and `.claude/settings.json`).
 
-In a repository with both stacks, fill each command placeholder in `AGENTS.md` and `CLAUDE.md` once per stack: one table row or list line per stack, labelled (for example "Test (.NET)" and "Test (JS/TS)").
+**Existing `AGENTS.md` / `CLAUDE.md` / `.github/copilot-instructions.md`:** follow "Location and name", "Place a new block", "Write" and, for files from an earlier init without markers, "Convert legacy content" in [references/managed-blocks.md](references/managed-blocks.md). Only the content between `<!-- ai-dlc:begin <id> -->` / `<!-- ai-dlc:end <id> -->` markers is init's; every other line of the developer's file stays as it was. Done when the merged file keeps every developer line in order and the markers are balanced.
+
+In a repository with both stacks, fill each command placeholder in `AGENTS.md` once per stack: one table row or list line per stack, labelled (for example "Test (.NET)" and "Test (JS/TS)").
 
 Also create empty folders with a `.gitkeep`: `docs/specs/`, `docs/architecture/decisions/`, `docs/architecture/narratives/`, `docs/plans/`, `docs/handoffs/`, `docs/product/`.
 
@@ -108,5 +112,6 @@ List every file created or changed, the items of the `workspace-folders` **Repor
 
 ## Rules
 
-- Never overwrite without a diff and consent. Never touch `.env` files.
+- Never overwrite without a diff and consent. Never touch `.env` files or `CLAUDE.local.md`.
+- In `AGENTS.md`, `CLAUDE.md` and `.github/copilot-instructions.md`, change only managed blocks; the developer's own content outside them is preserved line for line.
 - Keep rules and their Copilot twins identical in body; only frontmatter differs (`paths` vs `applyTo`).

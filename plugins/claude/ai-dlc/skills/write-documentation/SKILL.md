@@ -13,7 +13,7 @@ Writes and maintains README.md files throughout the project's repository. Invoke
 
 ## Phase 0 — Context Load (silent)
 
-1. Read `.claude/CLAUDE.md` and `AGENTS.md`
+1. Read the root `CLAUDE.md` and `AGENTS.md`
 2. Invoke `Skill("ai-dlc:manage-memory", args: "documentation-writer")` to load persistent memory
 3. Read any previously identified documentation gaps or notes from memory
 

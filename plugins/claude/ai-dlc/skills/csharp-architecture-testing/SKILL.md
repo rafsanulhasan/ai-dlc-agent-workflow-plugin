@@ -13,7 +13,7 @@ This skill provides comprehensive guidance for writing architecture tests that e
 
 ## Phase 0 — Context Load (silent)
 
-1. Read `.claude/CLAUDE.md` and `.claude/rules/testing.md` to understand project conventions and quality gates
+1. Read the root `CLAUDE.md` and `.claude/rules/testing.md` to understand project conventions and quality gates
 2. Invoke `Skill("ai-dlc:manage-memory", args: "sqa-engineer")` to load the SQA engineer's persistent memory
 3. Read relevant architecture documentation or existing ArchitectureTests.cs files to understand current architectural constraints
 
