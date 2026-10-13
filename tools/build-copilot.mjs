@@ -92,6 +92,12 @@ function stripNamespace(text) {
     .replaceAll("${CLAUDE_PLUGIN_ROOT}", "${PLUGIN_ROOT}");
 }
 
+// Source text is read with LF line endings whatever the checkout uses (core.autocrlf), so the
+// output is byte-identical on every machine; other files are copied byte for byte.
+const TEXT = /\.(md|mjs|cjs|js|json|ps1|py|sh|ya?ml|txt)$/i;
+const readText = (p) => fs.readFileSync(p, "utf8").replace(/\r\n/g, "\n");
+const readSource = (p) => !TEXT.test(p) ? fs.readFileSync(p) : p.endsWith(".md") ? stripNamespace(readText(p)) : readText(p);
+
 function translateTools(fmObj, name) {
   if (fmObj.tools) {
     const aliases = new Set();
@@ -138,7 +144,7 @@ const manifest = {
 
 // ---- agents -----------------------------------------------------------------
 for (const f of fs.readdirSync(path.join(SRC, "agents")).filter((f) => f.endsWith(".md")).sort()) {
-  const { fm, body } = splitFrontmatter(fs.readFileSync(path.join(SRC, "agents", f), "utf8"));
+  const { fm, body } = splitFrontmatter(readText(path.join(SRC, "agents", f)));
   const o = parseFm(fm);
   const name = (o.name || f.replace(/\.md$/, "")).replace(/^["']|["']$/g, "");
   if (o.status === "deprecated") { warn(`${name}: deprecated — skipped`); continue; }
@@ -275,7 +281,7 @@ if (fs.existsSync(MIRRORS)) {
 // ---- skills (copied, namespace stripped in markdown) ----------------------------
 for (const p of walk(path.join(SRC, "skills"))) {
   const rel = path.relative(SRC, p).split(path.sep).join("/");
-  files.set(rel, p.endsWith(".md") ? stripNamespace(fs.readFileSync(p, "utf8")) : fs.readFileSync(p));
+  files.set(rel, readSource(p));
 }
 
 // ---- non-Claude overlay skills ------------------------------------------------
@@ -292,7 +298,7 @@ if (fs.existsSync(OVERLAY_SKILLS)) {
     }
     for (const p of walk(path.join(OVERLAY_SKILLS, e.name))) {
       const rel = `skills/${path.relative(OVERLAY_SKILLS, p).split(path.sep).join("/")}`;
-      files.set(rel, p.endsWith(".md") ? stripNamespace(fs.readFileSync(p, "utf8")) : fs.readFileSync(p));
+      files.set(rel, readSource(p));
     }
   }
 }
@@ -300,7 +306,7 @@ if (fs.existsSync(OVERLAY_SKILLS)) {
 // ---- scripts (copied verbatim) ------------------------------------------------
 if (fs.existsSync(path.join(SRC, "scripts"))) {
   for (const p of walk(path.join(SRC, "scripts"))) {
-    files.set(path.relative(SRC, p).split(path.sep).join("/"), fs.readFileSync(p));
+    files.set(path.relative(SRC, p).split(path.sep).join("/"), TEXT.test(p) ? readText(p) : fs.readFileSync(p));
   }
 }
 
