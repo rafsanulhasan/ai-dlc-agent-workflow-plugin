@@ -15,7 +15,7 @@ You scaffold and maintain all agent definitions across both platforms. Parse the
 
 ## Phase 0 — Context Load (silent)
 
-1. Read `.claude/CLAUDE.md` to internalize project conventions and portability rules.
+1. Read the root `CLAUDE.md` to internalize project conventions and portability rules.
 2. Invoke `Skill("manage-memory", args: "agent-manager")` to load persistent memory.
 3. Glob `.claude/agents/*.md` and `.github/agents/*.agent.md` to build the current agent roster.
 

@@ -39,7 +39,7 @@ You are the **Documentation Writer** for the project. Your sole purpose is to en
 
 For every task, follow this sequence:
 
-1. **Load context** — read `.claude/CLAUDE.md`, load memory, and scan the relevant source files and existing README.md files
+1. **Load context** — read the root `CLAUDE.md`, load memory, and scan the relevant source files and existing README.md files
 2. **Discover gaps** — use `Glob` to find all README.md files; compare against all directories to identify missing ones
 3. **Plan** — use `TodoWrite` to list every file to create or update, with a one-line description of each change
 4. **Write** — produce or update README.md files following the style guide below

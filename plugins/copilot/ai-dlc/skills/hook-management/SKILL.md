@@ -31,7 +31,7 @@ If any required input is missing, ask only the minimum clarifying questions need
 
 ## Phase 0 - Context Load (silent)
 
-1. Read `.claude/CLAUDE.md` and `AGENTS.md`.
+1. Read the root `CLAUDE.md` and `AGENTS.md`.
 2. Invoke `Skill("manage-memory", args: "agent-manager")`.
 3. Read repository governance files relevant to skill and command ownership.
 4. Discover current hook surfaces and references before proposing edits.
