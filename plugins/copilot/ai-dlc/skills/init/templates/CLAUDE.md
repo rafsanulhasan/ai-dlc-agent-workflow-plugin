@@ -7,7 +7,7 @@
 <!-- ai-dlc:end pointer -->
 
 <!-- ai-dlc:begin workspace-folders -->
-## Workspace folders (Claude Code)
+## Workspace folders (Claude Code only)
 
 - Write scratch files to `{{SCRATCHPAD_ROOT}}/<session-or-task>/` instead of Claude Code's built-in per-session scratchpad directory or the system temp directory.
 - `claude --worktree`, `EnterWorktree` and agents with `isolation: "worktree"` get their worktree under `{{WORKTREE_ROOT}}/` through the `WorktreeCreate` hook in `.claude/settings.json`. Claude Code keeps the worktrees it creates for subagents; remove each with `git worktree remove` once its branch is merged.

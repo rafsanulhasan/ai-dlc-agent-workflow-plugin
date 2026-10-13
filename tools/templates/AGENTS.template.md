@@ -80,8 +80,9 @@ Both roots are relative to the repository root unless absolute. Change them with
 
 - **Worktrees.** Create each one with `git worktree add {{WORKTREE_ROOT}}/<slug> -b <branch>`: one worktree per task or branch. Remove it with `git worktree remove {{WORKTREE_ROOT}}/<slug>` once its branch is merged.
 - **Scratch.** Every temporary file — throwaway scripts, repro programs, intermediate outputs, deck copies, packed tarballs, session notes — goes in `{{SCRATCHPAD_ROOT}}/<session-or-task>/`. The scratch root is gitignored and stays inside the repository; it replaces the operating system's temp directory and any other spot in the tree, and nothing in it is committed.
-  - **GitHub Copilot and other providers:** load the `scratchpad` skill before writing the first scratch file.
-  - **Claude Code:** see `CLAUDE.md` "Workspace folders (Claude Code)".
+  - **Claude Code:** see `CLAUDE.md` "Workspace folders (Claude Code only)".
+  - **GitHub Copilot:** see `.github/copilot-instructions.md` "Workspace folders (GitHub Copilot only)".
+  - **Other providers:** load the `scratchpad` skill before writing the first scratch file.
 <!-- ai-dlc:end workspace-folders -->
 
 <!-- ai-dlc:begin conventions -->

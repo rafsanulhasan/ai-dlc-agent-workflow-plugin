@@ -1,6 +1,6 @@
 ---
 name: workspace-folders
-description: "Sets or changes the repository's worktree root and scratch root: records them in AGENTS.md and CLAUDE.md, gitignores them, and installs the Claude WorktreeCreate / WorktreeRemove hooks that place worktrees under the root. On a change it offers to move existing worktrees and scratch folders. Args: worktree=<path> scratch=<path>; with none, asks for both. Followed by init."
+description: "Sets or changes the repository's worktree root and scratch root: records them in AGENTS.md, CLAUDE.md and .github/copilot-instructions.md, gitignores them, and installs the Claude WorktreeCreate / WorktreeRemove hooks that place worktrees under the root. On a change it offers to move existing worktrees and scratch folders. Args: worktree=<path> scratch=<path>; with none, asks for both. Followed by init."
 disable-model-invocation: true
 ---
 
@@ -62,6 +62,7 @@ Show a unified diff for every existing file and write only after the user agrees
    When init has just written the file with the roots filled, there is nothing to change.
 3. **`CLAUDE.md`** (the root file, next to `AGENTS.md`; when only a `.claude/CLAUDE.md` exists, propose the move from "Location and name" in `../init/references/managed-blocks.md` first, and if declined, leave it untouched and create the root file) — the same for its `workspace-folders` block from `../init/templates/CLAUDE.md`; a legacy `## Workspace folders` section runs to the next `##` heading, and a new block is appended at the end. Write it even when `CLAUDE.md` imports `AGENTS.md` — its Claude Code notes are not in `AGENTS.md`; skip it only when the file holds `<!-- ai-dlc:skip workspace-folders -->`.
    Every line outside the block stays as it was; keep the file's line endings.
+   **`.github/copilot-instructions.md`** — the same for its `workspace-folders` block from `../init/templates/copilot-instructions.md`: replace in place, else append at the end. Create the file from that template when it is missing; skip it only for `<!-- ai-dlc:skip workspace-folders -->`.
 4. **Hook scripts** — copy `templates/hooks/worktree-create.mjs` and `templates/hooks/worktree-remove.mjs` to `.claude/hooks/` when missing or different from the templates.
 5. **`.claude/settings.json`** — merge `templates/hooks/claude-worktree-hooks.json` with `{{WORKTREE_ROOT}}` filled. Replace our own entries in place (new `--root`; keep a `--base head` the developer chose earlier), add them when absent, never add them twice, and keep every other hook and key. Add `--base head` only when the developer asks new worktrees to branch from the current `HEAD` instead of the remote default branch.
 6. **Change mode: worktrees** — for each worktree under the old root that the user agreed to move: create the new root if needed, then `git worktree move <old root>/<slug> <new root>/<slug>`. Skip, with a note, a worktree that is locked, has uncommitted changes (`git -C <path> status --porcelain` is not empty), or holds the current session. Worktrees outside the old root are never touched. Done when `git worktree list` shows each moved worktree at its new path.

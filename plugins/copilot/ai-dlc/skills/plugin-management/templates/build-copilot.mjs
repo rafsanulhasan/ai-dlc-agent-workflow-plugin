@@ -11,7 +11,9 @@
 // Optional generated sources, written into the Claude plugin so both plugins ship them:
 // - if tools/templates/AGENTS.template.md exists: skills/init/templates/AGENTS.md, the
 //   template with the orchestrator persona (agents/orchestrator.md) at its marker; its managed-block
-//   markers (and those in skills/init/templates/CLAUDE.md) are checked for balance;
+//   markers are checked for balance;
+// - if tools/templates/instructions.template.md exists: skills/init/templates/CLAUDE.md and
+//   skills/init/templates/copilot-instructions.md, its Claude and Copilot variants (same markers);
 // - if skills/plugin-management/ exists: skills/plugin-management/templates/build-copilot.mjs,
 //   a copy of this script for new plugins.
 // Never hand-edit generated files either.
@@ -173,9 +175,40 @@ if (fs.existsSync(AGENTS_TEMPLATE)) {
   checkManagedBlocks(agentsMd, path.relative(ROOT, AGENTS_OUT));
   writeGenerated(AGENTS_OUT, agentsMd);
 }
-const CLAUDE_TEMPLATE = path.join(SRC, "skills", "init", "templates", "CLAUDE.md");
-if (fs.existsSync(CLAUDE_TEMPLATE)) {
-  checkManagedBlocks(fs.readFileSync(CLAUDE_TEMPLATE, "utf8"), path.relative(ROOT, CLAUDE_TEMPLATE));
+
+// ---- generated per-platform instruction templates (CLAUDE.md, .github/copilot-instructions.md) ----
+// One source, tools/templates/instructions.template.md, rendered once per platform. Lines between
+// `<!-- variant:<platform> -->` and the next `<!-- variant:… -->` or `<!-- /variant -->` belong to that
+// platform only; every other line (title, managed-block markers) is shared, so both outputs carry the
+// same markers in the same order.
+const INSTRUCTIONS_TEMPLATE = path.join(ROOT, "tools", "templates", "instructions.template.md");
+const INSTRUCTIONS_OUT = { claude: "CLAUDE.md", copilot: "copilot-instructions.md" };
+if (fs.existsSync(INSTRUCTIONS_TEMPLATE)) {
+  const label = path.relative(ROOT, INSTRUCTIONS_TEMPLATE).split(path.sep).join("/");
+  const source = fs.readFileSync(INSTRUCTIONS_TEMPLATE, "utf8").replace(/\r\n/g, "\n");
+  const rendered = {};
+  for (const platform of Object.keys(INSTRUCTIONS_OUT)) {
+    let variant = null;
+    const out = [];
+    source.split("\n").forEach((line, i) => {
+      const v = line.match(/^<!-- (?:variant:([a-z]+)|(\/variant)) -->$/);
+      if (v) {
+        if (v[1] && !INSTRUCTIONS_OUT[v[1]]) throw new Error(`${label}:${i + 1}: unknown variant "${v[1]}"`);
+        if (v[2] && !variant) throw new Error(`${label}:${i + 1}: <!-- /variant --> without an open variant`);
+        variant = v[1] ?? null;
+        return;
+      }
+      if (variant && line.startsWith(`<!-- ${PLUGIN}:`)) throw new Error(`${label}:${i + 1}: managed-block marker inside a variant`);
+      if (!variant || variant === platform) out.push(line);
+    });
+    if (variant) throw new Error(`${label}: variant "${variant}" is never closed with <!-- /variant -->`);
+    rendered[platform] = out.join("\n");
+    const file = path.join(SRC, "skills", "init", "templates", INSTRUCTIONS_OUT[platform]);
+    checkManagedBlocks(rendered[platform], path.relative(ROOT, file));
+    writeGenerated(file, rendered[platform]);
+  }
+  const markers = (t) => t.split("\n").filter((l) => l.startsWith(`<!-- ${PLUGIN}:`)).join("\n");
+  if (new Set(Object.values(rendered).map(markers)).size > 1) throw new Error(`${label}: platform outputs carry different managed-block markers`);
 }
 
 // Managed blocks: `<!-- <plugin>:begin <id> -->` … `<!-- <plugin>:end <id> -->` mark what init owns in a

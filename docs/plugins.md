@@ -46,12 +46,13 @@ You can also install the plugin directly, without the marketplace: `copilot plug
 
 ## Using it in a project
 
-1. **Bootstrap once.** Run `/ai-dlc:init` in Claude Code, or the `init` skill in Copilot. It shows a diff before it changes any existing file. An existing `AGENTS.md` or `CLAUDE.md` is merged, not replaced: init writes its content inside `<!-- ai-dlc:begin <id> -->` … `<!-- ai-dlc:end <id> -->` blocks, keeps every line of yours outside them, reuses commands your file already states (asking when they conflict with what it detects), and on a re-run replaces only its own blocks. It writes:
+1. **Bootstrap once.** Run `/ai-dlc:init` in Claude Code, or the `init` skill in Copilot. It shows a diff before it changes any existing file. An existing `AGENTS.md`, `CLAUDE.md` or `.github/copilot-instructions.md` is merged, not replaced: init writes its content inside `<!-- ai-dlc:begin <id> -->` … `<!-- ai-dlc:end <id> -->` blocks, keeps every line of yours outside them, reuses commands your file already states (asking when they conflict with what it detects), and on a re-run replaces only its own blocks. It writes:
    - `AGENTS.md`: the full orchestrator persona, followed by the project's build, test and mutation commands, its gates, artifact paths and conventions.
    - `CLAUDE.md` in the repository root: an `@AGENTS.md` import (Claude Code reads `AGENTS.md` on its own only when there is no `CLAUDE.md`) plus the Claude Code specifics `AGENTS.md` does not carry.
+   - `.github/copilot-instructions.md`: the GitHub Copilot specifics `AGENTS.md` does not carry (Copilot loads `AGENTS.md` itself). It comes from the same source as `CLAUDE.md`, with Copilot content in the same blocks.
    - `.claude/settings.json`, merged into any existing file. It includes `"agent": "ai-dlc:orchestrator"`.
    - `docs/backlog/backlog.md` and the empty `docs/` folders the lifecycles write to: `specs/`, `architecture/decisions/`, `architecture/narratives/`, `plans/`, `handoffs/`, `product/`.
-   - The worktree root and the scratch root, installed by `workspace-folders`: recorded in `AGENTS.md` and `CLAUDE.md`, added to `.gitignore`, and a Claude `WorktreeCreate` / `WorktreeRemove` hook pair that creates worktrees under the root. Run `/ai-dlc:workspace-folders` to change them later.
+   - The worktree root and the scratch root, installed by `workspace-folders`: recorded in `AGENTS.md`, `CLAUDE.md` and `.github/copilot-instructions.md`, added to `.gitignore`, and a Claude `WorktreeCreate` / `WorktreeRemove` hook pair that creates worktrees under the root. Run `/ai-dlc:workspace-folders` to change them later.
    - **.NET repositories only** (detected from a `.sln`, `.slnx` or `.csproj` file):
      - The C# coding-style, GlobalUsings and testing rules, installed by `dotnet-rules`.
      - The `dotnet test` gate hook, installed by `dotnet-test-gate`.
@@ -251,6 +252,7 @@ The generated platform note at the top of each Copilot agent explains how to rea
 The build also regenerates three sources:
 
 - **`skills/init/templates/AGENTS.md`**: built from [`tools/templates/AGENTS.template.md`](../tools/templates/AGENTS.template.md) with the body of `agents/orchestrator.md` inserted at its persona marker. A project's `AGENTS.md` therefore always carries the current orchestrator. The build fails when the template's managed-block markers are unbalanced.
+- **`skills/init/templates/CLAUDE.md`** and **`copilot-instructions.md`**: rendered from [`tools/templates/instructions.template.md`](../tools/templates/instructions.template.md). Lines inside `<!-- variant:claude -->` or `<!-- variant:copilot -->` (up to `<!-- /variant -->`) go to that platform's file only; everything else, including every managed-block marker, goes to both. The build fails when the variants are unclosed, a marker sits inside a variant, or the two outputs' markers differ.
 - **`skills/plugin-management/templates/build-copilot.mjs`**: a copy of the build script itself. `plugin-management` uses it to create other plugins the same way.
 - **`.claude/skills/<name>/`**: mirrors of the skills listed in [`tools/project-skills.json`](../tools/project-skills.json) (currently `presentation-authoring`), for use inside this repository.
 

@@ -1,6 +1,6 @@
-# Managed blocks: merging AGENTS.md and CLAUDE.md
+# Managed blocks: merging AGENTS.md, CLAUDE.md and copilot-instructions.md
 
-`init` and `workspace-folders` own only what sits inside their **managed blocks**. Everything else in a project's `AGENTS.md` and `CLAUDE.md` belongs to the developer. That is what lets init merge into a hand-written file and lets a re-run replace its own content in place.
+`init` and `workspace-folders` own only what sits inside their **managed blocks**. Everything else in a project's `AGENTS.md`, `CLAUDE.md` and `.github/copilot-instructions.md` belongs to the developer. That is what lets init merge into a hand-written file and lets a re-run replace its own content in place.
 
 ## Marker scheme
 
@@ -12,7 +12,7 @@
 
 - Each marker stands alone on its line. Blocks are flat (never nested) and each id appears once per file.
 - `<!-- ai-dlc:skip <id> -->` records that the developer declined a block (for example, they keep their own commands section). A re-run honours it and does not offer that block again unless the developer asks.
-- The templates carry the markers: `templates/AGENTS.md` and `templates/CLAUDE.md`. A block's content is the template text between its markers, with the placeholders filled.
+- The templates carry the markers: `templates/AGENTS.md`, `templates/CLAUDE.md` and `templates/copilot-instructions.md`. A block's content is the template text between its markers, with the placeholders filled. The last two are rendered by the plugin build from one source, so they have the same blocks with per-platform content.
 
 | File | Blocks, in template order | Content |
 |---|---|---|
@@ -24,14 +24,16 @@
 | | `conventions` | where the stack rules live; ends on "Project-specific architecture notes:" |
 | `CLAUDE.md` | `pointer` | the `@AGENTS.md` import and a line explaining it |
 | | `workspace-folders` | Claude Code specifics only: the scratch root replaces the built-in scratchpad; the `WorktreeCreate` hook places Claude's worktrees under the root |
+| `.github/copilot-instructions.md` | `pointer` | a note that `AGENTS.md` holds the rules (Copilot loads it itself, so no import) |
+| | `workspace-folders` | GitHub Copilot specifics only: load the `scratchpad` skill; create worktrees by hand under the root |
 
-`CLAUDE.md` carries only what `AGENTS.md` does not: the import loads everything else. **Obsolete blocks:** `commands` and `watch-out-for` in `CLAUDE.md` came from earlier templates and duplicate `AGENTS.md`; a re-run proposes removing them (see "Decide per block").
+`CLAUDE.md` and `.github/copilot-instructions.md` carry only what `AGENTS.md` does not. GitHub Copilot CLI reads `CLAUDE.md` too, so each file's blocks name the platform they are for. **Obsolete blocks:** `commands` and `watch-out-for` in `CLAUDE.md` came from earlier templates and duplicate `AGENTS.md`; a re-run proposes removing them (see "Decide per block").
 
 The title (`# …`) and the architecture-notes list after the `conventions` block sit outside every block: they belong to the developer once written.
 
 ## Inspect an existing file
 
-Find each file case-insensitively: `AGENTS.md` (`Agents.md`, `agents.md`) at the repository root; `CLAUDE.md` (`Claude.md`, `claude.md`) at the root and in `.claude/`. Note a `CLAUDE.local.md` if present and never touch it. Where each file ends up is decided under "Location and name" below. For each file found, record:
+Find each file case-insensitively: `AGENTS.md` (`Agents.md`, `agents.md`) at the repository root; `CLAUDE.md` (`Claude.md`, `claude.md`) at the root and in `.claude/`; `copilot-instructions.md` (any case) in `.github/`. A `copilot-instructions.md` anywhere else is not a repository instruction file for Copilot: mention it and leave it alone. Note a `CLAUDE.local.md` if present and never touch it. Where each file ends up is decided under "Location and name" below. For each file found, record:
 
 1. Its line ending (LF or CRLF) and whether it ends with a newline.
 2. Its headings, in order, with line numbers.
@@ -51,7 +53,7 @@ Both files live in the repository root, side by side: `<repo>/AGENTS.md` and `<r
 |---|---|---|
 | Only `.claude/CLAUDE.md` | Move it to the root — `git mv .claude/CLAUDE.md CLAUDE.md` when it is tracked (`git ls-files --error-unmatch` succeeds), so history follows; a plain move otherwise — then merge into it as usual | Leave `.claude/CLAUDE.md` untouched and create the root `CLAUDE.md` from the template |
 | Root `CLAUDE.md` and `.claude/CLAUDE.md` | Merge `.claude/CLAUDE.md` into the root file, then remove it (`git rm` when tracked) | Leave `.claude/CLAUDE.md` untouched and merge only the root file |
-| `Claude.md`, `claude.md`, `Agents.md`, `agents.md` at the root | Recommend renaming to `CLAUDE.md` / `AGENTS.md` (`git mv` when tracked), then merge. Claude Code's docs name only the upper-case files and say nothing about case, so another case may go unread on a case-sensitive file system (Linux) | Keep the name and merge into it as it is |
+| `Claude.md`, `claude.md`, `Agents.md`, `agents.md` at the root, or `.github/` `copilot-instructions.md` in another case | Recommend renaming to `CLAUDE.md` / `AGENTS.md` / `copilot-instructions.md` (`git mv` when tracked), then merge. The docs name only these spellings and say nothing about case, so another case may go unread on a case-sensitive file system (Linux) | Keep the name and merge into it as it is |
 
 When a `.claude/CLAUDE.md` is left in place, tell the developer that Claude Code loads both files (both are project-instruction locations), so their instructions add up.
 
@@ -91,9 +93,9 @@ The architecture-notes list is filled only when `AGENTS.md` is created or has no
 - **`persona`, `project-facts`, `workspace-folders`, `conventions`** are appended after the developer's content, in that order, followed by the architecture-notes list. The persona runs to hundreds of lines; appending it keeps the developer's own sections at the top where they wrote them, and every line of `AGENTS.md` is loaded anyway, so position does not change what the agent sees.
 - When some blocks are already present, a missing block goes right after the block before it in template order (or right before the block after it), so the managed blocks stay in template order.
 
-**CLAUDE.md:**
+**CLAUDE.md** and **`.github/copilot-instructions.md`:**
 
-- **`pointer`** goes right after the title (before any other line).
+- **`pointer`** goes right after the title (before any other line); at the top of a file without a title.
 - **`workspace-folders`** is appended at the end.
 
 Separate every inserted block from its neighbours with one blank line.
