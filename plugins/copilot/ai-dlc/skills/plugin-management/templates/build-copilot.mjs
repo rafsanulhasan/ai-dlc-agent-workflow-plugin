@@ -10,7 +10,8 @@
 //
 // Optional generated sources, written into the Claude plugin so both plugins ship them:
 // - if tools/templates/AGENTS.template.md exists: skills/init/templates/AGENTS.md, the
-//   template with the orchestrator persona (agents/orchestrator.md) at its marker;
+//   template with the orchestrator persona (agents/orchestrator.md) at its marker; its managed-block
+//   markers (and those in skills/init/templates/CLAUDE.md) are checked for balance;
 // - if skills/plugin-management/ exists: skills/plugin-management/templates/build-copilot.mjs,
 //   a copy of this script for new plugins.
 // Never hand-edit generated files either.
@@ -34,8 +35,10 @@ if (!PLUGIN || !claudePlugins.includes(PLUGIN)) {
 }
 const SRC = path.join(ROOT, "plugins", "claude", PLUGIN);
 const OUT = path.join(ROOT, "plugins", "copilot", PLUGIN);
-// `<plugin>:` prefix on agent and skill references; Copilot ids have no namespace.
-const NAMESPACE = new RegExp(`\\b${PLUGIN.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}:(?=[a-z0-9-]+)`, "g");
+// `<plugin>:` prefix on agent and skill references; Copilot ids have no namespace. A prefix right after
+// `<!-- ` is a managed-block marker (`<!-- <plugin>:begin <id> -->`) and is kept, so init writes the
+// same markers on both platforms.
+const NAMESPACE = new RegExp(`(?<!<!-- )\\b${PLUGIN.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}:(?=[a-z0-9-]+)`, "g");
 
 // ---- tool translation -------------------------------------------------------
 const ALIAS = {
@@ -166,7 +169,45 @@ if (fs.existsSync(AGENTS_TEMPLATE)) {
     if (/^\s*```/.test(line)) fenced = !fenced;
     return !fenced && /^#{1,5} /.test(line) ? `#${line}` : line;
   }).join("\n");
-  writeGenerated(AGENTS_OUT, template.replace(PERSONA_MARKER, persona));
+  const agentsMd = template.replace(PERSONA_MARKER, persona);
+  checkManagedBlocks(agentsMd, path.relative(ROOT, AGENTS_OUT));
+  writeGenerated(AGENTS_OUT, agentsMd);
+}
+const CLAUDE_TEMPLATE = path.join(SRC, "skills", "init", "templates", "CLAUDE.md");
+if (fs.existsSync(CLAUDE_TEMPLATE)) {
+  checkManagedBlocks(fs.readFileSync(CLAUDE_TEMPLATE, "utf8"), path.relative(ROOT, CLAUDE_TEMPLATE));
+}
+
+// Managed blocks: `<!-- <plugin>:begin <id> -->` … `<!-- <plugin>:end <id> -->` mark what init owns in a
+// target repository's AGENTS.md / CLAUDE.md, so it can merge into hand-written files and replace its own
+// content in place on a re-run. Blocks are flat (never nested), each id appears once, and markers sit
+// outside fenced code. The persona must not contain markers of its own.
+function checkManagedBlocks(text, label) {
+  const marker = new RegExp(`^<!-- ${PLUGIN}:(begin|end) ([a-z0-9-]+) -->$`);
+  const seen = new Set();
+  let open = null;
+  let fenced = false;
+  text.split(/\r?\n/).forEach((line, i) => {
+    if (/^\s*```/.test(line)) fenced = !fenced;
+    const m = line.match(marker);
+    if (!m) {
+      if (line.includes(`<!-- ${PLUGIN}:begin`) || line.includes(`<!-- ${PLUGIN}:end`)) {
+        throw new Error(`${label}:${i + 1}: managed-block marker must stand alone on its line`);
+      }
+      return;
+    }
+    if (fenced) throw new Error(`${label}:${i + 1}: managed-block marker inside fenced code`);
+    const [, kind, id] = m;
+    if (kind === "begin") {
+      if (open) throw new Error(`${label}:${i + 1}: block "${id}" opens inside "${open}"`);
+      if (seen.has(id)) throw new Error(`${label}:${i + 1}: block "${id}" appears twice`);
+      open = id;
+      seen.add(id);
+    } else if (open !== id) {
+      throw new Error(`${label}:${i + 1}: end "${id}" does not close "${open ?? "nothing"}"`);
+    } else open = null;
+  });
+  if (open) throw new Error(`${label}: block "${open}" is never closed`);
 }
 
 // ---- generated build-script template (shipped by the plugin-management skill) -----
