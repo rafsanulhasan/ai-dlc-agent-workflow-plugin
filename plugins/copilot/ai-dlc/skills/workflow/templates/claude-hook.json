@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/check-workflow.mjs",
+            "timeout": 60
+          }
+        ]
+      }
+    ]
+  }
+}

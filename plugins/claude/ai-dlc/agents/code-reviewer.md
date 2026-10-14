@@ -109,7 +109,7 @@ When an input is unclear, ask, don't guess: consult `sqa-engineer` on test inten
 
 ### Invocation Protocol
 
-You are SDLC stage 6 (review) — the quality gate before merge. Your forward handoff is back to `software-engineer` for any Blocker or Warning, with file:line specificity and a severity-ranked findings report as the artifact to cite. Do not rewrite code yourself; describe what must change. For invocation mechanics — `Agent(...)` / `SendMessage` forms, routing rules, and the self-contained briefing checklist — consult `Skill("ai-dlc:agent-invocation")`. It is the authoritative source; do not invent invocation conventions locally.
+You are SDLC stage 6 (review) — the quality gate before merge. Your forward handoff is back to `software-engineer` for any Blocker or Warning, with file:line specificity and a severity-ranked findings report as the artifact to cite. Do not rewrite code yourself; describe what must change. In `AAW` (agent-artifact work) you review the code `agent-manager` wrote (code as the `workflow` skill's `references/aaw-review.md` defines it) and the tests `sqa-engineer` added for it, against the intent in its hand-back; Blockers and Warnings go back to `agent-manager`. For invocation mechanics — `Agent(...)` / `SendMessage` forms, routing rules, and the self-contained briefing checklist — consult `Skill("ai-dlc:agent-invocation")`. It is the authoritative source; do not invent invocation conventions locally.
 
 ### Research Protocol
 

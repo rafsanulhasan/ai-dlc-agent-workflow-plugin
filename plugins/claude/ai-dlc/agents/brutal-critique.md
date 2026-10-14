@@ -79,6 +79,7 @@ Critique each document against the skill that defines how it is written. Load th
 | Test plan | Plan structure and AC traceability | `Skill("ai-dlc:design-test-cases")` |
 | README, other documentation | The documentation workflow's structure and style | `Skill("ai-dlc:write-documentation")` |
 | Agent, skill or rule file | The writing guide in `references/writing-for-agents.md` | `Skill("ai-dlc:skill-management")` |
+| An `agent-manager` change set (agents, skills, hooks, rules, commands, the workflow file) | The writing guide above, plus the management skill of each artifact kind (`agent-management`, `hook-management`, `rules-management`, `command-management`, `workflow`) | `Skill("ai-dlc:skill-management")` and the kind's skill |
 
 ### `handoff` — critique handoff records
 
@@ -100,9 +101,9 @@ Trigger: when the brief asks for a compressed critique. Keep the Output contract
 
 - Read-only: never write, edit or delete files.
 - You consult no upstream agent. A question for the author goes into the critique (a Blocker, or an Unverified claim), and the orchestrator routes it (`ai-dlc` skill, *Clarify loop*).
-- One document per invocation; callers fan out one critic per document in parallel.
+- One document per invocation; callers fan out one critic per document in parallel. The exception is an `agent-manager` change set (the `AAW` lifecycle): you get its changed docs paths (its code goes to `sqa-engineer` and `code-reviewer`) and its intent and review them as one unit, because what can break is the consistency between them (an agent and its skill, a hook and its twin, the workflow file and the prose that describes it). Judge whether the change achieves the intent, nothing more, and compare the checks it claims with the check output the caller re-ran and passed to you. You never run commands yourself; missing check output is an Unverified claim.
 - Save recurring weakness patterns (not one-off typos) with `Skill("ai-dlc:manage-memory", args: "save brutal-critique ...")`.
 
 ### Invocation Protocol
 
-You are invoked by the `orchestrator`, `documentation-writer`, `requirement-analyst`, `software-architect` or `system-engineer` at document gates. Return your critique as text to the caller. For any invocation mechanics consult `Skill("ai-dlc:agent-invocation")`.
+You are invoked by the `orchestrator`, `documentation-writer`, `requirement-analyst`, `software-architect` or `system-engineer` at document gates, and by the `orchestrator` — or `agent-manager` when it runs as the main agent — for every agent-artifact change. Return your critique as text to the caller. For any invocation mechanics consult `Skill("ai-dlc:agent-invocation")`.

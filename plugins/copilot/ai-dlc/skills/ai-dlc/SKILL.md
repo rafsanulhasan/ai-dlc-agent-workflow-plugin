@@ -1,6 +1,6 @@
 ---
 name: ai-dlc
-description: "AI-DLC lifecycle router and operating model. Defines the full AI-DLC lifecycle — idea to release through every gate (Plan → G1 → Architect & Design → G2 → Breakdown → G3 → Build · Test · Review → G4 → Release) — the default for feature work, plus eight named lifecycles that are its segments (PDLC, ASDLC, STBLC, FDLC) or focused entry points (BFLC, RLC, TLC, CRLC). Use FIRST for any non-trivial request to pick which lifecycle applies, which agents own each stage, which artifact each stage must hand off, which gates a human must approve, and which upstream agents a stage consults when an input is unclear (the Clarify loop). The orchestrator's request-routing skill chooses each work item's lifecycle from this catalogue (unless the user named one), and the orchestrator follows it to run each stage."
+description: "AI-DLC lifecycle router and operating model. Defines the full AI-DLC lifecycle — idea to release through every gate (Plan → G1 → Architect & Design → G2 → Breakdown → G3 → Build · Test · Review → G4 → Release) — the default for feature work, plus eight named lifecycles that are its segments (PDLC, ASDLC, STBLC, FDLC) or focused entry points (BFLC, RLC, TLC, CRLC), and AAW, the lifecycle for changes to agents, skills, hooks, rules, commands and the workflow file. Use FIRST for any non-trivial request to pick which lifecycle applies, which agents own each stage, which artifact each stage must hand off, which gates a human must approve, and which upstream agents a stage consults when an input is unclear (the Clarify loop). The orchestrator's request-routing skill chooses each work item's lifecycle from this catalogue (unless the user named one), and the orchestrator follows it to run each stage. This catalogue is the default; a project's .ai-dlc/workflow.json overrides it."
 ---
 
 # AI-DLC — Lifecycle Router
@@ -15,6 +15,10 @@ The routing layer has four parts, used in this order:
 2. **`ai-dlc`** (this skill) — the lifecycle catalogue: stages, owners, exit artifacts and human gates.
 3. **`agent-invocation`** — spawns agents with self-contained briefs.
 4. **`handoff`** — records and verifies the artifact that crosses each stage boundary.
+
+## Project workflow
+
+Everything below is the **default** workflow. Its machine-readable form is `templates/workflow.json` of the `workflow` skill. A repository's `.ai-dlc/workflow.json` overrides it, and wherever the two differ the file wins: lifecycles and their stages, stage owners and who hands off to whom, parallel stages, loops, gates and their approvers (`human`, `orchestrator` or `none`), the clarify matrix and round limit, routing, disabled and custom agents, and artifact paths. `node .ai-dlc/workflow.mjs show` prints the effective workflow; changes go through `/workflow edit` (**Boris Cherny** (`agent-manager`)). The guardrails in *Step 3 — Gates, verification and the human* below, and the `workflow` skill's *Fixed guardrails*, hold whatever the file says.
 
 ## Roles
 
@@ -86,9 +90,9 @@ The `orchestrator` picks exactly one primary lifecycle per work item and runs th
 
 Shortcuts:
 
-- Agent/skill/hook/rule/command changes are **not** a lifecycle — route straight to `agent-manager`.
+- Agent/skill/hook/rule/command and workflow-file changes are **not** an AI-DLC lifecycle. They run the agent-artifact lifecycle **AAW** (`routing.byType["Agent Artifact"]` in the workflow file): ARM makes the change and hands back the changed paths, each marked by kind, and the intent; BC critiques the docs, SQA tests the code and then CR reviews it, both paths in parallel for a mixed change; findings go back to ARM within one shared round budget, then to the human. Change kinds, rounds and findings: the `workflow` skill's `references/aaw-review.md`. No work breakdown and no handoff records; the run state records the rounds and links each hand-back. A change to ARM's own definition or a skill it owns goes to a freshly spawned ARM.
 - P0 security issues: BFLC with `security-review` run by SA/CR before the fix lands; notify PO afterwards.
-- Pure questions: answer, or delegate to `research-assistant`; no lifecycle.
+- Pure questions, including "what does this repository do": delegate to `research-assistant` (the orchestrator does not explore code or docs to answer them); no lifecycle.
 - Releases: Release phase — `product-manager` runs its release-gate checklist, `product-owner` gives go / no-go, then `devops-engineer` runs CD.
 
 ## Step 2 — Run the lifecycle's stages
@@ -145,11 +149,12 @@ Run the segment stages below in order, gate by gate: PDLC → G1 → ASDLC → G
 ## Step 3 — Gates, verification and the human
 
 - **Every handoff is an artifact.** Cross a stage boundary only with `Skill("handoff")`, which records the artifact paths and the verification result in `docs/handoffs/`.
-- **Trust, but verify.** The orchestrator reads the artifact before the next agent starts. An agent's summary is a claim, not evidence.
+- **Trust, but verify.** The orchestrator reads the artifact before the next agent starts. An agent's summary is a claim, not evidence. Verification is the only reading the orchestrator does itself; understanding code or docs is delegated to `research-assistant`.
+- **Durable runs.** The orchestrator keeps each work item's run state (`handoff`, *Run state*) current before every spawn and after every return or gate, stores every agent's hand-back verbatim next to it as soon as the agent returns (`handoff`, *Hand-back record*), and offers to resume unfinished runs at the start of every session.
 - **Hard gates beat confidence.** Build and tests must be green before Build ends (`init` installs the stack's Stop hook that enforces the test command: `dotnet-test-gate` in .NET repositories, `node-test-gate` in JS / TS repositories); mutation testing is the SQA's gate.
 - **Ask upstream, then the human.** When an input is unclear, the stage agent consults the agents that produced it (*Clarify loop* below). Intent, scope or AC questions that no upstream agent can answer go to the human as one targeted question. Never let an agent guess.
 - **Re-anchor long runs** on the frozen spec at each stage boundary to stop drift.
-- **Skip gates only for artifact-only changes** (planning, agents, skills, hooks, prompts, rules): the test and mutation commands may be skipped when no runtime code, test code, runtime configuration or build logic changed.
+- **Skip gates only for artifact-only changes** (planning, agents, skills, hooks, prompts, rules): the test and mutation commands may be skipped when no runtime code, test code, runtime configuration or build logic changed — except the AAW test stage, which always runs for code in the change set.
 
 ## Clarify loop — consult upstream
 

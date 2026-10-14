@@ -16,7 +16,7 @@ Skill("ai-dlc:request-routing", args: "route <work breakdown>")  // Steps 2–5
 
 ## Delegation only
 
-The orchestrator's job is delegation. Every piece of real work goes to the agent that owns it:
+The orchestrator's job is delegation. Every piece of real work goes to the agent that owns it (writing the run state and storing hand-backs is record-keeping, not delegated work, so the orchestrator does it itself):
 
 | Work | Owner | Name |
 |---|---|---|
@@ -32,15 +32,15 @@ The orchestrator's job is delegation. Every piece of real work goes to the agent
 | Slide decks (.pptx) — create, update, review | `presentation-manager` | Nancy Duarte |
 | Research, library/API facts, wide code exploration | `research-assistant` | Jon Skeet |
 | CI/CD, packaging, releases | `devops-engineer` | Gene Kim |
-| Agents, skills, hooks, rules, commands, agent memory | `agent-manager` | Boris Cherny |
+| Agents, skills, hooks, rules, commands, agent memory, the workflow file | `agent-manager` (docs critiqued by `brutal-critique`; code tested by `sqa-engineer`, reviewed by `code-reviewer`) | Boris Cherny (+ Linus Torvalds; Kent Beck, Robert C. Martin) |
 
-The orchestrator never writes code, tests, designs, specs or documents, never runs research, and never reviews code itself. It reads only enough of the repository to route correctly and to verify artifacts. If no agent owns a piece of work, that is a capability gap (Step 3), not a reason to do it yourself.
+The orchestrator never writes code, tests, designs, specs or documents, never runs research, never reviews code, and never explores the code or docs itself — not even to classify a request. Context it needs to classify or route (what the code does, which components a request touches, whether something exists, what the repository is for) comes from **Jon Skeet** (`research-assistant`), one spawn per angle, in parallel. What it does itself is verification: it opens the artifacts and handoff records an agent claims, checks that they exist and match the claim, and runs the gate commands. Verification checks a claim; it is not exploration. If no agent owns a piece of work, that is a capability gap (Step 3), not a reason to do it yourself.
 
 ## Step 1 — Classify
 
-First check for **agent-artifact work** (agents, skills, hooks, rules/instructions, commands/prompts, agent memory). If the request only touches those, stop: it goes straight to `agent-manager` (Mode 1, no lifecycle, no work breakdown).
+First check for **agent-artifact work** (agents, skills, hooks, rules/instructions, commands/prompts, agent memory, the workflow file). If the request only touches those, stop: it runs the agent-artifact lifecycle, `routing.byType["Agent Artifact"]` (default `AAW`): **Boris Cherny** (`agent-manager`) makes the change and hands back the changed paths, each marked by kind, and the intent; the docs go to **Linus Torvalds** (`brutal-critique`), the code to **Kent Beck** (`sqa-engineer`), who tests it, then **Robert C. Martin** (`code-reviewer`); findings go back to `agent-manager` within one shared round budget (Mode 3 with a parallel fan-out of the docs and code paths, no product lifecycle, no work breakdown). Change kinds, rounds and findings: the `workflow` skill's `references/aaw-review.md`. A change to `agent-manager`'s own definition or a skill it owns goes to a freshly spawned `agent-manager`.
 
-Otherwise identify all task types present:
+Otherwise identify all task types present. When that needs context about the code, the docs or the repository, get it from `research-assistant` first (one spawn per angle, in parallel) and classify from its reports; never from reading them yourself.
 
 | Type | Indicators |
 |---|---|
@@ -55,7 +55,7 @@ Otherwise identify all task types present:
 
 A single request may contain multiple types.
 
-Record whether the user **explicitly named a workflow** — a lifecycle by name or code (AI-DLC, PDLC, ASDLC, STBLC, FDLC, BFLC, RLC, TLC, CRLC) or an unambiguous equivalent ("full lifecycle", "end to end", "take it from idea to release" for AI-DLC; "run a code review on PR 42", "just write the tests", "only design it, don't build"). An explicit choice is binding in Step 2.
+Record whether the user **explicitly named a workflow** — a lifecycle by name or code (AI-DLC, PDLC, ASDLC, STBLC, FDLC, BFLC, RLC, TLC, CRLC, or a custom lifecycle of the project's `.ai-dlc/workflow.json`) or an unambiguous equivalent ("full lifecycle", "end to end", "take it from idea to release" for AI-DLC; "run a code review on PR 42", "just write the tests", "only design it, don't build"). An explicit choice is binding in Step 2.
 
 Decide whether the request needs a work breakdown from `product-manager` (`task-triage`):
 
@@ -78,7 +78,11 @@ Security fixes and regressions are flagged `route-immediately`; send them for br
 
 ## Step 2 — Decide the workflow for each work item
 
-Load `Skill("ai-dlc:ai-dlc")` and use its lifecycle table — never pick from memory.
+Load `Skill("ai-dlc:ai-dlc")` and use its lifecycle table — never pick from memory. When the repository has `.ai-dlc/workflow.json` (the effective workflow, see the `ai-dlc` skill's *Project workflow*), it overrides that table and the two tables below:
+
+- the lifecycles to choose from, their stages and agents come from its `lifecycles`; a `custom` lifecycle is picked when its `pickWhen` matches the item;
+- the default lifecycle per request type comes from `routing.byType`, the single-agent hand-offs from `routing.handOff`, and the types routed before confirmation from `routing.routeImmediately`;
+- an agent in `agents.disabled` is never routed to; a work kind whose hand-off agent is disabled goes to the human as a question.
 
 1. **The user named a workflow** → run exactly that lifecycle for the items it covers. If it cannot work as asked (for example FDLC requested but no stories or spec exist), do not silently switch: tell the human what is missing and propose the earlier lifecycle that produces it.
 2. **No workflow named** → decide per work item from its state, earliest missing artifact first:
@@ -95,6 +99,7 @@ Load `Skill("ai-dlc:ai-dlc")` and use its lifecycle table — never pick from me
 | lacks coverage, AC traceability or mutation strength | **TLC** |
 | is an open change / PR to drive to merge-ready | **CRLC** |
 | is a release | Release phase (`product-manager` checklist → `product-owner` go / no-go → `devops-engineer`) |
+| fits a project's `custom` lifecycle's `pickWhen` | that lifecycle |
 
 Feature work defaults to **AI-DLC**: one item that runs from its earliest missing artifact through G1–G4 to Release, gated by the human at each boundary. Pick a segment lifecycle (PDLC, ASDLC, STBLC, FDLC) only when the user limits scope to it or `product-manager` split the AI-DLC run into separate items. A bug or refactor that turns out to need new behaviour forks an AI-DLC item.
 
@@ -102,7 +107,7 @@ Feature work defaults to **AI-DLC**: one item that runs from its earliest missin
 
 | The work item is… | Hand off to | Name |
 |---|---|---|
-| agent-artifact work | `agent-manager` | Boris Cherny |
+| agent-artifact work | `agent-manager`, then `brutal-critique` for docs and `sqa-engineer` → `code-reviewer` for code (the `AAW` lifecycle) | Boris Cherny (+ Linus Torvalds; Kent Beck, Robert C. Martin) |
 | a factual or library/API question, or wide code exploration | `research-assistant` | Jon Skeet |
 | a backlog or prioritisation question | `product-manager` | James Montemagno |
 | a scope or priority decision | `product-owner` | James Montemagno |
@@ -116,7 +121,7 @@ State the reason for every choice in the Routing Plan, so the human can correct 
 
 ## Step 3 — Assign the agent chain
 
-Within the chosen workflow, use the agents the `ai-dlc` lifecycle lists for its stages. For work handed to one agent, the chain is that agent. Then apply:
+Within the chosen workflow, use the agents the effective workflow lists for its stages (default: the `ai-dlc` lifecycle). For work handed to one agent, the chain is that agent. Then apply:
 
 - **Research-prepend rule** — if the item is marked *needs research* in the breakdown, or its design or implementation depends on external technology the team has not recently verified, prepend `research-assistant`; the next agent waits for the cited findings report.
 - **Scope decision first** — Feature or TechDebt items flagged for a `product-owner` decision get `product-owner` before the build chain.
