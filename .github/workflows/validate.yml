@@ -14,6 +14,8 @@ jobs:
           node-version: 22
       - name: Copilot plugin is regenerated from the Claude plugin
         run: node tools/build-copilot.mjs --check
+      - name: Run Node tests
+        run: node --test
       - name: Validate Claude plugin manifest
         run: npx -y @anthropic-ai/claude-code plugin validate --strict ./plugins/claude/ai-dlc
       - name: Validate Claude marketplace

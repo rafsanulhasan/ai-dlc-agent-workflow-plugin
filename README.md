@@ -31,7 +31,7 @@ Full reference for both plugins (agents, skills, lifecycles, hooks, the build an
 | `brutal-critique` | Adversarial read-only critique of every document | sonnet |
 | `research-assistant` | All external research; owns the knowledge base | opus |
 | `devops-engineer` | CI/CD, NuGet and npm publishing, SonarQube PR gates, releases | sonnet |
-| `agent-manager` | The only agent that changes agents, skills, hooks, rules or the workflow file; `brutal-critique` critiques every change | opus |
+| `agent-manager` | The only agent that changes agents, skills, hooks, rules or the workflow file; `brutal-critique` critiques the docs of every change, `sqa-engineer` and `code-reviewer` test and review its code | opus |
 
 Agents use the `opus` and `sonnet` aliases, and nothing pins `haiku`, so every role follows the newest model in its family (Opus 5.5 / Sonnet 5.5 / Haiku 5.5 on the Anthropic API today) without edits. To freeze a version, set `ANTHROPIC_DEFAULT_OPUS_MODEL` / `_SONNET_` / `_HAIKU_` in `.claude/settings.json`.
 
@@ -55,7 +55,7 @@ Agents use the `opus` and `sonnet` aliases, and nothing pins `haiku`, so every r
 
 Human gates: **G1** stories/ACs · **G2** frozen spec · **G3** task plan · **G4** review report · release go / no-go.
 
-Changes to agents, skills, hooks, rules, commands and the workflow file run **AAW**: `agent-manager` makes the change, `brutal-critique` returns PASS or REVISE, and REVISE goes back to `agent-manager` (at most three rounds). Every work item keeps a committed run state, `docs/handoffs/<work-item>/run.md`, written before each spawn and after each return or gate, so a new session can resume a run after a crash or a lost context.
+Changes to agents, skills, hooks, rules, commands and the workflow file run **AAW**: `agent-manager` makes the change; `brutal-critique` reviews the docs (PASS or REVISE), while `sqa-engineer` tests and then `code-reviewer` reviews any code; findings go back to `agent-manager` within one shared round budget (three rounds by default). After updating the plugin, run `/ai-dlc:workflow upgrade` in each repository that has `.ai-dlc/workflow.json`: an older file fails `validate` without the new review stages, and so does a customised AAW whose review loops have different `maxRounds`. The orchestrator's reminder at session start relies on the plugin version changing between releases. Every work item keeps a committed run state, `docs/handoffs/<work-item>/run.md`, written before each spawn and after each return or gate, and each agent's hand-back, the report it returned, stored next to it as `<NN>-<agent>-handback.md`, so a new session can resume a run after a crash or a lost context.
 
 ## Install
 

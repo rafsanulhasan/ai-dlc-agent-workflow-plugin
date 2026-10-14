@@ -16,7 +16,7 @@ Skill("ai-dlc:request-routing", args: "route <work breakdown>")  // Steps 2–5
 
 ## Delegation only
 
-The orchestrator's job is delegation. Every piece of real work goes to the agent that owns it:
+The orchestrator's job is delegation. Every piece of real work goes to the agent that owns it (writing the run state and storing hand-backs is record-keeping, not delegated work, so the orchestrator does it itself):
 
 | Work | Owner | Name |
 |---|---|---|
@@ -32,13 +32,13 @@ The orchestrator's job is delegation. Every piece of real work goes to the agent
 | Slide decks (.pptx) — create, update, review | `presentation-manager` | Nancy Duarte |
 | Research, library/API facts, wide code exploration | `research-assistant` | Jon Skeet |
 | CI/CD, packaging, releases | `devops-engineer` | Gene Kim |
-| Agents, skills, hooks, rules, commands, agent memory, the workflow file | `agent-manager` (critiqued by `brutal-critique`) | Boris Cherny (+ Linus Torvalds) |
+| Agents, skills, hooks, rules, commands, agent memory, the workflow file | `agent-manager` (docs critiqued by `brutal-critique`; code tested by `sqa-engineer`, reviewed by `code-reviewer`) | Boris Cherny (+ Linus Torvalds; Kent Beck, Robert C. Martin) |
 
 The orchestrator never writes code, tests, designs, specs or documents, never runs research, never reviews code, and never explores the code or docs itself — not even to classify a request. Context it needs to classify or route (what the code does, which components a request touches, whether something exists, what the repository is for) comes from **Jon Skeet** (`research-assistant`), one spawn per angle, in parallel. What it does itself is verification: it opens the artifacts and handoff records an agent claims, checks that they exist and match the claim, and runs the gate commands. Verification checks a claim; it is not exploration. If no agent owns a piece of work, that is a capability gap (Step 3), not a reason to do it yourself.
 
 ## Step 1 — Classify
 
-First check for **agent-artifact work** (agents, skills, hooks, rules/instructions, commands/prompts, agent memory, the workflow file). If the request only touches those, stop: it runs the agent-artifact lifecycle, `routing.byType["Agent Artifact"]` (default `AAW`): **Boris Cherny** (`agent-manager`) makes the change and hands back the changed paths and the intent, then **Linus Torvalds** (`brutal-critique`) critiques it, back to `agent-manager` on REVISE, at most 3 rounds (Mode 3, no product lifecycle, no work breakdown). A change to `agent-manager`'s own definition or a skill it owns goes to a freshly spawned `agent-manager`.
+First check for **agent-artifact work** (agents, skills, hooks, rules/instructions, commands/prompts, agent memory, the workflow file). If the request only touches those, stop: it runs the agent-artifact lifecycle, `routing.byType["Agent Artifact"]` (default `AAW`): **Boris Cherny** (`agent-manager`) makes the change and hands back the changed paths, each marked by kind, and the intent; the docs go to **Linus Torvalds** (`brutal-critique`), the code to **Kent Beck** (`sqa-engineer`), who tests it, then **Robert C. Martin** (`code-reviewer`); findings go back to `agent-manager` within one shared round budget (Mode 3 with a parallel fan-out of the docs and code paths, no product lifecycle, no work breakdown). Change kinds, rounds and findings: the `workflow` skill's `references/aaw-review.md`. A change to `agent-manager`'s own definition or a skill it owns goes to a freshly spawned `agent-manager`.
 
 Otherwise identify all task types present. When that needs context about the code, the docs or the repository, get it from `research-assistant` first (one spawn per angle, in parallel) and classify from its reports; never from reading them yourself.
 
@@ -107,7 +107,7 @@ Feature work defaults to **AI-DLC**: one item that runs from its earliest missin
 
 | The work item is… | Hand off to | Name |
 |---|---|---|
-| agent-artifact work | `agent-manager`, then `brutal-critique` (the `AAW` lifecycle) | Boris Cherny (+ Linus Torvalds) |
+| agent-artifact work | `agent-manager`, then `brutal-critique` for docs and `sqa-engineer` → `code-reviewer` for code (the `AAW` lifecycle) | Boris Cherny (+ Linus Torvalds; Kent Beck, Robert C. Martin) |
 | a factual or library/API question, or wide code exploration | `research-assistant` | Jon Skeet |
 | a backlog or prioritisation question | `product-manager` | James Montemagno |
 | a scope or priority decision | `product-owner` | James Montemagno |

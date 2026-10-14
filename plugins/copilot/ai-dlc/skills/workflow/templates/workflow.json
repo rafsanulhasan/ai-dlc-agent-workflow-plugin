@@ -418,26 +418,54 @@
       "name": "Agent Artifact Work",
       "kind": "focused",
       "pickWhen": "The request changes agents, skills, hooks, rules / instructions, commands / prompts, agent memory or the workflow file (agent-artifact work)",
-      "exitArtifact": "The changed agent artifacts, their platform checks green, and a PASS verdict from brutal-critique",
-      "note": "No work breakdown and no handoff records; the run state records each round. A change to agent-manager's own definition, or to a skill it owns, is made by a freshly spawned agent-manager, never by a running instance.",
+      "exitArtifact": "The changed agent artifacts, their platform checks green, a PASS from brutal-critique on the docs, and passing tests and a clean code review on the code",
+      "note": "No work breakdown, no gates and no handoff records; the run state records each round and links every hand-back, and both are committed when the run closes. Change kinds (code or docs), what a round is and which findings start one: the workflow skill's references/aaw-review.md. The maxRounds of the three review loops are one shared budget, not one per loop: validate requires them equal. A change to agent-manager's own definition, or to a skill it owns, is made by a freshly spawned agent-manager, never by a running instance.",
       "stages": [
         {
           "id": "change",
           "agent": "agent-manager",
-          "produces": ["The changed paths", "The intent of the change", "The checks run and their results"],
+          "produces": ["The changed paths, each marked code or docs", "The intent of the change", "The checks run and their results"],
           "after": [],
-          "note": "Uses the management skill for each artifact kind; ends with the twin or build checks (harness-sync --check, or the plugin build --check)."
+          "note": "Uses the management skill for each artifact kind; ends with the twin or build checks (harness-sync --check, or the plugin build --check). The orchestrator re-runs those checks before any review."
         },
         {
           "id": "critique",
           "agent": "brutal-critique",
-          "produces": ["Critique of the change set with a PASS / REVISE verdict"],
+          "when": "the change set contains docs",
+          "produces": ["Critique of the docs in the change set with a PASS / REVISE verdict"],
+          "after": ["change"],
           "loop": {
             "to": "change",
-            "on": "A REVISE verdict: the critique goes back to agent-manager with the same changed paths and intent",
+            "on": "A REVISE verdict, or Majors on a PASS: the critique goes back to agent-manager with the same changed paths and intent",
             "maxRounds": 3
           },
-          "note": "Reviews the changed paths against the intent, using the skill-management writing guide; read-only."
+          "note": "Reviews the docs paths against the intent, using the skill-management writing guide; read-only."
+        },
+        {
+          "id": "test",
+          "agent": "sqa-engineer",
+          "when": "the change set contains code",
+          "produces": ["Tests for the changed code", "The test run and its results"],
+          "after": ["change"],
+          "loop": {
+            "to": "change",
+            "on": "A test that fails because the code is wrong: the failure goes back to agent-manager",
+            "maxRounds": 3
+          },
+          "note": "Writes or updates tests for the code paths against the intent, in the repository's test folder outside the shipped plugin, with the repository's test runner (or the stack's built-in one), and runs them. The tests join the change set as code."
+        },
+        {
+          "id": "code-review",
+          "agent": "code-reviewer",
+          "when": "the change set contains code",
+          "produces": ["Severity-ranked findings on the code and its tests"],
+          "after": ["test"],
+          "loop": {
+            "to": "change",
+            "on": "A Blocker or Warning: the findings go back to agent-manager",
+            "maxRounds": 3
+          },
+          "note": "Reviews the code paths and the new tests against the intent (standards axis); read-only."
         }
       ]
     },

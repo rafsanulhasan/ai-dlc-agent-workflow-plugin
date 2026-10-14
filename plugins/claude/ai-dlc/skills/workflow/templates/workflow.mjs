@@ -114,7 +114,20 @@ function didYouMean(word, names) {
   return best && bestD <= Math.max(2, Math.floor(word.length / 3)) ? ` (did you mean "${best}"?)` : "";
 }
 
-const UNDISABLEABLE = ["orchestrator", "agent-manager", "brutal-critique"];
+// Fixed guardrail: these run every agent-artifact change (AAW), so a project cannot disable them.
+const UNDISABLEABLE = {
+  "orchestrator": "",
+  "agent-manager": "",
+  "brutal-critique": ": it critiques the docs of every agent-artifact change",
+  "sqa-engineer": ": it tests the code of every agent-artifact change",
+  "code-reviewer": ": it reviews the code of every agent-artifact change",
+};
+// AAW review stages: the only `when` each may carry, and why it must loop back to agent-manager.
+const AAW_REVIEWERS = {
+  "brutal-critique": { when: "the change set contains docs", why: "on REVISE: the docs of every agent-artifact change are critiqued" },
+  "sqa-engineer": { when: "the change set contains code", why: "on failing tests: the code of every agent-artifact change is tested" },
+  "code-reviewer": { when: "the change set contains code", why: "on Blockers or Warnings: the code of every agent-artifact change is reviewed" },
+};
 const APPROVERS = ["human", "orchestrator", "none"];
 const KINDS = ["primary", "segment", "focused", "custom"];
 const AXES = ["standards", "spec"];
@@ -163,7 +176,7 @@ function validate(wf, catalog) {
     else for (const d of dupes(wf.agents.disabled)) err("agents.disabled", `"${d}" is listed twice`);
     if (isStrArr(wf.agents.disabled)) for (const a of wf.agents.disabled) {
       if (catalog && !PLUGIN_AGENTS.includes(a)) err("agents.disabled", `"${a}" is not a plugin agent${didYouMean(a, PLUGIN_AGENTS)}`);
-      else if (UNDISABLEABLE.includes(a)) err("agents.disabled", `"${a}" cannot be disabled (fixed guardrail${a === "brutal-critique" ? ": it critiques every agent-artifact change" : ""})`);
+      else if (Object.hasOwn(UNDISABLEABLE, a)) err("agents.disabled", `"${a}" cannot be disabled (fixed guardrail${UNDISABLEABLE[a]})`);
       else disabled.add(a);
     }
     if (!isObj(wf.agents.custom)) err("agents.custom", "must be an object of { <id>: { description } }");
@@ -307,18 +320,40 @@ function validate(wf, catalog) {
       for (const [k, a] of Object.entries(r.handOff)) usedAgent(a, `routing.handOff["${k}"]`);
       if ("agent-artifact work" in r.handOff && r.handOff["agent-artifact work"] !== "agent-manager") err(`routing.handOff["agent-artifact work"]`, "must stay agent-manager (fixed guardrail)");
     }
-    // The lifecycle agent-artifact work runs: agent-manager makes the change, a critic reviews it.
+    // The lifecycle agent-artifact work runs: agent-manager makes the change; brutal-critique reviews the
+    // docs, sqa-engineer tests and code-reviewer reviews the code, each sending findings back to agent-manager.
     const aaw = isObj(r.byType) ? r.byType["Agent Artifact"] : undefined;
     const lc = typeof aaw === "string" ? lifecycles[aaw] : undefined;
-    if (isObj(r.byType) && aaw === undefined) err(`routing.byType["Agent Artifact"]`, `missing: agent-artifact work needs its lifecycle (default "AAW": agent-manager, then brutal-critique) — run /ai-dlc:workflow upgrade to bring it in`);
+    if (isObj(r.byType) && aaw === undefined) err(`routing.byType["Agent Artifact"]`, `missing: agent-artifact work needs its lifecycle (default "AAW": agent-manager, then brutal-critique for docs and sqa-engineer, code-reviewer for code) — run /ai-dlc:workflow upgrade to bring it in`);
     else if (isObj(r.byType) && !isObj(lc)) err(`routing.byType["Agent Artifact"]`, `lifecycle "${aaw}" is not defined — run /ai-dlc:workflow upgrade to bring in the default AAW`);
     else if (isObj(lc) && !Array.isArray(lc.stages)) err(`routing.byType["Agent Artifact"]`, `"${aaw}" must be a lifecycle with stages, not segments`);
     else if (isObj(lc) && lc.stages.length && lc.stages.every(isObj)) {
       const st = lc.stages;
       if (st.some((s, i) => afterOf(st, i).length === 0 && s.agent !== "agent-manager"))
         err(`lifecycles.${aaw}`, `agent-artifact work runs this lifecycle (routing.byType["Agent Artifact"]), so every starting stage must be agent-manager (fixed guardrail)`);
-      const critiqued = st.some((s) => s.agent === "brutal-critique" && isObj(s.loop) && st.some((t) => t.id === s.loop.to && t.agent === "agent-manager"));
-      if (!critiqued) err(`lifecycles.${aaw}`, "needs a brutal-critique stage that loops back to the agent-manager stage on REVISE: every agent-artifact change is critiqued (fixed guardrail)");
+      // The rules are documented in the workflow skill's references/aaw-review.md.
+      const reviews = st.filter((s) => typeof s.agent === "string" && Object.hasOwn(AAW_REVIEWERS, s.agent) && isObj(s.loop) && st.some((t) => t.id === s.loop.to && t.agent === "agent-manager"));
+      for (const [agent, { why }] of Object.entries(AAW_REVIEWERS))
+        if (!reviews.some((s) => s.agent === agent)) err(`lifecycles.${aaw}`, `needs a ${agent} stage that loops back to the agent-manager stage ${why} (fixed guardrail; run /ai-dlc:workflow upgrade to bring in the default AAW stages)`);
+      const where = (s) => `lifecycles.${aaw}.stages[${st.indexOf(s)}] (${s.id})`;
+      const budgets = new Map();
+      // Only stages that already loop back to agent-manager are checked here; a review stage with no valid
+      // loop is reported once, by the "needs a <agent> stage that loops back" error above.
+      for (const s of reviews) {
+        if (!Number.isInteger(s.loop.maxRounds) || s.loop.maxRounds < 1) err(`${where(s)}.loop.maxRounds`, "required on an AAW review loop: the review loops share one round budget (fixed guardrail)");
+        else budgets.set(s.id, s.loop.maxRounds);
+        // `when` is an exact phrase (case and spacing ignored), so a reworded condition cannot switch a review off.
+        const expected = AAW_REVIEWERS[s.agent].when;
+        if ("when" in s && (typeof s.when !== "string" || s.when.trim().replace(/\s+/g, " ").toLowerCase() !== expected))
+          err(`${where(s)}.when`, `must be "${expected}" (case and spacing ignored), or be omitted so the stage runs on every change (fixed guardrail)`);
+      }
+      if (new Set(budgets.values()).size > 1)
+        err(`lifecycles.${aaw}`, `the review loops share one round budget, so their maxRounds must be equal (${[...budgets].map(([id, n]) => `${id} ${n}`).join(", ")}) (fixed guardrail)`);
+      // code-review must name the sqa-engineer stage in its own `after` (directly, not through another stage).
+      const testIds = reviews.filter((s) => s.agent === "sqa-engineer").map((s) => s.id);
+      for (const s of reviews.filter((x) => x.agent === "code-reviewer"))
+        if (testIds.length && !afterOf(st, st.indexOf(s)).some((x) => testIds.includes(x)))
+          err(`${where(s)}.after`, `must include the sqa-engineer stage (${testIds.join(" or ")}): code is reviewed with its tests (fixed guardrail)`);
     }
     if (!isStrArr(r.routeImmediately)) err("routing.routeImmediately", "must be an array of request types");
     else for (const d of dupes(r.routeImmediately)) err("routing.routeImmediately", `"${d}" is listed twice`);
@@ -530,10 +565,12 @@ const catalog = loadCatalog();
 if (COMMAND === "validate") {
   const { errors, warnings } = validate(wf, catalog);
   if (opt("--plugin") && fs.existsSync(CATALOG_FILE)) {
+    // A corrupt stored catalog is only a warning here: --plugin supplies the catalog for this run.
     let stored = null;
-    try { stored = JSON.parse(fs.readFileSync(CATALOG_FILE, "utf8")); } catch { /* reported by a run without --plugin */ }
-    if (stored?.plugin?.version !== catalog.plugin.version)
-      warnings.push(`catalog: ${path.relative(process.cwd(), CATALOG_FILE) || CATALOG_FILE} is for plugin version ${stored?.plugin?.version ?? "(unknown)"}, the plugin at --plugin is ${catalog.plugin.version ?? "(no version)"} — run /ai-dlc:workflow upgrade to regenerate it`);
+    const rel = path.relative(process.cwd(), CATALOG_FILE) || CATALOG_FILE;
+    try { stored = JSON.parse(fs.readFileSync(CATALOG_FILE, "utf8")); } catch { warnings.push(`catalog: ${rel} is not valid JSON — run /ai-dlc:workflow upgrade to regenerate it`); }
+    if (stored && stored.plugin?.version !== catalog.plugin.version)
+      warnings.push(`catalog: ${rel} is for plugin version ${stored?.plugin?.version ?? "(unknown)"}, the plugin at --plugin is ${catalog.plugin.version ?? "(no version)"} — run /ai-dlc:workflow upgrade to regenerate it`);
   }
   if (!catalog) errors.unshift(`catalog: ${path.relative(process.cwd(), CATALOG_FILE) || CATALOG_FILE} is missing, so plugin agents and skills cannot be checked — run /ai-dlc:workflow upgrade to generate it (repositories set up before the catalog existed need this once; a new setup runs /ai-dlc:workflow install)`);
   for (const e of errors) console.log(`error: ${e}`);

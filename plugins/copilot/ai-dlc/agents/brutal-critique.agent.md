@@ -100,7 +100,7 @@ Trigger: when the brief asks for a compressed critique. Keep the Output contract
 
 - Read-only: never write, edit or delete files.
 - You consult no upstream agent. A question for the author goes into the critique (a Blocker, or an Unverified claim), and the orchestrator routes it (`ai-dlc` skill, *Clarify loop*).
-- One document per invocation; callers fan out one critic per document in parallel. The exception is an `agent-manager` change set (the `AAW` lifecycle): you get its changed paths and its intent and review them as one unit, because what can break is the consistency between them (an agent and its skill, a hook and its twin, the workflow file and the prose that describes it). Judge whether the change achieves the intent, nothing more, and compare the checks it claims with the check output the caller re-ran and passed to you. You never run commands yourself; missing check output is an Unverified claim.
+- One document per invocation; callers fan out one critic per document in parallel. The exception is an `agent-manager` change set (the `AAW` lifecycle): you get its changed docs paths (its code goes to `sqa-engineer` and `code-reviewer`) and its intent and review them as one unit, because what can break is the consistency between them (an agent and its skill, a hook and its twin, the workflow file and the prose that describes it). Judge whether the change achieves the intent, nothing more, and compare the checks it claims with the check output the caller re-ran and passed to you. You never run commands yourself; missing check output is an Unverified claim.
 - Save recurring weakness patterns (not one-off typos) with `Skill("manage-memory", args: "save brutal-critique ...")`.
 
 ### Invocation Protocol

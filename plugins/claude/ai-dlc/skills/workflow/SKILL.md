@@ -16,7 +16,7 @@ A repository's AI-DLC workflow lives in `.ai-dlc/workflow.json`. The orchestrato
 
 The **workflow gate** guards the file: `.claude/hooks/check-workflow.mjs` ([templates/check-workflow.mjs](templates/check-workflow.mjs)), run by a Claude `Stop` hook in `.claude/settings.json` and its Copilot twin `.github/hooks/ai-dlc-workflow-gate.json`. When `.ai-dlc/` has uncommitted changes, it runs `node .ai-dlc/workflow.mjs validate` and blocks finishing while that fails. It blocks **once per stop cycle**, like the test gates: if the agent stops again right after a block, the hook lets it through, so the gate catches mistakes but does not make an invalid file impossible — `validate` in CI or review does. It is a project hook installed with the files; the plugin ships no hooks. `AI_DLC_WORKFLOW_GATE=false` pauses it.
 
-**Boris Cherny** (`agent-manager`) owns changes to the workflow file, like every agent artifact, and **Linus Torvalds** (`brutal-critique`) critiques each change before it is done (the `AAW` lifecycle); developers may also run `/ai-dlc:workflow …` themselves. **Scott Hanselman** (`orchestrator`) only reads it.
+**Boris Cherny** (`agent-manager`) owns changes to the workflow file, like every agent artifact, and each change is reviewed before it is done (the `AAW` lifecycle, [references/aaw-review.md](references/aaw-review.md)): docs by **Linus Torvalds** (`brutal-critique`), code by **Kent Beck** (`sqa-engineer`) then **Robert C. Martin** (`code-reviewer`); developers may also run `/ai-dlc:workflow …` themselves. **Scott Hanselman** (`orchestrator`) only reads it.
 
 > Agent names are the defaults; a name chosen at `/ai-dlc:init` (the agent's `persona-name` memory, roster in the orchestrator's `project_team-roster`) takes precedence.
 
@@ -31,9 +31,10 @@ The **workflow gate** guards the file: `.claude/hooks/check-workflow.mjs` ([temp
 
 The file cannot change these; `validate` rejects the attempts it can detect.
 
-- Boris Cherny (`agent-manager`) alone changes agents, skills, hooks, rules, commands, agent memory and this workflow file. `orchestrator` and `agent-manager` cannot be disabled; `agent-artifact work` always routes to `agent-manager`, and the lifecycle `routing.byType["Agent Artifact"]` names (default `AAW`: `agent-manager` → `brutal-critique`, back to `agent-manager` on REVISE, at most 3 rounds) must start with `agent-manager` and must have a `brutal-critique` stage that loops back to it; `validate` fails otherwise, and when `routing.byType["Agent Artifact"]` or its lifecycle is missing (run **upgrade**). `brutal-critique` cannot be disabled, and `documents.critic: null` does not remove this critique.
+- Boris Cherny (`agent-manager`) alone changes agents, skills, hooks, rules, commands, agent memory and this workflow file, and `agent-artifact work` always routes to it. `orchestrator` and `agent-manager` cannot be disabled.
+- Every agent-artifact change is reviewed, in a bounded, shared loop. The lifecycle that `routing.byType["Agent Artifact"]` names (default `AAW`) starts with `agent-manager` and has `brutal-critique` (docs), `sqa-engineer` and then `code-reviewer` (code) stages that loop back to it, with one shared round budget (equal `loop.maxRounds`; default 3, the file may change it). `brutal-critique`, `sqa-engineer` and `code-reviewer` cannot be disabled, and `documents.critic: null` does not remove these reviews. Change kinds, rounds, findings, and exactly what `validate` enforces and what it cannot: [references/aaw-review.md](references/aaw-review.md). A missing `routing.byType["Agent Artifact"]` or lifecycle, or an `AAW` from before these rules, fails `validate`: run **upgrade**.
 - A change to `agent-manager`'s own definition, or to a skill it owns (`agent-management`, `skill-management`, `hook-management`, `rules-management`, `command-management`, `harness-sync`, `workflow`, `plugin-management`), is made by a freshly spawned `agent-manager`, never by the running instance.
-- Trust, but verify: every stage boundary gets a verified handoff record, whatever the gate approver (`AAW` records its rounds and the critic's verdict in the run state instead).
+- Trust, but verify: every stage boundary gets a verified handoff record, whatever the gate approver (`AAW` has no gates or handoff records: its run state records the rounds and verdicts), and every agent's hand-back is stored verbatim next to the handoff records (`handoff`, *Hand-back record*).
 - The test gate hooks and the workflow gate installed by `init` stay in force.
 - The orchestrator only delegates, and a stage owner never does another agent's job.
 
@@ -97,4 +98,4 @@ The file cannot change these; `validate` rejects the attempts it can detect.
 
 ## Report
 
-List each file written, the `validate` result, the catalog line (`<plugin> <version> · N agents · N skills`), the diagram of every changed lifecycle, and the commands developers run themselves: `node .ai-dlc/workflow.mjs show|validate`. End with the changed paths and the intent of the change, one line each, so `brutal-critique` can review it (`AAW`).
+List each file written, the `validate` result, the catalog line (`<plugin> <version> · N agents · N skills`), the diagram of every changed lifecycle, and the commands developers run themselves: `node .ai-dlc/workflow.mjs show|validate`. End with the changed paths, each marked `code` or `docs`, and the intent of the change, one line each, so the right reviewers can be spawned (`AAW`).
