@@ -343,6 +343,7 @@ function validate(wf, catalog) {
         if (!Number.isInteger(s.loop.maxRounds) || s.loop.maxRounds < 1) err(`${where(s)}.loop.maxRounds`, "required on an AAW review loop: the review loops share one round budget (fixed guardrail)");
         else budgets.set(s.id, s.loop.maxRounds);
         // `when` is an exact phrase (case and spacing ignored), so a reworded condition cannot switch a review off.
+        // `\s+` also collapses NBSP and other Unicode spaces on purpose (pinned by tests): never narrow it to ASCII spaces.
         const expected = AAW_REVIEWERS[s.agent].when;
         if ("when" in s && (typeof s.when !== "string" || s.when.trim().replace(/\s+/g, " ").toLowerCase() !== expected))
           err(`${where(s)}.when`, `must be "${expected}" (case and spacing ignored), or be omitted so the stage runs on every change (fixed guardrail)`);

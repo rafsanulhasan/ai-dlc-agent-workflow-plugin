@@ -127,6 +127,7 @@ It blocks the agent from finishing while the repository's test command fails, wi
 plugins/claude/ai-dlc/          ← edit here (agents/, skills/)
 node tools/build-copilot.mjs    ← regenerate plugins/copilot/ai-dlc and init's AGENTS.md template
 node tools/build-copilot.mjs --check
+node --test                     ← repository tests in tests/ (run it bare)
 npx @anthropic-ai/claude-code plugin validate --strict ./plugins/claude/ai-dlc
 ```
 
@@ -134,7 +135,7 @@ npx @anthropic-ai/claude-code plugin validate --strict ./plugins/claude/ai-dlc
 
 This whole setup is captured as the `plugin-management` skill (owned by `agent-manager`), with the build script shipped as its template, so the team can create and release other Claude Code + Copilot plugins the same way: `/ai-dlc:plugin-management create <name>`.
 
-CI (`.github/workflows/validate.yml`) fails if the Copilot tree is stale or either manifest stops validating. Never hand-edit `plugins/copilot/**`.
+CI (`.github/workflows/validate.yml`) fails if the Copilot tree is stale, a test in `tests/` fails, or either manifest stops validating. Never hand-edit `plugins/copilot/**`.
 
 The build projects each Claude agent to `agents/<name>.agent.md`, translates tools to Copilot aliases (`Read`→`read`, `Write`/`Edit`→`edit`, `Glob`/`Grep`→`search`, `Bash`→`execute`, `Agent`→`agent`, `WebFetch`/`WebSearch`→`web`, `TodoWrite`→`todo`), drops Claude-only tools, strips the `ai-dlc:` namespace, and converts plugin hooks (if any are added) to Copilot's `version: 1` format. In this repository a `Stop` hook (`.claude/hooks/check-copilot-stale.mjs`) blocks the agent from finishing while the Copilot tree is stale.
 

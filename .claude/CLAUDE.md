@@ -19,6 +19,7 @@ Agents are then `ai-dlc:<name>` and skills `/ai-dlc:<name>`, read straight from 
 - `node tools/build-copilot.mjs --check` : fail if the Copilot plugin is stale
 - `npx @anthropic-ai/claude-code plugin validate --strict ./plugins/claude/ai-dlc` : validate the Claude plugin
 - `npx @anthropic-ai/claude-code plugin validate --strict .` : validate the marketplace
+- `node --test` : run the repository tests (`tests/workflow`: the `workflow.mjs` CLI); run it after changing a script that has tests in `tests/`. Run it bare: `node --test tests/` fails (seen on Node 24)
 
 ## Architecture
 
@@ -34,4 +35,4 @@ Agents are then `ai-dlc:<name>` and skills `/ai-dlc:<name>`, read straight from 
 ## Watch out for
 
 - After changing anything under `plugins/claude/ai-dlc/`, run `node tools/build-copilot.mjs`. A Stop hook (`.claude/hooks/check-copilot-stale.mjs`) blocks finishing while the Copilot plugin is stale.
-- CI (`.github/workflows/validate.yml`) runs the staleness check and both `plugin validate --strict` commands.
+- CI (`.github/workflows/validate.yml`) runs the staleness check, `node --test` and both `plugin validate --strict` commands.

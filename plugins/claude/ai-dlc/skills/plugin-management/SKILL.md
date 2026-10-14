@@ -21,7 +21,7 @@ Skill("ai-dlc:plugin-management", args: "release <version>")      // bump, rebui
 <repo>/
 ├─ .claude-plugin/marketplace.json        Claude marketplace (lists plugins/claude/<name>)
 ├─ .github/plugin/marketplace.json        Copilot marketplace (lists plugins/copilot/<name>)
-├─ .github/workflows/validate.yml         CI: build --check + both strict validations
+├─ .github/workflows/validate.yml         CI: build --check + node --test + both strict validations
 ├─ plugins/
 │  ├─ claude/<name>/                      SOURCE OF TRUTH
 │  │  ├─ .claude-plugin/plugin.json
@@ -32,6 +32,7 @@ Skill("ai-dlc:plugin-management", args: "release <version>")      // bump, rebui
 ├─ tools/build-copilot.mjs                the projection (copy of templates/build-copilot.mjs)
 ├─ tools/templates/                       sources for generated files (e.g. AGENTS.template.md)
 ├─ tools/overlays/non-claude/skills/      skills only non-Claude plugins ship (e.g. scratchpad)
+├─ tests/                                 repo tests (node:test + node:assert only) — never shipped
 ├─ .claude/                               the plugin repo's own dev setup — never shipped (§8)
 └─ README.md
 ```
@@ -88,9 +89,10 @@ It also writes **generated sources** into the Claude plugin when their inputs ex
 
 1. Edit only `plugins/claude/<name>/` (or `tools/templates/` for generated sources).
 2. `node tools/build-copilot.mjs`, then `node tools/build-copilot.mjs --check`. Remove empty folders the build leaves under `plugins/copilot/` after a rename or delete.
-3. When a manifest changed, or an agent or skill was added, renamed or removed: `npx @anthropic-ai/claude-code plugin validate --strict ./plugins/claude/<name>` and `npx @anthropic-ai/claude-code plugin validate --strict .`
-4. Update every reference to a renamed or removed agent/skill (`grep -rn '<old-name>' plugins/claude README.md`), then the README tables.
-5. Prefer deleting a retired agent or skill outright in plugin scope (git keeps history); in project scope, deprecate instead.
+3. When a script with tests in `tests/` changed (the `workflow` skill's `workflow.mjs`), or a test did: `node --test`. Run it bare: `node --test tests/` fails (seen on Node 24).
+4. When a manifest changed, or an agent or skill was added, renamed or removed: `npx @anthropic-ai/claude-code plugin validate --strict ./plugins/claude/<name>` and `npx @anthropic-ai/claude-code plugin validate --strict .`
+5. Update every reference to a renamed or removed agent/skill (`grep -rn '<old-name>' plugins/claude README.md`), then the README tables.
+6. Prefer deleting a retired agent or skill outright in plugin scope (git keeps history); in project scope, deprecate instead.
 
 ## 8. The plugin repository's own `.claude/` (dogfooding)
 
@@ -111,7 +113,7 @@ The repo runs the plugin it builds — it keeps **no local copies** of agents, s
 
 ## 9. CI — `.github/workflows/validate.yml`
 
-On push and pull request: checkout, `actions/setup-node` (22), `node tools/build-copilot.mjs --check`, then both `plugin validate --strict` commands.
+On push and pull request: checkout, `actions/setup-node` (22), `node tools/build-copilot.mjs --check`, `node --test`, then both `plugin validate --strict` commands.
 
 ## 10. Release
 
