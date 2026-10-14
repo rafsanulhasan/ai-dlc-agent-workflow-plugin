@@ -6,3 +6,6 @@ __pycache__/
 *.pyc
 # agent memory belongs to target repositories, not the plugin repo
 .claude/agent-memory/
+# AI-DLC workspace folders
+/.worktrees/
+/.scratch/

@@ -1,5 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "agent": "ai-dlc:orchestrator",
   "effortLevel": "medium",
   "env": {
     "ANTHROPIC_MODEL": "opus",
@@ -17,7 +18,9 @@
       "Bash(node tools/build-copilot.mjs)",
       "Bash(node tools/build-copilot.mjs --check)",
       "Bash(npx -y @anthropic-ai/claude-code plugin validate --strict ./plugins/claude/ai-dlc)",
-      "Bash(npx -y @anthropic-ai/claude-code plugin validate --strict .)"
+      "Bash(npx -y @anthropic-ai/claude-code plugin validate --strict .)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)"
     ],
     "deny": [
       "Bash(rm -rf *)",
@@ -33,6 +36,37 @@
           {
             "type": "command",
             "command": "node .claude/hooks/check-copilot-stale.mjs",
+            "timeout": 120
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/check-workflow.mjs",
+            "timeout": 60
+          }
+        ]
+      }
+    ],
+    "WorktreeCreate": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/worktree-create.mjs\" --root \".worktrees\"",
+            "timeout": 120
+          }
+        ]
+      }
+    ],
+    "WorktreeRemove": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/worktree-remove.mjs\"",
             "timeout": 120
           }
         ]

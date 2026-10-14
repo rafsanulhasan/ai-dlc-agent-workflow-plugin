@@ -1,5 +1,11 @@
 # Project: AI-DLC Agent Workflow
 
+<!-- ai-dlc:begin pointer -->
+@AGENTS.md
+
+> Agent orchestration, routing, gates and memory rules live in [AGENTS.md](AGENTS.md), imported above. Claude Code reads `AGENTS.md` on its own only when there is no `CLAUDE.md`, so the import is what loads it here.
+<!-- ai-dlc:end pointer -->
+
 A Claude Code and GitHub Copilot plugin that ships the AI-DLC agentic engineering team. The lifecycle, agents and gates are language-agnostic; .NET and JS / TS (Node.js, TypeScript, JavaScript) are the supported stacks, with more languages to follow.
 
 ## Agents and skills in this repo
@@ -36,3 +42,10 @@ Agents are then `ai-dlc:<name>` and skills `/ai-dlc:<name>`, read straight from 
 
 - After changing anything under `plugins/claude/ai-dlc/`, run `node tools/build-copilot.mjs`. A Stop hook (`.claude/hooks/check-copilot-stale.mjs`) blocks finishing while the Copilot plugin is stale.
 - CI (`.github/workflows/validate.yml`) runs the staleness check, `node --test` and both `plugin validate --strict` commands.
+
+<!-- ai-dlc:begin workspace-folders -->
+## Workspace folders (Claude Code only)
+
+- Write scratch files to `.scratch/<session-or-task>/` instead of Claude Code's built-in per-session scratchpad directory or the system temp directory.
+- `claude --worktree`, `EnterWorktree` and agents with `isolation: "worktree"` get their worktree under `.worktrees/` through the `WorktreeCreate` hook in `.claude/settings.json`. Claude Code keeps the worktrees it creates for subagents; remove each with `git worktree remove` once its branch is merged.
+<!-- ai-dlc:end workspace-folders -->
