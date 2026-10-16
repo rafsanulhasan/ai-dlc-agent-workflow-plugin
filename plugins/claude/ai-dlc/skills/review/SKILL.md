@@ -34,7 +34,7 @@ A change can pass one and fail the other: clean, conventional code that implemen
 
 Before reviewing any code:
 
-1. Read `CLAUDE.md` and `AGENTS.md` to internalize all conventions (`{ data, error }` return shape, no stack trace exposure, logger module, plus the stack's own from `dotnet-rules` or `node-rules`) and the project's build / test commands.
+1. Read `CLAUDE.md` and `AGENTS.md` to internalize all conventions (`{ data, error }` return shape, no stack trace exposure, logger module, plus the stack's own from `dotnet-rules` or `node-rules`) and the project's build / test commands (in `CLAUDE.md`; on Copilot `.github/copilot-instructions.md`).
 2. **Pin the base and the diff** from the argument:
    - **PR number**: run `gh pr diff <number>` to get the full diff
    - **Branch name**: run `git diff main...<branch>` to get all changes vs main
@@ -112,7 +112,7 @@ The stack's coding rules (`dotnet-rules` or `node-rules`, under `.claude/rules/`
 ## Phase 3 — Test Coverage Review
 
 1. For every new public method or changed logical branch, check whether a corresponding test exists.
-2. Run the project's build command (recorded in `AGENTS.md` at init; for example `dotnet build` or `npm run build`) to confirm the code compiles.
+2. Run the project's build command (recorded at init in `CLAUDE.md` / `.github/copilot-instructions.md`; for example `dotnet build` or `npm run build`) to confirm the code compiles.
 3. Run the project's test command (for example `dotnet test` or `npm test`) to confirm the test suite passes.
 4. Identify any new logic paths not covered by the existing test suite and flag them as **Warning** items for **Kent Beck** (`sqa-engineer`).
 5. For every double the diff adds, changes or newly reaches (mock, stub, fake, spy, route, MSW handler, fake clock), apply the `test-doubles` review checklist. Each double that fails it is a Standards finding at the severity that checklist sets.

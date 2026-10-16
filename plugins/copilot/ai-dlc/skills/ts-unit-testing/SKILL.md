@@ -22,7 +22,7 @@ The loop and the quality bar (red first, public seams, no tautologies) belong to
 
 ## Phase 0 — Context Load (silent)
 
-1. Read `CLAUDE.md` / `AGENTS.md` (test, type-check and mutation commands) and `.claude/rules/node-testing.md`. On Copilot the same rule is `.github/instructions/node-testing.instructions.md`.
+1. Read `CLAUDE.md` (test, type-check and mutation commands; on Copilot `.github/copilot-instructions.md`), `AGENTS.md` and `.claude/rules/node-testing.md`. On Copilot the same rule is `.github/instructions/node-testing.instructions.md`.
 2. Invoke `Skill("manage-memory", args: "sqa-engineer")` to load persistent memory.
 3. Detect the runner from `package.json` (`devDependencies`, the `test` script) and from config files: `vitest.config.*` / `vite.config.*` mean Vitest; `jest.config.*` or a `jest` key means Jest. If no runner exists yet, use Vitest. Never add a second runner.
 4. Read several existing test files. Note:
@@ -171,7 +171,7 @@ Every test follows **Arrange, Act, Assert**, with the three blocks marked by com
 
 ### Running
 
-- All tests: the project's test command from `AGENTS.md` (usually `npm test`).
+- All tests: the project's test command from `CLAUDE.md` / `.github/copilot-instructions.md` (usually `npm test`).
 - One file while iterating: `npx vitest run path/to/file.test.ts` (Jest: `npx jest path/to/file.test.ts`).
 - Type-check test code as well (`npx tsc --noEmit`, or the project's script). Vitest strips types without checking them.
 

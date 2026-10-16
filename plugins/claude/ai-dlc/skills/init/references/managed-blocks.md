@@ -17,17 +17,18 @@
 | File | Blocks, in template order | Content |
 |---|---|---|
 | `AGENTS.md` | `intro` | what this file is, platform forms |
-| | `commands` | "Project commands" table |
 | | `persona` | the orchestrator persona |
 | | `project-facts` | lifecycles and gates, owners, artifact locations, quality gates, memory protocol |
 | | `workspace-folders` | worktree and scratch roots (written by `workspace-folders`) |
 | | `conventions` | where the stack rules live; ends on "Project-specific architecture notes:" |
 | `CLAUDE.md` | `pointer` | the `@AGENTS.md` import and a line explaining it |
+| | `commands` | "Project commands" table: the build, test and mutation commands |
 | | `workspace-folders` | Claude Code specifics only: the scratch root replaces the built-in scratchpad; the `WorktreeCreate` hook places Claude's worktrees under the root |
 | `.github/copilot-instructions.md` | `pointer` | a note that `AGENTS.md` holds the rules (Copilot loads it itself, so no import) |
+| | `commands` | the same "Project commands" table as in `CLAUDE.md` |
 | | `workspace-folders` | GitHub Copilot specifics only: load the `scratchpad` skill; create worktrees by hand under the root |
 
-`CLAUDE.md` and `.github/copilot-instructions.md` carry only what `AGENTS.md` does not. GitHub Copilot CLI reads `CLAUDE.md` too, so each file's blocks name the platform they are for. **Obsolete blocks:** `commands` and `watch-out-for` in `CLAUDE.md` came from earlier templates and duplicate `AGENTS.md`; a re-run proposes removing them (see "Decide per block").
+`CLAUDE.md` and `.github/copilot-instructions.md` carry only what `AGENTS.md` does not. `AGENTS.md` stays free of stack-specific commands, so the build, test and mutation commands are in the `commands` block of both platform files, with the same values. GitHub Copilot CLI reads `CLAUDE.md` too, so each file's platform-specific blocks name the platform they are for. **Obsolete blocks:** `commands` in `AGENTS.md` and `watch-out-for` in `CLAUDE.md` came from earlier templates; a re-run proposes removing them (see "Decide per block"). The commands an obsolete `AGENTS.md` `commands` block states are Phase 1 defaults for the `commands` blocks of the platform files.
 
 The title (`# …`) and the architecture-notes list after the `conventions` block sit outside every block: they belong to the developer once written.
 
@@ -39,7 +40,7 @@ Find each file case-insensitively: `AGENTS.md` (`Agents.md`, `agents.md`) at the
 2. Its headings, in order, with line numbers.
 3. **Blocks present**: each `begin`/`end` pair and each `skip` marker. An unbalanced or duplicated marker stops the merge for that file: show the lines and ask the developer to fix them.
 4. **Legacy content** (written by an init that predates the markers): see "Convert legacy content" below.
-5. `AGENTS.md` only — **equivalent sections**: a heading of the developer's own that covers a block, for example "Commands", "Build", "Build & test", "Development", "Scripts" for `commands`.
+5. `CLAUDE.md` and `.github/copilot-instructions.md` — **equivalent sections**: a heading of the developer's own that covers a block, for example "Commands", "Build", "Build & test", "Development", "Scripts" for `commands`. In `AGENTS.md`, record such a section as a **commands section** instead: it is the developer's, and Phase 1 offers to move it (see "Decide per block").
 6. **Facts it states**: build, test and mutation commands (in code spans or fenced shell lines), and architecture or convention notes. Phase 1 uses them as defaults and lists every one that conflicts with a detected value.
 7. `CLAUDE.md` only: whether it **imports** `AGENTS.md` (a line `@AGENTS.md`, or `@` plus its path) or only **links** to it (a Markdown link).
 
@@ -74,10 +75,11 @@ For each block of each existing file, decide one action and show it in the Phase
 |---|---|
 | Block present | **update** in place |
 | `skip` marker present | **skip** (say so) |
-| `AGENTS.md`: developer has an equivalent section | ask: **keep theirs** (default — their section stays as is, ours is skipped and a `skip` marker records it) or **adopt** (their section is replaced by our block filled with their values; their wording is lost, so only with explicit agreement) |
+| `CLAUDE.md` or `.github/copilot-instructions.md`: developer has an equivalent section | ask: **keep theirs** (default — their section stays as is, ours is skipped and a `skip` marker records it) or **adopt** (their section is replaced by our block filled with their values; their wording is lost, so only with explicit agreement) |
 | `CLAUDE.md` already imports `AGENTS.md` (their own `@AGENTS.md` line) | skip `pointer` — their import does its job; no marker is needed, the import is detected on every run. `workspace-folders` is still added or updated: its Claude-specific notes are not in `AGENTS.md` |
 | `CLAUDE.md` only links `AGENTS.md` | add `pointer`: a link does not load the file, and Claude Code reads `AGENTS.md` by itself only when no `CLAUDE.md` exists |
-| `CLAUDE.md`: obsolete `commands` or `watch-out-for` block, or a `skip` marker for one | **remove** — propose it in the same diff and consent. Only the markers and the lines between them go; a section of the developer's own with a similar heading is never touched |
+| Obsolete block — `commands` in `AGENTS.md`, `watch-out-for` in `CLAUDE.md` — or a `skip` marker for one in that file | **remove** — propose it in the same diff and consent. Only the markers and the lines between them go; a section of the developer's own with a similar heading is never touched |
+| `AGENTS.md`: developer has a commands section of their own | leave it in place by default; list it in Phase 1 and offer to move its stack-specific commands into the platform files' `commands` blocks, since `AGENTS.md` is meant to stay free of them. Move it only with explicit agreement |
 | Otherwise | **add** |
 
 Conflicting values — the file says `npm test`, init detected `pnpm test` — are listed and asked about. Never pick one silently. The confirmed value fills every block that uses it.
@@ -89,13 +91,14 @@ The architecture-notes list is filled only when `AGENTS.md` is created or has no
 **AGENTS.md:**
 
 - **Title.** Keep the existing H1. Add the template title only when the file has no H1.
-- **`intro` and `commands`** go right after the title and the paragraph(s) under it, before the first `##` heading. A reader (human or agent) meets the platform forms and the commands before the long persona that refers to them.
+- **`intro`** goes right after the title and the paragraph(s) under it, before the first `##` heading. A reader (human or agent) meets the platform forms, and where the commands are, before the long persona that refers to them.
 - **`persona`, `project-facts`, `workspace-folders`, `conventions`** are appended after the developer's content, in that order, followed by the architecture-notes list. The persona runs to hundreds of lines; appending it keeps the developer's own sections at the top where they wrote them, and every line of `AGENTS.md` is loaded anyway, so position does not change what the agent sees.
 - When some blocks are already present, a missing block goes right after the block before it in template order (or right before the block after it), so the managed blocks stay in template order.
 
 **CLAUDE.md** and **`.github/copilot-instructions.md`:**
 
 - **`pointer`** goes right after the title (before any other line); at the top of a file without a title.
+- **`commands`** goes right after `pointer`, before the developer's first `##` heading.
 - **`workspace-folders`** is appended at the end.
 
 Separate every inserted block from its neighbours with one blank line.
@@ -118,11 +121,12 @@ A file written by an earlier init has the template text but no markers. Recognis
 | Block | Legacy range |
 |---|---|
 | `intro` | from the paragraph starting "This file makes the main agent" through the "**Platform forms.**" paragraph |
-| `commands` (AGENTS.md) | from `## Project commands` through the line "Use these wherever the persona below says…" |
-| `persona` | everything after that line, up to `## Project facts` |
+| obsolete: `commands` (AGENTS.md) | from `## Project commands` through the line "Use these wherever the persona below says…" — **proposed for removal**, not converted; its commands are Phase 1 defaults for the platform files |
+| `persona` | everything after the `intro` range (or that `commands` range), up to `## Project facts` |
 | `project-facts`, `workspace-folders`, `conventions` | from `## Project facts` through the line ending "Project-specific architecture notes:" — replaced by the three current blocks (the old order had "Workspace folders" inside "Project facts") |
 | `pointer` | the line `> Agent orchestration, routing, gates and memory rules live in [AGENTS.md]…` (replaced by the current block, which adds the `@AGENTS.md` import) |
 | `workspace-folders` (CLAUDE.md) | from `## Workspace folders` to the next `##` heading or the end of the file |
-| obsolete: `## Commands`, `## Watch out for` (CLAUDE.md) | each from its heading to the next `##` heading or the end of the file — **proposed for removal**, not converted; if the developer keeps them, they stay as they are, unmarked |
+| `commands` (CLAUDE.md) | from `## Commands` to the next `##` heading or the end of the file; its commands are Phase 1 defaults |
+| obsolete: `## Watch out for` (CLAUDE.md) | from its heading to the next `##` heading or the end of the file — **proposed for removal**, not converted; if the developer keeps it, it stays as it is, unmarked |
 
 Inside a legacy range, a line that matches neither the old nor the new template text is a developer edit. List each one in Phase 1 and keep it, placed right after the new block, unless the developer agrees to drop it. For a range proposed for removal, its developer edits are listed the same way and kept in place (unmarked) if the developer says so. Show the conversion in the same diff as the rest of the merge.

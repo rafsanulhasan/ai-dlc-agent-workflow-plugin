@@ -157,7 +157,7 @@ After applying the fix, re-read the changed file to confirm no unintended side e
 
 ### Build
 
-Run the project's build command (recorded in `AGENTS.md` at init; for example `dotnet build`, or `npm run build` / `tsc --noEmit` for TypeScript).
+Run the project's build command (recorded at init in `CLAUDE.md` / `.github/copilot-instructions.md`; for example `dotnet build`, or `npm run build` / `tsc --noEmit` for TypeScript).
 
 Fix all compilation errors before continuing.
 

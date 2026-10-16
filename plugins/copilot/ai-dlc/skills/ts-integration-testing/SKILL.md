@@ -23,7 +23,7 @@ The loop and the quality bar (red first, public seams, no tautologies) belong to
 
 ## Phase 0 — Context Load (silent)
 
-1. Read `CLAUDE.md` / `AGENTS.md` (test and integration-test commands) and `.claude/rules/node-testing.md`. On Copilot the same rule is `.github/instructions/node-testing.instructions.md`.
+1. Read `CLAUDE.md` (test and integration-test commands; on Copilot `.github/copilot-instructions.md`), `AGENTS.md` and `.claude/rules/node-testing.md`. On Copilot the same rule is `.github/instructions/node-testing.instructions.md`.
 2. Invoke `Skill("manage-memory", args: "sqa-engineer")` to load persistent memory.
 3. Detect the runner from `package.json` and config files (`vitest.config.*`, `jest.config.*`). Never add a second runner.
 4. Find the existing integration suite (a separate Vitest config or project, a `tests/integration/` folder, an `*.int.test.ts` suffix) and follow its layout, setup files and helpers.

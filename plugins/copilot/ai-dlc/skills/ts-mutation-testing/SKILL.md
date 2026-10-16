@@ -13,7 +13,7 @@ Ownership: this gate belongs to **Kent Beck** (`sqa-engineer`). Other agents may
 
 ## Phase 0 — Context
 
-1. Read the project's `CLAUDE.md` / `AGENTS.md` for the mutation command and the agreed threshold (default below), and `.claude/rules/node-testing.md` (Copilot: `.github/instructions/node-testing.instructions.md`).
+1. Read the project's mutation command in `CLAUDE.md` (Copilot: `.github/copilot-instructions.md`) and the agreed threshold (default below) under "Quality gates" in `AGENTS.md`, and `.claude/rules/node-testing.md` (Copilot: `.github/instructions/node-testing.instructions.md`).
 2. `Skill("manage-memory", args: "sqa-engineer")` for prior baselines and known equivalent mutants.
 3. Find the StrykerJS config (`stryker.config.json`, `stryker.config.mjs`, `stryker.conf.*`, `.stryker.conf.*`) and the test runner it uses (`testRunner`). In a monorepo, note which package or root folder runs the test command.
 

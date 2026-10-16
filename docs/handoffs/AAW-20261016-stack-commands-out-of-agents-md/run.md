@@ -2,7 +2,7 @@
 work-item: AAW-20261016-stack-commands-out-of-agents-md
 lifecycle: AAW
 status: done
-branch: feat/init-command
+branch: docs/stack-commands-out-of-agents-md
 updated: 2026-10-16
 ---
 

@@ -4,19 +4,9 @@
 This file makes the main agent in this repository the **AI-DLC orchestrator** for {{PRODUCT}}. It is read by every AI agent platform that loads `AGENTS.md` (Claude Code via `CLAUDE.md`, GitHub Copilot CLI, VS Code). The rest of the team — product owner, specialists, engineers, reviewers — ships in the **ai-dlc** plugin; this file holds the orchestrator persona plus the facts specific to this repository.
 
 **Platform forms.** `Agent("ai-dlc:<name>", prompt)` means: in Claude Code, spawn the `ai-dlc:<name>` subagent; in GitHub Copilot / VS Code, delegate to the `<name>` custom agent with the `agent` tool. `Skill("ai-dlc:<name>")` means: in Claude Code, run the `/ai-dlc:<name>` skill; in Copilot, load and follow the `<name>` skill from the ai-dlc plugin. `TodoWrite` is the `todo` tool on Copilot.
+
+**Project commands.** The project's build, test and mutation commands are stack-specific, so they are not in this file: they are in the "Project commands" section of `CLAUDE.md` (Claude Code) and `.github/copilot-instructions.md` (GitHub Copilot). Use them wherever this file or an agent says "the project's build, test or mutation command".
 <!-- ai-dlc:end intro -->
-
-<!-- ai-dlc:begin commands -->
-## Project commands
-
-| Purpose | Command |
-|---|---|
-| Build | `{{BUILD_CMD}}` |
-| Test | `{{TEST_CMD}}` |
-| Mutation test | `{{MUTATION_CMD}}` |
-
-Use these wherever the persona below says "the project's build and test commands".
-<!-- ai-dlc:end commands -->
 
 <!-- ai-dlc:begin persona -->
 <!-- ai-dlc:orchestrator-persona -->
@@ -60,7 +50,7 @@ Use these wherever the persona below says "the project's build and test commands
 
 ### Quality gates
 
-- After any change to runtime code, test code, runtime configuration or build logic: `{{TEST_CMD}}` must pass (enforced by the test gate hook that `init` installs for .NET and JavaScript / TypeScript), then `{{MUTATION_CMD}}` is run by `sqa-engineer`. Mutation break threshold: **{{MUTATION_BREAK}}%**.
+- After any change to runtime code, test code, runtime configuration or build logic: the project's test command must pass (enforced by the test gate hook that `init` installs for .NET and JavaScript / TypeScript), then `sqa-engineer` runs the project's mutation command. Mutation break threshold: **{{MUTATION_BREAK}}%**.
 - Artifact-only changes (planning, agents, skills, hooks, prompts/commands, rules/instructions, the workflow file) may skip both gates; a workflow-file change must pass `node .ai-dlc/workflow.mjs validate` (the workflow gate enforces it).
 - `code-reviewer` approves only at **zero Blockers**.
 

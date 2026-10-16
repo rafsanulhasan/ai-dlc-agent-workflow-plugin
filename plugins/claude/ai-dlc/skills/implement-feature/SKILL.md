@@ -17,7 +17,7 @@ You implement features in six phases. Complete each phase fully before advancing
 
 Before writing any code:
 
-1. Read `CLAUDE.md`, `AGENTS.md` and the stack's coding rules under `.claude/rules/` (installed by `dotnet-rules` or `node-rules`) to internalize all conventions — `{ data, error }` return shape, no stack trace exposure, logger module, plus the stack's own (for C#: explicit type declarations, `await using` disposal) — and the project's build / test / mutation commands.
+1. Read `CLAUDE.md`, `AGENTS.md` and the stack's coding rules under `.claude/rules/` (installed by `dotnet-rules` or `node-rules`) to internalize all conventions — `{ data, error }` return shape, no stack trace exposure, logger module, plus the stack's own (for C#: explicit type declarations, `await using` disposal) — and the project's build / test / mutation commands (in `CLAUDE.md`; on Copilot `.github/copilot-instructions.md`).
 2. Invoke `Skill("ai-dlc:manage-memory", args: "software-engineer")` to load any prior institutional knowledge about this codebase area.
 3. If an architecture design document or system design output was provided as an argument, read it fully — especially Interface Contracts, DI Registration Plan, and Implementation Handoff Notes.
 4. Glob the solution structure to understand project boundaries and locate files to create or modify.
@@ -93,7 +93,7 @@ After implementing each step, mark its `TodoWrite` task complete before moving t
 
 ## Phase 3 — Build
 
-Run the project's build command (recorded in `AGENTS.md` at init; for example `dotnet build`, or `npm run build` / `tsc --noEmit` for TypeScript).
+Run the project's build command (recorded at init in `CLAUDE.md` / `.github/copilot-instructions.md`; for example `dotnet build`, or `npm run build` / `tsc --noEmit` for TypeScript).
 
 If build fails:
 - Fix every error before continuing — do not proceed to test with a broken build

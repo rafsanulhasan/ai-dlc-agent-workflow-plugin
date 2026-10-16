@@ -27,7 +27,7 @@ This skill owns the loop and the quality bar; the stack's testing skill owns the
 | Coded E2E UI | `tunit-playwright-ui-testing` (Blazor components: `bunit-blazor-testing`) | `ts-playwright-ui-testing` |
 | Mutation | `csharp-mutation-testing` | `ts-mutation-testing` |
 
-The project's build, test and mutation commands are recorded in `AGENTS.md` at init; the stack's coding conventions are in the rules `dotnet-rules` or `node-rules` installed under `.claude/rules/`.
+The project's build, test and mutation commands are recorded at init in `CLAUDE.md` / `.github/copilot-instructions.md`; the stack's coding conventions are in the rules `dotnet-rules` or `node-rules` installed under `.claude/rules/`.
 
 Whether a test may use a double (mock, stub, fake, spy, route, fake clock), and which kind, is decided by `test-doubles`; the stack skill shows how to write it.
 
@@ -40,7 +40,7 @@ Before writing any code:
 1. Read `CLAUDE.md` to internalize conventions.
 2. Invoke `Skill("ai-dlc:manage-memory", args: "sqa-engineer")` to load prior knowledge about test fixtures and patterns.
 3. Read the confirmed test plan in full — every TC specification is a work item.
-4. Identify the stack and load its testing skill from the table above. Read the build / test / mutation commands from `AGENTS.md`.
+4. Identify the stack and load its testing skill from the table above. Read the build / test / mutation commands from `CLAUDE.md` (Copilot: `.github/copilot-instructions.md`).
 5. Locate the test project using Glob. Read several existing test files to internalize:
    - Test framework and runner
    - Assertion library in use
@@ -110,7 +110,7 @@ Mark each `TodoWrite` TC item complete immediately after its test has been seen 
 
 ### Phase 2 — Run and Verify
 
-Run the project's test command (recorded in `AGENTS.md` at init; for example `dotnet test` or `npm test`).
+Run the project's test command (recorded at init in `CLAUDE.md` / `.github/copilot-instructions.md`; for example `dotnet test` or `npm test`).
 
 - All new tests must pass
 - No previously passing test may fail — a test that breaks existing tests is itself a defect; report it to **David Fowler** (`software-engineer`) rather than modifying production code
@@ -121,7 +121,7 @@ Run the project's test command (recorded in `AGENTS.md` at init; for example `do
 
 ### Phase 3 — Mutation Testing
 
-Run the stack's mutation-testing skill (`csharp-mutation-testing` for C# / .NET, `ts-mutation-testing` for JS / TS) with the project's mutation command from `AGENTS.md`.
+Run the stack's mutation-testing skill (`csharp-mutation-testing` for C# / .NET, `ts-mutation-testing` for JS / TS) with the project's mutation command from `CLAUDE.md` / `.github/copilot-instructions.md`.
 
 For each surviving mutant in code covered by the new tests:
 

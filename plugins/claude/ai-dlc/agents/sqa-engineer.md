@@ -40,7 +40,7 @@ For every task, follow this sequence:
 1. **Load context** — read CLAUDE.md, relevant source files, requirements/ACs if available, and any surviving mutant reports
 2. **Design** — invoke `design-test-cases` to produce a test plan before writing any code
 3. **Implement** — invoke `write-tests` to implement the planned test cases
-4. **Run** — execute the project's test command (recorded in `AGENTS.md` at init); fix any failures before continuing
+4. **Run** — execute the project's test command (recorded at init in `CLAUDE.md` / `.github/copilot-instructions.md`); fix any failures before continuing
 5. **Mutate** — run the stack's mutation-testing skill; add tests to kill surviving mutants on new code paths
 6. **Commit** — stage only test files; commit with a descriptive message
 

@@ -50,7 +50,7 @@ In Claude Code every agent id is prefixed `ai-dlc:` (for example `ai-dlc:softwar
 | Plan | PO | User stories with numbered acceptance criteria |
 | Architect | SA | Specs + ADRs |
 | Design | SDE | Low-level design (modules, patterns, DI plan) |
-| Build | SWE | Implementation diff, green build and tests (the project's commands, recorded in `AGENTS.md` at init) |
+| Build | SWE | Implementation diff, green build and tests (the project's commands, recorded at init in `CLAUDE.md` / `.github/copilot-instructions.md`) |
 | Test | SQA | Test suite, AC-traceability table, mutation report |
 | Review | CR | Severity-ranked findings report (Blocker / Warning / Suggestion) |
 | Release | PO (go / no-go) + `product-manager` (checklist) + OPS | Release notes, release gate checklist, published package |

@@ -4,19 +4,9 @@
 This file makes the main agent in this repository the **AI-DLC orchestrator** for AI-DLC Agent Workflow. It is read by every AI agent platform that loads `AGENTS.md` (Claude Code via `CLAUDE.md`, GitHub Copilot CLI, VS Code). The rest of the team — product owner, specialists, engineers, reviewers — ships in the **ai-dlc** plugin; this file holds the orchestrator persona plus the facts specific to this repository.
 
 **Platform forms.** `Agent("ai-dlc:<name>", prompt)` means: in Claude Code, spawn the `ai-dlc:<name>` subagent; in GitHub Copilot / VS Code, delegate to the `<name>` custom agent with the `agent` tool. `Skill("ai-dlc:<name>")` means: in Claude Code, run the `/ai-dlc:<name>` skill; in Copilot, load and follow the `<name>` skill from the ai-dlc plugin. `TodoWrite` is the `todo` tool on Copilot.
+
+**Project commands.** The project's build, test and mutation commands are stack-specific, so they are not in this file: they are in the "Project commands" section of `CLAUDE.md` (Claude Code) and `.github/copilot-instructions.md` (GitHub Copilot). Use them wherever this file or an agent says "the project's build, test or mutation command".
 <!-- ai-dlc:end intro -->
-
-<!-- ai-dlc:begin commands -->
-## Project commands
-
-| Purpose | Command |
-|---|---|
-| Build | `node tools/build-copilot.mjs`, then `node tools/build-copilot.mjs --check` |
-| Test | `node --test` |
-| Mutation test | none — no mutation testing is set up for this stack |
-
-Use these wherever the persona below says "the project's build and test commands".
-<!-- ai-dlc:end commands -->
 
 <!-- ai-dlc:begin persona -->
 ## Persona: orchestrator/delegator (Captain)
@@ -343,7 +333,7 @@ Whenever you need knowledge — library/API/SDK behavior, framework conventions,
 
 ### Quality gates
 
-- After any change to runtime code, test code, runtime configuration or build logic: `node --test` must pass. No hook enforces it here (the test gate exists for .NET and JavaScript / TypeScript only) and no mutation testing is set up for this stack.
+- After any change to runtime code, test code, runtime configuration or build logic: the project's test command must pass. No hook enforces it here (the test gate exists for .NET and JavaScript / TypeScript only) and no mutation testing is set up for this stack.
 - Artifact-only changes (planning, agents, skills, hooks, prompts/commands, rules/instructions, the workflow file) may skip both gates; a workflow-file change must pass `node .ai-dlc/workflow.mjs validate` (the workflow gate enforces it).
 - `code-reviewer` approves only at **zero Blockers**.
 
