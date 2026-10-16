@@ -16,7 +16,7 @@ This skill guides **Kent Beck** (`sqa-engineer`) to perform AI-driven UI tests u
 Before invoking this skill:
 1. Confirm the change is UI/frontend-related. If not, skip this skill entirely.
 2. The Playwright MCP server is already available via the **docker MCP gateway** (configured in `.mcp.json`). No additional setup is required — all browser tools are available with the `mcp__docker-mcp-gateway__` prefix.
-3. Ensure the application is running with the project's run command from `AGENTS.md` (for example `dotnet run` or the Aspire AppHost for .NET, `npm run dev` or `npm start` for JS / TS).
+3. Ensure the application is running with the project's run command from `CLAUDE.md` / `.github/copilot-instructions.md` (for example `dotnet run` or the Aspire AppHost for .NET, `npm run dev` or `npm start` for JS / TS).
 4. Discover the service URL (the Aspire dashboard at `http://localhost:15888`, the configured `launchUrl`, or the URL the dev server prints).
 
 ---

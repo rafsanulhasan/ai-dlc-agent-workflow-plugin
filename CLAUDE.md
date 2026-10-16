@@ -19,7 +19,10 @@ claude plugin install ai-dlc@ai-dlc-agent-workflow --scope local
 
 Agents are then `ai-dlc:<name>` and skills `/ai-dlc:<name>`, read straight from `plugins/claude/ai-dlc/`; edits apply on the next session or after `/reload-plugins`. Changes to agents, skills, hooks or rules go through `ai-dlc:agent-manager`.
 
+<!-- ai-dlc:skip commands -->
 ## Commands
+
+`AGENTS.md` and the agents call these "the project's build, test or mutation command": the build is the first two lines below, the test command is `node --test`, and no mutation testing is set up for this stack.
 
 - `node tools/build-copilot.mjs` : regenerate `plugins/copilot/ai-dlc` from `plugins/claude/ai-dlc`
 - `node tools/build-copilot.mjs --check` : fail if the Copilot plugin is stale

@@ -45,7 +45,7 @@ For every task, follow this sequence:
 1. **Load context** — read CLAUDE.md, relevant source files, and any architecture/design documents provided
 2. **Plan** — break the work into atomic steps; use `TodoWrite` to track them
 3. **Implement** — write code following all project conventions
-4. **Build** — run the project's build command (recorded in `AGENTS.md` at init); fix all errors before continuing
+4. **Build** — run the project's build command (recorded at init in `CLAUDE.md` / `.github/copilot-instructions.md`); fix all errors before continuing
 5. **Test** — run the project's test command; fix all failures before continuing
 6. **Mutation test** — run the project's mutation command; address surviving mutants that expose logic gaps
 7. **Commit** — stage and commit with a meaningful message

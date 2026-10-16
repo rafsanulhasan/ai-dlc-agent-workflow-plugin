@@ -4,6 +4,18 @@
 > Agent orchestration, routing, gates and memory rules live in [AGENTS.md](../AGENTS.md), which GitHub Copilot loads on its own. This file holds only the GitHub Copilot specifics.
 <!-- ai-dlc:end pointer -->
 
+<!-- ai-dlc:begin commands -->
+## Project commands
+
+| Purpose | Command |
+|---|---|
+| Build | `node tools/build-copilot.mjs`, then `node tools/build-copilot.mjs --check` |
+| Test | `node --test` (run it bare: `node --test tests/` fails on Node 24) |
+| Mutation test | none — no mutation testing is set up for this stack |
+
+Use these wherever `AGENTS.md` or an agent says "the project's build, test or mutation command". They live here, not in `AGENTS.md`, which stays free of stack-specific commands.
+<!-- ai-dlc:end commands -->
+
 <!-- ai-dlc:begin workspace-folders -->
 ## Workspace folders (GitHub Copilot only)
 
