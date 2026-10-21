@@ -15,7 +15,9 @@
 // - if tools/templates/instructions.template.md exists: skills/init/templates/CLAUDE.md and
 //   skills/init/templates/copilot-instructions.md, its Claude and Copilot variants (same markers);
 // - if skills/plugin-management/ exists: skills/plugin-management/templates/build-copilot.mjs,
-//   a copy of this script for new plugins.
+//   a copy of this script for new plugins;
+// - if the repository has a root LICENSE: LICENSE in the Claude plugin, and the same text in the
+//   Copilot plugin, so each installed plugin carries its license.
 // Never hand-edit generated files either.
 //
 // Optional non-Claude overlay: skills under tools/overlays/non-claude/skills/ are added to the
@@ -136,6 +138,7 @@ const manifest = {
   description: claudeManifest.description,
   version: claudeManifest.version,
   author: claudeManifest.author,
+  license: claudeManifest.license,
   homepage: claudeManifest.homepage,
   repository: claudeManifest.repository,
   keywords: claudeManifest.keywords,
@@ -257,6 +260,16 @@ const PLUGIN_MGMT = path.join(SRC, "skills", "plugin-management");
 if (fs.existsSync(PLUGIN_MGMT)) {
   const self = fs.readFileSync(fileURLToPath(import.meta.url), "utf8").replace(/\r\n/g, "\n");
   writeGenerated(path.join(PLUGIN_MGMT, "templates", "build-copilot.mjs"), self);
+}
+
+// ---- license: the repository root LICENSE is the one source --------------------
+// An installed plugin is only its own folder, so each plugin needs its own copy. The Claude copy is a
+// generated source (--check reports drift); the Copilot copy is part of the generated tree.
+const ROOT_LICENSE = path.join(ROOT, "LICENSE");
+if (fs.existsSync(ROOT_LICENSE)) {
+  const license = readText(ROOT_LICENSE);
+  writeGenerated(path.join(SRC, "LICENSE"), license);
+  files.set("LICENSE", license);
 }
 
 // ---- project mirrors: plugin skills also kept as repo-local .claude/skills/<name> ----
