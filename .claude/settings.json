@@ -86,6 +86,15 @@
     "commit-commands@claude-plugins-official": true,
     "claude-code-setup@claude-plugins-official": true,
     "pr-review-toolkit@claude-plugins-official": true,
-    "sonarqube@claude-plugins-official": true
+    "sonarqube@claude-plugins-official": true,
+    "cache-keepalive@ai-dlc-agent-workflow": true
+  },
+  "extraKnownMarketplaces": {
+    "ai-dlc-agent-workflow": {
+      "source": {
+        "source": "github",
+        "repo": "rafsanulhasan/ai-dlc-agent-workflow-plugin"
+      }
+    }
   }
 }

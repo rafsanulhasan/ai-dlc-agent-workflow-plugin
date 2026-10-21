@@ -1,6 +1,6 @@
 ---
 name: handoff
-description: "Records and verifies every hand-off in an AI-DLC run and keeps its run state. Use before any spawn, loop round or hand-off between agents (AAW included), whenever an agent returns its report, at every gate, and at session start to resume an unfinished run after a crash or lost context. Also use mid-stage, when a session must pass unfinished work to a fresh agent or session (context running out, pausing, switching machines), and for verification-only work (\"check it's done\", \"run the gates\"), which proves the acceptance criteria without expanding scope."
+description: "Records and verifies every hand-off in an AI-DLC run and keeps its run state. Use before any spawn, loop round or hand-off between agents (AAW included), whenever an agent returns its report, at every gate, and at session start to resume an unfinished run after a crash or lost context. Also use mid-stage, when a session must pass unfinished work to a fresh agent or session (context running out, pausing, switching machines; on Claude Code the automatic handoff does it at the context threshold), when a session was seeded by such an automatic handoff, and for verification-only work (\"check it's done\", \"run the gates\"), which proves the acceptance criteria without expanding scope."
 ---
 
 # Handoff
@@ -16,7 +16,8 @@ Every time work changes hands in an AI-DLC run, two records cross the boundary: 
 - You received a handoff: verify it before you start (*Receiving a handoff*).
 - A human gate (G1–G4, release) needs a single document to approve.
 - The orchestrator is about to spawn, has received a return, or a gate was decided: update the run state (*Run state*).
-- A session has to stop **mid-stage** and a fresh agent or session will continue the same work: write a session handoff instead (*Session handoff*).
+- A session has to stop **mid-stage** and a fresh agent or session will continue the same work: write a session handoff instead (*Session handoff*). On Claude Code the automatic path writes it when the context fills.
+- A session was seeded by an automatic handoff (its first prompt starts `[auto-handoff] ↪ Handoff from session`): read the session handoff it names, then resume the run from its `run.md` (*Run state*, Resuming).
 - The task is **verification only** — prove that existing work meets its acceptance criteria: follow *Verification-only work*.
 
 ## Naming
@@ -182,7 +183,7 @@ received: YYYY-MM-DD HH:MM   # a date alone only for records migrated from befor
 
 A run must survive a crash, a dropped connection or a lost context. Every run keeps one checkpoint file, `run.md`, in its run folder. The records say what crossed each boundary; the run state says where the run is and what happens next.
 
-**Who writes it.** The orchestrator — in an agent team too, as team lead. When no orchestrator is running, the session's main agent does, for example `agent-manager` run directly by a developer. A subagent or teammate never writes it; it reports, and the lead records.
+**Who writes it.** The orchestrator — in an agent team too, as team lead. When no orchestrator is running, the session's main agent does, for example `agent-manager` run directly by a developer. A subagent or teammate never writes it; it reports, and the lead records. The one exception is the automatic session handoff on Claude Code: just before its `/clear`, the hooks module rewrites *Next action* and `updated` of the run this session hands off, on the main agent's behalf. That is only the run this session last wrote, or the one unclaimed active run on the branch, never a run another session wrote (*The automatic path*, Which run).
 
 **When it is written** — always before acting, so a crash leaves the last intention on disk:
 
@@ -198,7 +199,7 @@ At **every** checkpoint, set `commit` to the current `HEAD` and `last-record` to
 
 **Ownership.** `owner` is the agent that writes the file (`orchestrator` or the main agent), `session` identifies the session that last wrote it, and `branch` is the branch the run works on. Two sessions never drive one run at the same time.
 
-**Resuming.** At the start of every session the orchestrator lists the `run.md` files in the handoff folders (`docs/handoffs/*/run.md` by default: `artifacts.handoffs` with its placeholders as `*`) whose `status` is `active` or `blocked`. It offers to resume only runs whose `branch` is the current branch; for a run on another branch, or one another session wrote last, it asks the human before taking it over and then records its own `session`. Before going on:
+**Resuming.** At the start of every session the orchestrator lists the `run.md` files in the handoff folders (`docs/handoffs/*/run.md` by default: `artifacts.handoffs` with its placeholders as `*`) whose `status` is `active` or `blocked`. It offers to resume only runs whose `branch` is the current branch; for a run on another branch, or one another session wrote last, it asks the human before taking it over and then records its own `session`. A session seeded by an automatic handoff is the exception, for the one run its seed names and no other: that run was handed to it on purpose, so it takes it over without asking and records its own `session`, provided the run's `branch` is the current branch and its `session` is the previous session's id (the session handoff's *Previous session* line) or empty. If `session` names any other session, that session may still be live: ask the human first. The steps below still apply. Before going on:
 
 1. Open `last-record` and re-verify it: each artifact it names still exists and matches, the branch still exists, and `commit` still holds — it is an ancestor of the current `HEAD` (`git merge-base --is-ancestor <commit> HEAD`).
 2. For a stage left `in-progress`, check whether that agent's output landed (a stored hand-back newer than `last-record`, or the artifacts themselves) before handing off to it again.
@@ -214,7 +215,7 @@ lifecycle: <a key of the effective workflow's lifecycles>
 mode: subagent | team   # the run's default; a stage that differs says so in the Mode column
 current-stage: <stage id>
 owner: orchestrator | <main agent id when there is no orchestrator>
-session: <session id, or host + start time>
+session: <session id; host + start time only where the platform has none>
 branch: <branch>
 commit: <HEAD at the last checkpoint>
 last-record: <file name of the newest handoff record or hand-back>
@@ -279,13 +280,21 @@ The overall result: `passed` only when every criterion is `pass`; otherwise `fai
 
 ## Session handoff (mid-stage)
 
-When a session must stop before its stage is finished — the context window is nearly full, the human is pausing, or the work moves to another machine or tool — compact the conversation into a session handoff so a fresh agent can continue without the chat history.
+When a session must stop before its stage is finished, it is compacted into a session handoff so a fresh session can continue without the chat history. Typical reasons: the context window is nearly full, the human is pausing, or the work moves to another machine or tool. There is one procedure with two ways to start it:
 
-1. **Ask what the next session is for**, if the caller has not said. Tailor the document to that focus and leave out what it will not need.
-2. **Write it to the scratch folder**, `.scratch/<run-folder>/session-<YYYYMMDD-HHMM>.md` (`.scratch` is the default scratch root; AGENTS.md "Workspace folders" records the project's), on every platform. On platforms other than Claude Code, load the `scratchpad` skill before writing it. It is a working note, not an audit record, so it does not belong in `docs/handoffs/` and is never committed. Give the caller the full path.
+| Path | Started by | Where it runs |
+|---|---|---|
+| **Manual** | The agent, when the human asks or it sees its context running out | Every platform: GitHub Copilot, and Claude Code with the automatic trigger off |
+| **Automatic** | The ai-dlc hooks module (`hooks/auto-handoff/`), when the context reaches its threshold | Claude Code 2.1.287 or later, interactive sessions only (*The automatic path*) |
+
+Both paths write the same sections (the template below) to the same place and leave the run state pointing at it. The automatic path adds a few of its own (*The automatic path*, What it adds):
+
+1. **Set the focus.** Manual: ask what the next session is for, if the caller has not said, and leave out what it will not need. Automatic: the focus is always to resume the run where the previous session stopped.
+2. **Write it to the scratch folder**: `<scratch root>/<run-folder>/session-<YYYYMMDD-HHMM>.md`. The scratch root is `.scratch` unless the "Workspace folders" table in AGENTS.md records another one. The path is the same on every platform. On platforms other than Claude Code, load the `scratchpad` skill before writing it. It is a working note, not an audit record, so it does not belong in `docs/handoffs/` and is never committed.
 3. **Reference, don't copy.** Link the spec, plan, ADRs, earlier records, branch and commits by path, URL or SHA.
-4. **Point to the run state.** Update the run's `run.md` first (the orchestrator, or the main agent when there is none): *Next action* = continue this stage from the session handoff, with its path. Link the run state at the top of the session handoff. The run state is committed and survives; the session handoff is a working note.
+4. **Point to the run state first.** Before the session ends, update the run's `run.md`: set *Next action* to "continue this stage from the session handoff", with its path. Normally the orchestrator or the main agent writes it. On the automatic path the hooks module writes it, before its `/clear`, and quotes the action that was there underneath so nothing planned is lost. Link the run state at the top of the session handoff. The run state is committed and survives; the session handoff is a working note. It stays on the machine that wrote it, so on another machine *Next action* points at a missing file: there, carry on from the planned action quoted under it (the automatic path keeps it) and the records. When you know you are switching machines, use the manual path and copy the session handoff across.
 5. **Redact** exactly as for the records.
+6. **Start the fresh session.** Manual: give the caller the full path. The human starts a new session (or runs `/clear`) and points it at the file. Automatic: the module runs `/clear` and sends the new session one line: read the session handoff, then resume the run from its `run.md`. In both cases the orchestrator resumes the run from its run state (Run Loop step 1, and *Run state*, Resuming).
 
 ```markdown
 # Session handoff: <run id> — <one-line goal>
@@ -301,8 +310,11 @@ When a session must stop before its stage is finished — the context window is 
 ## In progress
 - <what was being changed, which files, and their state (builds? tests pass?)>
 
+## Last request from the user
+<the human's last message, verbatim> — Status: answered / partially answered / not answered
+
 ## Next steps
-1. <the very next action>
+1. <the very next action; answering the last request first when it is not answered>
 
 ## Decisions and dead ends
 - <decision, or approach tried and abandoned, and why>
@@ -315,6 +327,28 @@ When a session must stop before its stage is finished — the context window is 
 ```
 
 A session handoff never replaces a hand-back: when the resumed stage finishes, its report is stored as the stage's hand-back as usual.
+
+### The automatic path (Claude Code)
+
+The ai-dlc plugin's hooks module runs the procedure above by itself when the context fills. It is adapted from [alexknowshtml/claude-auto-handoff](https://github.com/alexknowshtml/claude-auto-handoff) (MIT; see `hooks/auto-handoff/ATTRIBUTION.md` in the Claude plugin).
+
+- **Trigger.** The context reaches `thresholdPercent` of the context window (default 80). The window is the one Claude Code reports for the session; when it reports none, the module uses 500000 tokens and logs that once (`no context window reported: thresholdPercent applies to 500000, a line of 400000 tokens; if the real window is smaller than 400000, no handoff fires: set AUTO_HANDOFF_TOKENS to an absolute token count`, at the default 80%). If Claude Code reports no window and the real one is smaller than the line (a 200k window at 80% gives a 400k line), no handoff happens: set `AUTO_HANDOFF_TOKENS` to an absolute token count. `AUTO_HANDOFF_TOKENS` overrides the percentage for the sessions started from that shell; it also serves a test run. The module checks after each turn and before each model request, counting tool output that has not been measured yet. It also takes the place of an automatic compaction.
+- **Main session only.** Only the main conversation, the lead of an agent team, is handed off. Subagent and teammate turns never trigger it: each has its own context window, and a `/clear` typed in a teammate's view acts on the lead. A teammate that runs out of room is replaced by the lead (shut down, then spawned again with a brief); an in-process teammate can compact on its own when the subagent definition it is spawned from sets `autoCompactWindow`.
+- **Which run.** The module looks for a `run.md` under the handoff folder (`artifacts.handoffs`, default `docs/handoffs/`) with `status: active` and `branch` equal to the current git branch, and picks:
+  1. the run whose `session` is this session's id (the most recently `updated` if several);
+  2. else the only active run on the branch, if its `session` is empty (no session claimed it);
+  3. else none.
+
+  It never takes a run another session wrote, or one of several unclaimed runs: two sessions never drive one run. The match needs `session` to hold the Claude Code session id; a run whose `session` holds a host and start time is never this session's. A `blocked` run is never picked: it waits for the human.
+- **No run.** With no run picked, or outside a git repository, the module writes its own brief to `~/.claude/state/auto-handoff/<session-id>.md`. It leaves every run state alone and seeds the new session the same way.
+- **When a write fails.** The session handoff is written before `run.md`, so `run.md` never points at a missing file. If either write fails, the module logs the step that failed and seeds its own brief instead; a session handoff already written stays in scratch, unlinked, and the log names it.
+- **Who writes the content.** Haiku writes the template's sections from the conversation. The header lines, files, commits and token figures come from code. If Haiku fails, the document holds the facts alone. A copy of every handoff also stays in `~/.claude/state/auto-handoff/`, which feeds the optional brief viewer and status line link.
+- **What it adds.** Besides the template's sections, the automatic session handoff has a *Previous session* header line with the old session's id and transcript path, an *Instructions* section for the fresh session, a *Resume the run* section, a *How to Use This Brief* note, and the facts extracted in code (files, commits, token figures).
+- **Tool gate.** Past the threshold, the module refuses each main-conversation tool call before it runs and tells the model a handoff is coming. The gate is main-loop-only: a subagent's tool calls are never refused. A session the module will not hand off (kill switch set, loop guard reached, already handed off) is never gated either.
+- **Loop guards.** At most `maxConsecutiveHandoffs` handoffs (default 2) run before the human types a prompt; then the module pauses until they do. A seeded session hands off no sooner than 40k tokens above its own starting size.
+- **Kill switches.** `AUTO_HANDOFF_DISABLE=1` stops handoffs for one session. `DISABLE_AUTO_COMPACT` stops them too, because then something else owns the context limit. Either way the tool gate is off, and the brief viewer, when `viewer` is set, still serves earlier handoffs. With handoffs off, use the manual path.
+- **Settings and log.** The six options (`thresholdPercent`, `maxConsecutiveHandoffs`, `briefTemplate`, `instructionsTemplate`, `ignoreFiles`, `viewer`) are rows under ai-dlc in `/config`; `/ai-dlc:init` asks for the percentage and names the row. The old token option `threshold` is no longer read. Everything the module does is logged to `~/.claude/state/auto-handoff/auto-handoff.log`. Its Haiku requests count against your plan or API usage.
+- **Not on GitHub Copilot.** Copilot hooks expose no context size or timer, and document no way to run `/clear` or call a model, so the Copilot plugin ships no module and uses the manual path.
 
 Adapted in part from [mattpocock/skills](https://github.com/mattpocock/skills) (MIT).
 Adapted in part from [JuliusBrussee/caveman](https://github.com/JuliusBrussee/caveman) (Apache-2.0); modified.

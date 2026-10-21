@@ -1,0 +1,176 @@
+// Tests that a Claude Code hooks module (a mod, such as ai-dlc's auto-handoff) never reaches the
+// Copilot plugin: no module file, no hooks.json, no userConfig. Each test builds a throwaway fixture
+// repository with a copy of the build script, so the real plugins are never touched.
+// Run from the repository root: node --test "tests/**/*.test.mjs"
+import { test, beforeEach, afterEach } from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+
+const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const BUILD = path.join(REPO, "tools", "build-copilot.mjs");
+
+let tmp;
+const p = (...parts) => path.join(tmp, ...parts);
+const write = (rel, text) => { fs.mkdirSync(path.dirname(p(rel)), { recursive: true }); fs.writeFileSync(p(rel), text); };
+const read = (rel) => fs.readFileSync(p(rel), "utf8");
+const build = (...args) => spawnSync(process.execPath, [p("tools", "build-copilot.mjs"), ...args], { encoding: "utf8", cwd: tmp });
+const copilotFiles = () => {
+  const out = [];
+  const walk = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const f = path.join(d, e.name); if (e.isDirectory()) walk(f); else out.push(path.relative(p("plugins/copilot/demo"), f).split(path.sep).join("/")); } };
+  walk(p("plugins/copilot/demo"));
+  return out.sort();
+};
+
+const USER_CONFIG = { threshold: { type: "number", title: "Threshold", description: "Tokens.", default: 160000 } };
+
+function fixture({ hooks = { modules: ["./mod/register.tsx"] }, moduleAt = "hooks/mod" } = {}) {
+  fs.copyFileSync(BUILD, (fs.mkdirSync(p("tools"), { recursive: true }), p("tools", "build-copilot.mjs")));
+  write("plugins/claude/demo/.claude-plugin/plugin.json", JSON.stringify({ name: "demo", version: "0.0.1", description: "demo", author: { name: "Test" }, userConfig: USER_CONFIG }, null, 2));
+  write("plugins/claude/demo/agents/helper.md", "---\nname: helper\ndescription: helps\n---\n\nBody.\n");
+  write("plugins/claude/demo/skills/hello/SKILL.md", "---\nname: hello\ndescription: says hello\n---\n\nHello.\n");
+  if (hooks) write("plugins/claude/demo/hooks/hooks.json", JSON.stringify(hooks));
+  write(`plugins/claude/demo/${moduleAt}/register.tsx`, "export const register = () => {}\n");
+  write(`plugins/claude/demo/${moduleAt}/templates/brief.md`, "## Next Step\n");
+  write(`plugins/claude/demo/${moduleAt}/statusline/link.sh`, "#!/usr/bin/env bash\n");
+  write(`plugins/claude/demo/${moduleAt}/tests/mod.test.tsx`, "test('x', () => {})\n");
+}
+
+beforeEach(() => { tmp = fs.mkdtempSync(path.join(os.tmpdir(), "build-module-")); });
+afterEach(() => fs.rmSync(tmp, { recursive: true, force: true }));
+
+test("a hooks module under hooks/ leaves no module file, hooks.json or userConfig in the Copilot plugin", () => {
+  fixture();
+  const r = build();
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /1 Claude-only hooks module\(s\) left out/);
+  assert.deepEqual(copilotFiles(), ["GENERATED.md", "agents/helper.agent.md", "plugin.json", "skills/hello/SKILL.md"]);
+  const manifest = JSON.parse(read("plugins/copilot/demo/plugin.json"));
+  assert.ok(!("userConfig" in manifest), "userConfig leaked");
+  assert.ok(!("hooks" in manifest), "hooks entry without hooks");
+  assert.equal(build("--check").status, 0);
+});
+
+test("settings hooks next to modules are projected, the modules are not", () => {
+  fixture({ hooks: { modules: ["./mod/register.tsx"], hooks: { Stop: [{ hooks: [{ type: "command", command: "node check.mjs" }] }] } } });
+  assert.equal(build().status, 0);
+  const hooks = JSON.parse(read("plugins/copilot/demo/hooks.json"));
+  assert.deepEqual(Object.keys(hooks.hooks), ["agentStop"]);
+  assert.ok(!read("plugins/copilot/demo/hooks.json").includes("register.tsx"));
+  assert.ok(!copilotFiles().some((f) => f.includes("register.tsx") || f.endsWith(".test.tsx")));
+});
+
+test("a hooks module inside skills/ fails the build, since skills/ is copied", () => {
+  fixture({ hooks: { modules: ["../skills/hello/mod/register.tsx"] }, moduleAt: "skills/hello/mod" });
+  const r = build();
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /hooks module skills\/hello\/mod\/register\.tsx is in skills\//);
+  assert.ok(!fs.existsSync(p("plugins/copilot/demo")));
+});
+
+test("a mod test inside skills/ fails the build even without a modules entry", () => {
+  fixture({ hooks: null });
+  write("plugins/claude/demo/skills/hello/tests/mod.test.ts", "test('x', () => {})\n");
+  const r = build();
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /skills\/hello\/tests\/mod\.test\.ts: mod tests belong next to their hooks module/);
+});
+
+test("this repository's ai-dlc hooks module is Claude-only: hooks.json is modules only, nothing reaches Copilot", () => {
+  const claude = path.join(REPO, "plugins", "claude", "ai-dlc");
+  const copilot = path.join(REPO, "plugins", "copilot", "ai-dlc");
+  const hooks = JSON.parse(fs.readFileSync(path.join(claude, "hooks", "hooks.json"), "utf8"));
+  assert.deepEqual(Object.keys(hooks), ["modules"]);
+  assert.deepEqual(hooks.modules, ["./auto-handoff/register.tsx"]);
+  assert.ok(fs.existsSync(path.join(claude, "hooks", "auto-handoff", "register.tsx")));
+  assert.ok(fs.existsSync(path.join(claude, "hooks", "auto-handoff", "LICENSE")));
+  assert.ok(!fs.existsSync(path.join(copilot, "hooks.json")));
+  assert.ok(!fs.existsSync(path.join(copilot, "hooks")));
+  const manifest = JSON.parse(fs.readFileSync(path.join(copilot, "plugin.json"), "utf8"));
+  assert.ok(!("userConfig" in manifest));
+  assert.ok(!("hooks" in manifest));
+  const claudeManifest = JSON.parse(fs.readFileSync(path.join(claude, ".claude-plugin", "plugin.json"), "utf8"));
+  assert.deepEqual(Object.keys(claudeManifest.userConfig).sort(), ["briefTemplate", "ignoreFiles", "instructionsTemplate", "maxConsecutiveHandoffs", "thresholdPercent", "viewer"]);
+  assert.ok(!(claudeManifest.dependencies ?? []).includes("auto-handoff"));
+});
+
+test("the session handoff template the hooks module ships has the handoff skill's sections, in order", () => {
+  const headings = (text) => [...text.replace(/\r\n/g, "\n").matchAll(/^## (.+)$/gm)].map((m) => m[1].trim());
+  const skill = fs.readFileSync(path.join(REPO, "plugins", "claude", "ai-dlc", "skills", "handoff", "SKILL.md"), "utf8").replace(/\r\n/g, "\n");
+  const block = /```markdown\n# Session handoff: [\s\S]*?\n```/.exec(skill);
+  assert.ok(block, "session handoff template block not found in skills/handoff/SKILL.md");
+  const shipped = fs.readFileSync(path.join(REPO, "plugins", "claude", "ai-dlc", "hooks", "auto-handoff", "templates", "session-handoff.md"), "utf8");
+  assert.deepEqual(headings(shipped), headings(block[0]));
+});
+
+test("a hooks module inside agents/ or scripts/ fails the build, too", () => {
+  for (const dir of ["agents", "scripts"]) {
+    fixture({ hooks: { modules: [`../${dir}/mod/register.tsx`] }, moduleAt: `${dir}/mod` });
+    const r = build();
+    assert.equal(r.status, 1, dir);
+    assert.match(r.stderr, new RegExp(`hooks module ${dir}/mod/register\.tsx is in ${dir}/`));
+    fs.rmSync(tmp, { recursive: true, force: true });
+    tmp = fs.mkdtempSync(path.join(os.tmpdir(), "build-module-"));
+  }
+});
+
+test("a mod test inside agents/ or scripts/ fails the build, nested paths included", () => {
+  for (const rel of ["agents/sub/deep/x.test.tsx", "scripts/y.test.ts"]) {
+    fixture({ hooks: null });
+    write(`plugins/claude/demo/${rel}`, "test('x', () => {})\n");
+    const r = build();
+    assert.equal(r.status, 1, rel);
+    assert.match(r.stderr, new RegExp(`${rel.replace(/\./g, "\.")}: mod tests belong next to their hooks module`));
+    fs.rmSync(tmp, { recursive: true, force: true });
+    tmp = fs.mkdtempSync(path.join(os.tmpdir(), "build-module-"));
+  }
+});
+
+test("a module and its tests under hooks/ pass the guard, and a plain .test.md or .test.json in skills/ is not a mod test", () => {
+  fixture();
+  write("plugins/claude/demo/skills/hello/fixtures/data.test.json", "{}\n");
+  write("plugins/claude/demo/skills/hello/notes.test.md", "x\n");
+  const r = build();
+  assert.equal(r.status, 0, r.stderr);
+});
+
+test("a build with no hooks.json reports zero hooks modules", () => {
+  fixture({ hooks: null });
+  const r = build();
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /0 Claude-only hooks module\(s\) left out/);
+});
+
+test("a modules entry that is not a path string fails the build with a clear message", () => {
+  for (const bad of [42, null, { path: "./mod/register.tsx" }, ""]) {
+    fixture({ hooks: { modules: [bad] } });
+    const r = build();
+    assert.equal(r.status, 1, `entry ${JSON.stringify(bad)} built`);
+    assert.match(r.stderr, /every "modules" entry must be a non-empty path string/, `entry ${JSON.stringify(bad)}`);
+  }
+});
+
+// AC-1, AC-4, AC-5 (AAW-20261021-mods-config): the userConfig shape the code under test relies on.
+test("the ai-dlc manifest declares thresholdPercent as a 1..100 number defaulting to 80, and no token threshold", () => {
+  const manifest = JSON.parse(fs.readFileSync(path.join(REPO, "plugins", "claude", "ai-dlc", ".claude-plugin", "plugin.json"), "utf8"));
+  const field = manifest.userConfig.thresholdPercent;
+  assert.equal(field.type, "number");
+  assert.equal(field.default, 80);
+  assert.equal(field.min, 1);
+  assert.equal(field.max, 100);
+  assert.ok(!("threshold" in manifest.userConfig), "the retired token threshold key must not come back");
+  assert.match(field.description, /500000/);
+});
+
+test("the cache-keepalive manifest declares keepWarmFor (string, 8h) and keepaliveScope (session or machine, session)", () => {
+  const manifest = JSON.parse(fs.readFileSync(path.join(REPO, "plugins", "claude-mods", "cache-keepalive", ".claude-plugin", "plugin.json"), "utf8"));
+  assert.equal(manifest.userConfig.keepWarmFor.type, "string");
+  assert.equal(manifest.userConfig.keepWarmFor.default, "8h");
+  assert.equal(manifest.userConfig.keepaliveScope.type, "string");
+  assert.equal(manifest.userConfig.keepaliveScope.default, "session");
+  assert.deepEqual(manifest.userConfig.keepaliveScope.options, ["session", "machine"]);
+  assert.equal(manifest.userConfig.compactOnCap.default, false);
+});

@@ -51,6 +51,12 @@ Show the user a table of files to **create**, files to **merge** (an existing `A
 - Team names: a table agent ID → current name (default, or the name chosen at an earlier init). Ask whether to rename any agents; the developer replies with `agent → new name` pairs, or "keep". Validate:
   - names are unique across the team (case-insensitive) and never equal an agent ID or a role alias (the ID with spaces, or a short form in the role-alias table under "Addressing agents by name or role" in `${CLAUDE_SKILL_DIR}/../../agents/orchestrator.md`, e.g. "architect", "QA");
   - `product-owner`, `product-manager` and `requirement-analyst` share one default name, so addressing that name is ambiguous — suggest distinct names, but do not force them.
+- Automatic handoff and cache keep-warm, **Claude Code only**. On GitHub Copilot, leave this bullet out of the message, skip "Plugin settings" in Phase 2, and say in the Phase 3 report that these settings exist only in Claude Code, which has the automatic handoff and the `cache-keepalive` mod. On Claude Code, ask for three values:
+  - the handoff percentage: the share of the context window, 1 to 100, at which the main session hands off to a fresh one (default 80). Say that only the main session, the lead of an agent team, is handed off; subagents and teammates are not.
+  - the keep-warm duration: how long `cache-keepalive` may keep the prompt cache warm while background work runs, as `<n>m`, `<n>h` or `<n>d` (default `8h`).
+  - the default scope of `/keepalive <duration>`: `session` (default) or `machine`.
+
+  Check that the percentage is a number from 1 to 100 and the duration matches `<n>m`, `<n>h` or `<n>d`; ask again for a value that does not. Say that init does not write these values: each developer sets them in `/config`, and the Phase 3 report lists the rows.
 
 Stack-specific rules, the automatic test gate and the Stryker config exist for .NET and JavaScript / TypeScript. For any other stack, say that they are not available for that stack yet and will be skipped; the stack-neutral files (AGENTS.md, CLAUDE.md, settings, docs) are still written.
 
@@ -97,6 +103,8 @@ Done when `check-ignore` exits 1. If step 2 stops, or `check-ignore` still exits
 
 **Memory folders from an earlier init** (every stack): for each `<agent>/` folder listed in Phase 1, move its files into `.claude/agent-memory/ai-dlc-<agent>/` and merge its `MEMORY.md` lines into that folder's index, one line per memory. A file whose name already exists there is diffed first and merged with consent. Remove the old folder once it is empty.
 
+**Plugin settings** (Claude Code only): write no file for the values from Phase 1. Plugin options live under `pluginConfigs` in the developer's user settings, never in the project's `.claude/settings.json`, so they are per developer and set through `/config`.
+
 Also create empty folders with a `.gitkeep`: `docs/specs/`, `docs/architecture/decisions/`, `docs/architecture/narratives/`, `docs/plans/`, `docs/handoffs/`, `docs/product/`.
 
 **.NET projects only:**
@@ -135,7 +143,19 @@ Also create empty folders with a `.gitkeep`: `docs/specs/`, `docs/architecture/d
 
 ## Phase 3 — Report
 
-List every file created or changed, the items of the `workspace-folders` **Report**, the team roster (agent ID → name), whether agent memory is tracked (any ignore rule left in place, with its file and line, or "not a git repository"), and each memory folder moved. Say that `.claude/agent-memory/` is committed with the repository, so the team shares what the agents learn, and that memory files must be checked for secrets and personal data before each commit. Say that `/ai-dlc:workspace-folders` changes the roots later, that `node .claude/scripts/sync-harness.mjs` syncs agents, skills, commands, rules and hooks made on either platform to the other (`--check` only reports), and that the team's workflow — stages, who hands off to whom, gates and approvers, clarify matrix, routing — is in `.ai-dlc/workflow.json`, checked against `.ai-dlc/catalog.json` and guarded by the workflow gate: `/ai-dlc:workflow show` prints it with diagrams and `/ai-dlc:workflow edit <change>` changes it. Then the next step:
+List every file created or changed, the items of the `workspace-folders` **Report**, the team roster (agent ID → name), whether agent memory is tracked (any ignore rule left in place, with its file and line, or "not a git repository"), and each memory folder moved. Say that `.claude/agent-memory/` is committed with the repository, so the team shares what the agents learn, and that memory files must be checked for secrets and personal data before each commit. Say that `/ai-dlc:workspace-folders` changes the roots later, that `node .claude/scripts/sync-harness.mjs` syncs agents, skills, commands, rules and hooks made on either platform to the other (`--check` only reports), and that the team's workflow — stages, who hands off to whom, gates and approvers, clarify matrix, routing — is in `.ai-dlc/workflow.json`, checked against `.ai-dlc/catalog.json` and guarded by the workflow gate: `/ai-dlc:workflow show` prints it with diagrams and `/ai-dlc:workflow edit <change>` changes it.
+
+On Claude Code, add the `/config` steps for the values from Phase 1. Run `/config` and set:
+
+| Plugin | Row | Value |
+|---|---|---|
+| `ai-dlc` | `Auto-handoff: handoff threshold (% of the context window)` | the handoff percentage |
+| `cache-keepalive` | `Keep the cache warm for` | the keep-warm duration |
+| `cache-keepalive` | `Scope of /keepalive <duration>` | `session` or `machine` |
+
+List only the rows whose value differs from its default (80, `8h`, `session`); when none differs, say that the defaults apply and nothing needs setting. Say that every developer sets these for themselves, that `/keepalive 2h` (or `/keepalive 1d --machine`) changes the duration without `/config`, and that the old `Auto-handoff: handoff threshold (tokens)` row is gone: a token value set there is no longer read. On GitHub Copilot, say instead that these settings are Claude Code only.
+
+Then the next step:
 
 > The orchestrator is now the default agent for this repo (`"agent": "ai-dlc:orchestrator"` in `.claude/settings.json`), so every request reaches it first. One-off alternative: `claude --agent ai-dlc:orchestrator`. On Copilot, select the `orchestrator` custom agent.
 

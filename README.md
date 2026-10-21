@@ -68,6 +68,34 @@ Changes to agents, skills, hooks, rules, commands and the workflow file run **AA
 
 From a local clone: `/plugin marketplace add E:\Projects\personal\ai-dlc-agent-workflow-plugin`, or for one session `claude --plugin-dir ./plugins/claude/ai-dlc`.
 
+#### Automatic session handoff and the bundled mod
+
+The Claude plugin includes a [Claude Code mod](https://code.claude.com/docs/en/plugins/mods/overview) (a hooks module) and installs one more as a dependency. Both are adapted from their authors' repositories under the MIT License (see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)):
+
+| Mod | Where | What it does |
+|---|---|---|
+| Automatic session handoff | Part of `ai-dlc` (`plugins/claude/ai-dlc/hooks/auto-handoff/`) | Before the context window fills, it has Haiku write a session handoff, runs `/clear`, and seeds the fresh session to carry on, instead of auto-compacting. When the repository has an active AI-DLC run on the current branch that this session drives (or the only one, unclaimed), it writes the `handoff` skill's session handoff to `.scratch/<run-folder>/` and points the run's `run.md` at it, so the orchestrator resumes the run. Otherwise it writes its own brief to `~/.claude/state/auto-handoff/`. Adapted from [alexknowshtml/claude-auto-handoff](https://github.com/alexknowshtml/claude-auto-handoff). |
+| `cache-keepalive` | Its own plugin in `plugins/claude-mods/`, a dependency of `ai-dlc` | When a turn ends with background work still running (a teammate, a long build), pings the prompt cache every 50 minutes so it doesn't expire before the work reports back, for up to the keep-warm duration (`keepWarmFor`, default `8h`). Stops sooner when a new turn starts, on a cache miss, or once the pings have cost what a cache rewrite would. `/keepalive` pings now; `/keepalive 2h` sets the duration for this session (or for the machine, when `keepaliveScope` is `machine`), `/keepalive 1d --machine` for every session on this machine. Both settings are rows under `cache-keepalive` in `/config`. Adapted from [RichardJSun/claude-code-mods](https://github.com/RichardJSun/claude-code-mods); the duration and the command's arguments are local changes, listed in its `VENDORED.md`. |
+
+Both need Claude Code 2.1.287 or later, and both make model requests that count against your plan or API usage. GitHub Copilot has no mods, so the Copilot plugin includes neither; there, the `handoff` skill's session handoff is written by hand.
+
+Only the main session (the lead of an agent team) is handed off automatically. Subagents and teammates each have their own context window, and `/clear` cannot reset one; for in-process teammates, set `autoCompactWindow` in the subagent definition they are spawned from so they compact instead. `/ai-dlc:init` asks for the handoff percentage and the keep-warm duration and tells you which `/config` rows to set.
+
+The automatic handoff's settings are rows under `ai-dlc` in `/config`:
+
+| Setting | Default | What it does |
+|---|---|---|
+| `thresholdPercent` | `80` | Share of the context window, 1 to 100, that starts a handoff. The window is the one Claude Code reports for the session, or 500000 tokens when it reports none (logged once). If Claude Code reports no window and yours is smaller than the line (a 200k window at the default 80% gives a 400k line), no handoff happens: set `AUTO_HANDOFF_TOKENS` to an absolute token count. A seeded session hands off no sooner than 40k above its own starting size. It replaces the old token `threshold`, which is no longer read |
+| `maxConsecutiveHandoffs` | `2` | Handoffs allowed before you type a prompt; past this, it pauses until you do |
+| `briefTemplate` | `~/.claude/auto-handoff/brief.md` | The sections Haiku writes when no AI-DLC run is active. With an active run it uses the `handoff` skill's session handoff template instead |
+| `instructionsTemplate` | `~/.claude/auto-handoff/instructions.md` | What the fresh session is told to do first |
+| `ignoreFiles` | blank | Regex for edited files to leave out, such as caches or synced state |
+| `viewer` | blank | `host:port` to serve a readable page for each handoff (`tailscale` as the host means this machine's Tailscale IP). Blank: no server, and the link is the local file |
+
+Kill switches: `AUTO_HANDOFF_DISABLE=1` stops handoffs for one session, and `DISABLE_AUTO_COMPACT` also stops them, for setups where something else owns the context limit. With `viewer` set, the viewer still serves earlier handoffs. `AUTO_HANDOFF_TOKENS=<n>` overrides the percentage with an absolute token count for the sessions started from that shell; use it when Claude Code reports no window and yours is under 500000, or for a test run. When the window is missing, the log says so once: `no context window reported: thresholdPercent applies to 500000, a line of 400000 tokens; if the real window is smaller than 400000, no handoff fires: set AUTO_HANDOFF_TOKENS to an absolute token count` (the line follows `thresholdPercent`). Its log is `~/.claude/state/auto-handoff/auto-handoff.log`. The optional status line wrapper `handoff-link.sh` adds the handoff's page link to your status line. It is installed at `~/.claude/plugins/cache/ai-dlc-agent-workflow/ai-dlc/<version>/hooks/auto-handoff/statusline/handoff-link.sh` (the `installPath` in `~/.claude/plugins/installed_plugins.json` gives the version folder) and needs `jq`: without it the link never shows.
+
+**Installed the separate `auto-handoff` plugin before?** The automatic handoff used to be its own plugin, installed as a dependency of `ai-dlc`. Claude Code keeps an auto-installed dependency until you prune it, so the old copy could run next to the new one. Remove it with `claude plugin uninstall auto-handoff@ai-dlc-agent-workflow` (or `claude plugin prune`, which removes auto-installed dependencies no installed plugin needs any more), and drop `"auto-handoff@ai-dlc-agent-workflow"` from `enabledPlugins` in your settings if it is there. Settings you made under `auto-handoff` in `/config` do not carry over: set them again under `ai-dlc`.
+
 
 ### GitHub Copilot CLI
 
@@ -94,6 +122,7 @@ If a project still has its own copies of these agents in `.claude/agents` / `.gi
 
 ### Requirements
 
+- For the bundled mods: Claude Code 2.1.287 or later
 - For .NET projects: .NET SDK (`dotnet test`, `dotnet stryker` via a local tool manifest)
 - For the .NET test gate: PowerShell 7 (`pwsh`) on PATH — on any OS
 - For JS / TS projects and their test gate: Node.js 18 or later, and the project's package manager (npm, pnpm, yarn or bun)
@@ -127,7 +156,7 @@ It blocks the agent from finishing while the repository's test command fails, wi
 plugins/claude/ai-dlc/          ← edit here (agents/, skills/)
 node tools/build-copilot.mjs    ← regenerate plugins/copilot/ai-dlc and init's AGENTS.md template
 node tools/build-copilot.mjs --check
-node --test                     ← repository tests in tests/ (run it bare)
+node --test "tests/**/*.test.mjs"  ← repository tests in tests/ (quote the glob)
 npx @anthropic-ai/claude-code plugin validate --strict ./plugins/claude/ai-dlc
 ```
 
