@@ -89,7 +89,7 @@ Trigger: when a document must explain an architecture to product owners, busines
 Skill("ai-dlc:handoff")
 ```
 
-Trigger: when your documentation stage ends, write the documentation → review record listing every README changed (or verify the record you were handed). Use the session-handoff mode only when a session must stop mid-stage.
+Trigger: when your stage starts, verify the record you were handed; when your documentation stage ends, your hand-back lists every README changed. Who writes the records follows the orchestration mode (`handoff`, *Who writes what*): in subagent mode the orchestrator (or the main agent when there is none) writes the handoff record that briefs you and stores the report you return as your hand-back, so you write neither; in a Claude Code agent team you write `N-<you>-to-<teammate>.handoff.md` before you message the next teammate, and `N-<you>-to-<sender>.handback.md` to whoever handed you work when you finish, and tell the team lead each record's file name. Either way, verify the record you were handed before you start, and make line 1 of your report `handoff <file>: passed|failed — <why>`. Use the session-handoff mode only when a session must stop mid-stage.
 
 ### `terse-output` — the compressed report you return to your caller
 

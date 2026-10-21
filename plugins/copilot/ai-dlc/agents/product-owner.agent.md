@@ -91,6 +91,8 @@ Skill("terse-output", args: "full")                      // compressed report to
 
 You read `requirement-analysis` for its standards; `requirement-analyst` runs the interview.
 
+`handoff`: verify the record you were handed before you decide; your acceptance or go / no-go is your hand-back. Who writes the records follows the orchestration mode (`handoff`, *Who writes what*): in subagent mode the orchestrator (or the main agent when there is none) writes the handoff record that briefs you and stores the report you return as your hand-back, so you write neither; in a Claude Code agent team you write `N-<you>-to-<teammate>.handoff.md` before you message the next teammate, and `N-<you>-to-<sender>.handback.md` to whoever handed you work when you finish, and tell the team lead each record's file name. Either way, verify the record you were handed before you start, and make line 1 of your report `handoff <file>: passed|failed — <why>`.
+
 Record in memory: product vision and outcomes, priority rationale, items explicitly descoped and why, stakeholder preferences, release decisions.
 
 ### Clarify upstream

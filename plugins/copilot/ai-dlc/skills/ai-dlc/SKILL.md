@@ -14,7 +14,7 @@ The routing layer has four parts, used in this order:
 1. **`request-routing`** — **Scott Hanselman** (`orchestrator`) classifies the request and decides each work item's workflow from this skill's lifecycles (or the user's explicit choice), its agent chain and orchestration mode.
 2. **`ai-dlc`** (this skill) — the lifecycle catalogue: stages, owners, exit artifacts and human gates.
 3. **`agent-invocation`** — spawns agents with self-contained briefs.
-4. **`handoff`** — records and verifies the artifact that crosses each stage boundary.
+4. **`handoff`** — records every hand-off (the sender's handoff record, the receiver's hand-back) and keeps the run state.
 
 ## Project workflow
 
@@ -90,7 +90,7 @@ The `orchestrator` picks exactly one primary lifecycle per work item and runs th
 
 Shortcuts:
 
-- Agent/skill/hook/rule/command and workflow-file changes are **not** an AI-DLC lifecycle. They run the agent-artifact lifecycle **AAW** (`routing.byType["Agent Artifact"]` in the workflow file): ARM makes the change and hands back the changed paths, each marked by kind, and the intent; BC critiques the docs, SQA tests the code and then CR reviews it, both paths in parallel for a mixed change; findings go back to ARM within one shared round budget, then to the human. Change kinds, rounds and findings: the `workflow` skill's `references/aaw-review.md`. No work breakdown and no handoff records; the run state records the rounds and links each hand-back. A change to ARM's own definition or a skill it owns goes to a freshly spawned ARM.
+- Agent/skill/hook/rule/command and workflow-file changes are **not** an AI-DLC lifecycle. They run the agent-artifact lifecycle **AAW** (`routing.byType["Agent Artifact"]` in the workflow file): ARM makes the change and hands back the changed paths, each marked by kind, and the intent; BC critiques the docs, SQA tests the code and then CR reviews it, both paths in parallel for a mixed change; findings go back to ARM within one shared round budget, then to the human. Change kinds, rounds and findings: the `workflow` skill's `references/aaw-review.md`. No work breakdown and no gates; like every lifecycle it writes a handoff record before each hand-off and stores each hand-back (`handoff`), and the run state records the rounds. A change to ARM's own definition or a skill it owns goes to a freshly spawned ARM.
 - P0 security issues: BFLC with `security-review` run by SA/CR before the fix lands; notify PO afterwards.
 - Pure questions, including "what does this repository do": delegate to `research-assistant` (the orchestrator does not explore code or docs to answer them); no lifecycle.
 - Releases: Release phase — `product-manager` runs its release-gate checklist, `product-owner` gives go / no-go, then `devops-engineer` runs CD.
@@ -148,7 +148,7 @@ Run the segment stages below in order, gate by gate: PDLC → G1 → ASDLC → G
 
 ## Step 3 — Gates, verification and the human
 
-- **Every handoff is an artifact.** Cross a stage boundary only with `Skill("handoff")`, which records the artifact paths and the verification result in `docs/handoffs/`.
+- **Every handoff is an artifact.** Cross every hand-off only with `Skill("handoff")`: a handoff record written by the sender before the receiver starts and verified by the receiver, never by its writer, and the receiver's report stored as its hand-back, both in the run's folder `docs/handoffs/{LIFECYCLE}-{YYYYMMDD}-{feature-slug}/`, named by step code (`3-orchestrator-to-software-engineer.handoff.md`). In subagent mode the orchestrator writes both; in a Claude Code agent team the teammates do (`handoff`, *Who writes what*). Spawns before the run folder exists (classify research, work breakdown, `product-owner` consult) are recorded in `.scratch/<request-slug>/` and moved in as the run's first steps at Confirm (`handoff`, *Before the run folder exists*).
 - **Trust, but verify.** The orchestrator reads the artifact before the next agent starts. An agent's summary is a claim, not evidence. Verification is the only reading the orchestrator does itself; understanding code or docs is delegated to `research-assistant`.
 - **Durable runs.** The orchestrator keeps each work item's run state (`handoff`, *Run state*) current before every spawn and after every return or gate, stores every agent's hand-back verbatim next to it as soon as the agent returns (`handoff`, *Hand-back record*), and offers to resume unfinished runs at the start of every session.
 - **Hard gates beat confidence.** Build and tests must be green before Build ends (`init` installs the stack's Stop hook that enforces the test command: `dotnet-test-gate` in .NET repositories, `node-test-gate` in JS / TS repositories); mutation testing is the SQA's gate.
@@ -183,10 +183,10 @@ The same agents **answer** questions about their own artifacts and **own any rev
 ### How a round runs
 
 1. **Raise.** The asker raises questions while verifying the incoming handoff (`handoff`, *Receiving a handoff*) or as soon as a gap appears mid-stage, and keeps doing any work the questions do not block.
-2. **Return a clarification request** to the orchestrator: every open question in one batch, each naming the target upstream agent, the artifact or AC it refers to, and a recommended default. Format and relay mechanics: `agent-invocation`, *Clarification requests*. Subagents cannot spawn subagents; if the session's main agent is itself a stage agent, it consults the upstream agent directly with the same format.
+2. **Return a clarification request** to the orchestrator: every open question in one batch, each naming the target upstream agent, the artifact or AC it refers to, and a recommended default. Format and relay mechanics: `agent-invocation`, *Clarification requests*. The relay through the orchestrator is the workflow rule, also on Claude Code where a subagent with the `Agent` tool could spawn the upstream agent itself; only when the session's main agent is itself a stage agent does it consult the upstream agent directly, with the same format. In a Claude Code agent team, teammates ask each other directly and list the answers in their hand-backs.
 3. **Relay.** The orchestrator sends each question to its target — `SendMessage` to the instance that produced the artifact when it is still available, otherwise a fresh brief — and returns the answers to the asker with `SendMessage`, which resumes the stage.
 4. **Pass up or to the human.** An upstream agent that cannot answer passes the question along its own row (for example `system-engineer` → `product-owner`) within the same round. A question about the human's intent that no agent can answer goes to the human.
-5. **Record.** The asker lists every question and answer in the *Clarifications* section of its stage's handoff record.
+5. **Record.** The asker lists every question and answer under *Clarifications* in its hand-back; the orchestrator carries them into the next handoff record.
 
 ### Rules
 

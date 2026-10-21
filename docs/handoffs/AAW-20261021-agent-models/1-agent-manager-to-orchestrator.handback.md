@@ -1,9 +1,12 @@
 ---
-work-item: AAW-20261021-agent-models
-agent: agent-manager
-stage: change
-round: 1
+run: AAW-20261021-agent-models
+work-item: none
 lifecycle: AAW
+step: 1
+from: agent-manager
+to: orchestrator
+mode: subagent
+loop: none
 received: 2026-10-21
 ---
 

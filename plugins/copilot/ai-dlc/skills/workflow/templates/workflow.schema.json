@@ -55,7 +55,7 @@
     "lifecycles": {
       "type": "object",
       "minProperties": 1,
-      "description": "Lifecycles by code (AI-DLC, PDLC, ASDLC, STBLC, FDLC, BFLC, RLC, TLC, CRLC, Release, plus any `custom` ones). Each has either `segments` (a composite of other lifecycles, run in order) or `stages`, never both.",
+      "description": "Lifecycles by code. The keys of this object are the one authoritative list of lifecycle codes (the plugin default's are in templates/workflow.json; a project may add its own): routing, composite `segments`, the `{LIFECYCLE}` part of a run's handoff folder (`artifacts.handoffs`) and every skill refer to these keys and keep no list of their own. Each has either `segments` (a composite of other lifecycles, run in order) or `stages`, never both.",
       "propertyNames": { "pattern": "^[A-Za-z][A-Za-z0-9_-]*$" },
       "additionalProperties": { "$ref": "#/$defs/lifecycle" }
     },
@@ -164,7 +164,7 @@
         "decisions": { "type": "string", "minLength": 1, "description": "Folder for ADRs." },
         "narratives": { "type": "string", "minLength": 1, "description": "Architecture narrative per feature." },
         "plans": { "type": "string", "minLength": 1, "description": "Task plan per feature." },
-        "handoffs": { "type": "string", "minLength": 1, "description": "Folder for handoff records per work item; `<work-item>` is replaced. It also holds each work item's run state, `run.md`, which the orchestrator writes before every spawn and after every return or gate, so a new session can resume the run, and every agent's hand-back, `<NN>-<agent>-handback.md`: the report it returned, stored verbatim by the orchestrator (or the main agent, which also stores its own) as soon as it returns, numbered in the same sequence as the handoff records (parallel agents in the order of their Agent calls)." }
+        "handoffs": { "type": "string", "minLength": 1, "description": "Folder for one run's records; `{LIFECYCLE}` (a key of `lifecycles`), `{YYYYMMDD}` (the run's start date) and `{feature-slug}` (kebab-case) are replaced. Braces here, angle brackets in `specs`, `narratives` and `plans`: `{feature-slug}` and `<feature-slug>` are the same slug. The folder holds the run state, `run.md`; each handoff record, `{step}[.{sub}][.l{loop}]-{from-agent}-to-{to-agent}.handoff.md`; and each hand-back, the same pattern ending `.handback.md` with the two agents swapped. Agent IDs only, never persona names. Who writes each file in each orchestration mode, step numbering and verification: the `handoff` skill." }
       }
     }
   },

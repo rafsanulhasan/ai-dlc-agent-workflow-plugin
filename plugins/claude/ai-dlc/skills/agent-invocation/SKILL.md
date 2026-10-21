@@ -39,7 +39,7 @@ A spawned agent's reads stay in its own context; only its final report enters yo
 | A findings-only check of a diff | Spawn **Robert C. Martin** (`code-reviewer`) asking for the `review` skill's compact format |
 | A full review with rationale, or the review the human approves at G4 | `code-reviewer` with the `review` skill's full report |
 
-**Locate → change → check.** `research-assistant` returns the sites; you pick one or two and hand their exact `path:line` to `software-engineer`; `code-reviewer` checks the resulting diff. Skip *locate* when the site is already known. A change brief without its sites forces the engineer to search, which spends the context the chain was meant to save. Only the session's main agent can run this chain, because a subagent cannot spawn further agents.
+**Locate → change → check.** `research-assistant` returns the sites; you pick one or two and hand their exact `path:line` to `software-engineer`; `code-reviewer` checks the resulting diff. Skip *locate* when the site is already known. A change brief without its sites forces the engineer to search, which spends the context the chain was meant to save. Run the chain from the session's main agent. On Claude Code a subagent that has the `Agent` tool can run it too, within the nesting limit (`CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH`, default 3 from Claude Code v2.1.219; `1` turns nesting off); on GitHub Copilot nested spawning is not documented, so the plugin assumes only the main agent spawns there and runs the chain from it.
 
 ## Invocation mechanisms
 
@@ -113,7 +113,7 @@ A spawned agent's reads stay in its own context; only its final report enters yo
 
   Always cite the artifact path when invoking the next stage. Never hand off without naming the file the next agent should read first.
 
-- **Lifecycle selection and artifact handoff** — before routing, pick the lifecycle with `Skill("ai-dlc:ai-dlc")` (AI-DLC, the full lifecycle and the default for feature work; then PDLC, ASDLC, STBLC, FDLC, BFLC, RLC, TLC, CRLC). Every stage boundary is crossed with a handoff record written by `Skill("ai-dlc:handoff")` to `docs/handoffs/`, and the report each spawned agent returns (its hand-back) is stored there verbatim by the caller that writes the run state.
+- **Lifecycle selection and artifact handoff** — before routing, pick the lifecycle with `Skill("ai-dlc:ai-dlc")` (AI-DLC, the full lifecycle and the default for feature work; then PDLC, ASDLC, STBLC, FDLC, BFLC, RLC, TLC, CRLC). Every hand-off is recorded with `Skill("ai-dlc:handoff")` in the run's folder, `docs/handoffs/{LIFECYCLE}-{YYYYMMDD}-{feature-slug}/`: a handoff record written before the agent starts (`3-orchestrator-to-software-engineer.handoff.md`) and the report it returns, its hand-back, stored verbatim with the same step code (`3-software-engineer-to-orchestrator.handback.md`). Who writes them depends on the orchestration mode (`handoff`, *Who writes what*).
 - **Documentation critique** — any spec, ADR, design or README produced by `documentation-writer` (or another agent) is reviewed by **Linus Torvalds** (`brutal-critique`) in parallel before the gate is crossed.
 
 ## How to brief the spawned agent
@@ -123,7 +123,7 @@ The spawned agent starts **cold** — it does not see this conversation, your pr
 Required elements in every brief:
 
 - **Goal** — one sentence on the outcome, and one sentence on why it matters.
-- **Required context** — concrete artifact paths (`docs/specs/<slug>.spec.md`, `docs/architecture/decisions/NNN-*.md`, plan files, failing test names), file paths with **line numbers**, prior findings from earlier agents, and any constraints discovered so far.
+- **Required context** — first the path of the handoff record you wrote for this spawn (`handoff`), then concrete artifact paths (`docs/specs/<slug>.spec.md`, `docs/architecture/decisions/NNN-*.md`, plan files, failing test names), file paths with **line numbers**, prior findings from earlier agents, and any constraints discovered so far.
 - **Instructions** — the specific question to answer or work to perform, scoped to the receiving agent's role. Do not ask one agent to do another's job.
 - **Acceptance criteria** — numbered ACs the deliverable must satisfy.
 - **Expected deliverable** — its shape and length (e.g., "findings report ≤ 30 lines", "ADR following the project template", "code diff + passing tests", "test plan with AC-traceability table"). When you, not a human, will read the reply, ask for a **compressed report** and name its contract (see *Compressed reports* below).
@@ -131,6 +131,7 @@ Required elements in every brief:
 - **Model** — on Claude Code, whether the spawn passes a `model` argument; for `research-assistant` choose it with the list in *Model per spawn*.
 - **Next-hop hint** — which agent (if any) receives this agent's output, so the receiving agent can shape its deliverable appropriately.
 - **Success criteria** — how you (the caller) will verify the handoff is complete.
+- **Verification line** — ask for line 1 of the report to be exactly `handoff <file>: passed|failed — <why>` for the record named first in *Required context* (`handoff`, *Receiving a handoff*).
 
 Anti-patterns to avoid:
 
@@ -144,6 +145,7 @@ A spawned agent's final message enters the caller's context verbatim and stays t
 
 **Rules for every compressed report** (the floor of `Skill("ai-dlc:terse-output")`):
 
+- Line 1 is the verification line `handoff <file>: passed|failed — <why>` when the brief named a handoff record; it is the one permitted preamble and comes before any terminal reply (`No match.`, `No findings.`, `Inconclusive: …`).
 - One finding per line, location first, as `path:line` or `path:start-end`. Cite only lines actually read; never estimate a range.
 - Identifiers, commands, paths and error text verbatim, in backticks.
 - No preamble, narrative of the search, or closing summary — a final `totals:` line is the only summary.
@@ -159,13 +161,13 @@ A spawned agent's final message enters the caller's context verbatim and stays t
 | *change* | `software-engineer` | `path:start-end — <change, ten words or fewer>` per edit, then `verified: re-read OK` (or `mismatch at path:line`) and the test result line | `too-big: split into <n> tasks: …` · `needs-confirm: <operation>` · `ambiguous: <one question>` · `regressed: <path:line> — <cause>` |
 | *check* | `code-reviewer` | The `review` skill's compact format: one line per finding, then `totals:` and `verdict:` | `No findings.` |
 
-A terminal reply is the whole answer: stop and act on it — split the work, confirm with the human, answer the question, or send the regression back. Before showing a compressed report to a human, paraphrase it into prose.
+A terminal reply is the whole answer after the verification line: stop and act on it — split the work, confirm with the human, answer the question, or send the regression back. Before showing a compressed report to a human, paraphrase it into prose.
 
 Any stage agent, under any contract, may also end with a **clarification request** (below) instead of, or after, its partial deliverable.
 
 ## Clarification requests
 
-The Clarify loop in the `ai-dlc` skill lets a stage agent ask the agents that produced its inputs. A subagent cannot spawn another agent, so it returns its questions to the orchestrator, which relays them. Whom an agent may ask and the round limit come from the effective workflow's `clarify` section (`.ai-dlc/workflow.json`; default: the `ai-dlc` skill's consultation matrix and 3 rounds); the rules live in the `ai-dlc` skill. This section is only the format and the relay.
+The Clarify loop in the `ai-dlc` skill lets a stage agent ask the agents that produced its inputs. The asker returns its questions to the orchestrator, which relays them — the workflow rule, so every answer is verified and recorded in one place, even on Claude Code where a subagent with the `Agent` tool could spawn the upstream agent itself. Whom an agent may ask and the round limit come from the effective workflow's `clarify` section (`.ai-dlc/workflow.json`; default: the `ai-dlc` skill's consultation matrix and 3 rounds); the rules live in the `ai-dlc` skill. This section is only the format and the relay.
 
 **Request** — returned by the asker, all open questions in one batch:
 
@@ -197,14 +199,15 @@ When the session's main agent is itself a stage agent, it skips the relay and sp
 
 - For **independent sub-tasks** (no collaboration needed between them) — fire multiple `Agent(...)` calls in a single message on Claude, or multiple `agent` tool calls in a single message on Copilot/VS Code. The orchestrator synthesizes the combined output.
 - For **research breadth** (e.g., comparing 3–5 options) — spawn 3–5 `research-assistant` subagents in parallel, each with a distinct angle, then synthesize.
-- For **collaborative SDLC work** — do **not** parallelize within the chain; run it sequentially with explicit handoffs (Mode 3 in `request-routing`).
+- For **collaborative SDLC work** — do **not** parallelize within the chain; run it sequentially with explicit handoffs (Mode 3, sequential subagent chain, in `request-routing`).
+- For **genuine back-and-forth between two or more roles** (Refine: `software-architect` ↔ `system-engineer`; Align) on Claude Code, an agent team can replace repeated relays (Mode 5 in `request-routing`): the teammates message each other and write their own handoff records and hand-backs (`handoff`, *Who writes what*). Teammates do not load the `skills` in an agent's frontmatter, so a team brief names the skills each teammate must load. On Copilot, run the same work as subagents.
 - Background mode is for genuinely long-running independent work only — not a default. Most invocations should be foreground.
 
 ## Trust but verify
 
 A spawned agent's summary describes **intent**, not necessarily what landed on disk:
 
-- When you keep the run state (the orchestrator, or the main agent when there is none), **store the hand-back first**: the returned report, verbatim, as `<NN>-<agent>-handback.md` next to the handoff records (`handoff`, *Hand-back record*), before you verify or act on it.
+- When you keep the run state (the orchestrator, or the main agent when there is none), **store the hand-back first**: the returned report, verbatim, as `<step>-<agent>-to-<you>.handback.md`, with the step code of the handoff record you wrote for it (`handoff`, *Hand-back record*), before you verify or act on it.
 - After the agent returns, **verify changed files** with `Read` / `Grep` (Claude) before reporting work complete on the agent's behalf.
 - Mark `TodoWrite` / `todo` items Done only after verification, not on the agent's claim alone.
 - If verification fails, send a `SendMessage` (or Copilot equivalent) follow-up to the same agent rather than respawning a cold instance — the original context is still warm.

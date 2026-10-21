@@ -1,3 +1,15 @@
+---
+run: AAW-20261016-stack-commands-out-of-agents-md
+work-item: none
+lifecycle: AAW
+step: 1
+from: agent-manager
+to: orchestrator
+mode: subagent
+loop: none
+received: 2026-10-16
+---
+
 # Hand-back: agent-manager, round 1 (stored verbatim summary of report)
 
 Report received 2026-10-16. Changed paths (all docs, plus generated outputs): tools/templates/AGENTS.template.md, tools/templates/instructions.template.md, plugins/claude/ai-dlc/skills/init/SKILL.md, plugins/claude/ai-dlc/skills/init/references/managed-blocks.md, agents/{devops-engineer,software-engineer,sqa-engineer}.md, skills/{agent-invocation,ai-dlc,fix-bug,handoff,implement-feature,playwright-mcp-ui-testing,review,ts-integration-testing,ts-mutation-testing,ts-unit-testing,write-tests}/SKILL.md, AGENTS.md, CLAUDE.md, .github/copilot-instructions.md, README.md, docs/plugins.md. Generated: skills/init/templates/{AGENTS.md,CLAUDE.md,copilot-instructions.md}, plugins/copilot/ai-dlc/** (19 files).

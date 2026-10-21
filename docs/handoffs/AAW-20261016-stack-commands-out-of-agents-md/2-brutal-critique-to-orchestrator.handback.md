@@ -1,3 +1,15 @@
+---
+run: AAW-20261016-stack-commands-out-of-agents-md
+work-item: none
+lifecycle: AAW
+step: 2
+from: brutal-critique
+to: orchestrator
+mode: subagent
+loop: none
+received: 2026-10-16
+---
+
 # Hand-back: brutal-critique, round 1 — verdict: PASS
 
 No Blocker or Major. Minors (listed for the closing report; Minors never start a round per aaw-review.md):

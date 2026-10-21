@@ -19,8 +19,8 @@ This file makes the main agent in this repository the **AI-DLC orchestrator** fo
 
 - **AI-DLC**, the full lifecycle (idea → G1 → G2 → G3 → G4 → release), is the default for feature work; enter at the earliest missing artifact.
 - Eight named lifecycles, its segments and focused entry points: **PDLC** product design · **ASDLC** architecture & design · **STBLC** story & task breakdown · **FDLC** feature development · **BFLC** bug fixing · **RLC** refactoring · **TLC** testing · **CRLC** code review.
-- **Every handoff is an artifact.** Stage boundaries are crossed with a handoff record in `docs/handoffs/`; verify it before the next agent starts.
-- **Runs survive a lost session.** Each work item keeps its run state in `docs/handoffs/<work-item>/run.md` (stages and their status, gate decisions, open clarifications, the next action), written before every spawn and after every return or gate, and stores every agent's hand-back (the report it returned) verbatim as `<NN>-<agent>-handback.md` as soon as it returns. A new session offers to resume unfinished runs from there.
+- **Every handoff is an artifact.** Each run has a folder, `docs/handoffs/{LIFECYCLE}-{YYYYMMDD}-{feature-slug}/`. Before work changes hands the sender writes a handoff record, `{step}[.{sub}][.l{loop}]-{from}-to-{to}.handoff.md` (for example `3-orchestrator-to-software-engineer.handoff.md`), which the receiver verifies before it starts; the receiver's report is stored verbatim as the hand-back with the same step code and the agents swapped (`3-software-engineer-to-orchestrator.handback.md`). In subagent mode the orchestrator writes both; in a Claude Code agent team the teammates do.
+- **Runs survive a lost session.** Each run keeps its run state in its folder's `run.md` (stages with their step codes and status, gate decisions, open clarifications, the last record, the next action), written before every spawn and after every return or gate. A new session offers to resume unfinished runs from there.
 - **The human is the decision maker.** Humans set intent, approve gates G1 (stories/ACs), G2 (frozen spec), G3 (task plan) and G4 (review report), and resolve ambiguity. Agents never guess intent.
 - **The team's workflow is in `.ai-dlc/workflow.json`** — lifecycles and stages, who hands off to whom, gates and their approvers, the clarify matrix and routing. It overrides the defaults above wherever they differ. `node .ai-dlc/workflow.mjs show` prints it (`--mermaid` for diagrams) and `validate` checks it against `.ai-dlc/catalog.json` (the installed plugin's agents and skills) and the project's own; a Stop hook blocks finishing while it is invalid. Change it with `/ai-dlc:workflow edit <change>` (`agent-manager`).
 
@@ -45,7 +45,7 @@ This file makes the main agent in this repository the **AI-DLC orchestrator** fo
 | ADRs | `docs/architecture/decisions/` |
 | Architecture narratives | `docs/architecture/narratives/<feature-slug>.md` |
 | Task plans | `docs/plans/<feature-slug>.tasks.md` |
-| Handoff records, hand-backs and run state | `docs/handoffs/<work-item>/` (`run.md` is the run state, `<NN>-<agent>-handback.md` the agents' reports) |
+| Handoff records, hand-backs and run state | `docs/handoffs/{LIFECYCLE}-{YYYYMMDD}-{feature-slug}/` (`run.md` is the run state, `*.handoff.md` the records, `*.handback.md` the agents' reports) |
 | Team workflow | `.ai-dlc/workflow.json` (its `artifacts` section overrides the paths above) |
 
 ### Quality gates

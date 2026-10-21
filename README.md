@@ -37,7 +37,7 @@ Agents use the `opus` and `sonnet` aliases, and nothing pins `haiku`, so every r
 
 ## Lifecycles
 
-`request-routing` decides each work item's workflow (the lifecycle you asked for, else one chosen from `ai-dlc`), agent chain and orchestration mode → `agent-invocation` spawns → `handoff` carries the artifact. The orchestrator only delegates; it never does the engineering work itself.
+`request-routing` decides each work item's workflow (the lifecycle you asked for, else one chosen from `ai-dlc`), agent chain and orchestration mode → `agent-invocation` spawns → `handoff` records every hand-off and hand-back. The orchestrator only delegates; it never does the engineering work itself.
 
 **AI-DLC**, the full lifecycle, is the default for feature work: Plan → G1 → Architect & Design → G2 → Breakdown → G3 → Build · Test · Review → G4 → Release, entered at the earliest missing artifact. The eight named lifecycles are its segments (PDLC to FDLC) or focused entry points (BFLC to CRLC).
 
@@ -55,7 +55,7 @@ Agents use the `opus` and `sonnet` aliases, and nothing pins `haiku`, so every r
 
 Human gates: **G1** stories/ACs · **G2** frozen spec · **G3** task plan · **G4** review report · release go / no-go.
 
-Changes to agents, skills, hooks, rules, commands and the workflow file run **AAW**: `agent-manager` makes the change; `brutal-critique` reviews the docs (PASS or REVISE), while `sqa-engineer` tests and then `code-reviewer` reviews any code; findings go back to `agent-manager` within one shared round budget (three rounds by default). After updating the plugin, run `/ai-dlc:workflow upgrade` in each repository that has `.ai-dlc/workflow.json`: an older file fails `validate` without the new review stages, and so does a customised AAW whose review loops have different `maxRounds`. The orchestrator's reminder at session start relies on the plugin version changing between releases. Every work item keeps a committed run state, `docs/handoffs/<work-item>/run.md`, written before each spawn and after each return or gate, and each agent's hand-back, the report it returned, stored next to it as `<NN>-<agent>-handback.md`, so a new session can resume a run after a crash or a lost context.
+Changes to agents, skills, hooks, rules, commands and the workflow file run **AAW**: `agent-manager` makes the change; `brutal-critique` reviews the docs (PASS or REVISE), while `sqa-engineer` tests and then `code-reviewer` reviews any code; findings go back to `agent-manager` within one shared round budget (three rounds by default). After updating the plugin, run `/ai-dlc:workflow upgrade` in each repository that has `.ai-dlc/workflow.json`: an older file fails `validate` without the new review stages, and so does a customised AAW whose review loops have different `maxRounds`. The orchestrator's reminder at session start relies on the plugin version changing between releases. Every run keeps a committed folder, `docs/handoffs/{LIFECYCLE}-{YYYYMMDD}-{feature-slug}/`, with its run state (`run.md`, written before each spawn and after each return or gate), a handoff record written before every hand-off (`3-orchestrator-to-software-engineer.handoff.md`) and each agent's hand-back, the report it returned, stored with the same step code (`3-software-engineer-to-orchestrator.handback.md`), so a new session can resume a run after a crash or a lost context.
 
 ## Install
 
@@ -88,7 +88,7 @@ VS Code's agent-plugin support reads the same Copilot/Claude plugin formats; add
 2. **Talk to the orchestrator.** `init` sets `"agent": "ai-dlc:orchestrator"` in the repo's `.claude/settings.json`, so every request reaches it first (one-off: `claude --agent ai-dlc:orchestrator`). On Copilot, select the `orchestrator` custom agent.
 3. The orchestrator classifies your request, gets a work breakdown from `product-manager`, routes each item to a lifecycle and agent chain, confirms the plan with you, then runs the lifecycle and stops at each human gate.
 
-The orchestrator must be the **main** agent: subagents cannot spawn other subagents, so invoking it as `@agent-ai-dlc:orchestrator` from another agent will not let it run the team.
+The orchestrator must be the **main** agent: it is the lead that talks to you and runs the whole team, and subagent nesting is limited (on Claude Code to `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH` levels, default 3 from v2.1.219, `1` to turn it off; GitHub Copilot does not document nested spawning, so the plugin assumes only the main agent spawns there; running the orchestrator as a subagent is not tested), so invoking it as `@agent-ai-dlc:orchestrator` from another agent is not supported.
 
 If a project still has its own copies of these agents in `.claude/agents` / `.github/agents`, remove them after installing the plugin so each role exists once.
 

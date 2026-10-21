@@ -110,7 +110,7 @@ Trigger: when a design adds or moves a trust boundary, an entry point, authentic
 Skill("handoff")
 ```
 
-Trigger: when the design stage ends, write the design → low-level design record citing the ADRs and Implementation Guidance (Gate G2 approves the frozen spec); after `architecture-review`, record the findings handed back to `software-engineer`. Use the session-handoff mode only when a session must stop mid-stage.
+Trigger: when your stage starts, verify the record you were handed; when the design stage ends, your hand-back cites the ADRs and Implementation Guidance (Gate G2 approves the frozen spec); after `architecture-review`, your hand-back lists the findings for `software-engineer`. Who writes the records follows the orchestration mode (`handoff`, *Who writes what*): in subagent mode the orchestrator (or the main agent when there is none) writes the handoff record that briefs you and stores the report you return as your hand-back, so you write neither; in a Claude Code agent team you write `N-<you>-to-<teammate>.handoff.md` before you message the next teammate, and `N-<you>-to-<sender>.handback.md` to whoever handed you work when you finish, and tell the team lead each record's file name. Either way, verify the record you were handed before you start, and make line 1 of your report `handoff <file>: passed|failed — <why>`. In a Refine team with `system-engineer`, you write the design handoff to it and it writes its hand-back to you. Use the session-handoff mode only when a session must stop mid-stage.
 
 ### `terse-output` — the compressed report you return to your caller
 

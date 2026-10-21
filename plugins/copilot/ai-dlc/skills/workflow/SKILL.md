@@ -23,6 +23,7 @@ The **workflow gate** guards the file: `.claude/hooks/check-workflow.mjs` ([temp
 ## How the orchestrator applies it
 
 - **Effective workflow** = `.ai-dlc/workflow.json` if present, else the plugin default. A present but invalid file stops the run: the orchestrator shows the `validate` output and never falls back silently.
+- **Lifecycle codes** are the keys of `lifecycles`, the one list every skill refers to; a run's handoff folder starts with its code (`artifacts.handoffs`).
 - A one-off instruction in a request ("skip G3 this time") overrides the file for that run only.
 - Stage order comes from `after`; stages that share an `after` run in parallel; a stage whose `when` does not hold is skipped and counts as finished.
 - A gate's `approver`: `human` stops for the human; `orchestrator` approves on the human's behalf and records it; `none` skips the stop, but the handoff record is still written and verified.
@@ -34,7 +35,7 @@ The file cannot change these; `validate` rejects the attempts it can detect.
 - Boris Cherny (`agent-manager`) alone changes agents, skills, hooks, rules, commands, agent memory and this workflow file, and `agent-artifact work` always routes to it. `orchestrator` and `agent-manager` cannot be disabled.
 - Every agent-artifact change is reviewed, in a bounded, shared loop. The lifecycle that `routing.byType["Agent Artifact"]` names (default `AAW`) starts with `agent-manager` and has `brutal-critique` (docs), `sqa-engineer` and then `code-reviewer` (code) stages that loop back to it, with one shared round budget (equal `loop.maxRounds`; default 3, the file may change it). `brutal-critique`, `sqa-engineer` and `code-reviewer` cannot be disabled, and `documents.critic: null` does not remove these reviews. Change kinds, rounds, findings, and exactly what `validate` enforces and what it cannot: [references/aaw-review.md](references/aaw-review.md). A missing `routing.byType["Agent Artifact"]` or lifecycle, or an `AAW` from before these rules, fails `validate`: run **upgrade**.
 - A change to `agent-manager`'s own definition, or to a skill it owns (`agent-management`, `skill-management`, `hook-management`, `rules-management`, `command-management`, `harness-sync`, `workflow`, `plugin-management`), is made by a freshly spawned `agent-manager`, never by the running instance.
-- Trust, but verify: every stage boundary gets a verified handoff record, whatever the gate approver (`AAW` has no gates or handoff records: its run state records the rounds and verdicts), and every agent's hand-back is stored verbatim next to the handoff records (`handoff`, *Hand-back record*).
+- Trust, but verify: every hand-off, `AAW` included, gets a handoff record that its receiver verifies (never its writer), whatever the gate approver, and every agent's hand-back is stored verbatim beside it, in the run's folder (`artifacts.handoffs`: `{LIFECYCLE}-{YYYYMMDD}-{feature-slug}/`, files `{step}[.{sub}][.l{loop}]-{from-agent}-to-{to-agent}.handoff.md` and `.handback.md`; `handoff` skill). `AAW` has no gates: its run state records the rounds and verdicts.
 - The test gate hooks and the workflow gate installed by `init` stay in force.
 - The orchestrator only delegates, and a stage owner never does another agent's job.
 

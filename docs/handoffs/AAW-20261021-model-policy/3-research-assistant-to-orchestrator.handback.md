@@ -1,9 +1,12 @@
 ---
-work-item: AAW-20261021-model-policy
-agent: research-assistant
-stage: critique (orchestrator fact check of unverified claims)
-round: 1
+run: AAW-20261021-model-policy
+work-item: none
 lifecycle: AAW
+step: 3
+from: research-assistant
+to: orchestrator
+mode: subagent
+loop: none
 received: 2026-10-21
 ---
 

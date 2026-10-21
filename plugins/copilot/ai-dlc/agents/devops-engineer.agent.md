@@ -118,7 +118,7 @@ Trigger: when a workflow gains or changes secrets, environments, token permissio
 Skill("handoff")
 ```
 
-Trigger: verify the release-readiness record from `product-manager` before publishing, then record what shipped (versions, package and release URLs, gate results) as the closing handoff. Use the session-handoff mode only when a session must stop mid-release.
+Trigger: verify the release-readiness record you were handed before publishing; your hand-back records what shipped (versions, package and release URLs, gate results) and closes the run. Who writes the records follows the orchestration mode (`handoff`, *Who writes what*): in subagent mode the orchestrator (or the main agent when there is none) writes the handoff record that briefs you and stores the report you return as your hand-back, so you write neither; in a Claude Code agent team you write `N-<you>-to-<teammate>.handoff.md` before you message the next teammate, and `N-<you>-to-<sender>.handback.md` to whoever handed you work when you finish, and tell the team lead each record's file name. Either way, verify the record you were handed before you start, and make line 1 of your report `handoff <file>: passed|failed — <why>`. Use the session-handoff mode only when a session must stop mid-release.
 
 ### `terse-output` — the compressed report you return to your caller
 

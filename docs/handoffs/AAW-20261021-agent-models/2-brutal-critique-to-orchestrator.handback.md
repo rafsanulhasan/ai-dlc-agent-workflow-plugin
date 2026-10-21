@@ -1,9 +1,12 @@
 ---
-work-item: AAW-20261021-agent-models
-agent: brutal-critique
-stage: critique
-round: 1
+run: AAW-20261021-agent-models
+work-item: none
 lifecycle: AAW
+step: 2
+from: brutal-critique
+to: orchestrator
+mode: subagent
+loop: none
 received: 2026-10-21
 ---
 
