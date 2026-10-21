@@ -1,0 +1,3 @@
+- [Team roster](project_team-roster.md) — agent ID → name for this repository
+- [Mods release scope](project_mods-release-scope.md) — 1.0.0 ships mods (Claude; hook mods also Copilot); one mods plugin from ai-dlc-lens
+- [VS Code plugin reload](project_vscode-plugin-reload.md) — missing skill in VS Code extension: ask for a restart before changing the plugin

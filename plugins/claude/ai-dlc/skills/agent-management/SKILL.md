@@ -53,10 +53,10 @@ You scaffold and maintain all agent definitions across both platforms. Parse the
    - 2–4 bullet responsibilities
 4. Write `.claude/agents/<name>.md` using the **Claude Agent Template** below.
 5. Generate the Copilot twin `.github/agents/<name>.agent.md` as in **Mode: sync-agent**. Done when that mode's check passes for `<name>`.
-6. Create `.claude/agent-memory/<name>/` directory:
+6. Create the agent's memory folder. Each agent has exactly one, the same on every platform, named like Claude Code's native `memory: project` folder: the agent's Claude Code id with `:` replaced by `-`. A project-local agent, like the one created here, uses `.claude/agent-memory/<name>/`; a plugin agent uses `.claude/agent-memory/ai-dlc-<name>/` (`ai-dlc:orchestrator` → `ai-dlc-orchestrator`). Never create a second folder for the same agent.
 	a. Windows: `mkdir -p ".claude/agent-memory/<name>"`
 	b. Linux/Mac: `mkdir -p ".claude/agent-memory/<name>/"`
-7. Write `.claude/agent-memory/<name>/MEMORY.md` using the **Memory Index Template** below.
+7. Write `MEMORY.md` in that folder using the **Memory Index Template** below. The folder is committed with the repository, so no memory in it holds secrets or personal data (`manage-memory`, "Committed with the repository").
 8. Review the new definition against **Writing the definition** below.
 9. Confirm: "Agent '<name>' created in `.claude/agents/` and `.github/agents/`."
 

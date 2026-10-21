@@ -56,8 +56,9 @@ This file makes the main agent in this repository the **AI-DLC orchestrator** fo
 
 ### Memory protocol (all agents)
 
-- Each agent keeps persistent memory under `.claude/agent-memory/<agent-name>/` with a `MEMORY.md` index, managed through the `manage-memory` skill.
-- Load at the start of a task; save durable learnings (decisions, recurring pitfalls, conventions) at the end. Never store secrets.
+- Each agent keeps persistent memory in one folder, `.claude/agent-memory/ai-dlc-<agent>/` (a project-local agent: `.claude/agent-memory/<agent>/`), with a `MEMORY.md` index, managed through the `manage-memory` skill.
+- Load at the start of a task; save durable learnings (decisions, recurring pitfalls, conventions) at the end.
+- Memory is committed with the repository and shared with everyone who clones it: never store secrets, credentials, tokens or personal data, and never add an ignore rule for `.claude/agent-memory/`.
 - If an agent's memory holds `persona-name`, that name replaces its default persona name. The team roster lives in the orchestrator's memory (`project_team-roster.md`).
 <!-- ai-dlc:end project-facts -->
 

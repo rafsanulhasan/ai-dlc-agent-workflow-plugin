@@ -1,13 +1,41 @@
 ---
 name: manage-memory
-description: Manages persistent file-based memory for all agents in .claude/agent-memory/<agent-name>/. Supports load, save, refresh, prune, audit, and compress (shrink a memory or instruction file that loads every session, to save input tokens, keeping a readable backup). All agents call this directly for load/save; prune/audit/refresh are routed through skill-manager.
+description: Manages persistent file-based memory for all agents in .claude/agent-memory/<folder>/ (ai-dlc-<agent> for plugin agents), committed with the repository. Supports load, save, refresh, prune, audit, and compress (shrink a memory or instruction file that loads every session, to save input tokens, keeping a readable backup). All agents call this directly for load/save; prune/audit/refresh are routed through skill-manager.
 ---
 
 # Manage Memory Skill
 
-You manage all persistent memory for agents in the project. Memory is stored in `.claude/agent-memory/<agent-name>/`. Parse the args to determine the operation.
+You manage all persistent memory for agents in the project. Each agent has one memory folder, `.claude/agent-memory/<folder>/` (see "Memory folder"). Parse the args to determine the operation.
 
 > Agent names are the defaults; a name chosen at `/ai-dlc:init` (the agent's `persona-name` memory, roster in the orchestrator's `project_team-roster`) takes precedence.
+
+---
+
+## Memory folder
+
+Each agent has exactly one memory folder, the one Claude Code itself uses for an agent with `memory: project`: the agent's Claude Code ID with `:` replaced by `-`. GitHub Copilot uses the same folder.
+
+| Agent | Claude Code ID | `<folder>` |
+|---|---|---|
+| Plugin agent: `<agent>.md` is in the plugin's `agents/` folder, two levels above this skill's base directory | `ai-dlc:<agent>` | `ai-dlc-<agent>`, for example `ai-dlc-orchestrator` |
+| Project-local agent: `.claude/agents/<agent>.md` | `<agent>` | `<agent>` |
+
+Callers pass the agent ID (`orchestrator`) or the Claude Code ID (`ai-dlc:orchestrator`). Resolve either to `<folder>` before reading or writing; every path below is under `.claude/agent-memory/<folder>/`.
+
+---
+
+## Committed with the repository
+
+`.claude/agent-memory/` is committed with the repository: every memory file is shared with everyone who clones it, and with every agent on every platform. `/ai-dlc:init` makes sure no ignore rule hides it; never add one.
+
+So a memory never holds:
+
+- secrets: passwords, API keys, tokens, connection strings, private keys, certificates, or values copied from `.env` files or secret stores;
+- personal data: email addresses, phone numbers, home or postal addresses, account IDs, or machine paths that name a person (`C:\Users\<name>\…`, `/home/<name>/…`) — write paths relative to the repository root.
+
+`user` memories are read by the whole team. Record only what helps the work (role, expertise, how the developer wants to collaborate), never private details or judgements about a person.
+
+If what you were asked to save contains any of these, save the memory without it, or do not save it, and tell the caller what you left out. If you find one in an existing memory, remove it and tell the caller, who must also tell the human: a committed secret stays in git history and has to be rotated.
 
 ---
 
@@ -15,7 +43,7 @@ You manage all persistent memory for agents in the project. Memory is stored in 
 
 Retrieve all memories for the named agent.
 
-1. Check for `.claude/agent-memory/<agent-name>/MEMORY.md`
+1. Resolve `<folder>` and check for `.claude/agent-memory/<folder>/MEMORY.md`
 2. If it exists, read the index to get all memory file pointers
 3. Read each referenced memory file
 4. Run the Staleness Check (see below) on all entries
@@ -36,10 +64,10 @@ description: <one-line description for the index>
 <memory content body>
 ```
 
-1. Parse agent name, type, name, description, and content from args
+1. Parse agent name, type, name, description, and content from args. Check the content against "Committed with the repository": drop any secret or personal data, and tell the caller what you dropped.
 2. Derive filename: `<type>_<kebab-case-name>.md` (e.g., `feedback_response-style.md`)
-3. Write `.claude/agent-memory/<agent-name>/<filename>.md` using the Memory File Format below
-4. Read `.claude/agent-memory/<agent-name>/MEMORY.md` (or initialize an empty index)
+3. Resolve `<folder>` and write `.claude/agent-memory/<folder>/<filename>.md` using the Memory File Format below
+4. Read `.claude/agent-memory/<folder>/MEMORY.md` (or initialize an empty index)
 5. Check for an existing entry matching this memory name — update rather than duplicate
 6. Write the updated MEMORY.md
 7. Confirm: "Saved '<name>' to <agent-name>'s memory."
@@ -50,7 +78,7 @@ description: <one-line description for the index>
 
 Force-reload the memory index and all files, then re-run staleness checks.
 
-1. Re-read `.claude/agent-memory/<agent-name>/MEMORY.md`
+1. Re-read `.claude/agent-memory/<folder>/MEMORY.md`
 2. Re-read every referenced memory file
 3. Run the Staleness Check on all entries
 4. Flag any stale entries to the caller
@@ -79,6 +107,12 @@ Survey memory health across all agents.
 2. For each agent, count entries and note the index file size
 3. Return a summary table: agent → entry count → index line count → staleness risk
 4. Flag any agent whose MEMORY.md exceeds 150 lines (approaching the 200-line truncation limit); suggest `prune` first, then `compress` for what remains
+5. Flag any folder that breaks "Memory folder" (for example `orchestrator/` next to `ai-dlc-orchestrator/`), and suggest moving its files into the right folder and merging the index lines
+6. Scan every memory file for what "Committed with the repository" forbids:
+   - secrets: `password`, `api key`, `token`, `secret`, `BEGIN … PRIVATE KEY`, `ghp_`, `github_pat_`, `sk-`, `AKIA`, `xoxb-`;
+   - personal data: email addresses, phone numbers, and absolute paths under a user folder (`C:\Users\`, `/Users/`, `/home/`).
+
+   Report each hit as `path:line` with what it is. A word that only names the policy ("never store secrets") is not a hit. Removing a hit is a change routed through **Boris Cherny** (`agent-manager`); a committed secret must also be rotated.
 
 ---
 
@@ -142,7 +176,8 @@ Overwrite the source path with the validated text (both twins when `agent-manage
 ---
 name: <memory name>
 description: <one-line description — specific enough to judge relevance in future conversations>
-type: <user|feedback|project|reference>
+metadata:
+  type: <user|feedback|project|reference>
 ---
 
 <content body>
@@ -172,7 +207,7 @@ Lines after 200 are truncated — keep the index concise.
 
 | Type | Stores | Save when |
 |------|--------|-----------|
-| **user** | Role, goals, expertise, preferences | You learn who the user is |
+| **user** | Role, goals, expertise, preferences — read by the whole team, so no personal data | You learn who the user is |
 | **feedback** | Corrections AND validated approaches | User corrects ("don't X") or confirms ("yes, exactly") |
 | **project** | Work, decisions, constraints, deadlines | You learn project context (convert relative dates to absolute YYYY-MM-DD) |
 | **reference** | Pointers to external systems | You learn about tools, dashboards, trackers, channels |
@@ -183,6 +218,7 @@ Lines after 200 are truncated — keep the index concise.
 
 ## What NOT to Save
 
+- Secrets, credentials, tokens or personal data — see "Committed with the repository"
 - Code patterns, conventions, architecture — derivable from the codebase
 - Git history — `git log` is authoritative
 - Bug fixes or debugging recipes — the fix is in the code
