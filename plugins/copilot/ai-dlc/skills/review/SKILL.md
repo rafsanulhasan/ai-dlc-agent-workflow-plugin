@@ -24,8 +24,8 @@ A change can pass one and fail the other: clean, conventional code that implemen
 
 **Running them in parallel.** Each axis should be judged in its own context:
 
-- **When you can spawn agents** (you are the session's main agent), spawn two reviewers in one message, one per axis, each with a self-contained brief from `Skill("agent-invocation")`: the diff command, the commit list, and either the standards sources plus the full text of [references/smell-baseline.md](references/smell-baseline.md), pasted in because a spawned reviewer cannot resolve this skill's relative paths (Standards), or the spec and its acceptance criteria (Spec). Ask each for findings in the Phase 6 compact format, under about 400 words, so their reports stay small in your context. Aggregate their reports in Phase 6.
-- **When you are a subagent** (subagents cannot spawn further agents), run the axes as two separate passes: finish and write up Phases 1–4 before you open the spec for Phase 5, so the spec does not colour the standards review and vice versa.
+- **When you can spawn agents** (you are the session's main agent, or on Claude Code a subagent with the `Agent` tool within the nesting limit, `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH`), spawn two reviewers in one message, one per axis, each with a self-contained brief from `Skill("agent-invocation")`: the diff command, the commit list, and either the standards sources plus the full text of [references/smell-baseline.md](references/smell-baseline.md), pasted in because a spawned reviewer cannot resolve this skill's relative paths (Standards), or the spec and its acceptance criteria (Spec). Ask each for findings in the Phase 6 compact format, under about 400 words, so their reports stay small in your context. Aggregate their reports in Phase 6.
+- **When you cannot spawn agents** (on GitHub Copilot nested spawning is not documented, so the plugin assumes a subagent does not spawn; on Claude Code you lack the `Agent` tool or are at the nesting limit), run the axes as two separate passes: finish and write up Phases 1–4 before you open the spec for Phase 5, so the spec does not colour the standards review and vice versa.
 - **Scott Hanselman** (`orchestrator`) can also fan out two `code-reviewer` instances in parallel, one briefed `axis: standards` and one `axis: spec`. A reviewer briefed with one axis runs only that axis's phases plus Phases 0 and 6.
 
 ---
@@ -48,7 +48,7 @@ Before reviewing any code:
 4. Check `docs/architecture/decisions/` for any ADRs that constrain the changed components.
 5. **Find the standards sources** — every file that says how code should be written here: `CLAUDE.md`, `AGENTS.md`, `CONTRIBUTING.md`, `CODING_STANDARDS.md` (always include these two when present), `.claude/rules/`, `.github/instructions/`, and linter or formatter configuration. Rules a linter, formatter or compiler already enforces are not review findings; skip them.
 6. **Find the spec**, in this order:
-   1. the handoff record for the work item (`docs/handoffs/<work-item-id>/`) and the spec it links;
+   1. the handoff record you were briefed with (in the run's folder, `docs/handoffs/{LIFECYCLE}-{YYYYMMDD}-{feature-slug}/`) and the spec it links;
    2. a spec or story path passed as an argument;
    3. `docs/specs/<slug>.spec.md` (or another spec under `docs/`) matching the branch name or feature;
    4. issue or work-item references in the commit messages or PR description.

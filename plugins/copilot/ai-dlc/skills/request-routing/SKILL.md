@@ -1,6 +1,6 @@
 ---
 name: request-routing
-description: "The orchestrator's single routing skill. Classifies every incoming request, decides which AI-DLC workflow (lifecycle) each work item runs — the one the user explicitly asked for, otherwise chosen from the ai-dlc lifecycles — or which single agent it is handed to, assigns the agent chain, and picks the orchestration mode (direct delegation, parallel subagents, sequential agent team, full traversal). Produces the Routing Plan. The orchestrator only delegates; this skill never does engineering work itself."
+description: "The orchestrator's single routing skill. Classifies every incoming request, decides which AI-DLC workflow (lifecycle) each work item runs — the one the user explicitly asked for, otherwise chosen from the ai-dlc lifecycles — or which single agent it is handed to, assigns the agent chain, and picks the orchestration mode (direct delegation, parallel subagents, sequential subagent chain, full traversal, Claude Code agent team). Produces the Routing Plan. The orchestrator only delegates; this skill never does engineering work itself."
 ---
 
 # Request Routing
@@ -135,18 +135,23 @@ Run this once per planning cycle over the whole batch, so cross-item dependencie
 |---|---|---|
 | **1. Direct single-agent delegation** | One agent's expertise fully covers the item; no collaboration or lifecycle traversal needed | Hand off with a self-contained brief (`agent-invocation`). Done. |
 | **2. Parallel independent subagents** | The item splits into sub-tasks that do not need each other (research angles, independent reviews or analyses) | Spawn them in one message; the orchestrator synthesizes. For broad research, 3–5 `research-assistant` subagents, each with a distinct angle. |
-| **3. Sequential agent team** | Roles must collaborate — design informs implementation, implementation informs testing | Run the lifecycle's stages in order with explicit handoffs (`handoff`). |
+| **3. Sequential subagent chain** | Roles must collaborate — design informs implementation, implementation informs testing | Run the lifecycle's stages in order, one subagent each, with a handoff record before every spawn and a stored hand-back after it (`handoff`). |
 | **4. Full lifecycle traversal** | The item is an **AI-DLC** run, or otherwise crosses several lifecycles (requirements → architecture → implementation → test/docs → review → release) | Run the AI-DLC stages in order from the earliest missing artifact, gate by gate; use the `product-manager`'s breakdown for FDLC waves; coordinate inter-team handoffs. |
+| **5. Agent team** (Claude Code only) | A stage needs genuine back-and-forth between roles that a relay through the orchestrator would slow down — Refine (`software-architect` ↔ `system-engineer`), Align | The orchestrator, as team lead, starts one team for that stage; the teammates message each other, and each writes its outgoing handoff record and its hand-back (`handoff`, *Who writes what*), while the lead keeps the run state and verifies at the gate. |
 
 Decision tree:
 
 1. Can one agent fully own the item? → **Mode 1**.
 2. Do its sub-tasks need no collaboration? → **Mode 2**.
 3. Otherwise → **Mode 3** for one lifecycle, **Mode 4** for an AI-DLC run or any item that spans several lifecycles.
+4. Within Mode 3 or 4, does one stage need roles to talk back and forth, and do the Mode 5 conditions below hold? → run that stage as **Mode 5**; the rest stays subagents.
+
+**Mode 5 conditions** (Claude Code docs, [agent teams](https://code.claude.com/docs/en/agent-teams)). Agent teams are experimental and off by default: they need `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` (settings `env` or the shell), and teammates are not spawned in `-p`, headless or Agent SDK sessions, where a named agent runs as a plain subagent. A session runs one team, with a fixed lead, and teams do not nest. Teammates can be started from the plugin's agent definitions, which keep their `tools`, `disallowedTools`, `model`, `effort` and body but not their `skills` (nor `mcpServers` for in-process teammates), so the team brief names the skills each teammate must load. Teammates message each other by name with `SendMessage`. `/resume` does not bring in-process teammates back: if the session ends mid-team, resume from `run.md` and run the stage's remaining hand-offs as subagents (`handoff`, *Resuming*). When a condition fails, or on GitHub Copilot, run the stage in subagent mode (Mode 3) with the orchestrator relaying.
 
 Rules:
 
 - Prefer the smallest mode that fits; never collapse a needed team into one agent to save calls, and never expand a single-agent task into a team.
+- The batch's modes are decided once per planning cycle, but Mode 5 is chosen per stage: a run in Mode 3 or 4 can run one stage as a team. Each record carries its own `mode` — Modes 1–4 are `subagent`, Mode 5 is `team` — and `run.md` records the run's default `mode` with per-stage overrides in its *Stages* table (`handoff`, *Who writes what*, *Run state*).
 - Within a sequential chain, parallelize only where the lifecycle allows it (for example `sqa-engineer` and `documentation-writer` after `software-engineer`; `software-architect` and `system-engineer` together in design).
 - Re-plan when progress reveals new constraints or scope: return to Step 2 for the affected items only.
 

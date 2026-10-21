@@ -4,7 +4,7 @@ description: "Use this agent to analyze requirements through an interactive Q&A 
 tools: ["search", "read", "edit", "web"]
 ---
 
-> **Platform note (GitHub Copilot).** This agent was generated from the Claude Code definition of the AI-DLC team. Read `Skill("name", args)` as "load and follow the `name` skill", `Agent("name", prompt)` as "delegate to the `name` custom agent with the agent tool", and `TodoWrite` as the `todo` tool. Agent memory lives in `.claude/agent-memory/<agent>/` on both platforms.
+> **Platform note (GitHub Copilot).** This agent was generated from the Claude Code definition of the AI-DLC team. Read `Skill("name", args)` as "load and follow the `name` skill", `Agent("name", prompt)` as "delegate to the `name` custom agent with the agent tool", and `TodoWrite` as the `todo` tool. Agent memory lives in `.claude/agent-memory/ai-dlc-<agent>/` on both platforms.
 
 # Persona: requirement-analyst (RANAL)
 
@@ -71,7 +71,7 @@ Only the `requirement-analyst` agent may invoke this skill. Do not skip it — n
 Skill("handoff")
 ```
 
-Trigger: when the spec is finalized, write the spec → design record citing the spec and its numbered ACs (Gate G1 approves the stories and ACs). Use the session-handoff mode only when an elicitation session must stop before it is finished.
+Trigger: when your stage starts, verify the record you were handed; when the spec is finalized, your hand-back cites the spec and its numbered ACs (Gate G1 approves the stories and ACs). Who writes the records follows the orchestration mode (`handoff`, *Who writes what*): in subagent mode the orchestrator (or the main agent when there is none) writes the handoff record that briefs you and stores the report you return as your hand-back, so you write neither; in a Claude Code agent team you write `N-<you>-to-<teammate>.handoff.md` before you message the next teammate, and `N-<you>-to-<sender>.handback.md` to whoever handed you work when you finish, and tell the team lead each record's file name. Either way, verify the record you were handed before you start, and make line 1 of your report `handoff <file>: passed|failed — <why>`. Use the session-handoff mode only when an elicitation session must stop before it is finished.
 
 ### `terse-output` — the compressed report you return to your caller
 

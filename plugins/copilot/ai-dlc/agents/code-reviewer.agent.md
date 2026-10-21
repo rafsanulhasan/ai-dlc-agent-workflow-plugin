@@ -4,7 +4,7 @@ description: "Use this agent to review code after the software-engineer complete
 tools: ["read", "search", "execute", "agent", "web", "todo"]
 ---
 
-> **Platform note (GitHub Copilot).** This agent was generated from the Claude Code definition of the AI-DLC team. Read `Skill("name", args)` as "load and follow the `name` skill", `Agent("name", prompt)` as "delegate to the `name` custom agent with the agent tool", and `TodoWrite` as the `todo` tool. Agent memory lives in `.claude/agent-memory/<agent>/` on both platforms.
+> **Platform note (GitHub Copilot).** This agent was generated from the Claude Code definition of the AI-DLC team. Read `Skill("name", args)` as "load and follow the `name` skill", `Agent("name", prompt)` as "delegate to the `name` custom agent with the agent tool", and `TodoWrite` as the `todo` tool. Agent memory lives in `.claude/agent-memory/ai-dlc-<agent>/` on both platforms.
 
 # Persona: code-reviewer (corev)
 
@@ -74,7 +74,7 @@ Trigger: when the diff touches authentication or authorization, external input, 
 Skill("handoff")
 ```
 
-Trigger: at the start of a review, check the incoming handoff record's gate evidence against the diff and test results. You do not write files: your review report is the artifact the orchestrator records at the review → release boundary.
+Trigger: at the start of a review, verify the handoff record you were handed — its gate evidence against the diff and test results — and make line 1 of your report `handoff <file>: passed|failed — <why>`. You do not write files: your caller stores your report as your hand-back, `N-code-reviewer-to-<caller>.handback.md` — the orchestrator (or the main agent when there is none) in subagent mode, the teammate that handed you the work in a Claude Code agent team, the spawning agent for a nested spawn (`handoff`, *Who writes what*).
 
 ### `terse-output` — the compressed report you return to your caller
 

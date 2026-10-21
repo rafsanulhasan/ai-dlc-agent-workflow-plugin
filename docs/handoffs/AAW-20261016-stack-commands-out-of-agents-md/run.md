@@ -1,8 +1,12 @@
 ---
-work-item: AAW-20261016-stack-commands-out-of-agents-md
+run: AAW-20261016-stack-commands-out-of-agents-md
+work-item: none
 lifecycle: AAW
 status: done
+mode: subagent
+owner: orchestrator
 branch: docs/stack-commands-out-of-agents-md
+last-record: 2-brutal-critique-to-orchestrator.handback.md
 updated: 2026-10-16
 ---
 
@@ -20,11 +24,11 @@ AGENTS.md (generated for target repos by `/ai-dlc:init`, and this repo's own AGE
 | AAW-20261016-stack-commands-out-of-agents-md | Agent Artifact | AAW | agent-manager → brutal-critique (docs) / sqa-engineer → code-reviewer (code) |
 
 ## Stages
-| # | Stage | Agent | Status | Hand-back | Verification |
-|---|---|---|---|---|---|
-| 1 | Change | agent-manager | done (round 1) | 01-agent-manager-handback.md | build --check OK; node --test 134/134; validate OK; AGENTS.md greps clean |
-| 2 | Review (docs) | brutal-critique | done (round 1, PASS, 6 Minors) | 02-brutal-critique-handback.md | |
-| 3 | Review (code) | sqa-engineer → code-reviewer | skipped (no code paths) | | |
+| Step | Stage | Agent | Status | Handoff | Handback | Verification |
+|---|---|---|---|---|---|---|
+| 1 | Change | agent-manager | done (round 1) | not recorded (pre-convention) | `1-agent-manager-to-orchestrator.handback.md` | build --check OK; node --test 134/134; validate OK; AGENTS.md greps clean |
+| 2 | Review (docs) | brutal-critique | done (round 1, PASS, 6 Minors) | not recorded (pre-convention) | `2-brutal-critique-to-orchestrator.handback.md` | |
+| — | Review (code) | sqa-engineer → code-reviewer | skipped (no code paths) | — | — | |
 
 ## Gates
 AAW has no gates.

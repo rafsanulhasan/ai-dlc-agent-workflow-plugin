@@ -42,7 +42,7 @@ Overbuilding is the usual failure of feature work. Put three short lists at the 
 
 - **Reuse** — the existing modules, helpers, extension points and patterns this feature will build on. Search for them before planning anything new; a second implementation of behaviour the repository already has is a defect, not a feature. If the fitting seam needs reshaping to take the feature cleanly, plan that as a refactor step (below) rather than patching around it.
 - **Non-goals** — what this work item will *not* do: extra modes, providers, options, configuration, extensibility hooks and polish that no acceptance criterion asks for. A new dependency, public surface, service, configuration key or migration is added only when the design or an acceptance criterion requires it, and the plan states the trade-off in one line.
-- **Stop condition** — the observable check that ends the work, normally "every acceptance criterion restated in Phase 0 passes, through the real entry point". When it is met, stop; do not add unrequested cleanup or improvements. Material omissions go in the handoff, each with the trigger that would justify building it later.
+- **Stop condition** — the observable check that ends the work, normally "every acceptance criterion restated in Phase 0 passes, through the real entry point". When it is met, stop; do not add unrequested cleanup or improvements. Material omissions go in your hand-back, each with the trigger that would justify building it later.
 
 Still deliver a coherent path through every layer that owns part of the behaviour. "Small" means no speculative scope, not cramming the feature into one file or bypassing the layers the design assigns.
 
@@ -138,7 +138,7 @@ git add <specific files>
 git commit -m "feat(validation): reject requests that fail schema constraints" -m "Handlers assumed validated input; checking before dispatch keeps that assumption true for every endpoint."
 ```
 
-Do not self-approve. The stage ends with a handoff record (`Skill("ai-dlc:handoff")`) listing the changed files, the work item's acceptance criteria and the build and test results; review by **Robert C. Martin** (`code-reviewer`) follows in the lifecycle and checks the change against both the project's standards and the spec.
+Do not self-approve. The stage ends with your hand-back (`Skill("ai-dlc:handoff")`) listing the changed files, the work item's acceptance criteria and the build and test results; review by **Robert C. Martin** (`code-reviewer`) follows in the lifecycle and checks the change against both the project's standards and the spec.
 
 ---
 

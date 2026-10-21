@@ -67,9 +67,9 @@ You can also install the plugin directly, without the marketplace: `copilot plug
    2. It gets a work breakdown from `product-manager`.
    3. It picks a lifecycle, or a single agent, for each work item.
    4. It confirms the plan with you.
-   5. It runs the work and stops at each human gate. Before the first spawn, before every spawn and after every return or gate it updates the work item's run state, `docs/handoffs/<work-item>/run.md`; it stores each agent's hand-back (the report it returned) verbatim beside it as `<NN>-<agent>-handback.md` the moment the agent returns, before checking it; it commits both at each gate and when the item closes; after a crash, a dropped connection or a lost context, the next session offers to resume each unfinished run from its recorded next action, re-verifying the last handoff first.
+   5. It runs the work and stops at each human gate. Each run has a folder, `docs/handoffs/{LIFECYCLE}-{YYYYMMDD}-{feature-slug}/`. Before every spawn it writes the brief as a handoff record (`3-orchestrator-to-software-engineer.handoff.md`) and updates the run state, `run.md`; it stores each agent's hand-back (the report it returned) verbatim with the same step code (`3-software-engineer-to-orchestrator.handback.md`) the moment the agent returns, before checking it; it commits them at each gate and when the run closes; after a crash, a dropped connection or a lost context, the next session offers to resume each unfinished run from its recorded next action, re-verifying the last record first. In a Claude Code agent team the teammates write the records between themselves.
 
-The orchestrator has to be the **main** agent, because subagents cannot spawn other subagents. If you invoke it from inside another agent, it cannot run the team.
+The orchestrator has to be the **main** agent: it is the lead that talks to you and runs the whole team, and subagent nesting is limited (on Claude Code to `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH` levels, default 3 from v2.1.219, `1` to turn it off; GitHub Copilot does not document nested spawning, so the plugin assumes only the main agent spawns there; running the orchestrator as a subagent is not tested). Invoking it from inside another agent is not supported.
 
 ## The team (agents)
 
@@ -95,7 +95,7 @@ Agents name the `opus` and `sonnet` aliases rather than pinned model ids, so eac
 
 ## Lifecycles and gates
 
-The `ai-dlc` skill is the catalogue of lifecycles. `request-routing` picks a lifecycle for each work item, `agent-invocation` spawns the agents, and `handoff` records the artifact at every stage boundary.
+The `ai-dlc` skill is the catalogue of lifecycles. `request-routing` picks a lifecycle for each work item, `agent-invocation` spawns the agents, and `handoff` records every hand-off: the sender's handoff record and the receiver's hand-back, named by step code in the run's folder.
 
 **AI-DLC**, the full lifecycle, is the default for feature work: Plan → G1 → Architect & Design → G2 → Breakdown → G3 → Build · Test · Review → G4 → Release. A run enters at the earliest missing artifact and continues to release. The other eight lifecycles are its segments (PDLC to FDLC) or focused entry points for bugs, refactors, test gaps and reviews (BFLC to CRLC).
 
@@ -135,7 +135,7 @@ Everything above is the default. Each repository can change it in `.ai-dlc/workf
 | Section | What you can change |
 |---|---|
 | `lifecycles` | Each lifecycle's stages: owner agent, skills, artifacts, `after` (who hands off to whom; equal `after` means parallel), `when` (conditional stages), `loop` (send work back, with an optional round limit), `gate`, `critique`. Add your own lifecycles (`kind: "custom"`) |
-| `gates` | Name, the artifact approved, and the approver: `human`, `orchestrator` or `none` (no stop, but the handoff record is still written) |
+| `gates` | Name, the artifact approved, and the approver: `human`, `orchestrator` or `none` (no stop, but the handoff record is still written and verified) |
 | `agents` | Run without a plugin agent (`disabled`), or bring the project's own agents into stages (`custom`) |
 | `routing` | Request type → lifecycle, work kind → single agent, types routed before confirmation |
 | `clarify` | Whom each agent may ask, about what, and the round limit |
@@ -143,7 +143,7 @@ Everything above is the default. Each repository can change it in `.ai-dlc/workf
 
 `workflow.schema.json` documents every key (VS Code shows it on hover). `node .ai-dlc/workflow.mjs validate` checks the file, including unknown or disabled agents, stage skills that do not exist (each must be a plugin skill or a project skill in `.claude/skills/` or `.github/skills/`, with a "did you mean" for near misses), dangling or cyclic hand-offs and undefined gates. It checks names against `.ai-dlc/catalog.json`, which `/ai-dlc:workflow install` and `upgrade` (and `init`) generate from the installed plugin with `workflow.mjs catalog --plugin <plugin root>`, plus the project's own agents and skills; without the catalog it fails. The workflow gate hook blocks an agent from finishing, once per stop cycle, while `.ai-dlc/` has uncommitted changes that do not validate. `show [<lifecycle>] [--mermaid]` prints stage tables or flowcharts; `diff --against <file>` compares two workflow files. `/ai-dlc:workflow edit <change in plain words>` makes a change through `agent-manager`, validates it and shows the diff and the new diagram before writing.
 
-These stay fixed: `agent-manager` alone changes agents, skills, hooks, rules and the workflow file, and `Agent Artifact` work runs a lifecycle that starts with it; every stage boundary gets a verified handoff record (AAW keeps its rounds in the run state and the stored hand-backs instead); the test gate hook stays in force; the orchestrator only delegates; a stage owner never does another agent's job.
+These stay fixed: `agent-manager` alone changes agents, skills, hooks, rules and the workflow file, and `Agent Artifact` work runs a lifecycle that starts with it; every hand-off, AAW included, gets a handoff record its receiver verifies and a stored hand-back (AAW has no gates; its run state records the rounds); the test gate hook stays in force; the orchestrator only delegates; a stage owner never does another agent's job.
 
 ## Skills
 
@@ -182,7 +182,7 @@ The **lifecycle agents** own a stage and hand an artifact on: James Montemagno (
 | `manage-memory` | All agents | Every agent: load at session start, save durable learnings |
 | `terse-output` | All agents | Every agent, for the compressed report it returns to its caller; by default for Jon Skeet (`research-assistant`), whose reader is another agent; Scott Hanselman (`orchestrator`) when the human asks for shorter answers |
 | `scratchpad` | All agents (Copilot only) | Every agent on Copilot, before it writes its first temporary file; on Claude Code agents use the scratch root from `AGENTS.md` directly |
-| `handoff` | Lifecycle agents | Scott Hanselman (`orchestrator`) and every lifecycle agent, at each stage boundary; Robert C. Martin (`code-reviewer`) and Linus Torvalds (`brutal-critique`) verify records but never write one |
+| `handoff` | Lifecycle agents | Scott Hanselman (`orchestrator`) writes the handoff records and stores the hand-backs in subagent mode; in a Claude Code agent team the teammates write their own; every receiver verifies its record; Robert C. Martin (`code-reviewer`) and Linus Torvalds (`brutal-critique`) never write one |
 | `ai-dlc` | Role | Scott Hanselman (`orchestrator`) |
 | `request-routing` | Role | Scott Hanselman (`orchestrator`) |
 | `research` | Role | Jon Skeet (`research-assistant`) runs it; every other agent routes external questions to Jon Skeet (`research-assistant`) instead |

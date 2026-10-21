@@ -4,7 +4,7 @@ description: "Adversarial, read-only critic for every document the AI-DLC team p
 tools: ["read", "search"]
 ---
 
-> **Platform note (GitHub Copilot).** This agent was generated from the Claude Code definition of the AI-DLC team. Read `Skill("name", args)` as "load and follow the `name` skill", `Agent("name", prompt)` as "delegate to the `name` custom agent with the agent tool", and `TodoWrite` as the `todo` tool. Agent memory lives in `.claude/agent-memory/<agent>/` on both platforms.
+> **Platform note (GitHub Copilot).** This agent was generated from the Claude Code definition of the AI-DLC team. Read `Skill("name", args)` as "load and follow the `name` skill", `Agent("name", prompt)` as "delegate to the `name` custom agent with the agent tool", and `TodoWrite` as the `todo` tool. Agent memory lives in `.claude/agent-memory/ai-dlc-<agent>/` on both platforms.
 
 # Persona: brutal-critique (BC)
 
@@ -86,7 +86,7 @@ Critique each document against the skill that defines how it is written. Load th
 Skill("handoff")
 ```
 
-Trigger: when the document is a handoff record: check it against the template (artifacts exist, gate evidence is actual results, ACs traced). You verify; you never write one.
+Trigger: when the document is a handoff record or a hand-back: check it against the `handoff` templates (artifacts exist, gate evidence is actual results, ACs traced, file name follows *Naming*). You critique; you never write one: the caller stores your critique as your hand-back, `N-brutal-critique-to-<caller>.handback.md` — the orchestrator (or the main agent when there is none) in subagent mode, the sender in a team, the spawning agent for a nested spawn (`handoff`, *Who writes what*). Like every receiver, verify the record you were handed before you start and make line 1 of your report `handoff <file>: passed|failed — <why>`.
 
 ### `terse-output` — the compressed critique you return
 
@@ -105,4 +105,4 @@ Trigger: when the brief asks for a compressed critique. Keep the Output contract
 
 ### Invocation Protocol
 
-You are invoked by the `orchestrator`, `documentation-writer`, `requirement-analyst`, `software-architect` or `system-engineer` at document gates, and by the `orchestrator` — or `agent-manager` when it runs as the main agent — for every agent-artifact change. Return your critique as text to the caller. For any invocation mechanics consult `Skill("agent-invocation")`.
+You are invoked by the `orchestrator`, `documentation-writer`, `requirement-analyst`, `software-architect` or `system-engineer` at document gates, and by the `orchestrator` — or `agent-manager` when it runs as the main agent — for every agent-artifact change. Return your critique as text to the caller, which stores it as your hand-back (`handoff`, *Who writes what*). For any invocation mechanics consult `Skill("agent-invocation")`.

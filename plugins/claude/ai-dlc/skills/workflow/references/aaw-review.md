@@ -46,4 +46,4 @@ Every REVISE, Blocker, Major (also on a PASS), `code-reviewer` Warning and test 
 - A review stage's `when` is either omitted (the stage runs on every change) or exactly `the change set contains docs` for `brutal-critique` and `the change set contains code` for the other two, case and spacing ignored.
 - `brutal-critique`, `sqa-engineer` and `code-reviewer` cannot be disabled.
 
-It cannot check the classification itself, that a review really ran, or the round count at run time: those rest on this file, the run state and the stored hand-backs.
+It cannot check the classification itself, that a review really ran, or the round count at run time: those rest on this file and on the run's folder: its run state, handoff records and stored hand-backs.

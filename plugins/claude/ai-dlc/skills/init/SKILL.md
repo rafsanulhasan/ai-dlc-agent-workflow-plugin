@@ -25,7 +25,11 @@ Plugins cannot ship project rules, hooks, permissions or `AGENTS.md`, so this sk
 3. Existing `AGENTS.md`, `CLAUDE.md` and `.github/copilot-instructions.md` (any case; `CLAUDE.md` also in `.claude/`; note `CLAUDE.local.md` and never touch it): follow "Inspect an existing file" in [references/managed-blocks.md](references/managed-blocks.md). Reuse the commands and notes they state as Phase 1 defaults.
 4. List which of these already exist: `.claude/settings.json`, `.claude/rules/*`, `.github/instructions/*`, `.github/hooks/*`, `.claude/scripts/sync-harness.mjs`, `.ai-dlc/workflow.json`, `.ai-dlc/workflow.schema.json`, `.ai-dlc/workflow.mjs`, `.ai-dlc/catalog.json`, `.claude/hooks/check-workflow.mjs`, `docs/backlog/backlog.md`. For an existing `.ai-dlc/workflow.json`, record whether `node .ai-dlc/workflow.mjs validate` passes and how it differs from `${CLAUDE_SKILL_DIR}/../workflow/templates/workflow.json` (`diff --against`).
 5. Workspace folders: read `${CLAUDE_SKILL_DIR}/../workspace-folders/SKILL.md` and follow its **Inspect** section (roots from an earlier init, `.gitignore`, existing worktrees, worktree hooks). It runs even when `AGENTS.md` does not exist yet; then the mode is create.
-6. Read the default team roster: for each `${CLAUDE_SKILL_DIR}/../../agents/*.md` (the plugin's `agents/` folder), the agent ID (file name) and the name in its `Persona name: **<Name>**` line. Overlay any existing `.claude/agent-memory/<agent>/user_persona-name.md` so a re-run shows the current names.
+6. Read the default team roster: for each `${CLAUDE_SKILL_DIR}/../../agents/*.md` (the plugin's `agents/` folder), the agent ID (file name) and the name in its `Persona name: **<Name>**` line. Overlay any existing `.claude/agent-memory/ai-dlc-<agent>/user_persona-name.md` so a re-run shows the current names. Each agent has one memory folder, named by the "Memory folder" rule of `${CLAUDE_SKILL_DIR}/../manage-memory/SKILL.md`: `ai-dlc-<agent>` for a plugin agent. Also record any folder an earlier init wrote under the bare agent ID (`.claude/agent-memory/<agent>/` for a plugin agent ID, such as `orchestrator/`), and read its `user_persona-name.md` too when the `ai-dlc-<agent>` folder has none.
+7. Agent memory is committed with the repository. Check that nothing ignores it: `git check-ignore -v .claude/agent-memory/ai-dlc-orchestrator/MEMORY.md` (the file need not exist).
+   - Exit 1: it is tracked.
+   - Exit 0: a rule ignores it. Record the source file, line and pattern it prints: a `.gitignore` at the root or in a subfolder, `.git/info/exclude`, or the developer's global excludes file.
+   - Exit 128: this is not a git repository. Skip the check and say so in the Phase 3 report.
 
 ## Phase 1 — Confirm (one message)
 
@@ -42,6 +46,8 @@ Show the user a table of files to **create**, files to **merge** (an existing `A
 - Mutation break threshold (default 60)
 - Team workflow: `.ai-dlc/workflow.json` is created from the plugin default, or — when one exists — kept, with its `diff --against` the default and its `validate` result listed; `.ai-dlc/catalog.json` is generated from the installed plugin; the workflow gate hook is installed. Customising the workflow comes later, with `/ai-dlc:workflow edit`
 - Workspace folders: the worktree root and scratch root, validated, with the `.gitignore` lines and hook entries — the **Confirm** section of `workspace-folders`, inside this same message
+- Agent memory: `.claude/agent-memory/` is committed with the repository and shared with everyone who clones it, so it must never hold secrets or personal data (`manage-memory`, "Committed with the repository"). When Phase 0 found a rule that ignores it, show its file, line and pattern, describe the change "Agent memory" in Phase 2 would make, and ask a separate yes / no question: "Change the ignore rules so agent memory is committed?". Only an explicit yes applies it; anything else, silence included, means no change and the rule is listed in the Phase 3 report.
+- Memory folders from an earlier init (Phase 0, step 6): list each `<agent>/` folder and the `ai-dlc-<agent>/` folder its files move into.
 - Team names: a table agent ID → current name (default, or the name chosen at an earlier init). Ask whether to rename any agents; the developer replies with `agent → new name` pairs, or "keep". Validate:
   - names are unique across the team (case-insensitive) and never equal an agent ID or a role alias (the ID with spaces, or a short form in the role-alias table under "Addressing agents by name or role" in `${CLAUDE_SKILL_DIR}/../../agents/orchestrator.md`, e.g. "architect", "QA");
   - `product-owner`, `product-manager` and `requirement-analyst` share one default name, so addressing that name is ambiguous — suggest distinct names, but do not force them.
@@ -79,6 +85,18 @@ For each template, replace the `{{PLACEHOLDERS}}` and write it. For a file that 
 3. Install the workflow gate: `.claude/hooks/check-workflow.mjs`, its `Stop` entry merged into `.claude/settings.json`, and `.github/hooks/ai-dlc-workflow-gate.json` for Copilot.
 4. Run `node .ai-dlc/workflow.mjs validate`. Done when it exits 0, or when every error is in the Phase 3 report.
 
+**Agent memory** (every stack): never add a rule that ignores `.claude/agent-memory/`. Only when the developer answered yes in Phase 1, change the ignore rules. Keep a copy of every file you edit, then repeat these steps until `git check-ignore -v .claude/agent-memory/ai-dlc-orchestrator/MEMORY.md` exits 1, at most three times:
+
+1. Take the source file and pattern `check-ignore -v` prints.
+2. Create `.claude/agent-memory/` if it is missing, then run `git check-ignore -v .claude` (no trailing slash: with one, a pattern such as `.claude/*` also matches). When it exits 0 and names that same pattern, the pattern ignores the `.claude` folder itself, whatever its form (`.claude`, `/.claude/`, `**/.claude/`, …), and git cannot re-include anything inside an ignored folder. Rewrite that line so it ignores the folder's children instead, ending in `/*` (`.claude` → `.claude/*`, `/.claude/` → `/.claude/*`, `**/.claude/` → `**/.claude/*`). Do not rewrite it, but stop and report its file and line, when it is outside the repository or also matches other names (a wildcard such as `.*`).
+3. When the source file is outside the repository (`.git/info/exclude`, the global excludes file), never edit it: add the negation lines of step 5 to the root `.gitignore`, which takes precedence over both.
+4. When the pattern names only agent memory (`.claude/agent-memory/`, `agent-memory/`) in a repository `.gitignore`, delete that line.
+5. Otherwise add two negation lines at the end of the file `check-ignore -v` named, written relative to that file's folder: `!.claude/agent-memory/` and `!.claude/agent-memory/**` in the root `.gitignore`, `!agent-memory/` and `!agent-memory/**` in `.claude/.gitignore`. Both lines are needed: the second re-includes files that a pattern such as `*.md` or `.claude/**` matches. A negation in the root file does not override a rule in a deeper `.gitignore`, so it goes in the root file only when the rule is there or outside the repository.
+
+Done when `check-ignore` exits 1. If step 2 stops, or `check-ignore` still exits 0 after the third round, restore every file you edited from its copy and list the remaining rule in the Phase 3 report. When the developer answered no, the rule goes in the report unchanged.
+
+**Memory folders from an earlier init** (every stack): for each `<agent>/` folder listed in Phase 1, move its files into `.claude/agent-memory/ai-dlc-<agent>/` and merge its `MEMORY.md` lines into that folder's index, one line per memory. A file whose name already exists there is diffed first and merged with consent. Remove the old folder once it is empty.
+
 Also create empty folders with a `.gitkeep`: `docs/specs/`, `docs/architecture/decisions/`, `docs/architecture/narratives/`, `docs/plans/`, `docs/handoffs/`, `docs/product/`.
 
 **.NET projects only:**
@@ -95,13 +113,14 @@ Also create empty folders with a `.gitkeep`: `docs/specs/`, `docs/architecture/d
 
 **Team names** (memory format from `manage-memory`):
 
-- For each renamed agent, write `.claude/agent-memory/<agent>/user_persona-name.md`:
+- For each renamed agent, write `.claude/agent-memory/ai-dlc-<agent>/user_persona-name.md`:
 
   ```markdown
   ---
   name: persona-name
   description: The name this agent answers to in this repository
-  type: user
+  metadata:
+    type: user
   ---
 
   Your name in this repository is **<Name>** (chosen by the developer at init; replaces the default persona name <Default>). Answer to it, and sign your reports with it.
@@ -111,12 +130,12 @@ Also create empty folders with a `.gitkeep`: `docs/specs/`, `docs/architecture/d
   ```
 
   Add or update its line in that agent's `MEMORY.md` index (create the index if missing).
-- Always (renamed or not) write `.claude/agent-memory/orchestrator/project_team-roster.md` (type `project`, name `team-roster`) with the full table agent ID → name (chosen or default), a note that every agent stays addressable by its role too (agent ID or role alias, see the orchestrator's "Addressing agents by name or role"), a **Why:** and a **How to apply:** line, and add or update its line in the orchestrator's `MEMORY.md`.
+- Always (renamed or not) write `.claude/agent-memory/ai-dlc-orchestrator/project_team-roster.md` (name `team-roster`, `metadata.type: project`, the memory file format of `manage-memory`) with the full table agent ID → name (chosen or default), a note that every agent stays addressable by its role too (agent ID or role alias, see the orchestrator's "Addressing agents by name or role"), a **Why:** and a **How to apply:** line, and add or update its line in the orchestrator's `MEMORY.md`.
 - Existing memory files follow the same rule as every other file: diff, then consent.
 
 ## Phase 3 — Report
 
-List every file created or changed, the items of the `workspace-folders` **Report**, and the team roster (agent ID → name). Say that `/ai-dlc:workspace-folders` changes the roots later, that `node .claude/scripts/sync-harness.mjs` syncs agents, skills, commands, rules and hooks made on either platform to the other (`--check` only reports), and that the team's workflow — stages, who hands off to whom, gates and approvers, clarify matrix, routing — is in `.ai-dlc/workflow.json`, checked against `.ai-dlc/catalog.json` and guarded by the workflow gate: `/ai-dlc:workflow show` prints it with diagrams and `/ai-dlc:workflow edit <change>` changes it. Then the next step:
+List every file created or changed, the items of the `workspace-folders` **Report**, the team roster (agent ID → name), whether agent memory is tracked (any ignore rule left in place, with its file and line, or "not a git repository"), and each memory folder moved. Say that `.claude/agent-memory/` is committed with the repository, so the team shares what the agents learn, and that memory files must be checked for secrets and personal data before each commit. Say that `/ai-dlc:workspace-folders` changes the roots later, that `node .claude/scripts/sync-harness.mjs` syncs agents, skills, commands, rules and hooks made on either platform to the other (`--check` only reports), and that the team's workflow — stages, who hands off to whom, gates and approvers, clarify matrix, routing — is in `.ai-dlc/workflow.json`, checked against `.ai-dlc/catalog.json` and guarded by the workflow gate: `/ai-dlc:workflow show` prints it with diagrams and `/ai-dlc:workflow edit <change>` changes it. Then the next step:
 
 > The orchestrator is now the default agent for this repo (`"agent": "ai-dlc:orchestrator"` in `.claude/settings.json`), so every request reaches it first. One-off alternative: `claude --agent ai-dlc:orchestrator`. On Copilot, select the `orchestrator` custom agent.
 

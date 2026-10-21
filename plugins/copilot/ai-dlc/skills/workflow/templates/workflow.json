@@ -419,7 +419,7 @@
       "kind": "focused",
       "pickWhen": "The request changes agents, skills, hooks, rules / instructions, commands / prompts, agent memory or the workflow file (agent-artifact work)",
       "exitArtifact": "The changed agent artifacts, their platform checks green, a PASS from brutal-critique on the docs, and passing tests and a clean code review on the code",
-      "note": "No work breakdown, no gates and no handoff records; the run state records each round and links every hand-back, and both are committed when the run closes. Change kinds (code or docs), what a round is and which findings start one: the workflow skill's references/aaw-review.md. The maxRounds of the three review loops are one shared budget, not one per loop: validate requires them equal. A change to agent-manager's own definition, or to a skill it owns, is made by a freshly spawned agent-manager, never by a running instance.",
+      "note": "No work breakdown and no gates. Like every lifecycle it writes a handoff record before each hand-off and stores every hand-back verbatim in the run's folder (artifacts.handoffs); the run state records each round and links them, and all of it is committed when the run closes. Change kinds (code or docs), what a round is and which findings start one: the workflow skill's references/aaw-review.md. The maxRounds of the three review loops are one shared budget, not one per loop: validate requires them equal. A change to agent-manager's own definition, or to a skill it owns, is made by a freshly spawned agent-manager, never by a running instance.",
       "stages": [
         {
           "id": "change",
@@ -591,6 +591,6 @@
     "decisions": "docs/architecture/decisions/",
     "narratives": "docs/architecture/narratives/<feature-slug>.md",
     "plans": "docs/plans/<feature-slug>.tasks.md",
-    "handoffs": "docs/handoffs/<work-item>/"
+    "handoffs": "docs/handoffs/{LIFECYCLE}-{YYYYMMDD}-{feature-slug}/"
   }
 }

@@ -1,12 +1,15 @@
 ---
-work-item: AAW-20261021-agent-models
+run: AAW-20261021-agent-models
+work-item: none
 status: done
 lifecycle: AAW
+mode: subagent
 current-stage: closed
 owner: orchestrator
 session: 2762ce0e-e70f-4c77-9cc4-2048fa5ab363
 branch: feat/ai-dlc-lens
 commit: 0ed5475
+last-record: 2.l1-brutal-critique-to-orchestrator.handback.md
 updated: 2026-10-21 00:00
 ---
 
@@ -22,12 +25,12 @@ Apply the approved plan (`C:\Users\rafsa\.claude\plans\suggest-models-for-wach-d
 AAW, agent-manager → brutal-critique (docs). The human confirmed the plan on 2026-10-21. Sibling item: `docs/handoffs/AAW-20261021-model-policy/run.md`.
 
 ## Stages
-| Stage | Owner | Status | Hand-back | Handoff record | Updated |
-|---|---|---|---|---|---|
-| change | agent-manager | done | `01-agent-manager-handback.md` | — | 2026-10-21 |
-| critique | brutal-critique | done (REVISE) | `02-brutal-critique-handback.md` | — | 2026-10-21 |
-| change r2 | agent-manager | done | `03-agent-manager-handback.md` | — | 2026-10-21|
-| critique r2 | brutal-critique | done (PASS) | `04-brutal-critique-handback.md` | — | 2026-10-21 |
+| Step | Stage | Owner | Status | Handoff | Handback | Updated |
+|---|---|---|---|---|---|---|
+| 1 | change | agent-manager | done | not recorded (pre-convention) | `1-agent-manager-to-orchestrator.handback.md` | 2026-10-21 |
+| 2 | critique | brutal-critique | done (REVISE) | not recorded (pre-convention) | `2-brutal-critique-to-orchestrator.handback.md` | 2026-10-21 |
+| 1.l1 | change r2 | agent-manager | done | not recorded (pre-convention) | `1.l1-agent-manager-to-orchestrator.handback.md` | 2026-10-21 |
+| 2.l1 | critique r2 | brutal-critique | done (PASS) | not recorded (pre-convention) | `2.l1-brutal-critique-to-orchestrator.handback.md` | 2026-10-21 |
 
 ## Gates and loops
 | Gate or loop | Approver / round | Decision | By | Date |
