@@ -13,6 +13,13 @@
       "source": "./plugins/claude/ai-dlc",
       "description": "Agentic engineering team running the AI-DLC lifecycles with artifact handoffs and hard quality gates. .NET is the first supported stack.",
       "category": "development"
+    },
+    {
+      "name": "cache-keepalive",
+      "source": "./plugins/claude-mods/cache-keepalive",
+      "description": "Mod: keeps the prompt cache warm while background tasks run, and caps what the pings cost. Vendored from RichardJSun/claude-code-mods (MIT). Installed with ai-dlc.",
+      "category": "development",
+      "license": "MIT"
     }
   ]
 }

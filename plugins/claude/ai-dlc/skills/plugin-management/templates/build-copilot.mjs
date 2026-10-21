@@ -20,6 +20,9 @@
 //
 // Optional non-Claude overlay: skills under tools/overlays/non-claude/skills/ are added to the
 // Copilot plugin only (see the overlay section below).
+//
+// Claude-only: a hooks module (hooks/hooks.json `modules`, a Claude Code mod) and the manifest's
+// `userConfig` are never projected; the build fails if a module or a mod test sits in a copied folder.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -312,7 +315,27 @@ if (fs.existsSync(path.join(SRC, "scripts"))) {
 
 // ---- hooks (optional — project hooks such as the .NET test gate are installed by skills) ----
 const hooksFile = path.join(SRC, "hooks", "hooks.json");
-const claudeHooks = fs.existsSync(hooksFile) ? JSON.parse(fs.readFileSync(hooksFile, "utf8")).hooks ?? {} : {};
+const hooksConfig = fs.existsSync(hooksFile) ? JSON.parse(fs.readFileSync(hooksFile, "utf8")) : {};
+const claudeHooks = hooksConfig.hooks ?? {};
+
+// ---- hooks modules (Claude Code mods, such as auto-handoff): Claude-only, never projected ----
+// hooks.json `modules` lists code files Claude Code loads in-process; Copilot has no such thing.
+// Nothing of them reaches the Copilot plugin: the module files sit under hooks/, which is never
+// copied, `modules` is not projected, and the manifest above is an allow-list without `userConfig`.
+// A module, or a mod test, inside a folder the build copies would leak, so the build refuses it.
+const COPIED = ["agents", "skills", "scripts"];
+const modules = Array.isArray(hooksConfig.modules) ? hooksConfig.modules : [];
+for (const m of modules) {
+  if (typeof m !== "string" || !m.trim()) throw new Error(`hooks/hooks.json: every "modules" entry must be a non-empty path string, got ${JSON.stringify(m)}`);
+  const rel = path.relative(SRC, path.resolve(path.dirname(hooksFile), m)).split(path.sep).join("/");
+  const top = rel.split("/")[0];
+  if (COPIED.includes(top)) throw new Error(`hooks module ${rel} is in ${top}/, which the Copilot build copies — keep hooks modules under hooks/`);
+}
+for (const d of COPIED) {
+  for (const p of fs.existsSync(path.join(SRC, d)) ? walk(path.join(SRC, d)) : []) {
+    if (/\.test\.tsx?$/.test(p)) throw new Error(`${path.relative(SRC, p).split(path.sep).join("/")}: mod tests belong next to their hooks module under hooks/, not in ${d}/, which the Copilot build copies`);
+  }
+}
 const copilotHooks = {};
 for (const [event, groups] of Object.entries(claudeHooks)) {
   const target = EVENT[event];
@@ -367,4 +390,4 @@ for (const rel of stale) {
 }
 const agents = [...files.keys()].filter((k) => k.startsWith("agents/")).length;
 const skills = [...files.keys()].filter((k) => /^skills\/[^/]+\/SKILL\.md$/.test(k)).length;
-console.log(`Copilot plugin written to ${path.relative(ROOT, OUT)}: ${agents} agents, ${skills} skills, ${Object.keys(copilotHooks).length} hook event(s); ${changed.length} file(s) updated, ${stale.length} removed.`);
+console.log(`Copilot plugin written to ${path.relative(ROOT, OUT)}: ${agents} agents, ${skills} skills, ${Object.keys(copilotHooks).length} hook event(s), ${modules.length} Claude-only hooks module(s) left out; ${changed.length} file(s) updated, ${stale.length} removed.`);

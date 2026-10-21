@@ -290,3 +290,59 @@ It is licensed under the Apache License, Version 2.0:
    See the License for the specific language governing permissions and
    limitations under the License.
 ```
+
+## RichardJSun/claude-code-mods (cache-keepalive)
+
+`plugins/claude-mods/cache-keepalive/` is a modified copy of the `cache-keepalive` mod from [RichardJSun/claude-code-mods](https://github.com/RichardJSun/claude-code-mods) at commit `6135ec5574609c9fcd865f517c24990d5f37321b`. The Claude `ai-dlc` plugin installs it as a dependency. The changes (a configurable keep-warm duration, `/keepalive <duration>` with a session or machine-wide scope, their tests and README section) are listed in its `VENDORED.md`, which also records what was copied. Its `LICENSE` file ships with it, unchanged. It is distributed under the following licence:
+
+```text
+MIT License
+
+Copyright (c) 2026 RichardJSun
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+## alexknowshtml/claude-auto-handoff (auto-handoff)
+
+`plugins/claude/ai-dlc/hooks/auto-handoff/` is a modified copy of [alexknowshtml/claude-auto-handoff](https://github.com/alexknowshtml/claude-auto-handoff) at commit `8d762ce726c962268e2dbe24c1c60f0889a2fcde`, incorporated into the Claude `ai-dlc` plugin as its hooks module; it is no longer vendored as a separate plugin, and it is not part of the Copilot plugin. The changes (the brief viewer's web server is off by default; the module, its settings and its tests moved into `ai-dlc`; the handoff threshold is a percentage of the context window instead of a token count; the brief is the `handoff` skill's session handoff when an AI-DLC run is active; the README and the demo media left upstream) are listed in its `ATTRIBUTION.md`. Its `LICENSE` file ships with it. It is distributed under the following licence:
+
+```text
+MIT License
+
+Copyright (c) 2026 Alex Hillman
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```

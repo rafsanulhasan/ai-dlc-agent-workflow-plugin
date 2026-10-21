@@ -1,0 +1,32 @@
+{
+  "name": "cache-keepalive",
+  "version": "0.2.5",
+  "description": "Keeps the prompt cache warm while background tasks run",
+  "author": { "name": "RichardJSun" },
+  "repository": "https://github.com/RichardJSun/claude-code-mods",
+  "license": "MIT",
+  "userConfig": {
+    "compactOnCap": {
+      "type": "boolean",
+      "title": "Compact when the ping budget runs out",
+      "description": "Compacts the conversation while the cache is still warm instead of letting it expire. Loses context detail.",
+      "default": false
+    },
+    "keepWarmFor": {
+      "type": "string",
+      "title": "Keep the cache warm for",
+      "description": "How long the pings may keep the prompt cache warm after Claude ends a turn with background tasks running: <n>m, <n>h or <n>d (at least 1m), such as 90m, 8h or 1d. Pings come every 50 minutes, so a duration of 50m or less sends none: the cache's own 1-hour lifetime covers it. The ping budget, a missed ping and overage can stop them sooner. /keepalive <duration> overrides it.",
+      "default": "8h"
+    },
+    "keepaliveScope": {
+      "type": "string",
+      "title": "Scope of /keepalive <duration>",
+      "description": "Where /keepalive <duration> applies unless --session or --machine is given: session (this session only) or machine (every session on this machine until /keepalive clear --machine).",
+      "default": "session",
+      "options": [
+        "session",
+        "machine"
+      ]
+    }
+  }
+}

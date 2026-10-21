@@ -8,3 +8,5 @@ __pycache__/
 /.worktrees/
 /.scratch/
 /.vs
+# local mods API types the hooks module's tsconfig.json extends, for editors; not committed
+plugins/claude/ai-dlc/.claude-plugin/types/
