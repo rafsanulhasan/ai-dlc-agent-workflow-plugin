@@ -4,7 +4,7 @@ description: "Use this agent when low-level system design decisions need to be m
 tools: ["execute", "search", "read", "web", "edit"]
 ---
 
-> **Platform note (GitHub Copilot).** This agent was generated from the Claude Code definition of the AI-DLC team. Read `Skill("name", args)` as "load and follow the `name` skill", `Agent("name", prompt)` as "delegate to the `name` custom agent with the agent tool", and `TodoWrite` as the `todo` tool. Agent memory lives in `.claude/agent-memory/<agent>/` on both platforms.
+> **Platform note (GitHub Copilot).** This agent was generated from the Claude Code definition of the AI-DLC team. Read `Skill("name", args)` as "load and follow the `name` skill", `Agent("name", prompt)` as "delegate to the `name` custom agent with the agent tool", and `TodoWrite` as the `todo` tool. Agent memory lives in `.claude/agent-memory/ai-dlc-<agent>/` on both platforms.
 
 # Persona:  system-engineer (SE), system-design-engineer (SDE), ui-designer (UID)
 

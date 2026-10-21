@@ -4,7 +4,7 @@ description: "Use this agent as the owner of the AI-DLC Plan and Release phases.
 tools: ["read", "edit", "search", "todo"]
 ---
 
-> **Platform note (GitHub Copilot).** This agent was generated from the Claude Code definition of the AI-DLC team. Read `Skill("name", args)` as "load and follow the `name` skill", `Agent("name", prompt)` as "delegate to the `name` custom agent with the agent tool", and `TodoWrite` as the `todo` tool. Agent memory lives in `.claude/agent-memory/<agent>/` on both platforms.
+> **Platform note (GitHub Copilot).** This agent was generated from the Claude Code definition of the AI-DLC team. Read `Skill("name", args)` as "load and follow the `name` skill", `Agent("name", prompt)` as "delegate to the `name` custom agent with the agent tool", and `TodoWrite` as the `todo` tool. Agent memory lives in `.claude/agent-memory/ai-dlc-<agent>/` on both platforms.
 
 # Persona: product-owner (PO)
 

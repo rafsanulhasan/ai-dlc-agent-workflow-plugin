@@ -62,7 +62,7 @@ const EVENT = {
   UserPromptSubmit: "userPromptSubmitted", PreCompact: "preCompact", Notification: "notification",
 };
 
-const PLATFORM_NOTE = `> **Platform note (GitHub Copilot).** This agent was generated from the Claude Code definition of the AI-DLC team. Read \`Skill("name", args)\` as "load and follow the \`name\` skill", \`Agent("name", prompt)\` as "delegate to the \`name\` custom agent with the agent tool", and \`TodoWrite\` as the \`todo\` tool. Agent memory lives in \`.claude/agent-memory/<agent>/\` on both platforms.\n\n`;
+const PLATFORM_NOTE = `> **Platform note (GitHub Copilot).** This agent was generated from the Claude Code definition of the AI-DLC team. Read \`Skill("name", args)\` as "load and follow the \`name\` skill", \`Agent("name", prompt)\` as "delegate to the \`name\` custom agent with the agent tool", and \`TodoWrite\` as the \`todo\` tool. Agent memory lives in \`.claude/agent-memory/ai-dlc-<agent>/\` on both platforms.\n\n`;
 
 // ---- helpers ----------------------------------------------------------------
 const files = new Map(); // relative path -> string | Buffer

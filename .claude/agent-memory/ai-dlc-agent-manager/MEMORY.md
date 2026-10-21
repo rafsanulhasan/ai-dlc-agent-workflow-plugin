@@ -1,0 +1,7 @@
+- [Skill mapping in body](feedback_skill-mapping-in-body.md) — agent→skill mapping in `## Skills` body + docs matrix, never `skills:` frontmatter
+- [Third-party adaptations](feedback_third-party-adaptations.md) — attribution lines, trademark-free naming, own voice when merging community skills
+- [Policy skill single source](feedback_policy-skill-single-source.md) — cross-stack policy in one skill; stack skills keep mechanics + one-line pointer
+- [Workflow roster sync](project_workflow-roster-sync.md) — workflow.mjs validates against generated catalog.json; default workflow.json still hand-tracks ai-dlc prose
+- [Handoff naming](project_handoff-naming.md) — run folder + step-coded handoff/handback names; writer by orchestration mode (2026-10-21)
+- [Agent memory tracked](project_agent-memory-tracked.md) — memory committed everywhere since 2026-10-21; one folder per agent, `ai-dlc-<agent>`
+- [Handoff gaps](project_handoff-gaps.md) — deferred: O5 session matching, stale run data, Copilot nesting, main-agent rule untested
