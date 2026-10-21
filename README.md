@@ -180,3 +180,9 @@ The build projects each Claude agent to `agents/<name>.agent.md`, translates too
 - **Test gate moved to the target project.** The `dotnet test` Stop hook is no longer a plugin hook; `init` installs it only in .NET repositories via `dotnet-test-gate`, and the plugin's `enforce_tests` / `test_target` settings are gone (use `AI_DLC_ENFORCE_TESTS` / `AI_DLC_TEST_TARGET`).
 - **.NET rules moved to a skill.** The C# coding-style, GlobalUsings and testing rules are no longer scaffolded into every repository; `init` installs them only in .NET repositories via `dotnet-rules`.
 - **Fixes:** the test-gate script now reads its JSON payload from stdin and returns the top-level `decision`/`reason` contract (the old script could not block); agents that call skills now have the `Skill` tool; `software-architect` can write the ADRs it is asked to write.
+
+## License
+
+AI-DLC Agent Workflow is released under the [MIT License](LICENSE), Copyright (c) 2026 Rafsanul Hasan. Both plugins ship a copy of it: the build copies the root `LICENSE` into `plugins/claude/ai-dlc/` and `plugins/copilot/ai-dlc/`.
+
+The bundled mods in `plugins/claude-mods/` are MIT-licensed by their own authors and keep their own `LICENSE` files. Those mods, and the parts adapted from other projects (such as [JuliusBrussee/caveman](https://github.com/JuliusBrussee/caveman), Apache-2.0), are attributed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
