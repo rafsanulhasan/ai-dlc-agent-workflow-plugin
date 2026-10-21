@@ -33,7 +33,7 @@ A spawned agent's reads stay in its own context; only its final report enters yo
 | You already know the file or symbol, or one `Grep` / `Read` answers it (never the orchestrator) | Inline |
 | "Where is X defined", "what calls Y", "list every use of Z", cold-start orientation in an unfamiliar area, or a direct search already failed | Spawn **Jon Skeet** (`research-assistant`) with a *locate* brief |
 | The locate question has several angles (definitions, callers, tests) | 2–3 `research-assistant` spawns in one message, one angle each; merge their lists yourself |
-| You want explanation, options or design commentary, not locations | `research-assistant` with a prose deliverable, or **Mark Richards** (`software-architect`) / **Zoran Horvat** (`system-engineer`) for design |
+| You want explanation, options or design commentary, not locations | `research-assistant` with a prose deliverable (pass `model: "sonnet"`; see *Model per spawn*), or **Mark Richards** (`software-architect`) / **Zoran Horvat** (`system-engineer`) for design |
 | A bounded change — at most two files, sites known as `path:line`, no new abstraction | Spawn **David Fowler** (`software-engineer`) with a *change* brief |
 | A new feature, three or more files, or a cross-cutting refactor | Not a bounded change: route it through the lifecycle (`ai-dlc`, `implement-feature`) |
 | A findings-only check of a diff | Spawn **Robert C. Martin** (`code-reviewer`) asking for the `review` skill's compact format |
@@ -62,6 +62,20 @@ A spawned agent's reads stay in its own context; only its final report enters yo
 - **Parallel independent agents** — issue multiple `Agent(...)` calls in a single message. Each runs concurrently and returns to the caller, who synthesizes the combined output. This is the canonical form for orchestration mode 2 (Parallel independent subagents) in the `request-routing` skill.
 
 - **Foreground vs background** — default to foreground (you block until the agent returns). Use background only for genuinely independent long-running work where the caller has other useful work to do meanwhile.
+
+- **Model per spawn** — the `Agent(...)` call takes a `model` parameter (`sonnet`, `opus`, `haiku` or `fable`). It overrides the agent's frontmatter `model`, which overrides the `CLAUDE_CODE_SUBAGENT_MODEL` environment variable. `research-assistant` runs on Haiku by default: Haiku is far cheaper, and Sonnet is for work that needs reasoning across sources. Pick the model from this closed list:
+  - **Haiku (default, no `model` argument)** — a *locate* brief, or a lookup of one library, one fact or one component from a bounded set of sources.
+  - **`model: "sonnet"`** — any one of these:
+    1. a comparison of options, or a trade-off between them;
+    2. a whole-repository or cross-cutting audit;
+    3. a brief that needs many sources read together: more than about 10 files, or more than 3 external documents.
+
+  Split a question into parallel Haiku spawns only when its parts are independent, for example one library per spawn. Splitting never replaces Sonnet when the sources must be reasoned over together. Copilot ignores this choice: the build writes only `name`, `description` and `tools` to Copilot agents.
+
+  ```
+  Agent(subagent_type: "research-assistant", description: "Locate retry policy", prompt: "Locate brief: list every file:line where the HTTP retry policy is configured ...")
+  Agent(subagent_type: "research-assistant", model: "sonnet", description: "Compare queue libraries", prompt: "Compare BullMQ and RabbitMQ for our job scheduler: trade-offs on delivery guarantees, ops cost ...")
+  ```
 
 ### Copilot / VS Code
 
@@ -114,6 +128,7 @@ Required elements in every brief:
 - **Acceptance criteria** — numbered ACs the deliverable must satisfy.
 - **Expected deliverable** — its shape and length (e.g., "findings report ≤ 30 lines", "ADR following the project template", "code diff + passing tests", "test plan with AC-traceability table"). When you, not a human, will read the reply, ask for a **compressed report** and name its contract (see *Compressed reports* below).
 - **Write code vs. report only** — say explicitly whether the agent should land code on disk or only return analysis.
+- **Model** — on Claude Code, whether the spawn passes a `model` argument; for `research-assistant` choose it with the list in *Model per spawn*.
 - **Next-hop hint** — which agent (if any) receives this agent's output, so the receiving agent can shape its deliverable appropriately.
 - **Success criteria** — how you (the caller) will verify the handoff is complete.
 

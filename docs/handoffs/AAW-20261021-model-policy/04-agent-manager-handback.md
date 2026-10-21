@@ -1,0 +1,43 @@
+---
+work-item: AAW-20261021-model-policy
+agent: agent-manager
+stage: change
+round: 2
+lifecycle: AAW
+received: 2026-10-21
+---
+
+AAW-20261021-model-policy, round 2: every finding is addressed. I did not touch any agent files or `agent-invocation`, and I did not run the build.
+
+**Findings addressed**
+- **Policy Major 2 and 3, agent-models Major 4 and 5, policy Minor 5:** `agent-management/SKILL.md` create-agent step 3 now has a three-step decision order. The first rule that matches wins.
+  1. `opus` if the agent authors one of a closed list of source artifacts that later stages build on: the routing plan, specs and ADRs, stories and ACs, and agent definitions. How far errors spread decides this, not how often the agent is spawned.
+  2. `haiku` if its output is checked by a human gate, another agent or a mechanical check, **and** its work is lookup, reading and reporting, or mechanical editing, with no judgement that later stages rely on.
+  3. `sonnet` otherwise. The list includes "work breakdown, and scope and priority decisions", which replaces "planning".
+
+  After the rules, the step states the resulting assignment for the current team and names two deliberate results: `product-owner` is sonnet because the human approves its decisions at the gates, and `presentation-manager` is haiku because it works on a copy and renders every changed slide for visual QA. It also says a caller can override the model per spawn, and points to *Model per spawn* in `agent-invocation`.
+  - I checked the `model:` lines of all 15 agents under `plugins/claude/ai-dlc/agents/`. They match the stated result: 4 opus, 2 haiku, 9 sonnet.
+- **Policy Minor 1:** one clause now says `fable` is valid, costs more than `opus`, and is used only when the human explicitly asks for it.
+- **Policy Minor 2 and 3:** `plugin-management/SKILL.md:52` no longer lists aliases. It says `model` is an alias, never a pinned id, and points to `agent-management` (*Mode: create-agent*) for the allowed aliases and the rule for choosing one.
+- **Policy Major 1 and Minor 3:** `skill-management/SKILL.md` step 2 no longer asks for a model.
+  - A new sub-paragraph says a skill normally leaves out `model` and runs on the session's model. It sets `model` only when it truly needs a different one, and then uses an alias (rule in `agent-management`).
+  - It also says the field works only in Claude Code: it applies while the skill is active for the rest of that turn, and other harnesses reject it when the skill is packaged.
+  - I did not add `model` to the Skill File Template. The guidance says to leave it out by default, and a placeholder in the template would invite setting it.
+- **Policy Minor 4:** both validation lines in `agent-management` (update-agent step 5 at about line 134, and Validation Rules at about line 184) now say `model` is an alias (`haiku`, `sonnet`, `opus` or `fable`), never a pinned id.
+
+**Line endings in `plugin-management/SKILL.md`:** the file in HEAD uses CRLF and has a bare CR in the middle of line 71. My first scripted edit turned the file to LF and split line 71. I rebuilt the file from the HEAD bytes with only the line-52 text changed, so the content diff is now that one line. Because `.gitattributes` sets `eol=lf`, plain `git diff` may still show the whole file changed; `git diff --ignore-cr-at-eol` shows the one line. `git diff --check` flags line 52 for trailing whitespace; that is the file's CRLF ending, not a real space.
+
+Changed paths:
+- e:\Projects\personal\ai-dlc-agent-workflow-plugin\plugins\claude\ai-dlc\skills\agent-management\SKILL.md — docs
+- e:\Projects\personal\ai-dlc-agent-workflow-plugin\plugins\claude\ai-dlc\skills\plugin-management\SKILL.md — docs
+- e:\Projects\personal\ai-dlc-agent-workflow-plugin\plugins\claude\ai-dlc\skills\skill-management\SKILL.md — docs
+- plugins/copilot/ai-dlc/skills/{agent-management,plugin-management,skill-management}/SKILL.md — generated (not yet rebuilt; the orchestrator rebuilds)
+
+Intent: Turn the model-tier guidance into an ordered decision procedure that reproduces the human-approved model assignments, so a later run does not "correct" them. Also keep one alias policy, with `fable` limited to explicit human requests, stop asking for a model when creating a skill, and enforce aliases at validation.
+
+Checks:
+- No pinned model ids remain: `grep -rn "claude-sonnet|claude-opus|claude-haiku" plugins/claude/ai-dlc` found nothing.
+- Agent `model:` frontmatter matches the rule's stated result for all 15 agents.
+- `git diff --ignore-cr-at-eol --stat` shows plugin-management with 1 line changed, agent-management with 13+/3-, and skill-management with 2+/1-. CR counts in agent-management and skill-management match HEAD (0).
+- The *Model per spawn* reference exists at `agent-invocation/SKILL.md:66`. Another agent-manager is editing that file in parallel, so the link holds only if that bold label stays.
+- Not run, as the brief said: `node tools/build-copilot.mjs` and `--check`. Run them next; the Copilot copies are stale until then.

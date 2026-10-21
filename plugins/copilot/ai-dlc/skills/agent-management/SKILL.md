@@ -39,7 +39,14 @@ You scaffold and maintain all agent definitions across both platforms. Parse the
 1. Validate `<name>` is kebab-case.
 2. Fail if `.claude/agents/<name>.md` already exists.
 3. Collect required inputs:
-   - `model` — default `claude-sonnet-4-6`
+   - `model` — an alias, never a pinned id: `haiku`, `sonnet` or `opus`. `fable` is also valid, but it costs more than `opus`, so use it only when the human explicitly asks for it. Pick the alias with the first rule that matches:
+     1. `opus` if the agent authors one of the source artifacts that every later stage builds on: the routing plan, specs and ADRs, stories and acceptance criteria, agent definitions. The list is closed: task plans and work breakdowns are not on it and fall under rule 3. How far its errors spread decides this, not how often it is spawned.
+     2. `haiku` if its output is checked by a human gate, another agent or a mechanical check such as a test run, **and** its work is lookup, reading and reporting, or mechanical editing, with no judgement that later stages rely on. A finding, a verdict or a review is judgement, so reviewing and critiquing are never `haiku`.
+     3. `sonnet` otherwise: implementation, tests, reviews, critiques, low-level design, documentation, CI/CD, task plans and work breakdowns, and scope and priority decisions.
+
+     This gives the current team: `opus` for `orchestrator`, `agent-manager`, `software-architect` and `requirement-analyst`; `haiku` for `research-assistant` and `presentation-manager`; `sonnet` for the rest. Two results are deliberate, so do not "correct" them: `product-owner` is `sonnet`, not `opus`, because the human approves its decisions at the gates; `presentation-manager` is `haiku` although building a deck is more than mechanical editing, and no other agent checks it: it works on a copy and renders each changed slide for its own visual QA, and the human reviews the deck.
+
+     A caller may override the model for a single spawn; see *Model per spawn* in `agent-invocation`.
    - `color` — default `cyan`
    - `tools` — default `Read, Glob, Grep, Skill, TodoWrite`
    - One-line purpose describing the agent's domain
@@ -124,7 +131,7 @@ Agent("agent-manager", prompt: "update-agent <name> <change-description>")
 2. Parse `<change-description>` to determine what to change (frontmatter field, responsibilities, skills section, protocols, etc.).
 3. Apply changes to `.claude/agents/<name>.md` using Edit. A change to a Copilot-only key (`user-invocable`, `handoffs`, `target`, …) goes to `.github/agents/<name>.agent.md` directly.
 4. Bring the Copilot twin in step as in **Mode: sync-agent**, with `--prefer claude`.
-5. Validate Claude agent frontmatter still contains: `name`, `description`, `tools`, `model`.
+5. Validate Claude agent frontmatter still contains: `name`, `description`, `tools`, `model`; `model` is an alias (`haiku`, `sonnet`, `opus` or `fable`), never a pinned id.
 6. Check that the `description` still names every situation the agent now handles and that the change replaced superseded text instead of adding beside it (see **Writing the definition**).
 7. Confirm: "Agent '<name>' updated on both platforms."
 
@@ -174,7 +181,7 @@ Claude tools with no Copilot counterpart (`Skill`, `AskUserQuestion`, `SendMessa
 ## Validation Rules
 
 - Agent files must never be deleted — only deprecated via `status: deprecated` in frontmatter.
-- Claude agent files (`.claude/agents/*.md`) must have: `name`, `description`, `tools`, `model`.
+- Claude agent files (`.claude/agents/*.md`) must have: `name`, `description`, `tools`, `model`; `model` is an alias (`haiku`, `sonnet`, `opus` or `fable`), never a pinned id.
 - Copilot agent files (`.github/agents/*.agent.md`) must have: `name`, `description`; `tools` only when the agent does not inherit every tool.
 - Copilot agent `tools:` hold Copilot names only (the right-hand column of **Tool translation**, `mcp__*`, or Copilot-only tools), never Claude names such as `Read` or `Bash`.
 - Every Claude agent must have a matching Copilot agent of the same name: `node .claude/scripts/sync-harness.mjs --check --only agents` exits 0.
