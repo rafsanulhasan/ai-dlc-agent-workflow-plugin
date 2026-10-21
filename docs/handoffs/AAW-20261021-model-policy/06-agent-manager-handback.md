@@ -1,0 +1,33 @@
+---
+work-item: AAW-20261021-model-policy
+agent: agent-manager
+stage: change
+round: 3
+lifecycle: AAW
+received: 2026-10-21
+---
+
+AAW-20261021-model-policy, round 3. I fixed Major 1 and Minor 1 from 05-brutal-critique-handback.md. Only create-agent step 3 changed (lines 43–47). No agent's model changed: the agent frontmatter still has 4 opus, 2 haiku and 9 sonnet.
+
+**Major 1, rule 2 matched reviewers and critics:**
+- Rule 2 now excludes them in its own text: "A finding, a verdict or a review is judgement, so reviewing and critiquing are never `haiku`."
+- I removed "a render" from rule 2's list of checks. It now reads "a mechanical check such as a test run", so a render the agent looks at itself no longer counts as a check.
+- `presentation-manager` stays a stated deliberate exception, now described honestly: "`haiku` although building a deck is more than mechanical editing, and no other agent checks it: it works on a copy and renders each changed slide for its own visual QA, and the human reviews the deck." The text no longer claims that another agent checks it.
+
+**Minor 1, task plans could be read as rule 1:**
+- Rule 1 now says: "The list is closed: task plans and work breakdowns are not on it and fall under rule 3."
+- Rule 3's list now names "task plans and work breakdowns" (it said "work breakdown" before).
+
+As briefed, I did not run the build. You rebuild.
+
+Changed paths:
+- plugins/claude/ai-dlc/skills/agent-management/SKILL.md — docs
+
+Intent: Make the create-agent model rules give the current results (4 opus, 2 haiku, 9 sonnet) in their own words. Rule 2 must not match reviewers or critics, `presentation-manager`'s haiku must be described honestly as a deliberate exception, and task plans must clearly fall under rule 3.
+
+Checks:
+- I re-read lines 42–49 after editing. The three rules and the deliberate-exceptions paragraph read as above.
+- `grep '^model:' plugins/claude/ai-dlc/agents/*.md | sort | uniq -c` gives 2 haiku, 4 opus, 9 sonnet, unchanged.
+- I did not run `node tools/build-copilot.mjs` or `--check`. The Copilot copy `plugins/copilot/ai-dlc/skills/agent-management/SKILL.md` is stale until you rebuild.
+
+Findings addressed: Major 1, Minor 1. Minor 2 (skill-management:35) needed no change: the critique said it is fine as written, and you told me not to touch that file.

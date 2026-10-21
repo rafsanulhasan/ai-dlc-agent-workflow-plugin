@@ -1,0 +1,49 @@
+---
+work-item: AAW-20261021-agent-models
+agent: agent-manager
+stage: change
+round: 2
+lifecycle: AAW
+received: 2026-10-21
+---
+
+AAW-20261021-agent-models, round 2: I fixed the five findings in the brief. I did not run the build, as instructed, so `plugins/copilot/ai-dlc/` is now stale until you rebuild.
+
+Findings addressed: **Blocker 1, Major 1, Major 2, Major 3, Minor 2.** Major 4 and Major 5 are not touched; they belong to the parallel item. I did not edit agent-management, plugin-management or skill-management.
+
+**Blocker 1** (`plugins/claude/ai-dlc/skills/agent-invocation/SKILL.md`, "Model per spawn" bullet, Claude Code section):
+- The bullet now states the verified facts plainly:
+  - `Agent(...)` takes `model` with the values `sonnet`, `opus`, `haiku` and `fable`.
+  - Precedence is per-spawn `model`, then the agent's frontmatter `model`, then `CLAUDE_CODE_SUBAGENT_MODEL`.
+- The escalation rule is now a closed list:
+  - **Haiku (the default, no `model` argument):** a locate brief, or a lookup of one library, one fact or one component from a bounded set of sources.
+  - **`model: "sonnet"`** for any one of three cases: (1) a comparison of options or a trade-off; (2) a whole-repository or cross-cutting audit; (3) a brief that needs many sources read together — more than about 10 files, or more than 3 external documents. This replaces the 80K-token estimate.
+- There are two examples in a fenced block: a Haiku locate spawn and a Sonnet comparison spawn.
+- The delegation-table row at line 36 ("explanation, options or design commentary") now says "(pass `model: "sonnet"`; see *Model per spawn*)".
+
+**Major 1:** splitting a question into parallel Haiku spawns is allowed only when its parts are independent (for example one library per spawn). The bullet says splitting never replaces Sonnet when the sources must be reasoned over together.
+
+**Major 2:** the version-specific prices, the 80K figure and the "tokenizer" parenthetical are gone. The only reason left is one line: "Haiku is far cheaper, and Sonnet is for work that needs reasoning across sources."
+- The Copilot note now says the build writes only `name`, `description` and `tools` to Copilot agents. I confirmed this at `tools/build-copilot.mjs:152-153`.
+
+**Major 3** (`plugins/claude/ai-dlc/agents/research-assistant.md`, last Behavioral Principles bullet): one new line, frontmatter unchanged. It says:
+- The agent runs on Haiku by default and callers may escalate a spawn to Sonnet.
+- When a brief needs a trade-off reasoned across sources, or has too many sources to read together, the agent does not guess. It reports an Open Question recommending a re-run with `model: "sonnet"`.
+
+**Minor 2:** the brief checklist in agent-invocation ("How to brief the spawned agent") has a new **Model** item. It says whether the spawn passes `model` on Claude Code and points to *Model per spawn* for `research-assistant`.
+
+One thing for the reviewer: the fenced examples use `ai-dlc:research-assistant`. The build strips that prefix for Copilot, so the Copilot copy of the skill will show a `model:` argument inside the Claude Code section. The bullet already says Copilot ignores it.
+
+Changed paths:
+- `plugins/claude/ai-dlc/skills/agent-invocation/SKILL.md` — docs
+- `plugins/claude/ai-dlc/agents/research-assistant.md` — docs
+- `plugins/copilot/ai-dlc/skills/agent-invocation/SKILL.md` — generated (stale until the build runs)
+- `plugins/copilot/ai-dlc/agents/research-assistant.agent.md` — generated (stale until the build runs)
+
+Intent: make the research-assistant model-escalation rule something a caller can check against a closed list. Remove the version-specific prices from the durable skill. Make a Haiku run of research-assistant say when a brief is beyond it and recommend a Sonnet re-run, rather than failing without saying so.
+
+Checks:
+- I read `tools/build-copilot.mjs:148-156` and confirmed the Copilot agent frontmatter carries only `name`, `description` and `tools`.
+- I read the table row at line 36 back and it has the Sonnet note.
+- `git diff --stat` shows only the intended Claude-side files changed in this round, plus round 1's earlier changes.
+- I did not run `node tools/build-copilot.mjs` or `--check`, as instructed. `--check` will fail until you rebuild.

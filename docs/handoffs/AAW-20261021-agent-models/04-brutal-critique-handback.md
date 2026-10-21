@@ -1,0 +1,51 @@
+---
+work-item: AAW-20261021-agent-models
+agent: brutal-critique
+stage: critique
+round: 2
+lifecycle: AAW
+received: 2026-10-21
+---
+
+# Critique: AAW-20261021-agent-models, round 2
+
+Verdict: PASS
+
+I read the current files with Read and Grep only, and ran no commands. I relied on the orchestrator's `--check` and `validate` results as stated.
+
+## Blockers
+None.
+
+## Major
+None.
+
+## Minor
+1. `skills/agent-invocation/SKILL.md:36` vs `:67-71` — Line 36 says any "explanation, options or design commentary" spawn gets `model: "sonnet"`. The closed list at lines 67-71 sends a one-library or one-fact lookup to Haiku, even when the deliverable is prose. The two overlap only on a single-fact explanation. The closed list is the more specific rule, so this is not blocking. Change "(pass `model: "sonnet"`...)" to "(per *Model per spawn*)" if you want one source of truth.
+2. `:71` — "more than about 10 files" keeps "about" in a rule meant to be checkable. Drop "about" or say "10 or more". The count is a heuristic by design, so I am not raising it above Minor.
+
+## Round-1 findings: status
+- **Blocker 1 (resolved).** The triggers are now a closed list of three Sonnet cases, with Haiku as the default. The estimate-dependent 80K figure is replaced by a countable threshold (files and documents). Line 36 now points to the rule. The bullet has one Haiku example and one Sonnet example. The `Agent(...)` examples use `model` correctly and match the verified schema.
+- **Major 1 (resolved).** Line 73 restricts splitting to independent parts and says it never replaces Sonnet when sources must be reasoned over together.
+- **Major 2 (resolved).** The prices, the 80K figure and the "tokenizer" parenthetical are gone. The only reason left is one line. The Copilot note now matches `tools/build-copilot.mjs:152-153`, as the orchestrator verified.
+- **Major 3 (resolved).** `agents/research-assistant.md:39` says the agent runs on Haiku by default, that callers may escalate, and that it must raise an Open Question recommending a `model: "sonnet"` re-run instead of guessing. The text uses the same triggers as the skill ("a trade-off reasoned across sources", "too many sources to read together"). The frontmatter is unchanged (`model: haiku`).
+- **Minor 2 (resolved).** The brief checklist at line 131 has a Model item that points to *Model per spawn*.
+
+## Consistency with the sibling item AAW-20261021-model-policy
+`skills/agent-management/SKILL.md:42-49` is consistent with this item:
+- The aliases are `haiku`, `sonnet` and `opus` (plus `fable` on request), the same as the `model` values used in agent-invocation.
+- Rule 3 puts scope and priority decisions in `sonnet`, which matches product-owner.
+- The recorded exceptions (product-owner is `sonnet`, presentation-manager is `haiku`) match the agent frontmatter from round 1. They state the rationale, which resolves round-1 Majors 4 and 5.
+- Line 49 cross-references *Model per spawn* in `agent-invocation`, and that section exists. The two files agree on the override mechanism.
+- The fenced example is `ai-dlc:research-assistant`, inside the Claude Code section. The prefix strip is already covered by the Copilot note, so it is not a problem.
+
+## Unverified claims
+- None new. The `Agent` `model` schema, the precedence order, the build behaviour and the check outputs are covered by the orchestrator's verification.
+
+## What is good (keep it)
+- The closed list with its two concrete spawn examples. A caller can apply it without asking a follow-up question.
+- The `research-assistant` self-escalation line. A Haiku run now flags its own limit and recommends a re-run, where before it would have failed quietly.
+
+Files reviewed:
+- e:\Projects\personal\ai-dlc-agent-workflow-plugin\plugins\claude\ai-dlc\skills\agent-invocation\SKILL.md
+- e:\Projects\personal\ai-dlc-agent-workflow-plugin\plugins\claude\ai-dlc\agents\research-assistant.md
+- e:\Projects\personal\ai-dlc-agent-workflow-plugin\plugins\claude\ai-dlc\skills\agent-management\SKILL.md
