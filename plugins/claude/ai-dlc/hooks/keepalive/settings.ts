@@ -3,7 +3,7 @@
 // hands the levels in, and tests/ in the repository checks the table against the manifest and the README.
 import { ABSOLUTE_MIN, formatDuration, parseDuration } from './duration.ts'
 import type { Scope } from './duration.ts'
-import { parseBool } from '../config.ts'
+import { parseBool } from '../auto-handoff/config.ts'
 
 export type TrackKey = 'oneHour' | 'fiveMinute'
 export type TrackSettings = { enabled: boolean; ttl: number; pingEvery: number; keepWarmFor: number; maxPings: number }
@@ -74,13 +74,16 @@ export const SETTINGS: readonly Setting[] = [
 // The settings a cloned repository may set only in a folder Claude Code trusts, from either source it
 // commits: .ai-dlc/cache-keepalive.json and the `env` of .claude/settings.json. They decide whether
 // and how long the module spends the person's tokens and rate limit (enabled, the intervals, the
-// keep-warm times, the ping limits, the spend limit, compactOnCap), or are text it sends to the model
-// (pingPrompt, compactInstructions). Human decision D2, 2026-10-22.
+// keep-warm times, the ping limits, the spend limit and the prices it is counted in, compactOnCap),
+// or are text it sends to the model (pingPrompt, compactInstructions). Human decision D2, 2026-10-22;
+// writeMult, outputMult and readPrice added 2026-10-23, since a low price lifts the spend limit as
+// surely as a high budgetMultiplier does.
 export const TRUST_GATED: readonly string[] = [
   'enabled', 'pingPrompt',
   'oneHour.enabled', 'oneHour.pingEvery', 'oneHour.keepWarmFor', 'oneHour.maxPings',
   'fiveMinute.enabled', 'fiveMinute.pingEvery', 'fiveMinute.keepWarmFor', 'fiveMinute.maxPings',
   'budgetMultiplier', 'compactOnCap', 'compactInstructions',
+  'writeMult', 'outputMult', 'readPrice',
 ]
 
 /** The names the trust-gated settings go by in a level: their variables in an `env`, their keys in the repository file. */
@@ -91,9 +94,9 @@ export const gatedNames = (by: 'env' | 'json'): string[] =>
 export type Level = { where: string; by: 'env' | 'json' | 'userConfig'; values: Record<string, unknown> }
 export type Resolved = { settings: Settings; sources: Record<string, string>; warnings: string[] }
 
-// Booleans parse as in the automatic handoff's settings (config.ts, parseBool). Numbers do not: these
-// take fractions ("0.9"), which the handoff's whole-number settings refuse.
-const NUMBER =/^\s*[0-9]+(\.[0-9]+)?\s*$/
+// Booleans parse as in the automatic handoff's settings (../auto-handoff/config.ts, parseBool).
+// Numbers do not: these take fractions ("0.9"), which the handoff's whole-number settings refuse.
+const NUMBER = /^\s*[0-9]+(\.[0-9]+)?\s*$/
 const num = (v: unknown): number | undefined => {
   const n = typeof v === 'number' ? v : typeof v === 'string' && NUMBER.test(v) ? Number(v) : NaN
   return Number.isFinite(n) ? n : undefined

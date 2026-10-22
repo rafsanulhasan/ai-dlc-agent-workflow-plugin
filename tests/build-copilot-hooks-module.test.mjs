@@ -174,9 +174,23 @@ test("the cache-keepalive mod is folded into ai-dlc: no mod folder, marketplace 
   assert.deepEqual(market.plugins.map((p) => p.name), ["ai-dlc"]);
   const ci = fs.readFileSync(path.join(REPO, ".github", "workflows", "validate.yml"), "utf8");
   assert.ok(!ci.includes("claude-mods"), "the CI loop over vendored mods should be gone");
-  const keepalive = path.join(REPO, "plugins", "claude", "ai-dlc", "hooks", "auto-handoff", "keepalive");
+  const keepalive = path.join(REPO, "plugins", "claude", "ai-dlc", "hooks", "keepalive");
   assert.ok(fs.existsSync(path.join(keepalive, "LICENSE")), "the upstream MIT LICENSE ships with the folded-in code");
   assert.match(fs.readFileSync(path.join(keepalive, "LICENSE"), "utf8"), /Copyright \(c\) 2026 RichardJSun/);
+  assert.ok(fs.existsSync(path.join(keepalive, "ATTRIBUTION.md")), "keep-alive's attribution sits with its code");
+});
+
+// Keep-alive has its own folder, hooks/keepalive/ (AAW-20261023-keepalive-own-folder), and is not a
+// module of its own: auto-handoff's register.tsx imports and registers it, and hooks.json lists one module.
+test("keep-alive lives in hooks/keepalive/, registered by the auto-handoff module; nothing is left under auto-handoff", () => {
+  const hooksDir = path.join(REPO, "plugins", "claude", "ai-dlc", "hooks");
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(hooksDir, "hooks.json"), "utf8")).modules, ["./auto-handoff/register.tsx"]);
+  for (const f of ["keepalive.ts", "settings.ts", "duration.ts", "README.md", "LICENSE", "ATTRIBUTION.md", "tests/keepalive.test.ts"]) {
+    assert.ok(fs.existsSync(path.join(hooksDir, "keepalive", f)), `hooks/keepalive/${f}`);
+  }
+  assert.ok(!fs.existsSync(path.join(hooksDir, "auto-handoff", "keepalive")), "hooks/auto-handoff/keepalive/ should be gone");
+  assert.ok(!fs.existsSync(path.join(hooksDir, "auto-handoff", "tests", "keepalive.test.ts")));
+  assert.match(fs.readFileSync(path.join(hooksDir, "auto-handoff", "register.tsx"), "utf8"), /from '\.\.\/keepalive\/keepalive\.ts'/);
 });
 
 // D3 (AAW-20261022-fold-cache-keepalive): skills that only work in Claude Code stay out of the Copilot plugin.

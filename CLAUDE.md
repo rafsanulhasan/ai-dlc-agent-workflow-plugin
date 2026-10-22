@@ -33,7 +33,7 @@ Agents are then `ai-dlc:<name>` and skills `/ai-dlc:<name>`, read straight from 
 
 ## Architecture
 
-- `plugins/claude/ai-dlc/` — source of truth (agents, skills, and `hooks/auto-handoff/`: a Claude-only hooks module, the automatic path of the `handoff` skill's session handoff, adapted from alexknowshtml/claude-auto-handoff, and its `keepalive/` part, which keeps the prompt cache warm while background tasks run and answers `/ai-dlc:keepalive` (the `keepalive` skill gives the name), adapted from the `cache-keepalive` mod of RichardJSun/claude-code-mods; `hooks/hooks.json` lists the one module under `modules` only, and the settings of both are the manifest's `userConfig`)
+- `plugins/claude/ai-dlc/` — source of truth (agents, skills, and `hooks/auto-handoff/`: a Claude-only hooks module, the automatic path of the `handoff` skill's session handoff, adapted from alexknowshtml/claude-auto-handoff, and `hooks/keepalive/`, which keeps the prompt cache warm while background tasks run and answers `/ai-dlc:keepalive` (the `keepalive` skill gives the name), adapted from the `cache-keepalive` mod of RichardJSun/claude-code-mods; auto-handoff's `register.tsx` imports and registers keep-alive, so `hooks/hooks.json` lists the one module under `modules` only, and the settings of both are the manifest's `userConfig`)
 - `plugins/copilot/ai-dlc/` — generated; never hand-edit
 - `tools/build-copilot.mjs` — Claude → Copilot projection
 - `tools/overlays/non-claude/skills/` — skills only non-Claude plugins ship (currently `scratchpad`); the build adds them to the Copilot plugin, never to the Claude one
@@ -47,7 +47,7 @@ Agents are then `ai-dlc:<name>` and skills `/ai-dlc:<name>`, read straight from 
 
 - After changing anything under `plugins/claude/ai-dlc/`, run `node tools/build-copilot.mjs`. A Stop hook (`.claude/hooks/check-copilot-stale.mjs`) blocks finishing while the Copilot plugin is stale.
 - CI (`.github/workflows/validate.yml`) runs the staleness check, the repository tests, both `plugin validate --strict` commands, and `plugin test` for `ai-dlc`'s hooks module.
-- The hooks module and its tests stay under `plugins/claude/ai-dlc/hooks/`, never in `skills/`, `agents/` or `scripts/`, which the build copies to Copilot (it fails when one is there). It keeps the upstream `LICENSE` of each part (`hooks/auto-handoff/LICENSE`, `hooks/auto-handoff/keepalive/LICENSE`); record every change to it in its `ATTRIBUTION.md`, and a new upstream in `THIRD_PARTY_NOTICES.md`.
+- The hooks module and its tests stay under `plugins/claude/ai-dlc/hooks/`, never in `skills/`, `agents/` or `scripts/`, which the build copies to Copilot (it fails when one is there). Each of its two folders keeps its upstream `LICENSE` (`hooks/auto-handoff/LICENSE`, `hooks/keepalive/LICENSE`); record every change to a folder in that folder's `ATTRIBUTION.md`, and a new upstream in `THIRD_PARTY_NOTICES.md`.
 
 <!-- ai-dlc:begin workspace-folders -->
 ## Workspace folders (Claude Code only)

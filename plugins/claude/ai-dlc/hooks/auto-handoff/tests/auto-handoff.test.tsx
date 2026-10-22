@@ -4,6 +4,7 @@ import type { On, SessionMessage } from 'claude-code'
 import { briefPrompt, extractFacts, factsBlock, hasUnansweredLastRequest, isValidBrief, markUnverifiedFigures } from '../brief.ts'
 import { renderTemplate } from '../templates.ts'
 import { parseBrief } from '../viewer.ts'
+import { orLog } from '../io.ts'
 import { DEFAULT_WINDOW, contextLine, creationSplit, hostFields, parseConfig, seedCacheFields, seedCacheLine, windowFields, windowInfo, windowOf } from '../config.ts'
 
 // renamed: the names /rename was run with, in order; commandOrder: every slash command run, in order.
@@ -1836,7 +1837,8 @@ describe('workspace trust for the repository file', () => {
   const risky = JSON.stringify({ viewer: '0.0.0.0:3846', briefTemplate: '/repo/chosen.md', thresholdTokens: 60000 })
   const trust = (path: string, value: unknown = true) => JSON.stringify({ projects: { [path]: { hasTrustDialogAccepted: value } } })
   const thresholdIn = (calls: Calls) => /threshold session=old-session tokens=\d+ threshold=(\d+)/.exec(calls.written[LOG_FILE] ?? '')?.[1]
-  const IGNORED = 'config: briefTemplate, viewer in .ai-dlc/auto-handoff.json ignored: Claude Code does not trust this folder'
+  // Each skipped key is logged with its value (io.ts, trustGate).
+  const IGNORED = 'config: briefTemplate="/repo/chosen.md", viewer="0.0.0.0:3846" in .ai-dlc/auto-handoff.json ignored: Claude Code does not trust this folder'
 
   test('untrusted: viewer and the templates from the repository file are ignored and logged, other keys apply', async ($, on) => {
     const calls = engine(on, { tokens: 190_000, git: GIT, files: { [REPO_FILE]: risky } })
@@ -1990,6 +1992,47 @@ describe('the handoff and the prompt cache', () => {
     await $.turn.start({ turnId: 't-2' } as never)
     await $.classic.Stop({ background_tasks: [KA_TASK], transcript_path: '/home/test/new.jsonl' } as never)
     expect(statuses.at(-1)?.split('\n')).toHaveLength(2)
+  })
+
+  // The engine drops a failed status line itself, so the seed line cannot fail through it today;
+  // register.tsx runs showSeedCache through orLog, and this is what orLog does with a throw. A test's
+  // own $ has no env or process, so orLog gets a stand-in with the two calls log() makes.
+  test('a step run through orLog that throws is logged, not passed on; one that succeeds logs nothing', async () => {
+    const lines: string[] = []
+    const stub = {
+      env: { get: async (name: string) => name === 'HOME' ? '/home/test' : undefined },
+      process: { run: async (argv: string[]) => (lines.push(argv[4] ?? ''), { exitCode: 0, stdout: '', stderr: '' }) },
+    } as never
+    await expect(orLog(stub, 'keepalive seed line', async () => { throw new Error('status line unavailable') })).resolves.toBeUndefined()
+    await orLog(stub, 'keepalive seed line', async () => undefined)
+    expect(lines).toHaveLength(1)
+    expect(lines[0]).toContain('keepalive seed line error Error: status line unavailable')
+  })
+
+  // [B1] End to end: the seed line's status call fails during the seed turn. The floor is already set,
+  // so the tight-threshold warning (the next step in register.tsx) must still run and the turn must return.
+  // Whether the engine drops the failed call itself or the orLog guard catches it, both are fine here:
+  // the stub test above pins the guard, this one pins the outcome the guard exists for.
+  // Not pinned: the guard's wiring at its call site in register.tsx. No test can make showSeedCache
+  // throw past the engine: every engine call in it is caught (load, log) or dropped by the engine
+  // (ui.status, ui.log), userConfig values are validated before register sees them, and the test
+  // harness loads its own copy of the module, so a fault a test sets on an imported module never
+  // reaches it (tried 2026-10-23). Removing the wrapper therefore fails no test; that gap is accepted.
+  test('[B1] a failing seed-line status does not stop the seed turn: the floor is set and the tight-threshold warning still shows', { options: {} }, async ($, on) => {
+    const calls = engine(on, { tokens: 85_000, stepUsage: true, env: { AI_DLC_AUTO_HANDOFF_THRESHOLD_TOKENS: '80000' } })
+    let attempts = 0
+    on('ui.status', async (_$, e) => { if (e.text?.includes('keepalive seed')) { attempts++; throw new Error('status line unavailable') } return { value: undefined } as never })
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    await $.classic.SessionStart({ source: 'clear' })
+    await settle(() => calls.seeded.length > 0)
+    calls.tokens = 45_000
+    await step($, 0) // the seed turn's first request: sets the floor, then shows the seed line, then warns
+    const log = calls.written['/home/test/.claude/state/auto-handoff/auto-handoff.log']!
+    expect(attempts).toBe(1)
+    expect(log).toContain("floor session=new-session-1 tokens=45000 (seed turn's first request)")
+    expect(log).toContain('tight threshold session=new-session-1')
+    expect(await band($)).toContain("leaves 35k this session's 45k start")
   })
 
   test('a seed turn that read nothing from the cache says miss on the status line', async ($, on) => {

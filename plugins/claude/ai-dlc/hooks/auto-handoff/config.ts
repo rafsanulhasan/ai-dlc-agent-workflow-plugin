@@ -92,7 +92,7 @@ const WHOLE = /^\s*(0|[1-9][0-9]*)\s*$/
 const BOOLS: Record<string, boolean> = { true: true, false: false, '1': true, '0': false, yes: true, no: false, on: true, off: false }
 
 /** A boolean, or a word for one (true/false, 1/0, yes/no, on/off; any case, spaces around ignored).
- * Undefined for anything else. Shared with keepalive/settings.ts, so both parse a boolean alike. */
+ * Undefined for anything else. Shared with ../keepalive/settings.ts, so both parse a boolean alike. */
 export function parseBool(raw: unknown): boolean | undefined {
   if (typeof raw === 'boolean') return raw
   if (typeof raw !== 'string') return undefined
@@ -101,9 +101,9 @@ export function parseBool(raw: unknown): boolean | undefined {
   return Object.hasOwn(BOOLS, word) ? BOOLS[word] : undefined
 }
 
-// Numbers are not shared with keepalive/settings.ts: this module takes whole numbers only, written
+// Numbers are not shared with ../keepalive/settings.ts: this module takes whole numbers only, written
 // without leading zeros, and keep-alive takes fractions ("0.9", "1.5"); one parser would change one of them.
-const whole =(v: unknown): number | undefined => {
+const whole = (v: unknown): number | undefined => {
   const n = typeof v === 'number' ? v : typeof v === 'string' && WHOLE.test(v) ? Number(v) : NaN
   return Number.isSafeInteger(n) && n >= 0 ? n : undefined
 }
@@ -356,6 +356,30 @@ function valueAt(values: Record<string, unknown>, key: string): unknown {
   }
   return cur
 }
+
+/** The longest text, in characters (code points), a skipped setting's value is logged with before it is cut. */
+export const PREVIEW_CHARS = 40
+
+/**
+ * A value as the trust gate logs it: a text in double quotes, anything else as JSON. Runs of
+ * white space become one space, and a value longer than PREVIEW_CHARS is cut there, with `…` and
+ * `(N chars)` after it, so a long pingPrompt or compactInstructions stays one short line. Lengths
+ * count characters (code points, so an emoji is one and is never split in half) of the folded
+ * text, the text that was cut. Nothing is redacted (asked for, so a person can see what was
+ * skipped): the first PREVIEW_CHARS characters are logged as they are, which is why the README
+ * says never to put a secret in these settings.
+ */
+export function previewValue(v: unknown): string {
+  const text = typeof v === 'string' ? v : JSON.stringify(v) ?? String(v)
+  const chars = Array.from(text.replace(/\s+/g, ' '))
+  const cut = chars.length > PREVIEW_CHARS ? `${chars.slice(0, PREVIEW_CHARS).join('')}…` : chars.join('')
+  const shown = typeof v === 'string' ? `"${cut}"` : cut
+  return chars.length > PREVIEW_CHARS ? `${shown} (${chars.length} chars)` : shown
+}
+
+/** The given keys with the values they have in `values`, `key=value, …`, as the trust gate logs them. */
+export const keysWithValues = (values: Record<string, unknown>, keys: readonly string[]): string =>
+  keys.map(key => `${key}=${previewValue(valueAt(values, key))}`).join(', ')
 
 /**
  * The values without those of the given keys that are set (not missing or null), and the keys taken

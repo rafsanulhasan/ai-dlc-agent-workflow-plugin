@@ -1,8 +1,8 @@
-// The module's file, git, trust and log helpers, shared by register.tsx and keepalive/keepalive.ts.
+// The module's file, git, trust and log helpers, shared by register.tsx and ../keepalive/keepalive.ts.
 // The engine is passed in as `$` and only ever called as $.noun.event(...), which is what `claude
 // plugin validate` follows. HOME and USERPROFILE are the only environment variables read here.
 import type { EngineInterface } from 'claude-code'
-import { BRIEF_DIR, trustOf, trustRoot, withoutKeys } from './config.ts'
+import { BRIEF_DIR, keysWithValues, trustOf, trustRoot, withoutKeys } from './config.ts'
 import type { TrustTarget } from './config.ts'
 
 // Windows sets USERPROFILE, not HOME. With HOME unset, every path built on it began with
@@ -31,6 +31,16 @@ export async function log($: EngineInterface, line: string) {
   } catch {}
 }
 
+/** Runs `fn` and logs a throw from it as `<what> error <the error>` instead of passing it on: for a
+ * step whose failure must not stop the hook that runs it, such as keep-alive's seed line. */
+export async function orLog($: EngineInterface, what: string, fn: () => Promise<unknown>): Promise<void> {
+  try {
+    await fn()
+  } catch (err) {
+    await log($, `${what} error ${String(err)}`)
+  }
+}
+
 export async function readText($: EngineInterface, path: string): Promise<string | undefined> {
   try {
     const text = await $.fs.read(path)
@@ -55,7 +65,7 @@ export async function repoRoot($: EngineInterface): Promise<string> {
 }
 
 // Whether Claude Code trusts this folder (config.ts, trustOf). Also keep-alive's check for its own
-// repository file (keepalive/keepalive.ts).
+// repository file (../keepalive/keepalive.ts).
 export async function folderTrust($: EngineInterface): Promise<{ trusted: boolean; why: string }> {
   const home = await homeDir($)
   return trustOf(home ? await readRaw($, `${home}/.claude.json`) : undefined, await trustTarget($))
@@ -67,15 +77,16 @@ export type TrustCache = { result?: Promise<{ trusted: boolean; why: string }> }
 // A level read from a file a cloned repository controls (a repository file, the env of the committed
 // .claude/settings.json), without the given keys unless Claude Code trusts this folder. ~/.claude.json
 // is read only when one of the keys is set, and only its trust flag is used: nothing else from it is
-// logged or kept. Each skipped key is named in one line added to `problems`, with `where` and
-// `instead` (where to set them instead). Fails closed. Shared by the automatic handoff and keep-alive.
+// logged or kept. The skipped keys are named, each with its value (config.ts, previewValue: long
+// text cut short), in one line added to `problems`, with `where` and `instead` (where to set them
+// instead). Fails closed. Shared by the automatic handoff and keep-alive.
 export async function trustGate($: EngineInterface, values: Record<string, unknown>, keys: readonly string[], where: string, instead: string, problems: string[], cache: TrustCache = {}): Promise<Record<string, unknown>> {
   const gated = withoutKeys(values, keys)
   if (!gated.ignored.length) return values
   cache.result ??= folderTrust($)
   const { trusted, why } = await cache.result
   if (trusted) return values
-  problems.push(`${gated.ignored.join(', ')} in ${where} ignored: Claude Code does not trust this folder (${why}); ${instead}`)
+  problems.push(`${keysWithValues(values, gated.ignored)} in ${where} ignored: Claude Code does not trust this folder (${why}); ${instead}`)
   return gated.values
 }
 

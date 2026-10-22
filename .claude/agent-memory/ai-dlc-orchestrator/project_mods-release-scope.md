@@ -7,7 +7,7 @@ metadata:
 
 On 2026-10-20 the human decided that release 1.0.0 ships the AI-DLC mods for Claude Code, and that mods running only through settings hooks are also integrated for Copilot. The packaging plan then was ai-dlc core (AAW changes) plus **one** Claude-only mods plugin, grown out of the ai-dlc-lens run. That replaced the run's earlier "buy, don't build" decisions and its rule to ship in 1.1.0 if the work would delay 1.0.0.
 
-**Update 2026-10-23 (run `AAW-20261022-fold-cache-keepalive`).** cache-keepalive now lives inside ai-dlc core, in `hooks/auto-handoff/keepalive/`. `plugins/claude-mods/`, the `ai-dlc` `dependencies` entry and its marketplace entry are gone. Claude-only skills are listed in `tools/claude-only-skills.json`. Any *other* mod from the ai-dlc-lens plan (for example a status line) has not been re-decided: ask before creating a separate mods plugin again.
+**Update 2026-10-23 (run `AAW-20261022-fold-cache-keepalive`).** cache-keepalive now lives inside ai-dlc core, in `hooks/keepalive/` (moved there from `hooks/auto-handoff/keepalive/` on 2026-10-23), and the auto-handoff module imports and registers it. `plugins/claude-mods/`, the `ai-dlc` `dependencies` entry and its marketplace entry are gone. Claude-only skills are listed in `tools/claude-only-skills.json`. Any *other* mod from the ai-dlc-lens plan (for example a status line) has not been re-decided: ask before creating a separate mods plugin again.
 
 **Why:** the human wants the mods in the first release, and wants one module to manage both context and cache.
 

@@ -9,8 +9,8 @@ import { BRIEF_DIR, CAPABILITIES_FILE, DEFAULTS, LAST_RESORT_INSTRUCTIONS, MODUL
 import type { Config, HostWindow, Level, SeedCache, TemplateKey, WindowInfo } from './config.ts'
 import { ENDED, assembleSessionHandoff, handoffsRoot, inRepo, openRecords, parseRunState, pickRun, scratchRoot, sessionHandoffPath, withNextAction } from './run.ts'
 import type { RunState, RunTarget } from './run.ts'
-import { noteUsage, registerKeepalive, showSeedCache, stopForHandoff, transcriptSplit } from './keepalive/keepalive.ts'
-import { git, homeDir, log, readRaw, readText, repoRoot, trustGate } from './io.ts'
+import { noteUsage, registerKeepalive, showSeedCache, stopForHandoff, transcriptSplit } from '../keepalive/keepalive.ts'
+import { git, homeDir, log, orLog, readRaw, readText, repoRoot, trustGate } from './io.ts'
 
 // At the handoff threshold (thresholdPercent of the context window), Haiku writes a handoff brief, the mod runs /clear, then seeds the
 // fresh session with a pointer to the brief. Interactive terminal sessions only: where a
@@ -24,7 +24,7 @@ import { git, homeDir, log, readRaw, readText, repoRoot, trustGate } from './io.
 // The cache: the fresh session can read only the shared prefix (tools, system prompt, project
 // context) from the prompt cache, never the old conversation. So the handoff keeps that prefix as
 // it was: it changes neither the model nor the effort, and the brief and the seed travel only as
-// messages. Keep-alive (keepalive/) is registered here too; its timers stop before the /clear, and
+// messages. Keep-alive (../keepalive/) is registered here too; its timers stop before the /clear, and
 // the seed turn logs what its first request read from the cache.
 
 // The effective settings (config.ts, resolveConfig) and where each came from. Loaded on first use
@@ -45,7 +45,6 @@ const CHARS_PER_TOKEN = 4
 // The panel above the prompt (panel.tsx) is the whole UI. No status entry: the host draws one
 // as "⚠ auto-handoff:", which reads as an error.
 const LOG = `~/${BRIEF_DIR}/auto-handoff.log`
-
 // problem: why the brief is facts only, when Haiku's summary was unusable.
 // briefPath: the brief in BRIEF_DIR, which keeps the chain, the viewer and the status line working.
 // seedPath: what the fresh session is told to read; the session handoff when a run is active.
@@ -762,7 +761,7 @@ export const register: Register = (on, opts) => {
   options = opts
   cfg = resolveConfig([], options).cfg
   cfgLoaded = false
-  // Keep-alive (keepalive/keepalive.ts): its own events and the /ai-dlc:keepalive command. It arms no
+  // Keep-alive (../keepalive/keepalive.ts): its own events and the /ai-dlc:keepalive command. It arms no
   // pings while a handoff is under way.
   registerKeepalive(on, opts, { handingOff: () => inFlight || pending !== undefined })
   on('turn.complete', async ($, e, next) => {
@@ -874,8 +873,9 @@ export const register: Register = (on, opts) => {
       }
       await log($, `floor session=${seededSession} tokens=${floor} (seed turn's first request) ${seedCacheFields(cache)}`)
       showHandedOff($, floor, cache)
-      // Also on keep-alive's status line, until the next turn starts.
-      await showSeedCache($, cache)
+      // Also on keep-alive's status line, until the next turn starts. A failure there is logged,
+      // never thrown: the floor is already set, and the tight-threshold warning below must still run.
+      await orLog($, 'keepalive seed line', () => showSeedCache($, cache))
       await warnTightThreshold($, seededSession!)
     }
     return r

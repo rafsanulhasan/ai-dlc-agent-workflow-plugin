@@ -19,4 +19,4 @@ In Claude Code, the ai-dlc plugin's hooks module answers `/ai-dlc:keepalive` its
 | `/ai-dlc:keepalive 1d --machine` | Sets it for every session on this machine until cleared |
 | `/ai-dlc:keepalive clear`, `/ai-dlc:keepalive clear --machine` | Removes the override in that scope |
 
-If you are reading this in Claude Code, the module did not answer: the ai-dlc hooks module is not loaded (Claude Code older than 2.1.287, or the plugin's hooks are turned off). Tell the person that, point them to the keep-alive README in the plugin (`hooks/auto-handoff/keepalive/README.md`), and do nothing else: never ping or change a setting yourself.
+If you are reading this in Claude Code, the module did not answer: the ai-dlc hooks module is not loaded (Claude Code older than 2.1.287, or the plugin's hooks are turned off). Tell the person that, point them to the keep-alive README in the plugin (`hooks/keepalive/README.md`), and do nothing else: never ping or change a setting yourself.

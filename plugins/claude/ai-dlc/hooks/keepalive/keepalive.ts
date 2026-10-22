@@ -3,17 +3,18 @@ import { formatDuration, parseCommandArgs } from './duration.ts'
 import type { Scope } from './duration.ts'
 import { defaults, gatedNames, readMult, resolveSettings } from './settings.ts'
 import type { Level, Settings, TrackKey } from './settings.ts'
-import { creationSplit, k, repoConfig, settingsEnv } from '../config.ts'
-import { log, readRaw, repoRoot, trustGate } from '../io.ts'
-import type { TrustCache } from '../io.ts'
+import { creationSplit, k, repoConfig, settingsEnv } from '../auto-handoff/config.ts'
+import { log, readRaw, repoRoot, trustGate } from '../auto-handoff/io.ts'
+import type { TrustCache } from '../auto-handoff/io.ts'
 
 // Keep-alive, folded into the ai-dlc hooks module from the vendored cache-keepalive mod (see
 // ../ATTRIBUTION.md, "cache-keepalive"). When Claude ends a turn while background tasks still run, it
 // pings the prompt cache so the cache is still warm when the task's notification wakes the session.
 // Two tracks, one per cache lifetime: the 1-hour track and the 5-minute track. Which ones run comes
-// from the 1h/5m split of the session's last cache write, never from an assumption. register.tsx
-// calls registerKeepalive; the files, git, trust and the log come from ../io.ts. This file reads no
-// environment variable: its settings come from settings files, never the process environment.
+// from the 1h/5m split of the session's last cache write, never from an assumption.
+// ../auto-handoff/register.tsx calls registerKeepalive; the files, git, trust and the log come from
+// ../auto-handoff/io.ts. This file reads no environment variable: its settings come from settings
+// files, never the process environment.
 
 // The command. A hooks module can only register a bare name (letters, digits, _ and -), so the name
 // comes from the plugin skill skills/keepalive, which Claude Code lists as /ai-dlc:keepalive, and the

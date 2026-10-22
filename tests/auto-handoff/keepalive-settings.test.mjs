@@ -1,7 +1,7 @@
-// Keep-alive's one settings table (hooks/auto-handoff/keepalive/settings.ts) against everything that
+// Keep-alive's one settings table (hooks/keepalive/settings.ts) against everything that
 // repeats its names: the ai-dlc manifest's /config rows, the keep-alive README's table, and the
 // command's name everywhere it is written. The module's own behaviour is tested by `claude plugin test`
-// (hooks/auto-handoff/tests/keepalive.test.ts); this suite needs node:fs, which that one cannot import.
+// (hooks/keepalive/tests/keepalive.test.ts); this suite needs node:fs, which that one cannot import.
 // The table is imported as TypeScript through Node's type stripping (Node 22.18 and later).
 // Run: node --test "tests/**/*.test.mjs".
 import { test, describe } from "node:test";
@@ -12,7 +12,7 @@ import { fileURLToPath } from "node:url";
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const PLUGIN = path.join(REPO, "plugins", "claude", "ai-dlc");
-const KEEPALIVE = path.join(PLUGIN, "hooks", "auto-handoff", "keepalive");
+const KEEPALIVE = path.join(PLUGIN, "hooks", "keepalive");
 const toUrl = (p) => new URL(`file:///${p.replace(/\\/g, "/").replace(/^\/+/, "")}`).href;
 
 let mod;
@@ -63,12 +63,14 @@ describe("keep-alive settings table", { skip: skipReason }, () => {
 
 describe("keep-alive's trust gate", { skip: skipReason }, () => {
   // D2 (AAW-20261022-fold-cache-keepalive): in an untrusted folder, the two committed sources may not
-  // set these: the spend and behaviour settings, and the two texts sent to the model.
-  test("gates exactly the spend and behaviour settings and the two texts, each a real setting", () => {
+  // set these: the spend and behaviour settings, the prices the spend limit counts in (since
+  // AAW-20261023-keepalive-own-folder), and the two texts sent to the model.
+  test("gates exactly the spend and behaviour settings, the three prices and the two texts, each a real setting", () => {
     assert.deepEqual([...mod.TRUST_GATED].sort(), [
       "budgetMultiplier", "compactInstructions", "compactOnCap", "enabled",
       "fiveMinute.enabled", "fiveMinute.keepWarmFor", "fiveMinute.maxPings", "fiveMinute.pingEvery",
-      "oneHour.enabled", "oneHour.keepWarmFor", "oneHour.maxPings", "oneHour.pingEvery", "pingPrompt",
+      "oneHour.enabled", "oneHour.keepWarmFor", "oneHour.maxPings", "oneHour.pingEvery", "outputMult", "pingPrompt",
+      "readPrice", "writeMult",
     ]);
     const keys = new Set(mod.SETTINGS.map((s) => s.key));
     for (const k of mod.TRUST_GATED) assert.ok(keys.has(k), k);
@@ -83,6 +85,15 @@ describe("keep-alive's trust gate", { skip: skipReason }, () => {
     const para = trust.slice(0, trust.indexOf("\n\n"));
     for (const k of mod.TRUST_GATED) assert.ok(para.includes(`\`${k.split(".").pop()}\``), `README trust paragraph names ${k}`);
     assert.ok(para.includes("`.ai-dlc/cache-keepalive.json`") && para.includes("`.claude/settings.json`"));
+    assert.ok(trust.includes(`the ${mod.TRUST_GATED.length} settings above`), "README counts the gated settings");
+  });
+
+  test("the /config row of every gated setting, and only those, says the committed files override it only in a trusted folder", () => {
+    const GATE = "overrides this row only in a folder Claude Code trusts (see the keep-alive README, hooks/keepalive/README.md, Workspace trust)";
+    for (const s of mod.SETTINGS) {
+      const gated = mod.TRUST_GATED.includes(s.key);
+      assert.equal(manifest.userConfig[s.userConfig].description.includes(GATE), gated, `${s.userConfig}: gate sentence ${gated ? "missing" : "on an ungated row"}`);
+    }
   });
 });
 
