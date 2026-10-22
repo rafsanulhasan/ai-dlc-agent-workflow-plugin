@@ -91,7 +91,7 @@ The orchestrator has to be the **main** agent: it is the lead that talks to you 
 | `devops-engineer` | CI/CD, NuGet and npm publishing, SonarQube PR gates, releases | sonnet |
 | `agent-manager` | The only agent that may change agents, skills, hooks, rules, commands, agent memory and the workflow file; `brutal-critique` critiques the docs of every change, `sqa-engineer` and `code-reviewer` test and review its code. It also creates new Claude and Copilot plugins | opus |
 
-Agents name the `opus` and `sonnet` aliases rather than pinned model ids, so each role follows the newest model in its family. To pin a version, set `ANTHROPIC_DEFAULT_OPUS_MODEL` or `ANTHROPIC_DEFAULT_SONNET_MODEL` in `.claude/settings.json`.
+Agents use the `opus`, `sonnet` and `haiku` aliases (see the `model:` line of each file in `plugins/claude/ai-dlc/agents/`), so every role follows the newest model in its family without edits. To freeze a version, set `ANTHROPIC_DEFAULT_OPUS_MODEL` / `_SONNET_` / `_HAIKU_` in `.claude/settings.json`.
 
 ## Lifecycles and gates
 

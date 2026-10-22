@@ -30,6 +30,7 @@
     "architecture-review",
     "bunit-blazor-testing",
     "command-management",
+    "configure-auto-handoff",
     "csharp-architecture-testing",
     "csharp-integration-testing",
     "csharp-mutation-testing",

@@ -85,7 +85,8 @@ Made by Rafsanul Hasan, 2026-10-21:
   not yet checked on a live 1M session). The comparisons, including the
   projected size and the seeded-session headroom guard, stay in tokens.
   `AUTO_HANDOFF_TOKENS` stays, as an absolute token count that overrides the
-  percentage. The threshold source reads, for example,
+  percentage (superseded 2026-10-22: no longer read; `thresholdTokens`, or
+  `AI_DLC_AUTO_HANDOFF_THRESHOLD_TOKENS`, replaces it). The threshold source reads, for example,
   `80% of the 1000k window, thresholdPercent in /config` on a 1M window. Still main or lead
   session only: every hook skips events with an `agentId`. The stale comment
   naming `HANDOFF_ARM_TOKENS` in `context-warning.ts` is gone. Tests in
@@ -94,7 +95,7 @@ Made by Rafsanul Hasan, 2026-10-21:
   a 1M window, the derived window, the fallback, the env override and the
   clamp; the headroom warning test uses `thresholdPercent: 30`.
 - **Percentage tests, review round 1.** `tests/auto-handoff.test.tsx` adds a
-  non-numeric `AUTO_HANDOFF_TOKENS` falling back to the percentage, the line at
+  non-numeric `AUTO_HANDOFF_TOKENS` (superseded 2026-10-22, see below) falling back to the percentage, the line at
   `thresholdPercent` 100, `windowOf` with a zero or negative window, `contextLine`
   rounding down, and the logged line in tokens at the default.
 - **Fallback window, review round 2.** The one-time log line for a missing
@@ -104,10 +105,164 @@ Made by Rafsanul Hasan, 2026-10-21:
   set AUTO_HANDOFF_TOKENS to an absolute token count` (at the default 80%).
   The fallback test pins the full text. The comment on `configured` names the
   missing window as a use of `AUTO_HANDOFF_TOKENS`, and `parseConfig`'s
-  return object is re-indented.
+  return object is re-indented. (Superseded 2026-10-22: the line now ends
+  `set thresholdTokens (AI_DLC_AUTO_HANDOFF_THRESHOLD_TOKENS) to an absolute
+  token count`, and the 500000 is `defaultContextWindow`.)
 - **Fallback log test, SQA review round 2.** `tests/auto-handoff.test.tsx` adds a
   test that the fallback log line follows `thresholdPercent` (50% gives a line of
   250000 tokens).
 - **README not carried.** The settings, environment variables and status line
   are documented in the `ai-dlc` README ("Automatic session handoff") and the
   `handoff` skill (*Session handoff*).
+
+Made by Rafsanul Hasan, 2026-10-22 (run `AAW-20261022-auto-handoff-chain`):
+
+- **Chain while the run is active.** Upstream's `unattended` guard stopped every
+  chain after `maxConsecutiveHandoffs` handoffs, because the seed prompt never
+  counts as the user's. `chainGuard` in `register.tsx` now lets the run state
+  decide: while the run the chain hands off is `active` and belongs to the
+  chain, there is no cap; when the run this chain claimed becomes `done`,
+  `blocked` or `abandoned`, the chain ends (logged as `run <id> is <status>:
+  chain ends`, with a sticky panel); with no such run, the old guard applies.
+  `unattended` is still counted. The seed handler records the run as
+  `chainRun:<new session>` in the store, and `pickRun` in `run.ts` also accepts
+  a run whose `session` is an earlier session of the chain (the lineage) or the
+  claimed run while its `session` is empty. `activeRun` became `runLookup`.
+- **Open handoff records.** `run.ts` gained `parseStages`, `isOpen`, `pairOf`,
+  `openRecords` and `recordsSection`. The session handoff gets a `## Handoff
+  records` section built in code: `run.md`, the session handoff, then the
+  records of every *Stages* row not `done` or `skipped`, `last-record` and its
+  pair first; files not on disk are marked `(missing)`. The seed line names it.
+- **Session names.** Each session of a chain is named
+  `<sessionNamePrefix>: <original name> (Session N)`. The original name comes
+  from the classic SessionStart / UserPromptSubmit `session_title`, else the
+  transcript's last `custom-title`, else its `ai-title`, else the short id; it
+  is carried in the lineage record (`baseName`) and any wrapper is stripped
+  (`baseName` in `config.ts`), so names never nest. The old session is renamed
+  with `$.command.run({ command: 'rename' })` before `/clear`, only when
+  `$.command.list()` includes `rename`; the seeded session's name is the
+  `sessionTitle` of the classic SessionStart answer. Failures are logged and
+  never block the handoff. Open runtime checks, not provable in unit tests:
+  whether Claude Code honours `sessionTitle` returned by a hooks module, and
+  whether `/rename` exists and renames the current session when a hook runs it.
+- **Capabilities record.** At each startup or resume (and once per process),
+  the module writes `~/.claude/state/auto-handoff/capabilities.json` with the
+  engine version and whether `/rename` is listed, for `/ai-dlc:init` and
+  `/ai-dlc:configure-auto-handoff` to read.
+- **Repository configuration.** `config.ts` has a `SETTINGS` table (13 keys,
+  each with an `AI_DLC_AUTO_HANDOFF_*` variable) and `resolveConfig`: per key,
+  `env` of `.claude/settings.local.json`, `env` of `.claude/settings.json`
+  (both read from the files, JSONC allowed), the process environment,
+  `.ai-dlc/auto-handoff.json`, the `userConfig` from `/config`, then the
+  default. Invalid values are logged and fall through; settings reload at each
+  session start. New keys: `enabled` (replaces `AUTO_HANDOFF_DISABLE`),
+  `thresholdTokens` (replaces `AUTO_HANDOFF_TOKENS`), `defaultContextWindow`
+  and `seedHeadroomTokens` (were the constants `DEFAULT_WINDOW` and
+  `MIN_HEADROOM`, now the defaults), `chainWhileRunActive`, `renameSessions`,
+  `sessionNamePrefix`. The old `AUTO_HANDOFF_*` names are no longer read.
+  `DISABLE_AUTO_COMPACT` is still honoured. The schema and the CLI that writes
+  the file ship with the new `configure-auto-handoff` skill.
+- **Tests.** The test engine's `command.run` branches on the command and gains
+  `command.list` and `session.version`; new tests in
+  `tests/auto-handoff.test.tsx` (chain, records, session names, configuration),
+  `tests/run.test.ts` (lineage, stages, records) and the new
+  `tests/config.test.ts`.
+
+Made by Rafsanul Hasan, 2026-10-22, code review round (run
+`AAW-20261022-auto-handoff-chain`, step 2.l2):
+
+- **Workspace trust for the repository file.** `.ai-dlc/auto-handoff.json` is
+  committed, and Claude Code's trust dialog does not cover it. `config.ts`
+  gained `TRUST_GATED` (`briefTemplate`, `instructionsTemplate`, `viewer`),
+  `trustOf`, `trustRoot`, `normPath` and `withoutGated`; `loadConfig` in
+  `register.tsx` passes the file's values through `trustGated`. When one of
+  the three keys is set there, the module reads `~/.claude.json` (only its
+  `projects[...].hasTrustDialogAccepted` flag is used; nothing else is logged
+  or kept) and applies the three keys only when the flag is exactly `true` for
+  the repository root (a linked worktree: the main checkout's root, from `git
+  rev-parse --path-format=absolute --git-common-dir`; a nested repository: its
+  own root) or, outside a repository, for the working directory or a folder
+  above it. Keys are compared ignoring case, `\` against `/` and a trailing
+  slash. It fails closed: no file, bad JSON, no entry or a non-`true` value
+  skip the three keys with one log line naming them; every other key of the
+  file still applies. Settings `env`, the process environment and `/config`
+  are not gated. Unverified: whether `CLAUDE_CONFIG_DIR` moves `.claude.json`
+  (the module always reads the home directory's, so a moved file reads as
+  untrusted), and how other machines spell the keys (this one: forward slashes
+  and a lowercase drive letter, matched by the normalisation).
+- **Viewer address checked.** `parseAddress` in `server.ts` now takes a port
+  of 10 to 65535 with no leading zero, and `check` in `config.ts` accepts a
+  `viewer` only when it is blank or `host:port`; anything else is logged and
+  falls through, instead of silently starting no server. The CLI applies the
+  same rule (schema `format: host-port`).
+- **`/config` warnings.** `parseConfig` became `parseUserConfig`, which also
+  returns a warning per `/config` value it clamps or drops; `resolveConfig`
+  logs it when `/config` is the level used for that key. `parseConfig` stays,
+  returning the settings alone.
+- **One run lookup per attempt.** `chainGuard` takes the lookup as a function
+  and returns what it found; `tryHandoff` passes that to `handoff`, which no
+  longer looks again. `canHandOff` on the tool gate uses `cachedLookup`: one
+  lookup, shared while running, for two seconds, dropped at each turn end,
+  typed prompt and session start.
+- **`handoff()` split.** `composeBrief` (Haiku and the brief's text),
+  `writeRunHandoff` (the session handoff, then `run.md`) and `queueClear` were
+  extracted; behaviour is unchanged.
+- **Rename before clear.** `renameOld` now awaits the `/rename` (a queued
+  command resolves once it has run) before the `/clear` is queued, so the two
+  run in order; a rename still pending after 10 seconds is logged and the
+  `/clear` goes ahead.
+- **Settings reload.** At each SessionStart, `reloadConfig` waits for a load
+  already in flight and then loads again, instead of reusing a load that read
+  the files before the session started.
+- **Tidying.** The unreachable `return undefined` after `check`'s switch and
+  stray blank lines in `register.tsx` are gone.
+- **Tests.** `tests/config.test.ts`: trust matching (case, separators,
+  trailing slash, drive letter, nested repository, parent-only trust outside a
+  repository, missing file, bad JSON, non-boolean), `trustRoot`, the address
+  rule and the `/config` warnings. `tests/auto-handoff.test.tsx`: the test
+  engine answers `--git-common-dir` and counts run lookups; new tests for an
+  untrusted, a non-`true`, a trusted and a worktree folder, and for one lookup
+  per handoff and per burst of gated tool calls.
+- **Prototype keys.** `check` looks a boolean word up in `BOOLS` with
+  `Object.hasOwn`, so `constructor` and `__proto__` are invalid (as in the
+  CLI) instead of resolving to `Object.prototype` members. `renderTemplate`
+  likewise treats a `{{#name}}` that is not an own flag as unset.
+
+Made by Rafsanul Hasan, 2026-10-22 (run `AAW-20261022-window-observability`):
+
+- **Window in the threshold log line.** The per-turn line now names the
+  window the threshold was computed from, where it came from, and the basis:
+  `threshold session=<id> tokens=<n> threshold=<n> window=<n|none>
+  windowSource=<host|host-percent|default|none> basis=<thresholdPercent:<n>|thresholdTokens>
+  via=<trigger>`. `via` stays last because it can hold spaces. `config.ts`
+  gained `windowInfo` (the window and its source; `windowOf` now wraps it) and
+  `windowFields` (the three fields). In `register.tsx`, `contextWindow` keeps
+  the window it used in `lastWindow` and `configured` clears it first, so under
+  `thresholdTokens`, where no window is read, the line says `window=none
+  windowSource=none basis=thresholdTokens`; `windowFields` adds no usage call.
+- **Fallback log line corrected.** The one-time `no context window reported`
+  line said `no handoff fires` when the real window is smaller than the line.
+  The `session.compact` handler hands off in place of Claude Code's
+  auto-compact whatever the threshold, so the line now ends `if the real window
+  is smaller than <line>, the handoff waits for auto-compact: set
+  thresholdTokens (AI_DLC_AUTO_HANDOFF_THRESHOLD_TOKENS) to an absolute token
+  count`. The two tests that pin it follow.
+- **Tests.** `tests/auto-handoff.test.tsx` adds the line's fields for a window
+  the host reports, one derived from its percentage, the default window and
+  `thresholdTokens`, that `via` stays last, and unit tests of `windowInfo` and
+  `windowFields`.
+- **Claude Code's own window fields** (fix round 1). The line gains
+  `hostWindowSource=<source|none> autoCompactThreshold=<n|none>` between
+  `basis` and `via`: Claude Code's `autocompactSource` (how it settled the
+  window it compacts against) and `autoCompactThreshold`, read from
+  `$.session.usage({ breakdown: 'summary' }).context.breakdown`. `summary`
+  estimates locally (`full` would send token-count requests). `register.tsx`
+  gained `hostWindow`, called only in `tryHandoff` when the line is written,
+  never per turn; a missing breakdown, a missing field or a failed call logs
+  `none` and the handoff goes on. `config.ts` gained `HostWindow` and
+  `hostFields`, which also logs `none` for a value of the wrong type or one
+  that would put a space in the line. The test engine's `session.usage` mock
+  now records each call's args and can return a breakdown or throw; the
+  existing threshold-line tests take the two fields, and five tests cover a
+  breakdown with both fields, with neither, a call that throws, a single
+  `summary` request made only when the line is written, and `hostFields`.

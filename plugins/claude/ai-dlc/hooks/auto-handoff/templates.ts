@@ -6,7 +6,7 @@
 /** Fills {{#name}}...{{/name}} (shown when set) and {{^name}}...{{/name}} (shown when not). */
 export function renderTemplate(template: string, flags: Record<string, boolean>): string {
   return template
-    .replace(/\{\{([#^])(\w+)\}\}([\s\S]*?)\{\{\/\2\}\}/g, (_m, kind: string, name: string, body: string) => (kind === '#') === Boolean(flags[name]) ? body : '')
+    .replace(/\{\{([#^])(\w+)\}\}([\s\S]*?)\{\{\/\2\}\}/g, (_m, kind: string, name: string, body: string) => (kind === '#') === (Object.hasOwn(flags, name) && Boolean(flags[name])) ? body : '')
     .replace(/\n{3,}/g, '\n\n')
     .trim()
 }

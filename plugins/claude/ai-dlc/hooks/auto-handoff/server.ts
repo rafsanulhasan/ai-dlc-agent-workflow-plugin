@@ -25,8 +25,10 @@ http.createServer((req, res) => {
 }).listen(Number(port), host, () => console.log('viewer serving http://' + host + ':' + port))
 `
 
-/** "host:port", or undefined when the value is not one. The host "tailscale" is resolved by the caller. */
+/** "host:port", or undefined when the value is not one: a host of letters, digits, `_`, `.` and `-`,
+ * and a port from 10 to 65535 with no leading zero. The host "tailscale" is resolved by the caller.
+ * The CLI of /ai-dlc:configure-auto-handoff applies the same rule (its `host-port` format). */
 export function parseAddress(v: string): { host: string; port: string } | undefined {
-  const m = /^([\w.-]+):(\d{2,5})$/.exec(v.trim())
-  return m ? { host: m[1]!, port: m[2]! } : undefined
+  const m = /^([\w.-]+):([1-9]\d{1,4})$/.exec(v.trim())
+  return m && Number(m[2]) <= 65535 ? { host: m[1]!, port: m[2]! } : undefined
 }

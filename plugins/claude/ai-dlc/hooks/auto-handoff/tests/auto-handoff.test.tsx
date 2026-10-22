@@ -4,9 +4,10 @@ import type { On, SessionMessage } from 'claude-code'
 import { briefPrompt, extractFacts, factsBlock, hasUnansweredLastRequest, isValidBrief, markUnverifiedFigures } from '../brief.ts'
 import { renderTemplate } from '../templates.ts'
 import { parseBrief } from '../viewer.ts'
-import { DEFAULT_WINDOW, contextLine, parseConfig, windowOf } from '../config.ts'
+import { DEFAULT_WINDOW, contextLine, hostFields, parseConfig, windowFields, windowInfo, windowOf } from '../config.ts'
 
-type Calls = { compacts: number; steps: number; cleared: number; seeded: string[]; written: Record<string, string>; completes: number; tokens: number; prompts: string[]; toasts: string[]; ran: number; clearedAtWrite: Record<string, number> }
+// renamed: the names /rename was run with, in order; commandOrder: every slash command run, in order.
+type Calls = { compacts: number; steps: number; cleared: number; seeded: string[]; written: Record<string, string>; completes: number; tokens: number; prompts: string[]; toasts: string[]; ran: number; clearedAtWrite: Record<string, number>; renamed: string[]; commandOrder: string[]; branchQueries: number; usageArgs: unknown[] }
 
 // The test runs sandboxed, with no file access, so these stand in for the files in templates/:
 // the same headings and switches, shorter prose.
@@ -52,8 +53,9 @@ Copy "Last Real User Message" verbatim. Then "Status: Answered / Partially answe
 1. The next action.
 `
 
-// git as the engine runs it: the repository root, the branch and the short commit.
-type Git = { root: string; branch: string; commit: string }
+// git as the engine runs it: the repository root, the branch and the short commit; commonDir: the
+// absolute --git-common-dir, set for a linked worktree (unset: git answers as for an older git).
+type Git = { root: string; branch: string; commit: string; commonDir?: string }
 
 const BASIC: SessionMessage[] = [
   { role: 'user', text: 'please refactor the parser', toolUses: [] },
@@ -72,12 +74,14 @@ declare const setTimeout: (fn: (...args: never[]) => void, ms: number) => unknow
 // On Windows the engine hands fs hooks "/home/test/x" as "D:\home\test\x";
 // the fake file store keys on the POSIX spelling either way.
 const posix = (p: string) => p.replace(/^[A-Za-z]:/, '').replace(/\\/g, '/')
-// The mod's log lands in the fake file store too (sh append or fs.write); assertions about the files a handoff writes skip it.
-const files = (written: Record<string, string>) => Object.keys(written).filter(p => !p.endsWith('/auto-handoff.log'))
+// The mod's log and its capabilities record land in the fake file store too (sh append or fs.write);
+// assertions about the files a handoff writes skip them.
+const files = (written: Record<string, string>) => Object.keys(written).filter(p => !p.endsWith('/auto-handoff.log') && !p.endsWith('/capabilities.json'))
 
 // The engine beneath the plugin: everything the mod calls, answered from memory.
-function engine(on: On, opts: { tokens: number; files?: Record<string, string>; env?: Record<string, string>; brief?: string | null; messages?: SessionMessage[]; toolChars?: number; streamToolChars?: number; store?: Record<string, unknown>; stepUsage?: boolean; surfaces?: ('terminal' | 'desktop' | 'mobile' | 'vscode')[]; noSh?: boolean; git?: Git; failWrite?: RegExp; window?: number | null; percent?: number }): Calls {
-  const calls: Calls = { compacts: 0, steps: 0, cleared: 0, seeded: [], written: {}, completes: 0, tokens: opts.tokens, prompts: [], toasts: [], ran: 0, clearedAtWrite: {} }
+// commands: the slash commands the engine lists (default: clear and rename); failRename: /rename rejects.
+function engine(on: On, opts: { tokens: number; files?: Record<string, string>; env?: Record<string, string>; brief?: string | null; messages?: SessionMessage[]; toolChars?: number; streamToolChars?: number; store?: Record<string, unknown>; stepUsage?: boolean; surfaces?: ('terminal' | 'desktop' | 'mobile' | 'vscode')[]; noSh?: boolean; git?: Git; failWrite?: RegExp; window?: number | null; percent?: number; breakdown?: Record<string, unknown> | 'throw'; commands?: string[]; failRename?: boolean }): Calls {
+  const calls: Calls = { compacts: 0, steps: 0, cleared: 0, seeded: [], written: {}, completes: 0, tokens: opts.tokens, prompts: [], toasts: [], ran: 0, clearedAtWrite: {}, renamed: [], commandOrder: [], branchQueries: 0, usageArgs: [] }
   let sessionId = 'old-session'
   let clears = 0
   mock.env(on, { HOME: '/home/test', ...(opts.env ?? {}) })
@@ -91,7 +95,14 @@ function engine(on: On, opts: { tokens: number; files?: Record<string, string>; 
   on('turn.complete', async () => ({ text: 'ok' }))
   // window: the host's context window, 200k unless the test sets one; null: the host reports none.
   // percent: the host's own share, 0 to 100, sent only when the test sets it.
-  on('session.usage', async () => ({ value: { startedAt: 0, context: { tokens: calls.tokens, ...(opts.window === null ? {} : { window: opts.window ?? 200_000 }), ...(opts.percent === undefined ? {} : { percent: opts.percent }) }, rateLimits: [] } }))
+  // breakdown: what a call with { breakdown } gets as context.breakdown (absent unless the test sets it);
+  // 'throw': such a call fails. usageArgs records every call's args, so a test sees which asked for one.
+  on('session.usage', async (_$, e) => {
+    calls.usageArgs.push(e)
+    if (e?.breakdown && opts.breakdown === 'throw') throw new Error('breakdown failed')
+    const breakdown = e?.breakdown && opts.breakdown ? { breakdown: opts.breakdown } : {}
+    return { value: { startedAt: 0, context: { tokens: calls.tokens, ...(opts.window === null ? {} : { window: opts.window ?? 200_000 }), ...(opts.percent === undefined ? {} : { percent: opts.percent }), ...breakdown }, rateLimits: [] } } as never
+  })
   on('session.id', async () => ({ value: sessionId }))
   on('session.cwd', async () => ({ value: '/home/test/proj' }))
   on('fs.read', async (_$, e) => {
@@ -139,10 +150,13 @@ function engine(on: On, opts: { tokens: number; files?: Record<string, string>; 
     // git answers only when the test gives a repository; otherwise it fails as outside one.
     if (e.argv[0] === 'git') {
       const args = e.argv.slice(3).join(' ')
+      // Each run lookup asks for the branch once: the count of lookups.
+      if (args === 'rev-parse --abbrev-ref HEAD') calls.branchQueries++
       const out = !opts.git ? undefined
         : args === 'rev-parse --show-toplevel' ? opts.git.root
         : args === 'rev-parse --abbrev-ref HEAD' ? opts.git.branch
         : args === 'rev-parse --short HEAD' ? opts.git.commit
+        : args === 'rev-parse --path-format=absolute --git-common-dir' ? opts.git.commonDir
         : undefined
       return { value: { exitCode: out === undefined ? 128 : 0, stdout: out ? `${out}\n` : '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
     }
@@ -156,7 +170,17 @@ function engine(on: On, opts: { tokens: number; files?: Record<string, string>; 
     calls.toasts.push(e.text)
     return { value: undefined }
   })
-  on('command.run', async () => {
+  on('command.list', async () => ({ value: (opts.commands ?? ['clear', 'rename']).map(name => ({ name, description: name, source: 'builtin' as never })) }))
+  on('session.version', async () => ({ value: { version: '2.1.306', base: '2.1.306' } as never }))
+  // /clear starts a new session; /rename records the name; anything else is a no-op.
+  on('command.run', async (_$, e) => {
+    calls.commandOrder.push(e.command)
+    if (e.command === 'rename') {
+      if (opts.failRename) throw new Error('rename refused')
+      calls.renamed.push(e.args)
+      return {}
+    }
+    if (e.command !== 'clear') return {}
     calls.cleared++
     sessionId = `new-session-${++clears}`
     return {}
@@ -259,16 +283,16 @@ describe('auto-handoff', () => {
     expect(calls.completes).toBe(1)
   })
 
-  test('AUTO_HANDOFF_TOKENS lowers the threshold', async ($, on) => {
-    const calls = engine(on, { tokens: 25_000, env: { AUTO_HANDOFF_TOKENS: '20000' } })
+  test('AI_DLC_AUTO_HANDOFF_THRESHOLD_TOKENS lowers the threshold', async ($, on) => {
+    const calls = engine(on, { tokens: 25_000, env: { AI_DLC_AUTO_HANDOFF_THRESHOLD_TOKENS: '20000' } })
     await $.turn.complete(TURN)
     await settle(() => calls.cleared > 0)
     expect(calls.cleared).toBe(1)
   })
 
-  for (const name of ['AUTO_HANDOFF_DISABLE', 'DISABLE_AUTO_COMPACT']) {
-    test(`kill switch: ${name} set means no brief and no clear`, async ($, on) => {
-      const calls = engine(on, { tokens: 190_000, env: { [name]: '1' } })
+  for (const [name, value] of [['AI_DLC_AUTO_HANDOFF_ENABLED', 'false'], ['DISABLE_AUTO_COMPACT', '1']] as const) {
+    test(`kill switch: ${name}=${value} means no brief and no clear`, async ($, on) => {
+      const calls = engine(on, { tokens: 190_000, env: { [name]: value } })
       await $.turn.complete(TURN)
       await settle(() => false)
       expect(calls.completes).toBe(0)
@@ -398,7 +422,7 @@ describe('auto-handoff', () => {
     expect(calls.cleared).toBe(0)
     const log = calls.written['/home/test/.claude/state/auto-handoff/auto-handoff.log'] ?? ''
     expect(log.split('no context window reported: thresholdPercent applies to 500000').length - 1).toBe(1)
-    expect(log).toContain('no context window reported: thresholdPercent applies to 500000, a line of 400000 tokens; if the real window is smaller than 400000, no handoff fires: set AUTO_HANDOFF_TOKENS to an absolute token count')
+    expect(log).toContain('no context window reported: thresholdPercent applies to 500000, a line of 400000 tokens; if the real window is smaller than 400000, the handoff waits for auto-compact: set thresholdTokens (AI_DLC_AUTO_HANDOFF_THRESHOLD_TOKENS) to an absolute token count')
     calls.tokens = 400_000
     await $.turn.complete(TURN)
     await settle(() => calls.cleared > 0)
@@ -410,20 +434,20 @@ describe('auto-handoff', () => {
     await $.turn.complete(TURN)
     await settle(() => false)
     const log = calls.written['/home/test/.claude/state/auto-handoff/auto-handoff.log'] ?? ''
-    expect(log).toContain('no context window reported: thresholdPercent applies to 500000, a line of 250000 tokens; if the real window is smaller than 250000, no handoff fires: set AUTO_HANDOFF_TOKENS to an absolute token count')
+    expect(log).toContain('no context window reported: thresholdPercent applies to 500000, a line of 250000 tokens; if the real window is smaller than 250000, the handoff waits for auto-compact: set thresholdTokens (AI_DLC_AUTO_HANDOFF_THRESHOLD_TOKENS) to an absolute token count')
     expect(log).not.toContain('400000')
   })
 
-  test('AUTO_HANDOFF_TOKENS overrides thresholdPercent with an absolute count', { options: { thresholdPercent: 50 } }, async ($, on) => {
-    const calls = engine(on, { tokens: 120_000, env: { AUTO_HANDOFF_TOKENS: '150000' } })
+  test('AI_DLC_AUTO_HANDOFF_THRESHOLD_TOKENS overrides thresholdPercent with an absolute count', { options: { thresholdPercent: 50 } }, async ($, on) => {
+    const calls = engine(on, { tokens: 120_000, env: { AI_DLC_AUTO_HANDOFF_THRESHOLD_TOKENS: '150000' } })
     await $.turn.complete(TURN)
     await settle(() => false)
     expect(calls.cleared).toBe(0)
   })
 
   // Review round 1 (AC-1): edges of the percentage line.
-  test('a non-numeric or non-positive AUTO_HANDOFF_TOKENS is ignored and thresholdPercent applies', async ($, on) => {
-    const calls = engine(on, { tokens: 159_999, env: { AUTO_HANDOFF_TOKENS: 'lots' } })
+  test('a non-numeric or non-positive AI_DLC_AUTO_HANDOFF_THRESHOLD_TOKENS is ignored and thresholdPercent applies', async ($, on) => {
+    const calls = engine(on, { tokens: 159_999, env: { AI_DLC_AUTO_HANDOFF_THRESHOLD_TOKENS: 'lots' } })
     await $.turn.complete(TURN)
     await settle(() => false)
     expect(calls.cleared).toBe(0) // not handed off at 0 tokens; the line is 160k
@@ -463,6 +487,167 @@ describe('auto-handoff', () => {
     await settle(() => calls.cleared > 0)
     const log = calls.written['/home/test/.claude/state/auto-handoff/auto-handoff.log'] ?? ''
     expect(log).toContain('threshold=160000')
+  })
+
+  // The per-turn threshold line names the window the threshold came from and its source, so a live
+  // session shows what Claude Code reports. via stays last: it can hold spaces.
+  const thresholdLine = (calls: Calls) => (calls.written['/home/test/.claude/state/auto-handoff/auto-handoff.log'] ?? '').split('\n').find((l) => l.includes('threshold session=')) ?? ''
+
+  test('the threshold log line names a window the host reports', async ($, on) => {
+    const calls = engine(on, { tokens: 800_000, window: 1_000_000 })
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    expect(thresholdLine(calls)).toContain('tokens=800000 threshold=800000 window=1000000 windowSource=host basis=thresholdPercent:80 hostWindowSource=none autoCompactThreshold=none via=turn.complete')
+  })
+
+  test('the threshold log line names a window derived from the host percentage', async ($, on) => {
+    // 800k at 80% means a 1M window, so the line is 800k.
+    const calls = engine(on, { tokens: 800_000, window: null, percent: 80 })
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    expect(thresholdLine(calls)).toContain('threshold=800000 window=1000000 windowSource=host-percent basis=thresholdPercent:80 hostWindowSource=none autoCompactThreshold=none via=')
+  })
+
+  test('the threshold log line names the default window when the host reports none', async ($, on) => {
+    const calls = engine(on, { tokens: 400_000, window: null })
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    expect(thresholdLine(calls)).toContain('threshold=400000 window=500000 windowSource=default basis=thresholdPercent:80 hostWindowSource=none autoCompactThreshold=none via=')
+  })
+
+  test('the threshold log line reads no window under thresholdTokens', async ($, on) => {
+    const calls = engine(on, { tokens: 150_000, window: 1_000_000, env: { AI_DLC_AUTO_HANDOFF_THRESHOLD_TOKENS: '150000' } })
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    expect(thresholdLine(calls)).toContain('threshold=150000 window=none windowSource=none basis=thresholdTokens hostWindowSource=none autoCompactThreshold=none via=')
+  })
+
+  test('the threshold log line keeps via last, after the window fields', async ($, on) => {
+    const calls = engine(on, { tokens: 165_000 })
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    expect(thresholdLine(calls)).toMatch(/threshold session=old-session tokens=165000 threshold=160000 window=200000 windowSource=host basis=thresholdPercent:80 hostWindowSource=none autoCompactThreshold=none via=turn\.complete$/)
+  })
+
+  test('windowInfo and windowFields give the window, its source and the basis', () => {
+    expect(windowInfo({ tokens: 1, window: 1_000_000 })).toEqual({ window: 1_000_000, source: 'host' })
+    expect(windowInfo({ tokens: 400_000, percent: 40 })).toEqual({ window: 1_000_000, source: 'host-percent' })
+    expect(windowInfo({ tokens: 400_000 })).toBeUndefined()
+    expect(windowFields({ window: 500_000, source: 'default' }, { thresholdPercent: 50 })).toBe('window=500000 windowSource=default basis=thresholdPercent:50')
+    expect(windowFields(undefined, { thresholdPercent: 80, thresholdTokens: 90_000 })).toBe('window=none windowSource=none basis=thresholdTokens')
+  })
+
+  test('windowInfo ignores a window that is not a number and falls through to the percentage', () => {
+    expect(windowInfo({ tokens: 200_000, window: '1000000' as unknown as number, percent: 20 })).toEqual({ window: 1_000_000, source: 'host-percent' })
+    expect(windowInfo({ tokens: 200_000, window: Number.NaN, percent: 20 })).toEqual({ window: 1_000_000, source: 'host-percent' })
+    expect(windowInfo({ tokens: 200_000, window: '1000000' as unknown as number })).toBeUndefined()
+    expect(windowInfo({ tokens: 200_000, window: 0, percent: 20 })?.source).toBe('host-percent')
+  })
+
+  // Claude Code's own window source and auto-compact line, from a summary breakdown asked for only
+  // when the threshold line is written.
+  test('the threshold log line names the host window source and auto-compact threshold', async ($, on) => {
+    const calls = engine(on, { tokens: 800_000, window: 1_000_000, breakdown: { autocompactSource: 'model-default', autoCompactThreshold: 967_000 } })
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    expect(thresholdLine(calls)).toContain('window=1000000 windowSource=host basis=thresholdPercent:80 hostWindowSource=model-default autoCompactThreshold=967000 via=turn.complete')
+  })
+
+  test('the threshold log line reads none when the host breakdown has neither field', async ($, on) => {
+    const calls = engine(on, { tokens: 165_000, breakdown: { totalTokens: 165_000 } })
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    expect(thresholdLine(calls)).toContain('basis=thresholdPercent:80 hostWindowSource=none autoCompactThreshold=none via=turn.complete')
+  })
+
+  test('the threshold log line reads none and still hands off when the breakdown call throws', async ($, on) => {
+    const calls = engine(on, { tokens: 165_000, breakdown: 'throw' })
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    expect(calls.cleared).toBe(1)
+    expect(thresholdLine(calls)).toContain('windowSource=host basis=thresholdPercent:80 hostWindowSource=none autoCompactThreshold=none via=turn.complete')
+  })
+
+  test('the host breakdown is asked for once, as a summary, and only when the threshold line is written', async ($, on) => {
+    const calls = engine(on, { tokens: 31_000, breakdown: { autocompactSource: 'env', autoCompactThreshold: 150_000 } })
+    await $.turn.complete(TURN)
+    await settle(() => false)
+    expect(calls.cleared).toBe(0)
+    expect(calls.usageArgs.length).toBeGreaterThan(0)
+    expect(calls.usageArgs.filter((a) => (a as { breakdown?: unknown } | undefined)?.breakdown !== undefined)).toEqual([])
+    calls.tokens = 165_000
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    const asked = calls.usageArgs.filter((a) => (a as { breakdown?: unknown } | undefined)?.breakdown !== undefined)
+    expect(asked).toEqual([{ breakdown: 'summary' }])
+    expect(thresholdLine(calls)).toContain('hostWindowSource=env autoCompactThreshold=150000 via=turn.complete')
+  })
+
+  test('hostFields keeps the line to key=value pairs', () => {
+    expect(hostFields(undefined)).toBe('hostWindowSource=none autoCompactThreshold=none')
+    expect(hostFields({ autocompactSource: 'settings', autoCompactThreshold: 180_000 })).toBe('hostWindowSource=settings autoCompactThreshold=180000')
+    expect(hostFields({ autocompactSource: 'two words', autoCompactThreshold: '180000' })).toBe('hostWindowSource=none autoCompactThreshold=none')
+    expect(hostFields({ autocompactSource: '', autoCompactThreshold: Number.NaN })).toBe('hostWindowSource=none autoCompactThreshold=none')
+  })
+
+  test('hostFields reads each field on its own and rejects what is not a plain string or finite number', () => {
+    expect(hostFields({ autocompactSource: 'env' })).toBe('hostWindowSource=env autoCompactThreshold=none')
+    expect(hostFields({ autoCompactThreshold: 150_000 })).toBe('hostWindowSource=none autoCompactThreshold=150000')
+    expect(hostFields({})).toBe('hostWindowSource=none autoCompactThreshold=none')
+    expect(hostFields({ autocompactSource: 7, autoCompactThreshold: Number.POSITIVE_INFINITY })).toBe('hostWindowSource=none autoCompactThreshold=none')
+    expect(hostFields({ autocompactSource: null, autoCompactThreshold: Number.NEGATIVE_INFINITY })).toBe('hostWindowSource=none autoCompactThreshold=none')
+    expect(hostFields({ autocompactSource: 'a	b' })).toBe('hostWindowSource=none autoCompactThreshold=none')
+    expect(hostFields({ autocompactSource: ' env' })).toBe('hostWindowSource=none autoCompactThreshold=none')
+    // Any finite number is logged as the host sent it; the module does not judge it.
+    expect(hostFields({ autoCompactThreshold: 0 })).toBe('hostWindowSource=none autoCompactThreshold=0')
+    expect(hostFields({ autoCompactThreshold: -5 })).toBe('hostWindowSource=none autoCompactThreshold=-5')
+    expect(hostFields({ autoCompactThreshold: 1.5 })).toBe('hostWindowSource=none autoCompactThreshold=1.5')
+  })
+
+  test('the threshold log line reads each host field on its own', async ($, on) => {
+    const calls = engine(on, { tokens: 165_000, breakdown: { autoCompactThreshold: 180_000 } })
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    expect(thresholdLine(calls)).toContain('hostWindowSource=none autoCompactThreshold=180000 via=turn.complete')
+  })
+
+  test('the threshold log line shows the host source when auto-compact is off (no threshold)', async ($, on) => {
+    const calls = engine(on, { tokens: 165_000, breakdown: { autocompactSource: 'settings' } })
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    expect(thresholdLine(calls)).toContain('hostWindowSource=settings autoCompactThreshold=none via=turn.complete')
+  })
+
+  test('the threshold log line names a host source with a space as none and keeps via last', async ($, on) => {
+    const calls = engine(on, { tokens: 165_000, breakdown: { autocompactSource: 'model default', autoCompactThreshold: 150_000 } })
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    expect(thresholdLine(calls)).toContain('hostWindowSource=none autoCompactThreshold=150000 via=turn.complete')
+  })
+
+  test('auto-compact asks the host breakdown once and logs it', async ($, on) => {
+    const calls = engine(on, { tokens: 174_000, window: null, breakdown: { autocompactSource: 'env', autoCompactThreshold: 170_000 } })
+    await $.session.compact({ trigger: 'auto', messages: BASIC })
+    await settle(() => calls.cleared > 0)
+    expect(thresholdLine(calls)).toContain('hostWindowSource=env autoCompactThreshold=170000 via=session.compact')
+    expect(calls.usageArgs.filter((a) => (a as { breakdown?: unknown } | undefined)?.breakdown !== undefined)).toEqual([{ breakdown: 'summary' }])
+  })
+
+  test('the threshold log line keeps via last when it holds spaces', async ($, on) => {
+    const calls = engine(on, { tokens: 61_000, env: { AI_DLC_AUTO_HANDOFF_THRESHOLD_TOKENS: '80000' }, toolChars: 80_000 })
+    await $.tool.call({ tool: 'Read', file_path: '/big.txt' })
+    await step($)
+    await settle(() => calls.cleared > 0)
+    expect(thresholdLine(calls)).toMatch(/ window=none windowSource=none basis=thresholdTokens hostWindowSource=none autoCompactThreshold=none via=turn\.step measured=\d+$/)
+  })
+
+  test('auto-compact on the default window fires and names the default window', async ($, on) => {
+    // The fallback message says the handoff waits for auto-compact: it does fire there, below the line.
+    const calls = engine(on, { tokens: 174_000, window: null })
+    await $.session.compact({ trigger: 'auto', messages: BASIC })
+    await settle(() => calls.cleared > 0)
+    expect(calls.cleared).toBe(1)
+    expect(thresholdLine(calls)).toContain('window=500000 windowSource=default basis=thresholdPercent:80 hostWindowSource=none autoCompactThreshold=none via=session.compact')
   })
 
   test('the brief opens with the handoff instructions', async ($, on) => {
@@ -586,6 +771,14 @@ describe('auto-handoff', () => {
     expect(renderTemplate(t, { priority: false })).toBe('A\nN\nB')
   })
 
+  test('renderTemplate treats a section named like an Object.prototype member as not set', async () => {
+    for (const name of ['constructor', '__proto__']) {
+      const t = `A\n{{#${name}}}SHOWN{{/${name}}}{{^${name}}}HIDDEN{{/${name}}}\nB`
+      expect(renderTemplate(t, {})).toBe('A\nHIDDEN\nB')
+      expect(renderTemplate(t, { priority: true })).toBe('A\nHIDDEN\nB')
+    }
+  })
+
   test('hasUnansweredLastRequest reads only the last-request section', async () => {
     expect(hasUnansweredLastRequest('## Last Request from the User\n"x"\nStatus: Not answered')).toBe(true)
     expect(hasUnansweredLastRequest('## Last Request from the User\n"x"\nStatus: Answered')).toBe(false)
@@ -622,7 +815,7 @@ describe('auto-handoff', () => {
 
   test('a seeded session that starts above the threshold does not loop', async ($, on) => {
     // The 2026-10-03 live run: threshold 20k, every fresh session started at ~31k.
-    const calls = engine(on, { tokens: 31_000, env: { AUTO_HANDOFF_TOKENS: '20000' } })
+    const calls = engine(on, { tokens: 31_000, env: { AI_DLC_AUTO_HANDOFF_THRESHOLD_TOKENS: '20000' } })
     await $.turn.complete(TURN)
     await settle(() => calls.cleared > 0)
     await $.classic.SessionStart({ source: 'clear' })
@@ -673,21 +866,21 @@ describe('auto-handoff', () => {
   }
 
   test('progress guard: no more than two handoffs without a typed prompt', async ($, on) => {
-    const calls = engine(on, { tokens: 31_000, env: { AUTO_HANDOFF_TOKENS: '20000' } })
+    const calls = engine(on, { tokens: 31_000, env: { AI_DLC_AUTO_HANDOFF_THRESHOLD_TOKENS: '20000' } })
     await unattendedRounds($, calls, 4)
     await settle(() => false)
     expect(calls.cleared).toBe(2)
   })
 
   test('maxConsecutiveHandoffs sets the progress guard', { options: { maxConsecutiveHandoffs: 1 } }, async ($, on) => {
-    const calls = engine(on, { tokens: 31_000, env: { AUTO_HANDOFF_TOKENS: '20000' } })
+    const calls = engine(on, { tokens: 31_000, env: { AI_DLC_AUTO_HANDOFF_THRESHOLD_TOKENS: '20000' } })
     await unattendedRounds($, calls, 3)
     await settle(() => false)
     expect(calls.cleared).toBe(1)
   })
 
-  test('a seeded session gets 40k of headroom above its floor, not a config field', { options: { headroom: 1_000_000, growth: 1_000_000 } }, async ($, on) => {
-    const calls = engine(on, { tokens: 120_000, env: { AUTO_HANDOFF_TOKENS: '100000' } })
+  test('a seeded session gets 40k of headroom above its floor by default; unknown options do not change it', { options: { headroom: 1_000_000, growth: 1_000_000 } }, async ($, on) => {
+    const calls = engine(on, { tokens: 120_000, env: { AI_DLC_AUTO_HANDOFF_THRESHOLD_TOKENS: '100000' } })
     await $.turn.complete(TURN)
     await settle(() => calls.cleared > 0)
     await $.classic.SessionStart({ source: 'clear' })
@@ -705,16 +898,16 @@ describe('auto-handoff', () => {
   })
 
   test('a threshold too close to the floor is raised, and the panel names the env var', async ($, on) => {
-    // The 2026-10-04 live run: AUTO_HANDOFF_TOKENS=80000 left in a shell, seeded sessions start at
+    // The 2026-10-04 live run: AI_DLC_AUTO_HANDOFF_THRESHOLD_TOKENS=80000 left in a shell, seeded sessions start at
     // ~45k. max(80k, 45k + 20k) was 80k, so each seeded session handed off after ~35k of work: eight times.
-    const calls = engine(on, { tokens: 85_000, env: { AUTO_HANDOFF_TOKENS: '80000' } })
+    const calls = engine(on, { tokens: 85_000, env: { AI_DLC_AUTO_HANDOFF_THRESHOLD_TOKENS: '80000' } })
     await $.turn.complete(TURN)
     await settle(() => calls.cleared > 0)
     await $.classic.SessionStart({ source: 'clear' })
     await settle(() => calls.seeded.length > 0)
     calls.tokens = 45_000
     await $.turn.complete(TURN) // seed turn sets the floor: 35k of headroom, under the 40k minimum
-    const warning = "threshold 80k (AUTO_HANDOFF_TOKENS) leaves 35k this session's 45k start: handing off at 85k instead"
+    const warning = "threshold 80k (AI_DLC_AUTO_HANDOFF_THRESHOLD_TOKENS in the environment) leaves 35k this session's 45k start: handing off at 85k instead"
     expect(await band($)).toContain(`⚠ ${warning}`)
     calls.tokens = 81_000 // past 80k; the old math handed off here
     await $.turn.complete(TURN)
@@ -750,7 +943,7 @@ describe('auto-handoff', () => {
   })
 
   test('progress guard: a typed prompt resumes handoffs', async ($, on) => {
-    const calls = engine(on, { tokens: 31_000, env: { AUTO_HANDOFF_TOKENS: '20000' } })
+    const calls = engine(on, { tokens: 31_000, env: { AI_DLC_AUTO_HANDOFF_THRESHOLD_TOKENS: '20000' } })
     await unattendedRounds($, calls, 3)
     expect(calls.cleared).toBe(2)
     await $.prompt.submit({ text: 'keep going', origin: { kind: 'composer' } } as never)
@@ -760,7 +953,7 @@ describe('auto-handoff', () => {
   })
 
   test('progress guard: a plugin or notification prompt is not progress', async ($, on) => {
-    const calls = engine(on, { tokens: 31_000, env: { AUTO_HANDOFF_TOKENS: '20000' } })
+    const calls = engine(on, { tokens: 31_000, env: { AI_DLC_AUTO_HANDOFF_THRESHOLD_TOKENS: '20000' } })
     await unattendedRounds($, calls, 3)
     await $.prompt.submit({ text: 'from a plugin', origin: { kind: 'plugin', name: 'other' } } as never)
     await $.prompt.submit({ text: 'task done', origin: { kind: 'task-notification' } } as never)
@@ -771,7 +964,7 @@ describe('auto-handoff', () => {
 
   test('a turn whose tool output would cross the threshold stops before the next request', async ($, on) => {
     // The 2026-10-03 case: measured 63k, then reads worth ~140k land in one turn.
-    const calls = engine(on, { tokens: 63_000, env: { AUTO_HANDOFF_TOKENS: '80000' }, toolChars: 560_000 })
+    const calls = engine(on, { tokens: 63_000, env: { AI_DLC_AUTO_HANDOFF_THRESHOLD_TOKENS: '80000' }, toolChars: 560_000 })
     await $.tool.call({ tool: 'Read', file_path: '/big.txt' })
     const chunks = await step($)
     expect(calls.steps).toBe(0)
@@ -783,7 +976,7 @@ describe('auto-handoff', () => {
 
   test('tool output that lands while the response streams still counts', async ($, on) => {
     // Seen live: eight reads ran mid-stream, then the stream's end zeroed the count.
-    const calls = engine(on, { tokens: 61_000, env: { AUTO_HANDOFF_TOKENS: '80000' }, streamToolChars: 400_000 })
+    const calls = engine(on, { tokens: 61_000, env: { AI_DLC_AUTO_HANDOFF_THRESHOLD_TOKENS: '80000' }, streamToolChars: 400_000 })
     const stream = $.turn.step({ ...STEP, index: 1 })[Symbol.asyncIterator]()
     await stream.next() // the response is still streaming
     await $.tool.call({ tool: 'Read', file_path: '/streamed.txt' }) // core runs the tool now
@@ -795,7 +988,7 @@ describe('auto-handoff', () => {
   })
 
   test('auto-compact is replaced by a handoff', async ($, on) => {
-    const calls = engine(on, { tokens: 174_000, env: { AUTO_HANDOFF_TOKENS: '80000' } })
+    const calls = engine(on, { tokens: 174_000, env: { AI_DLC_AUTO_HANDOFF_THRESHOLD_TOKENS: '80000' } })
     const r = await $.session.compact({ trigger: 'auto', messages: BASIC })
     expect(r.skip).toContain('auto-handoff')
     expect(calls.compacts).toBe(0)
@@ -804,21 +997,21 @@ describe('auto-handoff', () => {
   })
 
   test('a manual /compact is left alone', async ($, on) => {
-    const calls = engine(on, { tokens: 174_000, env: { AUTO_HANDOFF_TOKENS: '80000' } })
+    const calls = engine(on, { tokens: 174_000, env: { AI_DLC_AUTO_HANDOFF_THRESHOLD_TOKENS: '80000' } })
     await $.session.compact({ trigger: 'manual', messages: BASIC })
     expect(calls.compacts).toBe(1)
     expect(calls.completes).toBe(0)
   })
 
   test('auto-compact goes ahead when the kill switch is set', async ($, on) => {
-    const calls = engine(on, { tokens: 174_000, env: { AUTO_HANDOFF_TOKENS: '80000', AUTO_HANDOFF_DISABLE: 'x' } })
+    const calls = engine(on, { tokens: 174_000, env: { AI_DLC_AUTO_HANDOFF_THRESHOLD_TOKENS: '80000', AI_DLC_AUTO_HANDOFF_ENABLED: 'false' } })
     await $.session.compact({ trigger: 'auto', messages: BASIC })
     expect(calls.compacts).toBe(1)
     expect(calls.cleared).toBe(0)
   })
 
   test('small tool output under the threshold lets the request through', async ($, on) => {
-    const calls = engine(on, { tokens: 63_000, env: { AUTO_HANDOFF_TOKENS: '80000' }, toolChars: 20_000 })
+    const calls = engine(on, { tokens: 63_000, env: { AI_DLC_AUTO_HANDOFF_THRESHOLD_TOKENS: '80000' }, toolChars: 20_000 })
     await $.tool.call({ tool: 'Read', file_path: '/small.txt' })
     await step($)
     expect(calls.steps).toBe(1)
@@ -826,7 +1019,7 @@ describe('auto-handoff', () => {
   })
 
   test('the first request of a turn is never stopped', async ($, on) => {
-    const calls = engine(on, { tokens: 63_000, env: { AUTO_HANDOFF_TOKENS: '80000' }, toolChars: 560_000 })
+    const calls = engine(on, { tokens: 63_000, env: { AI_DLC_AUTO_HANDOFF_THRESHOLD_TOKENS: '80000' }, toolChars: 560_000 })
     await $.tool.call({ tool: 'Read', file_path: '/big.txt' })
     await step($, 0)
     expect(calls.steps).toBe(1)
@@ -909,7 +1102,7 @@ describe('auto-handoff', () => {
 
   test('past the threshold, tool calls are refused before they run', async ($, on) => {
     // Seen live: ~28 reads in one step took the session from 67k to 437k.
-    const calls = engine(on, { tokens: 67_000, env: { AUTO_HANDOFF_TOKENS: '80000' }, toolChars: 220_000 })
+    const calls = engine(on, { tokens: 67_000, env: { AI_DLC_AUTO_HANDOFF_THRESHOLD_TOKENS: '80000' }, toolChars: 220_000 })
     const results = []
     for (let i = 0; i < 28; i++) results.push(await $.tool.call({ tool: 'Read', file_path: `/export-${i}.txt` }))
     expect(calls.ran).toBe(1) // 67k + 55k crosses 80k after the first read
@@ -925,7 +1118,7 @@ describe('auto-handoff', () => {
 
   test('a refused tool call hands off at turn end even when the real size comes in under the threshold', async ($, on) => {
     // Seen live: the gate projected 83.7k, the response measured 72.5k, and the session stopped with no handoff.
-    const calls = engine(on, { tokens: 67_000, env: { AUTO_HANDOFF_TOKENS: '80000' }, toolChars: 220_000 })
+    const calls = engine(on, { tokens: 67_000, env: { AI_DLC_AUTO_HANDOFF_THRESHOLD_TOKENS: '80000' }, toolChars: 220_000 })
     await $.tool.call({ tool: 'Read', file_path: '/a.txt' })
     const refused = await $.tool.call({ tool: 'Read', file_path: '/b.txt' })
     expect('deny' in refused && refused.deny?.includes('[auto-handoff] Not run')).toBe(true)
@@ -936,7 +1129,7 @@ describe('auto-handoff', () => {
   })
 
   test('a refused tool call hands off at the next request, and the stop line does not claim a size under the threshold', async ($, on) => {
-    const calls = engine(on, { tokens: 84_000, env: { AUTO_HANDOFF_TOKENS: '80000' } })
+    const calls = engine(on, { tokens: 84_000, env: { AI_DLC_AUTO_HANDOFF_THRESHOLD_TOKENS: '80000' } })
     const refused = await $.tool.call({ tool: 'Read', file_path: '/a.txt' })
     expect('deny' in refused).toBe(true)
     calls.tokens = 72_500 // the next measurement comes in under the threshold
@@ -950,7 +1143,7 @@ describe('auto-handoff', () => {
   })
 
   test('without a refusal, a turn that ends under the threshold does not hand off', async ($, on) => {
-    const calls = engine(on, { tokens: 67_000, env: { AUTO_HANDOFF_TOKENS: '80000' }, toolChars: 4_000 })
+    const calls = engine(on, { tokens: 67_000, env: { AI_DLC_AUTO_HANDOFF_THRESHOLD_TOKENS: '80000' }, toolChars: 4_000 })
     await $.tool.call({ tool: 'Read', file_path: '/a.txt' })
     await $.turn.complete(TURN)
     await settle(() => false)
@@ -982,7 +1175,7 @@ describe('auto-handoff', () => {
   })
 
   test('the tool gate never blocks a session the mod will not hand off', async ($, on) => {
-    const calls = engine(on, { tokens: 165_000, env: { AUTO_HANDOFF_DISABLE: 'x' }, toolChars: 220_000 })
+    const calls = engine(on, { tokens: 165_000, env: { AI_DLC_AUTO_HANDOFF_ENABLED: 'false' }, toolChars: 220_000 })
     await $.tool.call({ tool: 'Read', file_path: '/a.txt' })
     await $.tool.call({ tool: 'Read', file_path: '/b.txt' })
     expect(calls.ran).toBe(2)
@@ -995,7 +1188,7 @@ describe('auto-handoff', () => {
   })
 
   test('the pre-request check honours the kill switch', async ($, on) => {
-    const calls = engine(on, { tokens: 63_000, env: { AUTO_HANDOFF_TOKENS: '80000', AUTO_HANDOFF_DISABLE: 'x' }, toolChars: 560_000 })
+    const calls = engine(on, { tokens: 63_000, env: { AI_DLC_AUTO_HANDOFF_THRESHOLD_TOKENS: '80000', AI_DLC_AUTO_HANDOFF_ENABLED: 'false' }, toolChars: 560_000 })
     await $.tool.call({ tool: 'Read', file_path: '/big.txt' })
     await step($)
     expect(calls.steps).toBe(1)
@@ -1006,7 +1199,7 @@ describe('auto-handoff', () => {
 // An AI-DLC run on disk: run.md as the handoff skill's Run state template writes it.
 const ROOT = '/home/test/proj'
 const GIT: Git = { root: ROOT, branch: 'feat/x', commit: 'abc1234' }
-const runMd = (o: { status?: string; branch?: string; session?: string; updated?: string; next?: string } = {}) => `---
+const runMd = (o: { status?: string; branch?: string; session?: string; updated?: string; next?: string; stages?: string } = {}) => `---
 run: AAW-20261021-demo
 work-item: WI-1
 status: ${o.status ?? 'active'}
@@ -1024,8 +1217,7 @@ updated: ${o.updated ?? '2026-10-21 11:10'}
 # Run: AAW-20261021-demo — absorb the demo mod
 
 ## Stages
-| Step | Stage |
-|---|---|
+${o.stages ?? '| Step | Stage |\n|---|---|'}
 
 ## Next action
 ${o.next ?? 'Store agent-manager\'s report as `2-agent-manager-to-orchestrator.handback.md`.'}
@@ -1176,6 +1368,378 @@ describe('ai-dlc run', () => {
   })
 })
 
+// Hands off once per round with no typed prompt between rounds; growth clears the floor each time.
+// Returns the SessionStart answers of the seeded sessions, in order.
+async function chainRounds($: Parameters<TestBody>[0], calls: Calls, rounds: number) {
+  const answers: { sessionTitle?: string }[] = []
+  for (let i = 0; i < rounds; i++) {
+    const before = calls.cleared
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > before)
+    if (calls.cleared === before) return answers
+    answers.push(await $.classic.SessionStart({ source: 'clear' }) as { sessionTitle?: string })
+    await settle(() => calls.seeded.length >= calls.cleared)
+    await $.turn.complete(TURN) // seed turn sets the floor
+    calls.tokens += 60_000
+  }
+  return answers
+}
+const LOG_FILE = '/home/test/.claude/state/auto-handoff/auto-handoff.log'
+const LOW = { AI_DLC_AUTO_HANDOFF_THRESHOLD_TOKENS: '20000' }
+
+describe('chain while the run is active', () => {
+  test('with an active run the chain goes on past maxConsecutiveHandoffs', async ($, on) => {
+    const calls = engine(on, { tokens: 31_000, env: LOW, git: GIT, files: { [RUN_MD]: runMd() } })
+    await chainRounds($, calls, 5)
+    await settle(() => false)
+    expect(calls.cleared).toBe(5)
+    // Every seed resumes the run: the chain kept finding it.
+    expect(calls.seeded.every(s => s.includes('It continues AI-DLC run AAW-20261021-demo'))).toBe(true)
+  })
+
+  test('without a run the loop guard still stops the chain at two', async ($, on) => {
+    const calls = engine(on, { tokens: 31_000, env: LOW, git: GIT })
+    await chainRounds($, calls, 5)
+    await settle(() => false)
+    expect(calls.cleared).toBe(2)
+  })
+
+  test('chainWhileRunActive false keeps the loop guard with an active run', async ($, on) => {
+    const calls = engine(on, { tokens: 31_000, env: { ...LOW, AI_DLC_AUTO_HANDOFF_CHAIN_WHILE_RUN_ACTIVE: 'false' }, git: GIT, files: { [RUN_MD]: runMd() } })
+    await chainRounds($, calls, 5)
+    await settle(() => false)
+    expect(calls.cleared).toBe(2)
+  })
+
+  for (const status of ['done', 'blocked', 'abandoned']) {
+    test(`the chain ends when its run becomes ${status}`, async ($, on) => {
+      const calls = engine(on, { tokens: 31_000, env: LOW, git: GIT, files: { [RUN_MD]: runMd() } })
+      await chainRounds($, calls, 1)
+      expect(calls.cleared).toBe(1)
+      calls.written[RUN_MD] = calls.written[RUN_MD]!.replace('status: active', `status: ${status}`)
+      await chainRounds($, calls, 2)
+      await settle(() => false)
+      expect(calls.cleared).toBe(1)
+      expect(calls.written[LOG_FILE]).toContain(`run AAW-20261021-demo is ${status}: chain ends`)
+      expect(await band($)).toContain(`auto-handoff stopped: run AAW-20261021-demo is ${status}: chain ends`)
+    })
+  }
+
+  test('a typed prompt after the chain ended lets the session hand off again, as its own brief', async ($, on) => {
+    const calls = engine(on, { tokens: 31_000, env: LOW, git: GIT, files: { [RUN_MD]: runMd() } })
+    await chainRounds($, calls, 1)
+    calls.written[RUN_MD] = calls.written[RUN_MD]!.replace('status: active', 'status: done')
+    await chainRounds($, calls, 1)
+    expect(calls.cleared).toBe(1)
+    await $.prompt.submit({ text: 'one more thing', origin: { kind: 'composer' } } as never)
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 1)
+    expect(calls.cleared).toBe(2)
+  })
+
+  test('the run is found through the lineage while run.md still names the first session', async ($, on) => {
+    const calls = engine(on, { tokens: 31_000, env: LOW, git: GIT, files: { [RUN_MD]: runMd({ session: 'old-session' }) } })
+    await chainRounds($, calls, 3)
+    expect(calls.cleared).toBe(3)
+    expect(calls.seeded.length).toBe(3)
+    for (const s of calls.seeded) expect(s).toContain('Read the session handoff at')
+    // The third session (new-session-2) still wrote the run's Next action.
+    expect(calls.written[RUN_MD]).toContain('from session new-sess')
+  })
+
+  test('a run claimed by a session outside the chain is never taken', async ($, on) => {
+    const calls = engine(on, { tokens: 31_000, env: LOW, git: GIT, files: { [RUN_MD]: runMd({ session: 'someone-else' }) } })
+    await chainRounds($, calls, 4)
+    expect(calls.cleared).toBe(2) // no run of its own: the loop guard applies
+    expect(calls.seeded.every(s => s.includes('Read the brief at'))).toBe(true)
+  })
+})
+
+describe('chain guard on the tool gate and retired names', () => {
+  const READ = { tool: 'Read', file_path: '/big.txt' } as const
+  const refused = (r: unknown) => typeof r === 'object' && r !== null && 'deny' in r
+
+  test('[AC-1] the tool gate keeps refusing past maxConsecutiveHandoffs while the chain run is active', async ($, on) => {
+    const calls = engine(on, { tokens: 31_000, env: LOW, git: GIT, files: { [RUN_MD]: runMd() }, toolChars: 220_000 })
+    await chainRounds($, calls, 3)
+    expect(refused(await $.tool.call(READ))).toBe(true)
+  })
+
+  test('[AC-3] the tool gate lets calls run once the loop guard has paused a chain with no run', async ($, on) => {
+    const calls = engine(on, { tokens: 31_000, env: LOW, git: GIT, toolChars: 220_000 })
+    await chainRounds($, calls, 3)
+    expect(calls.cleared).toBe(2)
+    expect(refused(await $.tool.call(READ))).toBe(false)
+  })
+
+  test('[AC-2] the tool gate lets calls run once the chain run is done', async ($, on) => {
+    const calls = engine(on, { tokens: 31_000, env: LOW, git: GIT, files: { [RUN_MD]: runMd() }, toolChars: 220_000 })
+    await chainRounds($, calls, 1) // one handoff in: only the ended run, not the loop guard, can stop the gate
+    calls.written[RUN_MD] = calls.written[RUN_MD]!.replace('status: active', 'status: done')
+    expect(refused(await $.tool.call(READ))).toBe(false)
+  })
+
+  for (const [name, value] of [['AUTO_HANDOFF_TOKENS', '20000'], ['AUTO_HANDOFF_DISABLE', '1'], ['AUTO_HANDOFF_ENABLED', 'false']] as const) {
+    test(`[AC-8] the retired variable ${name} is ignored`, async ($, on) => {
+      const calls = engine(on, { tokens: 165_000, env: { [name]: value } })
+      await $.turn.complete(TURN)
+      await settle(() => calls.cleared > 0)
+      expect(calls.cleared).toBe(1) // handed off at the default 80% line of 200k; none of the old names moved or stopped it
+    })
+  }
+})
+
+// A Stages table with a done, an in-progress, a pending and a skipped stage.
+const STAGES = `| Step | Stage | Owner | Mode | Status | Handoff | Handback | Updated |
+|---|---|---|---|---|---|---|---|
+| 1 | research | research-assistant | subagent | done (passed) | \`1-orchestrator-to-research-assistant.handoff.md\` | \`1-research-assistant-to-orchestrator.handback.md\` | 2026-10-22 |
+| 2 | change | agent-manager | subagent | in-progress | \`2-orchestrator-to-agent-manager.handoff.md\` | — | 2026-10-22 |
+| 3.x | critique | brutal-critique | subagent | pending | \`3.1-orchestrator-to-brutal-critique.handoff.md\` | — | 2026-10-22 |
+| 0 | spike | research-assistant | subagent | skipped | \`0-orchestrator-to-research-assistant.handoff.md\` | — | 2026-10-22 |`
+const RUN_DIR = `${ROOT}/docs/handoffs/AAW-20261021-demo`
+
+describe('handoff records', () => {
+  test('the session handoff lists the open records, last-record and its pair first, and the seed names them', async ($, on) => {
+    const files = {
+      [RUN_MD]: runMd({ stages: STAGES }),
+      [`${RUN_DIR}/2-orchestrator-to-agent-manager.handoff.md`]: 'brief',
+      [`${RUN_DIR}/1-orchestrator-to-research-assistant.handoff.md`]: 'done brief',
+    }
+    const calls = engine(on, { tokens: 165_000, git: GIT, files })
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    const handoff = calls.written[sessionHandoffOf(calls.written)!]!
+    const section = handoff.slice(handoff.indexOf('## Handoff records'))
+    const paths = [...section.matchAll(/^- `([^`]+)`/gm)].map(m => m[1])
+    expect(paths.slice(0, 1)).toEqual(['docs/handoffs/AAW-20261021-demo/run.md'])
+    expect(paths[1]).toMatch(/^\.scratch\/AAW-20261021-demo\/session-\d{8}-\d{4}\.md$/)
+    expect(paths.slice(2)).toEqual([
+      'docs/handoffs/AAW-20261021-demo/2-orchestrator-to-agent-manager.handoff.md',
+      'docs/handoffs/AAW-20261021-demo/2-agent-manager-to-orchestrator.handback.md',
+      'docs/handoffs/AAW-20261021-demo/3.1-orchestrator-to-brutal-critique.handoff.md',
+    ])
+    expect(section).toContain('`docs/handoffs/AAW-20261021-demo/2-orchestrator-to-agent-manager.handoff.md` — last record, step 2, in-progress')
+    expect(section).toContain('`docs/handoffs/AAW-20261021-demo/2-agent-manager-to-orchestrator.handback.md` (missing) — its pair')
+    expect(section).toContain('`docs/handoffs/AAW-20261021-demo/3.1-orchestrator-to-brutal-critique.handoff.md` (missing)')
+    // Done and skipped stages are left out.
+    expect(section).not.toContain('1-orchestrator-to-research-assistant')
+    expect(section).not.toContain('0-orchestrator-to-research-assistant')
+    // Built in code, ahead of what Haiku wrote.
+    expect(handoff.indexOf('## Handoff records')).toBeLessThan(handoff.indexOf('## How to Use This Brief'))
+    await $.classic.SessionStart({ source: 'clear' })
+    await settle(() => calls.seeded.length > 0)
+    expect(calls.seeded[0]).toContain('resume the run from its run state docs/handoffs/AAW-20261021-demo/run.md')
+    expect(calls.seeded[0]).toContain('read the open records its Handoff records section lists')
+  })
+
+  test('without a run the brief has no records section', async ($, on) => {
+    const calls = engine(on, { tokens: 165_000 })
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    expect(calls.written['/home/test/.claude/state/auto-handoff/old-session.md']).not.toContain('## Handoff records')
+  })
+})
+
+describe('session names', () => {
+  test('the chain is named Session 1, 2, 3, 4 after the original name, never nested', async ($, on) => {
+    const calls = engine(on, { tokens: 31_000, env: LOW, git: GIT, files: { [RUN_MD]: runMd() } })
+    await $.classic.SessionStart({ source: 'startup', session_title: 'Fix the parser' } as never)
+    const answers = await chainRounds($, calls, 3)
+    // The first session is renamed before its /clear; the seeded ones are named through SessionStart.
+    expect(calls.renamed).toEqual(['[ai-dlc:auto-handoff]: Fix the parser (Session 1)'])
+    expect(calls.commandOrder.slice(0, 2)).toEqual(['rename', 'clear'])
+    expect(answers.map(a => a.sessionTitle)).toEqual([
+      '[ai-dlc:auto-handoff]: Fix the parser (Session 2)',
+      '[ai-dlc:auto-handoff]: Fix the parser (Session 3)',
+      '[ai-dlc:auto-handoff]: Fix the parser (Session 4)',
+    ])
+  })
+
+  test('a session already carrying the chain name is not wrapped again', async ($, on) => {
+    const calls = engine(on, { tokens: 165_000 })
+    await $.classic.SessionStart({ source: 'startup', session_title: '[ai-dlc:auto-handoff]: Fix the parser (Session 7)' } as never)
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    expect(calls.renamed).toEqual(['[ai-dlc:auto-handoff]: Fix the parser (Session 1)'])
+    const answer = await $.classic.SessionStart({ source: 'clear' }) as { sessionTitle?: string }
+    expect(answer.sessionTitle).toBe('[ai-dlc:auto-handoff]: Fix the parser (Session 2)')
+  })
+
+  test('without a title from the engine, the transcript\'s custom-title names the chain, else the short id', async ($, on) => {
+    const transcript = '/home/test/.claude/projects/-home-test-proj/old-session.jsonl'
+    const lines = ['{"type":"ai-title","aiTitle":"Guessed","sessionId":"old-session"}', '{"type":"custom-title","customTitle":"Named by me","sessionId":"old-session"}'].join('\n')
+    const calls = engine(on, { tokens: 165_000, files: { [transcript]: lines } })
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    expect(calls.renamed).toEqual(['[ai-dlc:auto-handoff]: Named by me (Session 1)'])
+  })
+
+  test('with no title anywhere, the short id is the name', async ($, on) => {
+    const calls = engine(on, { tokens: 165_000 })
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    expect(calls.renamed).toEqual(['[ai-dlc:auto-handoff]: old-sess (Session 1)'])
+  })
+
+  test('without /rename the old session keeps its name, and the new one is still named', async ($, on) => {
+    const calls = engine(on, { tokens: 165_000, commands: ['clear'] })
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    expect(calls.renamed).toEqual([])
+    expect(calls.written[LOG_FILE]).toContain('rename unavailable')
+    const answer = await $.classic.SessionStart({ source: 'clear' }) as { sessionTitle?: string }
+    expect(answer.sessionTitle).toBe('[ai-dlc:auto-handoff]: old-sess (Session 2)')
+  })
+
+  test('a failed rename is logged and the handoff goes on', async ($, on) => {
+    const calls = engine(on, { tokens: 165_000, failRename: true })
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    expect(calls.cleared).toBe(1)
+    await settle(() => (calls.written[LOG_FILE] ?? '').includes('rename failed'))
+    expect(calls.written[LOG_FILE]).toContain('rename failed session=old-session')
+    await $.classic.SessionStart({ source: 'clear' })
+    await settle(() => calls.seeded.length > 0)
+    expect(calls.seeded.length).toBe(1)
+  })
+
+  test('renameSessions false names nothing', async ($, on) => {
+    const calls = engine(on, { tokens: 165_000, env: { AI_DLC_AUTO_HANDOFF_RENAME_SESSIONS: 'false' } })
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    expect(calls.renamed).toEqual([])
+    const answer = await $.classic.SessionStart({ source: 'clear' }) as { sessionTitle?: string }
+    expect(answer.sessionTitle).toBeUndefined()
+  })
+
+  test('sessionNamePrefix changes the prefix', async ($, on) => {
+    const calls = engine(on, { tokens: 165_000, env: { AI_DLC_AUTO_HANDOFF_SESSION_NAME_PREFIX: '[handoff]' } })
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    expect(calls.renamed).toEqual(['[handoff]: old-sess (Session 1)'])
+  })
+})
+
+describe('repository configuration', () => {
+  const LOCAL = `${ROOT}/.claude/settings.local.json`
+  const SHARED = `${ROOT}/.claude/settings.json`
+  const REPO = `${ROOT}/.ai-dlc/auto-handoff.json`
+  const tokensEnv = (n: number | string) => JSON.stringify({ env: { AI_DLC_AUTO_HANDOFF_THRESHOLD_TOKENS: n } })
+  const all = { [LOCAL]: tokensEnv('30000'), [SHARED]: tokensEnv(40000), [REPO]: JSON.stringify({ thresholdTokens: 60000 }) }
+  const without = (...drop: string[]) => Object.fromEntries(Object.entries(all).filter(([p]) => !drop.includes(p)))
+  const thresholdIn = (calls: Calls) => /threshold session=old-session tokens=\d+ threshold=(\d+)/.exec(calls.written[LOG_FILE] ?? '')?.[1]
+
+  for (const [name, files, env, expected] of [
+    ['settings.local.json env wins over everything', all, { AI_DLC_AUTO_HANDOFF_THRESHOLD_TOKENS: '50000' }, '30000'],
+    ['then settings.json env', without(LOCAL), { AI_DLC_AUTO_HANDOFF_THRESHOLD_TOKENS: '50000' }, '40000'],
+    ['then the process environment', without(LOCAL, SHARED), { AI_DLC_AUTO_HANDOFF_THRESHOLD_TOKENS: '50000' }, '50000'],
+    ['then .ai-dlc/auto-handoff.json', without(LOCAL, SHARED), {}, '60000'],
+  ] as const) {
+    test(`precedence: ${name}`, async ($, on) => {
+      const calls = engine(on, { tokens: 190_000, git: GIT, files, env })
+      await $.turn.complete(TURN)
+      await settle(() => calls.cleared > 0)
+      expect(thresholdIn(calls)).toBe(expected)
+    })
+  }
+
+  test('precedence: the repository file beats /config, which beats the default', { options: { thresholdPercent: 50 } }, async ($, on) => {
+    const calls = engine(on, { tokens: 190_000, git: GIT, files: { [REPO]: JSON.stringify({ thresholdPercent: 60 }) } })
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    expect(thresholdIn(calls)).toBe('120000') // 60% of 200k, not /config's 50%
+  })
+
+  test('precedence: /config beats the default', { options: { thresholdPercent: 50 } }, async ($, on) => {
+    const calls = engine(on, { tokens: 190_000, git: GIT })
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    expect(thresholdIn(calls)).toBe('100000')
+  })
+
+  test('an invalid value is logged and falls through to the next source', async ($, on) => {
+    const calls = engine(on, { tokens: 190_000, git: GIT, files: { ...without(LOCAL), [LOCAL]: tokensEnv('lots') } })
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    expect(thresholdIn(calls)).toBe('40000')
+    expect(calls.written[LOG_FILE]).toContain('config: AI_DLC_AUTO_HANDOFF_THRESHOLD_TOKENS="lots" in .claude/settings.local.json ignored')
+  })
+
+  test('settings files with comments are read, and a broken one is logged and skipped', async ($, on) => {
+    const files = { [LOCAL]: '{ not json', [SHARED]: '{\n  // team settings\n  "env": { "AI_DLC_AUTO_HANDOFF_THRESHOLD_TOKENS": "40000" } /* end */\n}' }
+    const calls = engine(on, { tokens: 190_000, git: GIT, files })
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    expect(thresholdIn(calls)).toBe('40000')
+    expect(calls.written[LOG_FILE]).toContain('config: .claude/settings.local.json is not valid JSON')
+  })
+
+  test('null in the repository file means not set here', { options: { thresholdPercent: 50 } }, async ($, on) => {
+    const calls = engine(on, { tokens: 190_000, git: GIT, files: { [REPO]: JSON.stringify({ $schema: './auto-handoff.schema.json', thresholdPercent: null, thresholdTokens: null }) } })
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    expect(thresholdIn(calls)).toBe('100000')
+  })
+
+  test('enabled false in the repository file turns the module off', async ($, on) => {
+    const calls = engine(on, { tokens: 190_000, git: GIT, files: { [REPO]: JSON.stringify({ enabled: false }) } })
+    await $.turn.complete(TURN)
+    await settle(() => false)
+    expect(calls.cleared).toBe(0)
+    expect(calls.written[LOG_FILE]).toContain('reason=enabled=false (enabled in .ai-dlc/auto-handoff.json)')
+  })
+
+  test('the settings are reloaded at each session start, so a chain picks up an edit', async ($, on) => {
+    const calls = engine(on, { tokens: 31_000, git: GIT, files: { [REPO]: JSON.stringify({ thresholdTokens: 20000 }) } })
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    calls.written[REPO] = JSON.stringify({ thresholdTokens: 500000 })
+    await $.classic.SessionStart({ source: 'clear' })
+    await settle(() => calls.seeded.length > 0)
+    await $.turn.complete(TURN) // seed turn sets the floor
+    calls.tokens = 200_000
+    await $.turn.complete(TURN)
+    await settle(() => false)
+    expect(calls.cleared).toBe(1)
+  })
+
+  test('a window read before a reload to thresholdTokens does not leak into the threshold line', async ($, on) => {
+    // The first turn computes a percent threshold (and caches its window); the settings then switch to an
+    // absolute count, so the next handoff must log window=none, not the stale 200000.
+    const calls = engine(on, { tokens: 31_000, git: GIT, files: { [REPO]: JSON.stringify({ thresholdPercent: 80 }) } })
+    await $.turn.complete(TURN)
+    await settle(() => false)
+    expect(calls.cleared).toBe(0)
+    calls.written[REPO] = JSON.stringify({ thresholdTokens: 20000 })
+    await $.classic.SessionStart({ source: 'resume' })
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    const line = (calls.written['/home/test/.claude/state/auto-handoff/auto-handoff.log'] ?? '').split(/\r?\n/).find((l) => l.includes('threshold session=')) ?? ''
+    expect(line).toContain('threshold=20000 window=none windowSource=none basis=thresholdTokens hostWindowSource=none autoCompactThreshold=none via=')
+  })
+
+  test('defaultContextWindow and seedHeadroomTokens come from the settings', async ($, on) => {
+    const calls = engine(on, { tokens: 85_000, window: null, git: GIT, files: { [REPO]: JSON.stringify({ defaultContextWindow: 100000, seedHeadroomTokens: 0 }) } })
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    expect(thresholdIn(calls)).toBe('80000') // 80% of the 100k fallback
+  })
+
+  test('each session start records whether /rename exists, for init to read', async ($, on) => {
+    const calls = engine(on, { tokens: 1_000 })
+    await $.classic.SessionStart({ source: 'startup' })
+    const caps = JSON.parse(calls.written['/home/test/.claude/state/auto-handoff/capabilities.json'] ?? '{}')
+    expect(caps.rename).toBe(true)
+    expect(caps.claudeCodeVersion).toBe('2.1.306')
+  })
+
+  test('the capabilities record says so when /rename is missing', async ($, on) => {
+    const calls = engine(on, { tokens: 1_000, commands: ['clear'] })
+    await $.classic.SessionStart({ source: 'startup' })
+    expect(JSON.parse(calls.written['/home/test/.claude/state/auto-handoff/capabilities.json'] ?? '{}').rename).toBe(false)
+  })
+})
+
 describe('extractFacts', () => {
   test('heredoc commit messages count when git output is not in yet', async () => {
     const f = extractFacts([msg('assistant', '', [bash("git add x && git commit -F - <<'EOF'\nfix(mods): loop guard\n\nWHY: chained six times\nEOF")])])
@@ -1229,10 +1793,10 @@ describe('handoff numbers', () => {
   const base = { filesModified: [], commits: [], issues: [] }
 
   test('the prompt carries the real token figures and where the threshold came from', () => {
-    const p = briefPrompt([], { ...base, handoffTokens: 93_105, threshold: 85_000, thresholdSource: 'AUTO_HANDOFF_TOKENS', seededSessionStartSize: 45_000, unattendedCount: 2 }, 'TEMPLATE')
+    const p = briefPrompt([], { ...base, handoffTokens: 93_105, threshold: 85_000, thresholdSource: 'AI_DLC_AUTO_HANDOFF_THRESHOLD_TOKENS', seededSessionStartSize: 45_000, unattendedCount: 2 }, 'TEMPLATE')
     expect(p).toContain('## Handoff Numbers')
     expect(p).toContain('**Tokens at handoff:** 93105 (93k)')
-    expect(p).toContain('**Threshold:** 85000 (85k), from AUTO_HANDOFF_TOKENS')
+    expect(p).toContain('**Threshold:** 85000 (85k), from AI_DLC_AUTO_HANDOFF_THRESHOLD_TOKENS')
     expect(p).toContain('starting size (seeded from a handoff):** 45000 (45k)')
     expect(p).toContain('no user message:** 2')
     expect(p.indexOf('## Handoff Numbers')).toBeLessThan(p.indexOf('TEMPLATE'))
@@ -1244,7 +1808,7 @@ describe('handoff numbers', () => {
 })
 
 describe('markUnverifiedFigures', () => {
-  const facts = { filesModified: [], commits: [], issues: [], handoffTokens: 93_105, threshold: 85_141, thresholdSource: 'AUTO_HANDOFF_TOKENS (80k), raised to leave 40k above the starting size', seededSessionStartSize: 45_141 }
+  const facts = { filesModified: [], commits: [], issues: [], handoffTokens: 93_105, threshold: 85_141, thresholdSource: 'AI_DLC_AUTO_HANDOFF_THRESHOLD_TOKENS (80k), raised to leave 40k above the starting size', seededSessionStartSize: 45_141 }
 
   test('marks an invented figure and leaves the real ones alone', () => {
     const r = markUnverifiedFigures('Low: session burned its 200k budget. It handed off at 93k of 85k, from 80k with 40k room over a 45,141 tokens start.', facts)
@@ -1260,5 +1824,76 @@ describe('markUnverifiedFigures', () => {
 
   test('with no numbers block, any figure is marked', () => {
     expect(markUnverifiedFigures('at 120k', { filesModified: [], commits: [], issues: [] }).flagged).toEqual(['120k'])
+  })
+})
+
+describe('workspace trust for the repository file', () => {
+  const REPO_FILE = `${ROOT}/.ai-dlc/auto-handoff.json`
+  const CLAUDE_JSON = '/home/test/.claude.json'
+  const risky = JSON.stringify({ viewer: '0.0.0.0:3846', briefTemplate: '/repo/chosen.md', thresholdTokens: 60000 })
+  const trust = (path: string, value: unknown = true) => JSON.stringify({ projects: { [path]: { hasTrustDialogAccepted: value } } })
+  const thresholdIn = (calls: Calls) => /threshold session=old-session tokens=\d+ threshold=(\d+)/.exec(calls.written[LOG_FILE] ?? '')?.[1]
+  const IGNORED = 'config: briefTemplate, viewer in .ai-dlc/auto-handoff.json ignored: Claude Code does not trust this folder'
+
+  test('untrusted: viewer and the templates from the repository file are ignored and logged, other keys apply', async ($, on) => {
+    const calls = engine(on, { tokens: 190_000, git: GIT, files: { [REPO_FILE]: risky } })
+    await $.classic.SessionStart({ source: 'startup' })
+    expect(calls.written['/repo/chosen.md']).toBeUndefined()
+    expect(calls.written['/home/test/.claude/auto-handoff/brief.md']).toBeDefined()
+    expect(calls.written[LOG_FILE]).toContain(`${IGNORED} (~/.claude.json was not readable); set them in the env of .claude/settings.local.json or in /config instead`)
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    expect(thresholdIn(calls)).toBe('60000')
+  })
+
+  test('an entry that is not exactly true is untrusted', async ($, on) => {
+    const calls = engine(on, { tokens: 1_000, git: GIT, files: { [REPO_FILE]: risky, [CLAUDE_JSON]: trust(ROOT, 'yes') } })
+    await $.classic.SessionStart({ source: 'startup' })
+    expect(calls.written['/repo/chosen.md']).toBeUndefined()
+    expect(calls.written[LOG_FILE]).toContain(`${IGNORED} (the folder is not marked trusted)`)
+  })
+
+  test('trusted: the repository file applies in full, and nothing is logged about trust', async ($, on) => {
+    const calls = engine(on, { tokens: 1_000, git: GIT, files: { [REPO_FILE]: risky, [CLAUDE_JSON]: trust('\\HOME\\test\\proj\\') } })
+    await $.classic.SessionStart({ source: 'startup' })
+    expect(calls.written['/repo/chosen.md']).toBeDefined()
+    expect(calls.written[LOG_FILE] ?? '').not.toContain('does not trust')
+  })
+
+  test('in a linked worktree, trust is read from the main checkout', async ($, on) => {
+    const tree = `${ROOT}/.worktrees/fix`
+    const git: Git = { ...GIT, root: tree, commonDir: `${ROOT}/.git` }
+    const calls = engine(on, { tokens: 1_000, git, files: { [`${tree}/.ai-dlc/auto-handoff.json`]: risky, [CLAUDE_JSON]: trust(ROOT) } })
+    await $.classic.SessionStart({ source: 'startup' })
+    expect(calls.written['/repo/chosen.md']).toBeDefined()
+  })
+
+  test('a file with no trust-gated key never reads ~/.claude.json', async ($, on) => {
+    const calls = engine(on, { tokens: 1_000, git: GIT, files: { [REPO_FILE]: JSON.stringify({ thresholdTokens: 60000 }), [CLAUDE_JSON]: '{ not json' } })
+    await $.classic.SessionStart({ source: 'startup' })
+    expect(calls.written[LOG_FILE] ?? '').not.toContain('trust')
+  })
+})
+
+describe('one run lookup per handoff attempt', () => {
+  test('the handoff reuses the lookup its chain guard made', async ($, on) => {
+    const calls = engine(on, { tokens: 31_000, env: LOW, git: GIT, files: { [RUN_MD]: runMd() } })
+    await chainRounds($, calls, 1)
+    calls.branchQueries = 0
+    const before = calls.cleared
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > before)
+    expect(calls.cleared).toBe(before + 1)
+    expect(calls.branchQueries).toBe(1)
+  })
+
+  test('parallel tool calls at the gate share one lookup', async ($, on) => {
+    const calls = engine(on, { tokens: 31_000, env: LOW, git: GIT, files: { [RUN_MD]: runMd() }, toolChars: 220_000 })
+    await chainRounds($, calls, 3)
+    calls.branchQueries = 0
+    const READ = { tool: 'Read', file_path: '/big.txt' } as const
+    const results = await Promise.all([$.tool.call(READ), $.tool.call(READ), $.tool.call(READ), $.tool.call(READ)])
+    expect(results.every(r => typeof r === 'object' && r !== null && 'deny' in r)).toBe(true)
+    expect(calls.branchQueries).toBeLessThanOrEqual(1)
   })
 })

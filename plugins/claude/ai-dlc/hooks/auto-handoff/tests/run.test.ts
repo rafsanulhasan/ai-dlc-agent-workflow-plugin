@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'claude-code/testing'
-import { AUTO_MARK, assembleSessionHandoff, handoffsRoot, inRepo, parseRunState, pickRun, scratchRoot, sessionHandoffName, sessionHandoffPath, stepOf, withNextAction } from '../run.ts'
+import { AUTO_MARK, assembleSessionHandoff, handoffsRoot, inRepo, isOpen, openRecords, pairOf, parseRunState, parseStages, pickRun, recordsSection, scratchRoot, sessionHandoffName, sessionHandoffPath, stepOf, withNextAction } from '../run.ts'
 import type { RunState, RunTarget } from '../run.ts'
 
 const RUN = `---
@@ -245,5 +245,100 @@ describe('run state edge cases', () => {
     expect(out).toContain('> Old.')
     expect(out.match(/## Next action/g)?.length).toBe(1)
     expect(out).toContain('from session abcdefgh at 1k')
+  })
+})
+
+describe('chained sessions', () => {
+  const run = (o: Partial<RunState>): RunState => ({ id: 'r', folder: 'f', status: 'active', branch: 'b', ...o })
+
+  test('pickRun follows the lineage: a run written by an earlier session of the chain is this session\'s', () => {
+    const runs = [run({ id: 'mine', session: 'first' })]
+    expect(pickRun(runs, 'b', 'third', ['second', 'first'])?.id).toBe('mine')
+    expect(pickRun(runs, 'b', 'third', ['second'])).toBeUndefined()
+    expect(pickRun(runs, 'b', 'third')).toBeUndefined()
+  })
+
+  test('pickRun takes the claimed run among several unclaimed ones, never one another session wrote', () => {
+    const runs = [run({ id: 'a' }), run({ id: 'b' })]
+    expect(pickRun(runs, 'b', 's', [], 'b')?.id).toBe('b')
+    expect(pickRun(runs, 'b', 's')).toBeUndefined()
+    expect(pickRun([run({ id: 'b', session: 'someone-else' })], 'b', 's', ['first'], 'b')).toBeUndefined()
+    expect(pickRun([run({ id: 'b', status: 'done' })], 'b', 's', [], 'b')).toBeUndefined()
+  })
+})
+
+const STAGES_MD = `---
+run: AAW-1
+last-record: 2-orchestrator-to-agent-manager.handoff.md
+---
+
+## Stages
+| Step | Stage | Owner | Status | Handoff | Hand-back |
+|---|---|---|---|---|---|
+| 1 | research | research-assistant | done (passed) | \`1-orchestrator-to-research-assistant.handoff.md\` | \`1-research-assistant-to-orchestrator.handback.md\` |
+| 2 | change | agent-manager | in-progress | \`2-orchestrator-to-agent-manager.handoff.md\` | — |
+| 3.x | review | brutal-critique · sqa-engineer | pending | \`3.1-orchestrator-to-brutal-critique.handoff.md\`, \`3.2-orchestrator-to-sqa-engineer.handoff.md\` | — |
+| 4 | gate | human | blocked | \`other/4-orchestrator-to-human.handoff.md\` | — |
+| 5 | spike | research-assistant | skipped | \`5-orchestrator-to-research-assistant.handoff.md\` | — |
+
+## Next action
+Go.
+`
+
+describe('handoff records', () => {
+  test('parseStages finds the columns by header and reads every record in a cell', () => {
+    const rows = parseStages(STAGES_MD)
+    expect(rows.map(r => r.step)).toEqual(['1', '2', '3.x', '4', '5'])
+    expect(rows[0]!.records).toEqual(['1-orchestrator-to-research-assistant.handoff.md', '1-research-assistant-to-orchestrator.handback.md'])
+    expect(rows[2]!.records).toEqual(['3.1-orchestrator-to-brutal-critique.handoff.md', '3.2-orchestrator-to-sqa-engineer.handoff.md'])
+    expect(rows.map(isOpen)).toEqual([false, true, true, true, false])
+  })
+
+  test('parseStages: no Stages table, or one without a Status column, gives no rows', () => {
+    expect(parseStages('# Run\n\n## Next action\nGo.\n')).toEqual([])
+    expect(parseStages('## Stages\n| Step | Stage |\n|---|---|\n| 1 | x |\n')).toEqual([])
+    expect(parseStages(STAGES_MD.replace(/\n/g, '\r\n')).length).toBe(5)
+  })
+
+  test('pairOf swaps the agents and the record kind, keeping the step code and folder', () => {
+    expect(pairOf('2-orchestrator-to-agent-manager.handoff.md')).toBe('2-agent-manager-to-orchestrator.handback.md')
+    expect(pairOf('3.1.l2-agent-manager-to-orchestrator.handback.md')).toBe('3.1.l2-orchestrator-to-agent-manager.handoff.md')
+    expect(pairOf('docs/x/4-a-to-b.handoff.md')).toBe('docs/x/4-b-to-a.handback.md')
+    expect(pairOf('run.md')).toBeUndefined()
+  })
+
+  test('openRecords lists run.md, the session handoff, then last-record and its pair, then the other open stages', () => {
+    const out = openRecords(STAGES_MD, { folder: 'docs/handoffs/AAW-1', runMd: 'docs/handoffs/AAW-1/run.md', lastRecord: '2-orchestrator-to-agent-manager.handoff.md' }, '.scratch/AAW-1/session-1.md')
+    expect(out.map(r => r.path)).toEqual([
+      'docs/handoffs/AAW-1/run.md',
+      '.scratch/AAW-1/session-1.md',
+      'docs/handoffs/AAW-1/2-orchestrator-to-agent-manager.handoff.md',
+      'docs/handoffs/AAW-1/2-agent-manager-to-orchestrator.handback.md',
+      'docs/handoffs/AAW-1/3.1-orchestrator-to-brutal-critique.handoff.md',
+      'docs/handoffs/AAW-1/3.2-orchestrator-to-sqa-engineer.handoff.md',
+      'other/4-orchestrator-to-human.handoff.md',
+    ])
+    expect(out[2]!.note).toBe('last record, step 2, in-progress')
+    expect(out[3]!.note).toBe('its pair')
+  })
+
+  test('openRecords leaves last-record out when its stage is done', () => {
+    const md = STAGES_MD.replace('last-record: 2-orchestrator-to-agent-manager.handoff.md', 'last-record: 1-research-assistant-to-orchestrator.handback.md')
+    const out = openRecords(md, { folder: 'f', runMd: 'f/run.md', lastRecord: '1-research-assistant-to-orchestrator.handback.md' }, 's.md')
+    expect(out.some(r => r.path.includes('research-assistant'))).toBe(false)
+    expect(out[2]!.path).toBe('f/2-orchestrator-to-agent-manager.handoff.md')
+  })
+
+  test('openRecords matches last-record by its whole file name, not a suffix', () => {
+    const md = STAGES_MD.replace('`2-orchestrator-to-agent-manager.handoff.md`', '`12-orchestrator-to-agent-manager.handoff.md`')
+    const out = openRecords(md, { folder: 'f', runMd: 'f/run.md', lastRecord: '2-orchestrator-to-agent-manager.handoff.md' }, 's.md')
+    expect(out.some(r => r.note.startsWith('last record'))).toBe(false)
+  })
+
+  test('recordsSection marks the missing ones', () => {
+    const text = recordsSection([{ path: 'a.md', note: 'run state', exists: true }, { path: 'b.md', note: 'its pair', exists: false }])
+    expect(text.startsWith('## Handoff records\n')).toBe(true)
+    expect(text).toContain('- `a.md` — run state')
+    expect(text).toContain('- `b.md` (missing) — its pair')
   })
 })

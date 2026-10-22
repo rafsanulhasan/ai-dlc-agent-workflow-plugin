@@ -106,17 +106,116 @@ export function parseRunState(text: string, folder: string): RunState | undefine
   }
 }
 
+/** The statuses that end a run's handoff chain. */
+export const ENDED = new Set(['done', 'blocked', 'abandoned'])
+
 /** The run this session hands off, among the `active` runs on the current branch:
- * 1. the run whose `session` is this session's id (the newest `updated` when there are several);
+ * 1. the run whose `session` is this session's id or one of its chain's earlier sessions (`lineage`,
+ *    nearest first), or whose id is the run this chain claimed (`claimed`) while no session outside
+ *    the chain has written it; the newest `updated` when there are several;
  * 2. else the only active run on the branch, when its `session` is empty (no session claimed it);
- * 3. else none, so the module seeds its plain brief. A run another session wrote is never taken,
- * and neither is one of several unclaimed runs: two sessions never drive one run. A `blocked` run
- * waits for the human, so it is never picked. */
-export function pickRun(runs: readonly RunState[], branch: string, sessionId: string): RunState | undefined {
+ * 3. else none, so the module seeds its plain brief. A run a session outside this chain wrote is
+ * never taken, and neither is one of several unclaimed runs: two sessions never drive one run. A
+ * `blocked` run waits for the human, so it is never picked.
+ * A session seeded by a handoff matches through `lineage`: until the resumed orchestrator rewrites
+ * run.md, its `session` still names an earlier session of the chain. */
+export function pickRun(runs: readonly RunState[], branch: string, sessionId: string, lineage: readonly string[] = [], claimed?: string): RunState | undefined {
   const open = runs.filter(r => r.status === 'active' && r.branch === branch)
-  const own = sessionId ? open.filter(r => r.session === sessionId) : []
+  const chain = new Set([sessionId, ...lineage].filter(Boolean))
+  const own = open.filter(r => {
+    const s = r.session?.trim() ?? ''
+    return (s && chain.has(s)) || (claimed !== undefined && r.id === claimed && !s)
+  })
   if (own.length) return [...own].sort((a, b) => (b.updated ?? '').localeCompare(a.updated ?? ''))[0]
   return open.length === 1 && !open[0]!.session?.trim() ? open[0] : undefined
+}
+
+/** One row of run.md's *Stages* table: its step code, its status and the record files it names. */
+export type StageRow = { step: string; status: string; records: string[] }
+
+const cells = (line: string) => line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map(c => c.trim())
+const norm = (h: string) => h.toLowerCase().replace(/[^a-z]/g, '')
+const base = (p: string) => p.slice(p.lastIndexOf('/') + 1)
+// A record file name in a cell: backticked or bare, with or without a folder.
+const RECORD = /[^\s`|]*\.(?:handoff|handback)\.md/g
+
+/** The rows of run.md's *Stages* table. Columns are found by their header (Step, Status, Handoff,
+ * Handback / Hand-back), so a table with more or fewer columns still parses; no table, no rows. */
+export function parseStages(runMd: string): StageRow[] {
+  const text = lf(runMd)
+  const heading = /^## Stages[ \t]*$/m.exec(text)
+  if (!heading) return []
+  const rest = text.slice(heading.index + heading[0].length)
+  const end = /^## /m.exec(rest)
+  const lines = (end ? rest.slice(0, end.index) : rest).split('\n').filter(l => l.trim().startsWith('|'))
+  if (lines.length < 2) return []
+  const head = cells(lines[0]!).map(norm)
+  const at = (name: string) => head.indexOf(name)
+  const step = at('step')
+  const status = at('status')
+  const recordCols = head.map((h, i) => h === 'handoff' || h === 'handback' ? i : -1).filter(i => i >= 0)
+  if (status < 0) return []
+  return lines.slice(2).map(line => {
+    const c = cells(line)
+    const records = recordCols.flatMap(i => (c[i] ?? '').match(RECORD) ?? [])
+    return { step: step >= 0 ? (c[step] ?? '').replace(/`/g, '') : '', status: (c[status] ?? '').toLowerCase(), records }
+  })
+}
+
+/** Whether a stage row is still open work: any status but done or skipped. */
+export const isOpen = (row: StageRow) => !/^(done|skipped)\b/.test(row.status.trim())
+
+/** The record a record answers or is answered by: same step code, agents swapped, handoff ↔ handback.
+ * "3-orchestrator-to-x.handoff.md" → "3-x-to-orchestrator.handback.md". Undefined for another name. */
+export function pairOf(record: string): string | undefined {
+  const slash = record.lastIndexOf('/')
+  const dir = record.slice(0, slash + 1)
+  const m = /^(\d+(?:\.\d+)*(?:\.l\d+)?)-(.+?)-to-(.+)\.(handoff|handback)\.md$/.exec(record.slice(slash + 1))
+  if (!m) return undefined
+  return `${dir}${m[1]}-${m[3]}-to-${m[2]}.${m[4] === 'handoff' ? 'handback' : 'handoff'}.md`
+}
+
+/** A file the fresh session is told to read, relative to the repository root unless absolute. */
+export type OpenRecord = { path: string; note: string }
+
+/**
+ * The files of the work that is not done, in reading order: run.md, the session handoff, then the
+ * records of every *Stages* row whose status is not done or skipped. `last-record` and its pair come
+ * first among the records when their stage is open. A record named by its file name alone lives in
+ * the run folder. Done and skipped stages are left out: the fresh session needs only open work.
+ */
+export function openRecords(runMd: string, run: { folder: string; runMd: string; lastRecord?: string }, sessionHandoff: string): OpenRecord[] {
+  const inFolder = (name: string) => name.includes('/') ? name : `${run.folder}/${name}`
+  const out: OpenRecord[] = [{ path: run.runMd, note: 'run state' }, { path: sessionHandoff, note: 'this session handoff' }]
+  const seen = new Set(out.map(r => r.path))
+  const add = (name: string, note: string) => {
+    const path = inFolder(name)
+    if (seen.has(path)) return
+    seen.add(path)
+    out.push({ path, note })
+  }
+  const rows = parseStages(runMd)
+  const last = run.lastRecord?.trim()
+  if (last) {
+    const pair = pairOf(last)
+    const names = new Set([base(last), ...(pair ? [base(pair)] : [])])
+    const row = rows.find(r => r.records.some(p => names.has(base(p))))
+    if (row && isOpen(row)) {
+      add(last, `last record, step ${row.step || stepOf(last) || '?'}, ${row.status || 'open'}`)
+      if (pair) add(pair, 'its pair')
+    }
+  }
+  for (const row of rows) if (isOpen(row)) for (const p of row.records) add(p, `step ${row.step || stepOf(p) || '?'}, ${row.status || 'open'}`)
+  return out
+}
+
+/** The "Handoff records" section: each open file, `(missing)` after one that is not on disk. */
+export function recordsSection(records: readonly (OpenRecord & { exists: boolean })[]): string {
+  const lines = records.map(r => `- \`${r.path}\`${r.exists ? '' : ' (missing)'} — ${r.note}`)
+  return `## Handoff records
+The files of the work that is not done yet, listed in code from \`run.md\`'s *Stages* table: read them before the run state's *Next action*. Stages that are done or skipped are left out.
+
+${lines.join('\n')}`
 }
 
 const pad = (n: number) => String(n).padStart(2, '0')
@@ -171,7 +270,7 @@ export function withNextAction(runMd: string, ctx: { stage?: string; sessionHand
  * state and git, the fresh session's instructions, then the sections Haiku wrote from the session
  * handoff template (or, when Haiku failed, the facts alone), then the facts extracted in code.
  */
-export function assembleSessionHandoff(ctx: { run: RunTarget; sessionId: string; transcript: string; instructions: string; tokens: string }, facts: Facts, haiku: string | undefined): string {
+export function assembleSessionHandoff(ctx: { run: RunTarget; sessionId: string; transcript: string; instructions: string; tokens: string; records?: readonly (OpenRecord & { exists: boolean })[] }, facts: Facts, haiku: string | undefined): string {
   const { run } = ctx
   const instructions = renderTemplate(ctx.instructions, { priority: haiku ? hasUnansweredLastRequest(haiku) : false })
   const step = stepOf(run.lastRecord)
@@ -187,7 +286,7 @@ ${instructions}
 
 ## Resume the run
 This session continues run \`${run.id}\`. Resume it from its run state \`${run.runMd}\` as the \`handoff\` skill describes (*Run state*, Resuming): re-verify its \`last-record\`, and for a stage left \`in-progress\` check whether that agent's output landed before handing off again. Its *Next action* points to this file and quotes the action planned before the handoff.
-
+${ctx.records?.length ? `\n${recordsSection(ctx.records)}\n` : ''}
 ## How to Use This Brief
 ${haiku ? 'Haiku wrote the sections below from the conversation, with tool output abbreviated. The facts sections came from tool calls in code.' : 'Haiku did not return a usable summary, so this holds only facts extracted in code. Read the transcript for the rest.'} Treat every line as a starting point, not a fact: check it against the run state, the records and \`git status\` before acting on it.`
   return [header, haiku?.trim(), factsBlock(facts, !haiku)].filter(Boolean).join('\n\n')
