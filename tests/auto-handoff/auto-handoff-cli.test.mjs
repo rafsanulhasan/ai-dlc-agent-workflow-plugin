@@ -41,11 +41,10 @@ const fileOf = (root) => JSON.parse(fs.readFileSync(path.join(root, ".ai-dlc", "
 // ---- one list of settings ----------------------------------------------------------------------
 test("the schema and the hooks module list the same keys, variables and kinds, in the same order", () => {
   const source = fs.readFileSync(CONFIG_TS, "utf8");
-  const rows = [...source.matchAll(/^\s*\{ key: '([^']+)', field: '[^']+', env: '([^']+)', kind: '([^']+)'(?:, userConfig: '([^']+)')? \},$/gm)]
-    .map((m) => ({ key: m[1], env: m[2], kind: m[3], userConfig: m[4] }));
+  const rows = [...source.matchAll(/^\s*\{ key: '([^']+)', field: '[^']+', env: '([^']+)', kind: '([^']+)' \},$/gm)]
+    .map((m) => ({ key: m[1], env: m[2], kind: m[3] }));
   assert.deepEqual(rows.map((r) => r.key), keys.map((p) => p.key));
   assert.deepEqual(rows.map((r) => r.env), keys.map((p) => p["x-env"]));
-  assert.deepEqual(rows.map((r) => r.userConfig), keys.map((p) => p["x-userConfig"]));
   // Each module kind matches the schema's constraint.
   const kindOf = (p) => {
     const t = p.type.filter((x) => x !== "null")[0];
@@ -60,11 +59,6 @@ test("the schema and the hooks module list the same keys, variables and kinds, i
     if (want === null) assert.ok(["text", "path"].includes(r.kind), `${r.key}: ${r.kind}`);
     else assert.equal(r.kind, want, r.key);
   }
-});
-
-test("every key with a /config option exists in the plugin manifest's userConfig", () => {
-  const manifest = JSON.parse(fs.readFileSync(path.join(REPO, "plugins", "claude", "ai-dlc", ".claude-plugin", "plugin.json"), "utf8"));
-  for (const p of keys.filter((x) => x["x-userConfig"])) assert.ok(manifest.userConfig[p["x-userConfig"]], p.key);
 });
 
 // ---- merge ---------------------------------------------------------------------------------------
@@ -159,7 +153,7 @@ test("show resolves settings.local.json env, then settings.json env, then the en
   const fileOnly = { ".ai-dlc/auto-handoff.json": all[".ai-dlc/auto-handoff.json"] };
   assert.equal(row(repo(fileOnly), env).value, 50000);
   assert.deepEqual(row(repo(fileOnly), {}), { key: "thresholdTokens", value: 60000, source: "thresholdTokens in .ai-dlc/auto-handoff.json" });
-  assert.deepEqual(row(repo(), {}, "thresholdPercent"), { key: "thresholdPercent", value: 80, source: "default, unless set in /config" });
+  assert.deepEqual(row(repo(), {}, "thresholdPercent"), { key: "thresholdPercent", value: 80, source: "default" });
   assert.deepEqual(row(repo(), {}, "enabled"), { key: "enabled", value: true, source: "default" });
 });
 
@@ -245,9 +239,9 @@ test("trustOf matches keys case-insensitively with either separator, and fails c
 test("show skips the trust-gated keys of an untrusted folder, says so, and keeps the rest", () => {
   const root = repo({ ".ai-dlc/auto-handoff.json": { viewer: "0.0.0.0:3846", briefTemplate: "/x.md", thresholdTokens: 60000 } });
   const untrusted = effective(root, keys, {}, { trusted: false, why: "the folder has no entry" });
-  assert.deepEqual(untrusted.rows.find((r) => r.key === "viewer"), { key: "viewer", value: "", source: "default, unless set in /config" });
+  assert.deepEqual(untrusted.rows.find((r) => r.key === "viewer"), { key: "viewer", value: "", source: "default" });
   assert.equal(untrusted.rows.find((r) => r.key === "thresholdTokens").value, 60000);
-  assert.deepEqual(untrusted.warnings, ["briefTemplate, viewer in .ai-dlc/auto-handoff.json ignored: Claude Code does not trust this folder (the folder has no entry); set them in the env of .claude/settings.local.json or in /config instead"]);
+  assert.deepEqual(untrusted.warnings, ["briefTemplate, viewer in .ai-dlc/auto-handoff.json ignored: Claude Code does not trust this folder (the folder has no entry); set them in the env of .claude/settings.local.json instead"]);
   const trusted = effective(root, keys, {}, { trusted: true, why: "" });
   assert.equal(trusted.rows.find((r) => r.key === "viewer").value, "0.0.0.0:3846");
   assert.deepEqual(trusted.warnings, []);

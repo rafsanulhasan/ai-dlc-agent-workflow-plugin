@@ -98,7 +98,7 @@ description: <one-line description>
 
 Add `argument-hint: <short arg hint>` when the command takes arguments, and write them in the body as `$ARGUMENTS`.
 
-**Copilot prompt** — generate `.github/prompts/<name>.prompt.md` from the command with `Skill("ai-dlc:harness-sync", args: "sync --only commands --name <name> --prefer claude")`. It writes the same body with `$ARGUMENTS` as `${input:arguments}`, the same `description` and `argument-hint`, and `agent: agent`. Positional `$1…` arguments have no Copilot form; use `$ARGUMENTS`.
+**Copilot prompt** — generate `.github/prompts/<name>.prompt.md` from the command with `node .claude/scripts/sync-harness.mjs --only commands --name <name> --prefer claude` (follow *For agents* in `${CLAUDE_SKILL_DIR}/../harness-sync/SKILL.md`). It writes the same body with `$ARGUMENTS` as `${input:arguments}`, the same `description` and `argument-hint`, and `agent: agent`. Positional `$1…` arguments have no Copilot form; use `$ARGUMENTS`.
 
 ### modify
 
@@ -114,7 +114,7 @@ Add `argument-hint: <short arg hint>` when the command takes arguments, and writ
 
 ### sync
 
-Run `Skill("ai-dlc:harness-sync", args: "sync --only commands --name <name>")`, adding `--prefer claude|copilot` when the user named the authoritative side; otherwise the side edited last wins. Done when its `--check` exits 0.
+Follow *For agents* in `${CLAUDE_SKILL_DIR}/../harness-sync/SKILL.md`. When you sync one item and both of its twins were edited, run `node .claude/scripts/sync-harness.mjs --check --only commands --name <name>` first, ask the human which side wins, then sync with `--prefer claude` or `--prefer copilot`; never let `newer` decide. Otherwise run `node .claude/scripts/sync-harness.mjs --only commands --name <name> --prefer claude|copilot`, naming the side the user named or the side you changed. Done when `node .claude/scripts/sync-harness.mjs --check --only commands --name <name>` exits 0.
 
 ---
 

@@ -25,20 +25,44 @@ export function formatDuration(ms: number): string {
   return ms % MINUTE === 0 ? `${ms / MINUTE}m` : `${Number((ms / MINUTE).toFixed(2))}m`
 }
 
+/** A cache lifetime, and the keep-alive track that keeps it warm. */
+export type TrackName = '1h' | '5m'
+export const TRACK_NAMES: readonly TrackName[] = ['1h', '5m']
+
 export type CommandArgs =
   | { kind: 'ping' }
-  | { kind: 'set'; ms: number; scope: Scope }
-  | { kind: 'clear'; scope: Scope }
+  | { kind: 'set'; ms: number; scope: Scope; tracks: TrackName[] }
+  | { kind: 'clear'; scope: Scope; tracks: TrackName[] }
   | { kind: 'usage'; problem: string }
 
-/** The words after `/ai-dlc:keepalive`: a duration or `clear`, and `--session` / `--machine` to pick
- * the scope for this call. `min`: the shortest duration accepted (minDuration). */
+/** `1h`, `5m` or `both` (any case) as the tracks it names; undefined for anything else. */
+function tracksOf(word: string | undefined): TrackName[] | undefined {
+  const w = word?.toLowerCase()
+  if (w === 'both') return [...TRACK_NAMES]
+  return w === '1h' || w === '5m' ? [w] : undefined
+}
+
+/** The words after `/ai-dlc:cache-keepalive`: a duration or `clear`; `--session` / `--machine` to pick
+ * the scope for this call; and `--track 1h`, `--track 5m` or `--track both` (also `--track=5m`) to pick
+ * the track whose keep-warm time it sets or clears, both when not given. `min`: the shortest duration
+ * accepted (minDuration). A flag alone changes nothing: the call pings. */
 export function parseCommandArgs(args: string, defaultScope: Scope, min = MINUTE): CommandArgs {
   let scope = defaultScope
   let ms: number | undefined
   let clear = false
-  for (const word of args.trim().split(/\s+/).filter(Boolean)) {
+  let tracks: TrackName[] | undefined
+  const words = args.trim().split(/\s+/).filter(Boolean)
+  const badTrack = (v: string | undefined) => ({ kind: 'usage' as const, problem: v === undefined ? '--track needs 1h, 5m or both' : `"${v}" is not a track: --track takes 1h, 5m or both` })
+  for (let i = 0; i < words.length; i++) {
+    const word = words[i]!
     const w = word.toLowerCase()
+    if (w === '--track' || w.startsWith('--track=')) {
+      const value = w === '--track' ? words[++i] : word.slice('--track='.length)
+      if (tracks !== undefined) return { kind: 'usage', problem: 'give --track once' }
+      tracks = tracksOf(value)
+      if (!tracks) return badTrack(value)
+      continue
+    }
     const d = parseDuration(w, min)
     if (w === '--machine') scope = 'machine'
     else if (w === '--session') scope = 'session'
@@ -47,10 +71,11 @@ export function parseCommandArgs(args: string, defaultScope: Scope, min = MINUTE
       if (ms !== undefined) return { kind: 'usage', problem: 'give one duration' }
       ms = d
     }
-    else return { kind: 'usage', problem: `"${word}" is not a duration (<n>m, <n>h, <n>d, at least ${formatDuration(Math.max(min, ABSOLUTE_MIN))}), clear, --session or --machine` }
+    else return { kind: 'usage', problem: `"${word}" is not a duration (<n>m, <n>h, <n>d, at least ${formatDuration(Math.max(min, ABSOLUTE_MIN))}), clear, --session, --machine or --track` }
   }
   if (clear && ms !== undefined) return { kind: 'usage', problem: 'give a duration or clear, not both' }
-  if (clear) return { kind: 'clear', scope }
-  if (ms !== undefined) return { kind: 'set', ms, scope }
+  const which = tracks ?? [...TRACK_NAMES]
+  if (clear) return { kind: 'clear', scope, tracks: which }
+  if (ms !== undefined) return { kind: 'set', ms, scope, tracks: which }
   return { kind: 'ping' }
 }

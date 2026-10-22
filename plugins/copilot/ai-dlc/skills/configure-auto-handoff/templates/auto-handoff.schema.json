@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/rafsanulhasan/ai-dlc-agent-workflow-plugin/auto-handoff.schema.json",
   "title": "AI-DLC automatic session handoff settings",
-  "description": "Settings of the ai-dlc plugin's automatic session handoff (Claude Code only), committed in .ai-dlc/auto-handoff.json. Each key is read, highest first, from the env of .claude/settings.local.json (its x-env variable), the env of .claude/settings.json, the process environment, this file, the plugin's /config option (keys that have one), then the default. null means not set here: the next source applies. An invalid value is logged and the next source applies. Keys marked x-trustGated apply from this file only when Claude Code trusts the folder (projects[<repository root>].hasTrustDialogAccepted in ~/.claude.json); elsewhere they are ignored and logged.",
+  "description": "Settings of the ai-dlc plugin's automatic session handoff (Claude Code only), committed in .ai-dlc/auto-handoff.json. Each key is read, highest first, from the env of .claude/settings.local.json (its x-env variable), the env of .claude/settings.json, the process environment, this file, then the default. The automatic handoff has no /config rows. null means not set here: the next source applies. An invalid value is logged and the next source applies. Keys marked x-trustGated apply from this file only when Claude Code trusts the folder (projects[<repository root>].hasTrustDialogAccepted in ~/.claude.json); elsewhere they are ignored and logged.",
   "type": "object",
   "additionalProperties": false,
   "properties": {
@@ -22,7 +22,6 @@
       "maximum": 100,
       "default": 80,
       "x-env": "AI_DLC_AUTO_HANDOFF_THRESHOLD_PERCENT",
-      "x-userConfig": "thresholdPercent",
       "description": "Share of the context window, 1 to 100, at which the main session hands off. The window is the one Claude Code reports, else defaultContextWindow. thresholdTokens, when set, replaces it."
     },
     "thresholdTokens": {
@@ -51,7 +50,6 @@
       "minimum": 1,
       "default": 2,
       "x-env": "AI_DLC_AUTO_HANDOFF_MAX_CONSECUTIVE",
-      "x-userConfig": "maxConsecutiveHandoffs",
       "description": "Handoffs allowed in a row before you type a prompt, when no AI-DLC run is active for the chain. With an active run, chainWhileRunActive decides."
     },
     "chainWhileRunActive": {
@@ -78,7 +76,6 @@
       "minLength": 1,
       "default": "~/.claude/auto-handoff/brief.md",
       "x-env": "AI_DLC_AUTO_HANDOFF_BRIEF_TEMPLATE",
-      "x-userConfig": "briefTemplate",
       "x-trustGated": true,
       "description": "Markdown file that tells Haiku which sections to write when no AI-DLC run is active (with one, the handoff skill's session handoff template is used). Created with the defaults on first run. From this file it applies only when Claude Code trusts the folder."
     },
@@ -87,7 +84,6 @@
       "minLength": 1,
       "default": "~/.claude/auto-handoff/instructions.md",
       "x-env": "AI_DLC_AUTO_HANDOFF_INSTRUCTIONS_TEMPLATE",
-      "x-userConfig": "instructionsTemplate",
       "x-trustGated": true,
       "description": "Markdown file that tells the fresh session how to read the brief. Created with the defaults on first run. From this file it applies only when Claude Code trusts the folder."
     },
@@ -96,7 +92,6 @@
       "format": "regex",
       "default": "",
       "x-env": "AI_DLC_AUTO_HANDOFF_IGNORE_FILES",
-      "x-userConfig": "ignoreFiles",
       "description": "A regular expression: edited files matching it are left out of the brief. \"\" means none."
     },
     "viewer": {
@@ -105,7 +100,6 @@
       "pattern": "^\\s*([A-Za-z0-9_.-]+:[1-9][0-9]{1,4})?\\s*$",
       "default": "",
       "x-env": "AI_DLC_AUTO_HANDOFF_VIEWER",
-      "x-userConfig": "viewer",
       "x-trustGated": true,
       "description": "Where to serve a readable page for each brief, as host:port, the port 10 to 65535; \"tailscale\" as the host means this machine's Tailscale IP. \"\" means no server. From this file it applies only when Claude Code trusts the folder."
     }

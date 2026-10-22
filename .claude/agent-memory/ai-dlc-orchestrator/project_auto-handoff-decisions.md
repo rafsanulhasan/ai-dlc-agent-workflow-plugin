@@ -1,6 +1,6 @@
 ---
 name: auto-handoff-decisions
-description: 2026-10-22 decisions on the auto-handoff module — chain by run state, settings precedence (local env wins), trust gate, cache-keepalive to be folded in
+description: auto-handoff and keep-alive decisions — chain by run state, settings precedence (local env wins, no /config since 2026-10-23), trust gate, cache-keepalive commands
 metadata:
   type: project
 ---
@@ -10,7 +10,7 @@ Decisions the human made in run `AAW-20261022-auto-handoff-chain` (closed 2026-1
 - **Chaining:** keep handing off while the chain's run is `active`. Stop on `done`, `blocked` or `abandoned`. With no run, keep the 2-handoff guard.
 - **What a new session gets:** only the records of open stages.
 - **Session names:** `[ai-dlc:auto-handoff]: <original> (Session N)`.
-- **Settings precedence:** `.claude/settings.local.json` env, then `.claude/settings.json` env, then process env, then `.ai-dlc/auto-handoff.json`, then `/config`, then the default. **Local always wins.** The human first wrote the order reversed, then corrected it.
+- **Settings precedence:** `.claude/settings.local.json` env, then `.claude/settings.json` env, then process env, then `.ai-dlc/auto-handoff.json`, then the default (the `/config` level was removed 2026-10-23; change settings with `/ai-dlc:configure-auto-handoff`). **Local always wins.** The human first wrote the order reversed, then corrected it.
 - **Trust gate:** `viewer`, `briefTemplate` and `instructionsTemplate` from the repo file apply only when `~/.claude.json` records the folder as trusted (`hasTrustDialogAccepted`).
   - In VS Code and the SDK the trust dialog never shows, and this repository reads as untrusted, so a gate on the whole file would make it useless there.
 - **cache-keepalive:** folded into ai-dlc on 2026-10-23; the code is in `hooks/keepalive/`, imported and registered by the auto-handoff module (run `AAW-20261022-fold-cache-keepalive`); the mod dependency is dropped.
@@ -18,9 +18,9 @@ Decisions the human made in run `AAW-20261022-auto-handoff-chain` (closed 2026-1
   - Human decisions in that run:
     - **Two tracks:** 1h (ping every 50m, keep warm 8h) and 5m (every 3m, keep warm 1h, 20 pings, the ping that falls on the limit included), with one status line per track and a seed `cache hit/miss` line.
     - **Stopping:** pinging stops when the work is done or when the optional spend limit is reached (`BUDGET_MULTIPLIER=0` turns the limit off).
-    - **Settings:** 26 `AI_DLC_KEEPALIVE_*` settings. Precedence: the `/ai-dlc:keepalive` override > settings.local env > settings.json env > `.ai-dlc/cache-keepalive.json` > `/config` > default. The process env is **not** read here, unlike auto-handoff.
+    - **Settings:** 26 `AI_DLC_KEEPALIVE_*` settings. Precedence: the `/ai-dlc:cache-keepalive` override > settings.local env > settings.json env > `.ai-dlc/cache-keepalive.json` > default (`/config` rows removed 2026-10-23; team settings via `/ai-dlc:cache-keepalive-configure`; init runs -install or -merge, then writes keep-warm time and scope; every key explicit, never null; maxPings = keepWarmFor ÷ pingEvery (≥ 1)). The process env is **not** read here, unlike auto-handoff.
     - **Trust gate:** in an untrusted folder, 16 spend, behaviour and price keys (13 on 2026-10-22; writeMult, outputMult and readPrice added 2026-10-23) are skipped from both committed sources (settings.json env and the repo file).
-    - **Commands:** every one carries the `ai-dlc:` prefix. Mods-API commands can't contain a colon, so `/ai-dlc:keepalive` is a plugin skill the module answers in `command.run`. The skill is Claude-only and left out of Copilot.
+    - **Commands:** every one carries the `ai-dlc:` prefix. Mods-API commands can't contain a colon, so `/ai-dlc:cache-keepalive <duration> [--track 1h|5m|both]` (renamed from `/ai-dlc:keepalive` 2026-10-23) is a plugin skill the module answers in `command.run`; `/ai-dlc:cache-keepalive-install` (first use), `-merge` (update or repair) and `-configure` (show or change in plain words; no user-facing set) manage the settings. Both are Claude-only and left out of Copilot. Auto-handoff registers no commands of its own.
   - **Trust facts (2026-10-23):**
     - Interactive terminal sessions record `hasTrustDialogAccepted`.
     - `-p` and SDK sessions never show the dialog, so they never record it (an inference).

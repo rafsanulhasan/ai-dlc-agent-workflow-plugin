@@ -93,10 +93,6 @@ test("this repository's ai-dlc hooks module is Claude-only: hooks.json is module
   assert.ok(!("userConfig" in manifest));
   assert.ok(!("hooks" in manifest));
   const claudeManifest = JSON.parse(fs.readFileSync(path.join(claude, ".claude-plugin", "plugin.json"), "utf8"));
-  // The six auto-handoff rows, then keep-alive's, each named keepalive<Key> (tests/auto-handoff/keepalive-settings.test.mjs checks them).
-  const keys = Object.keys(claudeManifest.userConfig);
-  assert.deepEqual(keys.filter((k) => !k.startsWith("keepalive")).sort(), ["briefTemplate", "ignoreFiles", "instructionsTemplate", "maxConsecutiveHandoffs", "thresholdPercent", "viewer"]);
-  assert.ok(keys.some((k) => k.startsWith("keepalive")));
   assert.ok(!("dependencies" in claudeManifest), "ai-dlc depends on no other plugin: keep-alive is part of its hooks module");
 });
 
@@ -156,16 +152,16 @@ test("a modules entry that is not a path string fails the build with a clear mes
   }
 });
 
-// AC-1, AC-4, AC-5 (AAW-20261021-mods-config): the userConfig shape the code under test relies on.
-test("the ai-dlc manifest declares thresholdPercent as a 1..100 number defaulting to 80, and no token threshold", () => {
-  const manifest = JSON.parse(fs.readFileSync(path.join(REPO, "plugins", "claude", "ai-dlc", ".claude-plugin", "plugin.json"), "utf8"));
-  const field = manifest.userConfig.thresholdPercent;
-  assert.equal(field.type, "number");
+// AC-1, AC-4, AC-5 (AAW-20261021-mods-config), revised by AAW-20261022-cache-keepalive-init: thresholdPercent
+// lives in the configure-auto-handoff schema as a 1..100 integer defaulting to 80; no /config row, no token threshold.
+test("thresholdPercent is a 1..100 integer defaulting to 80 in the schema, with no token threshold", () => {
+  const schema = JSON.parse(fs.readFileSync(path.join(REPO, "plugins", "claude", "ai-dlc", "skills", "configure-auto-handoff", "templates", "auto-handoff.schema.json"), "utf8"));
+  const field = schema.properties.thresholdPercent;
+  assert.deepEqual(field.type, ["integer", "null"]);
   assert.equal(field.default, 80);
-  assert.equal(field.min, 1);
-  assert.equal(field.max, 100);
-  assert.ok(!("threshold" in manifest.userConfig), "the retired token threshold key must not come back");
-  assert.match(field.description, /500000/);
+  assert.equal(field.minimum, 1);
+  assert.equal(field.maximum, 100);
+  assert.ok(!("threshold" in schema.properties), "the retired token threshold key must not come back");
 });
 
 test("the cache-keepalive mod is folded into ai-dlc: no mod folder, marketplace entry or CI loop is left", () => {
@@ -225,8 +221,11 @@ test("a name in tools/claude-only-skills.json that is not a plugin skill fails t
   assert.match(r.stderr, /tools\/claude-only-skills\.json: no plugin skill "nope"/);
 });
 
-test("this repository's keepalive skill is Claude-only: listed, and absent from the Copilot plugin", () => {
-  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(REPO, "tools", "claude-only-skills.json"), "utf8")), ["keepalive"]);
-  assert.ok(fs.existsSync(path.join(REPO, "plugins", "claude", "ai-dlc", "skills", "keepalive", "SKILL.md")));
-  assert.ok(!fs.existsSync(path.join(REPO, "plugins", "copilot", "ai-dlc", "skills", "keepalive", "SKILL.md")));
+test("this repository's keep-alive skills are Claude-only: listed, and absent from the Copilot plugin", () => {
+  const names = ["cache-keepalive", "cache-keepalive-configure", "cache-keepalive-install", "cache-keepalive-merge"];
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(REPO, "tools", "claude-only-skills.json"), "utf8")), names);
+  for (const name of names) {
+    assert.ok(fs.existsSync(path.join(REPO, "plugins", "claude", "ai-dlc", "skills", name, "SKILL.md")), name);
+    assert.ok(!fs.existsSync(path.join(REPO, "plugins", "copilot", "ai-dlc", "skills", name)), name);
+  }
 });

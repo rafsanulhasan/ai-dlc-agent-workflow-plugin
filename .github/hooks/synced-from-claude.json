@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "hooks": {
+    "agentStop": [
+      {
+        "type": "command",
+        "bash": "node .claude/hooks/stop-sync-then-check.mjs",
+        "powershell": "node .claude/hooks/stop-sync-then-check.mjs",
+        "timeoutSec": 240
+      }
+    ]
+  }
+}

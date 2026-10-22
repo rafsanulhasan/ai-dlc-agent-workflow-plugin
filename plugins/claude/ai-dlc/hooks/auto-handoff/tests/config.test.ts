@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'claude-code/testing'
-import { DEFAULTS, SETTINGS, TRUST_GATED, baseName, check, normPath, parseUserConfig, repoConfig, resolveConfig, sessionName, settingsEnv, transcriptTitle, trustOf, trustRoot, withoutGated, withoutKeys, parseBool, PREVIEW_CHARS, previewValue, keysWithValues } from '../config.ts'
+import { DEFAULTS, SETTINGS, TRUST_GATED, baseName, check, normPath, repoConfig, resolveConfig, sessionName, settingsEnv, transcriptTitle, trustOf, trustRoot, withoutGated, withoutKeys, parseBool, PREVIEW_CHARS, previewValue, keysWithValues } from '../config.ts'
 import { parseAddress } from '../server.ts'
 import type { Level } from '../config.ts'
 
@@ -7,22 +7,22 @@ const env = (where: string, values: Record<string, unknown>): Level => ({ where,
 const file = (values: Record<string, unknown>): Level => ({ where: '.ai-dlc/auto-handoff.json', byEnv: false, values })
 
 describe('resolveConfig', () => {
-  test('the first level with a valid value wins, then /config, then the default', () => {
+  test('the first level with a valid value wins, then the default', () => {
     const levels = [
       env('.claude/settings.local.json', { AI_DLC_AUTO_HANDOFF_MAX_CONSECUTIVE: '7' }),
       env('.claude/settings.json', { AI_DLC_AUTO_HANDOFF_MAX_CONSECUTIVE: 6, AI_DLC_AUTO_HANDOFF_THRESHOLD_PERCENT: 70 }),
       env('the environment', { AI_DLC_AUTO_HANDOFF_THRESHOLD_PERCENT: '60', AI_DLC_AUTO_HANDOFF_VIEWER: 'tailscale:3846' }),
       file({ thresholdPercent: 50, viewer: '', briefTemplate: '/repo/brief.md' }),
     ]
-    const { cfg, sources } = resolveConfig(levels, { thresholdPercent: 40, briefTemplate: '/mine.md', instructionsTemplate: '/i.md' })
+    const { cfg, sources } = resolveConfig(levels)
     expect(cfg.maxUnattended).toBe(7)
     expect(sources.maxConsecutiveHandoffs).toBe('AI_DLC_AUTO_HANDOFF_MAX_CONSECUTIVE in .claude/settings.local.json')
     expect(cfg.thresholdPercent).toBe(70)
     expect(cfg.viewer).toBe('tailscale:3846')
     expect(cfg.briefTemplate).toBe('/repo/brief.md')
     expect(sources.briefTemplate).toBe('briefTemplate in .ai-dlc/auto-handoff.json')
-    expect(cfg.instructionsTemplate).toBe('/i.md')
-    expect(sources.instructionsTemplate).toBe('instructionsTemplate in /config')
+    expect(cfg.instructionsTemplate).toBe(DEFAULTS.instructionsTemplate)
+    expect(sources.instructionsTemplate).toBe('default')
     expect(cfg.seedHeadroomTokens).toBe(40_000)
     expect(sources.seedHeadroomTokens).toBe('default')
   })
@@ -32,9 +32,9 @@ describe('resolveConfig', () => {
       env('.claude/settings.local.json', { AI_DLC_AUTO_HANDOFF_THRESHOLD_PERCENT: '150', AI_DLC_AUTO_HANDOFF_ENABLED: 'maybe' }),
       file({ thresholdPercent: 'eighty', ignoreFiles: '(' }),
     ]
-    const { cfg, sources, warnings } = resolveConfig(levels, { thresholdPercent: 55 })
-    expect(cfg.thresholdPercent).toBe(55)
-    expect(sources.thresholdPercent).toBe('thresholdPercent in /config')
+    const { cfg, sources, warnings } = resolveConfig(levels)
+    expect(cfg.thresholdPercent).toBe(80)
+    expect(sources.thresholdPercent).toBe('default')
     expect(cfg.enabled).toBe(true)
     expect(cfg.ignoreFiles).toBeUndefined()
     expect(warnings).toEqual([
@@ -46,20 +46,20 @@ describe('resolveConfig', () => {
   })
 
   test('unset is not invalid: null, a missing key or a blank environment value fall through quietly', () => {
-    const { cfg, warnings } = resolveConfig([env('x', { AI_DLC_AUTO_HANDOFF_THRESHOLD_TOKENS: '  ' }), file({ thresholdTokens: null })], {})
+    const { cfg, warnings } = resolveConfig([env('x', { AI_DLC_AUTO_HANDOFF_THRESHOLD_TOKENS: '  ' }), file({ thresholdTokens: null })])
     expect(cfg.thresholdTokens).toBeUndefined()
     expect(warnings).toEqual([])
   })
 
   test('a blank viewer or ignoreFiles in the file is a value: no server, no pattern', () => {
-    const { cfg, sources } = resolveConfig([file({ viewer: '', ignoreFiles: '' })], { viewer: 'tailscale:1', ignoreFiles: 'x' })
+    const { cfg, sources } = resolveConfig([file({ viewer: '', ignoreFiles: '' })])
     expect(cfg.viewer).toBe('')
     expect(sources.viewer).toBe('viewer in .ai-dlc/auto-handoff.json')
     expect(cfg.ignoreFiles).toBeUndefined()
   })
 
   test('with nothing set, the defaults', () => {
-    const { cfg } = resolveConfig([], {})
+    const { cfg } = resolveConfig([])
     expect(cfg).toEqual(DEFAULTS)
   })
 
@@ -144,39 +144,47 @@ describe('viewer address (W2)', () => {
   })
 
   test('a bad viewer in a settings file is logged and falls through', () => {
-    const { cfg, warnings } = resolveConfig([env('.claude/settings.json', { AI_DLC_AUTO_HANDOFF_VIEWER: 'foo' })], {})
+    const { cfg, warnings } = resolveConfig([env('.claude/settings.json', { AI_DLC_AUTO_HANDOFF_VIEWER: 'foo' })])
     expect(cfg.viewer).toBe('')
     expect(warnings).toEqual(['AI_DLC_AUTO_HANDOFF_VIEWER="foo" in .claude/settings.json ignored: not a valid address; falling back to the next source'])
   })
 })
 
-describe('/config warnings (W3)', () => {
-  test('parseUserConfig warns for each clamped or dropped value and keeps the defaults', () => {
-    const { cfg, warnings } = parseUserConfig({ thresholdPercent: 150, maxConsecutiveHandoffs: 0, briefTemplate: ' ', instructionsTemplate: '/i.md', ignoreFiles: '(', viewer: 'foo' })
-    expect(cfg.thresholdPercent).toBe(100)
-    expect(cfg.maxUnattended).toBe(2)
-    expect(cfg.briefTemplate).toBe(DEFAULTS.briefTemplate)
-    expect(cfg.instructionsTemplate).toBe('/i.md')
-    expect(cfg.ignoreFiles).toBeUndefined()
-    expect(cfg.viewer).toBe('')
-    expect(warnings).toEqual({
-      thresholdPercent: 'thresholdPercent=150 in /config clamped to 100',
-      maxConsecutiveHandoffs: 'maxConsecutiveHandoffs=0 in /config ignored: not a positive number; using 2',
-      briefTemplate: 'briefTemplate=" " in /config ignored: blank or not text; using "~/.claude/auto-handoff/brief.md"',
-      ignoreFiles: 'ignoreFiles="(" in /config ignored: not a valid regular expression; using ""',
-      viewer: 'viewer="foo" in /config ignored: not host:port; using ""',
-    })
+// The automatic handoff has no /config rows (human decision, 2026-10-23, run AAW-20261022-cache-keepalive-init):
+// resolveConfig takes the levels alone, and no setting names a userConfig key.
+describe('resolution order, level by level', () => {
+  const KEY = 'AI_DLC_AUTO_HANDOFF_THRESHOLD_TOKENS'
+  const levels = (...present: number[]): Level[] => [
+    env('.claude/settings.local.json', { [KEY]: '30000' }),
+    env('.claude/settings.json', { [KEY]: '40000' }),
+    env('the environment', { [KEY]: '50000' }),
+    file({ thresholdTokens: 60000 }),
+  ].filter((_, i) => present.includes(i))
+  const expected = [[30000, '.claude/settings.local.json'], [40000, '.claude/settings.json'], [50000, 'the environment'], [60000, '.ai-dlc/auto-handoff.json']] as const
+
+  test('each level beats every level below it, and the source names it', () => {
+    for (let top = 0; top < 4; top++) {
+      const { cfg, sources } = resolveConfig(levels(...[0, 1, 2, 3].filter(i => i >= top)))
+      expect(cfg.thresholdTokens).toBe(expected[top]![0])
+      expect(sources.thresholdTokens).toContain(expected[top]![1])
+    }
   })
 
-  test('good, blank and missing /config values give no warning', () => {
-    expect(parseUserConfig({ thresholdPercent: 70, maxConsecutiveHandoffs: 3, ignoreFiles: '', viewer: '' }).warnings).toEqual({})
-    expect(parseUserConfig({}).warnings).toEqual({})
-    expect(parseUserConfig({ thresholdPercent: 0.5 }).warnings.thresholdPercent).toBe('thresholdPercent=0.5 in /config clamped to 1')
+  test('a level whose value is invalid is skipped and the next one wins, for every level', () => {
+    for (let top = 0; top < 3; top++) {
+      const ls = levels(0, 1, 2, 3)
+      for (let i = 0; i <= top; i++) ls[i] = env(ls[i]!.where, { [KEY]: 'lots' })
+      const { cfg, warnings } = resolveConfig(ls)
+      expect(cfg.thresholdTokens).toBe(expected[top + 1]![0])
+      for (let i = 0; i <= top; i++) expect(warnings.some(w => w.includes(ls[i]!.where) && w.includes('lots'))).toBe(true)
+    }
   })
 
-  test('resolveConfig reports a /config warning only when /config supplies the key', () => {
-    expect(resolveConfig([], { thresholdPercent: 150 }).warnings).toEqual(['thresholdPercent=150 in /config clamped to 100'])
-    expect(resolveConfig([file({ thresholdPercent: 70 })], { thresholdPercent: 150 }).warnings).toEqual([])
+  test('a former /config row is not a level: resolveConfig takes only the levels given, and a key like userConfig changes nothing', () => {
+    const { cfg, sources } = resolveConfig([file({ userConfig: { thresholdPercent: 10 }, thresholdPercent: 70 } as never)])
+    expect(cfg.thresholdPercent).toBe(70)
+    expect(resolveConfig([]).cfg.thresholdPercent).toBe(DEFAULTS.thresholdPercent)
+    expect(Object.values(sources).some(v => /config/i.test(v) && !/auto-handoff.json/.test(v))).toBe(false)
   })
 })
 

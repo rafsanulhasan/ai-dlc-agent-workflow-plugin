@@ -29,7 +29,6 @@ import { git, homeDir, log, orLog, readRaw, readText, repoRoot, trustGate } from
 
 // The effective settings (config.ts, resolveConfig) and where each came from. Loaded on first use
 // and again at each session start, so a chain picks up edits to the repository file.
-let options: Record<string, unknown> = {}
 let cfg: Config = DEFAULTS
 let cfgSources: Record<string, string> = {}
 let cfgLoaded = false
@@ -101,9 +100,10 @@ async function processEnv($: EngineInterface): Promise<Record<string, unknown>> 
 
 // Reads every source and resolves each setting, highest first: `env` of .claude/settings.local.json,
 // `env` of .claude/settings.json (both read from the files, because the merged process environment
-// cannot tell them apart), the process environment, .ai-dlc/auto-handoff.json, /config, the default
-// (config.ts, resolveConfig). An unreadable source and every invalid value are logged; resolution
-// falls through. Never throws: on an error the module runs on /config and the defaults.
+// cannot tell them apart), the process environment, .ai-dlc/auto-handoff.json, the default
+// (config.ts, resolveConfig). The automatic handoff has no /config rows. An unreadable source and
+// every invalid value are logged; resolution falls through. Never throws: on an error the module runs
+// on the defaults.
 async function loadConfig($: EngineInterface): Promise<void> {
   try {
     const root = await repoRoot($)
@@ -119,16 +119,16 @@ async function loadConfig($: EngineInterface): Promise<void> {
     if (repo.problem) problems.push(`${REPO_CONFIG} ${repo.problem}`)
     // viewer, briefTemplate and instructionsTemplate apply from the repository file only in a folder
     // Claude Code trusts (config.ts, TRUST_GATED; io.ts, trustGate).
-    if (repo.values) levels.push({ where: REPO_CONFIG, byEnv: false, values: await trustGate($, repo.values, TRUST_GATED, REPO_CONFIG, 'set them in the env of .claude/settings.local.json or in /config instead', problems) })
-    const r = resolveConfig(levels, options)
+    if (repo.values) levels.push({ where: REPO_CONFIG, byEnv: false, values: await trustGate($, repo.values, TRUST_GATED, REPO_CONFIG, 'set them in the env of .claude/settings.local.json instead', problems) })
+    const r = resolveConfig(levels)
     cfg = r.cfg
     cfgSources = r.sources
     for (const line of [...problems, ...r.warnings]) await log($, `config: ${line}`)
   } catch (err) {
-    const r = resolveConfig([], options)
+    const r = resolveConfig([])
     cfg = r.cfg
     cfgSources = r.sources
-    await log($, `config error ${String(err)}; using /config and the defaults`)
+    await log($, `config error ${String(err)}; using the defaults`)
   }
 }
 
@@ -756,14 +756,13 @@ async function warnTightThreshold($: EngineInterface, sessionId: string) {
   addStep($, { mark: 'warn', text: `threshold ${k(base)} (${source}) ${left} this session's ${k(floor)} start: handing off at ${k(floor + min)} instead` }, { mark: 'warn', text: 'auto-handoff' }, true)
 }
 
-export const register: Register = (on, opts) => {
-  // /config alone until the first hook reads the other sources (ensureConfig).
-  options = opts
-  cfg = resolveConfig([], options).cfg
+export const register: Register = (on) => {
+  // The defaults until the first hook reads the settings (ensureConfig).
+  cfg = resolveConfig([]).cfg
   cfgLoaded = false
-  // Keep-alive (../keepalive/keepalive.ts): its own events and the /ai-dlc:keepalive command. It arms no
+  // Keep-alive (../keepalive/keepalive.ts): its own events and the /ai-dlc:cache-keepalive command. It arms no
   // pings while a handoff is under way.
-  registerKeepalive(on, opts, { handingOff: () => inFlight || pending !== undefined })
+  registerKeepalive(on, { handingOff: () => inFlight || pending !== undefined })
   on('turn.complete', async ($, e, next) => {
     const r = await next(e)
     try {

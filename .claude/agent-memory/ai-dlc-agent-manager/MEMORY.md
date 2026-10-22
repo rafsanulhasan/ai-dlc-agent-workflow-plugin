@@ -10,3 +10,4 @@
 - [Claude plugin config facts](reference_claude-plugin-config-facts.md) — userConfig rules, prefixed command via skill + command.run, $ only into declarations
 - [.ai-dlc copy test](project_ai-dlc-copy-test.md) — handoff-naming test fails until repo .ai-dlc/ is resynced after a template change
 - [Hooks module typecheck](reference_hooks-module-typecheck.md) — plugin test skips types; tsc recipe with bundled engine types; Claude-only skills on Copilot
+- [Harness-sync command](project_harness-sync-command.md) — no consumer sync hook; user-only command runs the script; agents run it directly

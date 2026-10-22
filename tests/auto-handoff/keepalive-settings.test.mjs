@@ -1,6 +1,6 @@
 // Keep-alive's one settings table (hooks/keepalive/settings.ts) against everything that
-// repeats its names: the ai-dlc manifest's /config rows, the keep-alive README's table, and the
-// command's name everywhere it is written. The module's own behaviour is tested by `claude plugin test`
+// repeats its names: the keep-alive README's table and the command's name everywhere it is written.
+// The module's own behaviour is tested by `claude plugin test`
 // (hooks/keepalive/tests/keepalive.test.ts); this suite needs node:fs, which that one cannot import.
 // The table is imported as TypeScript through Node's type stripping (Node 22.18 and later).
 // Run: node --test "tests/**/*.test.mjs".
@@ -25,24 +25,9 @@ try {
   skipReason = `Node ${process.versions.node} cannot import settings.ts (needs 22.18 or later): ${e.message}`;
 }
 
-const NUMBER_KINDS = new Set(["threshold", "ratio", "percent", "nonNegative", "positive", "whole", "positiveWhole"]);
-const manifest = JSON.parse(fs.readFileSync(path.join(PLUGIN, ".claude-plugin", "plugin.json"), "utf8"));
 const readme = fs.readFileSync(path.join(KEEPALIVE, "README.md"), "utf8").replace(/\r\n/g, "\n");
 
 describe("keep-alive settings table", { skip: skipReason }, () => {
-  test("every setting has one /config row, of the right type and with no default of its own", () => {
-    const rows = Object.keys(manifest.userConfig).filter((k) => k.startsWith("keepalive"));
-    assert.deepEqual(rows.sort(), mod.SETTINGS.map((s) => s.userConfig).sort());
-    for (const s of mod.SETTINGS) {
-      const row = manifest.userConfig[s.userConfig];
-      const type = s.kind === "boolean" ? "boolean" : NUMBER_KINDS.has(s.kind) ? "number" : "string";
-      assert.equal(row.type, type, s.userConfig);
-      assert.ok(!("default" in row), `${s.userConfig} repeats a default: the defaults live in settings.ts alone`);
-      assert.match(row.title, /^Keep-alive: /, s.userConfig);
-      assert.ok(row.description.includes(s.env), `${s.userConfig} names its variable`);
-    }
-  });
-
   test("every variable is AI_DLC_KEEPALIVE_*, unique, and the defaults keep every rule", () => {
     assert.equal(new Set(mod.SETTINGS.map((s) => s.env)).size, mod.SETTINGS.length);
     for (const s of mod.SETTINGS) assert.match(s.env, /^AI_DLC_KEEPALIVE_[A-Z0-9_]+$/);
@@ -88,22 +73,17 @@ describe("keep-alive's trust gate", { skip: skipReason }, () => {
     assert.ok(trust.includes(`the ${mod.TRUST_GATED.length} settings above`), "README counts the gated settings");
   });
 
-  test("the /config row of every gated setting, and only those, says the committed files override it only in a trusted folder", () => {
-    const GATE = "overrides this row only in a folder Claude Code trusts (see the keep-alive README, hooks/keepalive/README.md, Workspace trust)";
-    for (const s of mod.SETTINGS) {
-      const gated = mod.TRUST_GATED.includes(s.key);
-      assert.equal(manifest.userConfig[s.userConfig].description.includes(GATE), gated, `${s.userConfig}: gate sentence ${gated ? "missing" : "on an ungated row"}`);
-    }
-  });
 });
 
 describe("the keep-alive command", () => {
-  test("is /ai-dlc:keepalive: a plugin skill gives the name and the module answers it", () => {
-    const skill = fs.readFileSync(path.join(PLUGIN, "skills", "keepalive", "SKILL.md"), "utf8");
-    assert.match(skill, /^---\r?\nname: keepalive\r?\n/);
+  test("is /ai-dlc:cache-keepalive: a plugin skill gives the name and the module answers it", () => {
+    const skill = fs.readFileSync(path.join(PLUGIN, "skills", "cache-keepalive", "SKILL.md"), "utf8");
+    assert.match(skill, /^---\r?\nname: cache-keepalive\r?\n/);
+    assert.ok(!fs.existsSync(path.join(PLUGIN, "skills", "keepalive")), "the former keepalive skill is renamed cache-keepalive");
+    assert.match(skill, /--track 1h\|5m\|both/);
     assert.match(skill, /\ndisable-model-invocation: true\r?\n/);
     const code = fs.readFileSync(path.join(KEEPALIVE, "keepalive.ts"), "utf8");
-    assert.match(code, /export const COMMAND = 'ai-dlc:keepalive'/);
+    assert.match(code, /export const COMMAND = 'ai-dlc:cache-keepalive'/);
     assert.match(code, /on\('command\.run', \{ command: COMMAND \}/);
     assert.ok(!code.includes("command.register"), "a hooks module can only register a bare name");
   });
