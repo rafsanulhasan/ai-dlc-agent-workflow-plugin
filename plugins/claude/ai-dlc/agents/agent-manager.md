@@ -108,14 +108,16 @@ Trigger: any time a request involves creating, modifying, or deleting a `.claude
 
 ```
 node .claude/scripts/sync-harness.mjs --check [--only <kinds>] [--name <name>]                  # report only
-node .claude/scripts/sync-harness.mjs [--only <kinds>] [--name <name>] [--prefer claude|copilot|newer]   # sync
+node .claude/scripts/sync-harness.mjs --prefer claude|copilot [--only <kinds>] [--name <name>]     # sync
 ```
 
-When you sync one item and both of its twins were edited, run `node .claude/scripts/sync-harness.mjs --check --only <kind> --name <name>` first, ask the human which side wins, then sync with `--prefer claude` or `--prefer copilot`; never let `newer` decide.
+Always pass `--prefer claude` or `--prefer copilot` when you sync; never rely on the default, `newer`. When you sync one item and both of its twins were edited, run `node .claude/scripts/sync-harness.mjs --check --only <kind> --name <name>` first, ask the human which side wins, then sync with `--prefer claude` or `--prefer copilot`; never let `newer` decide.
+
+For a whole-harness sync (no `--name`, such as the last step of a project-scope create or update), run `node .claude/scripts/sync-harness.mjs --check` first. If any pair shows as `drifted`, ask the human which side wins and pass that side with `--prefer`; if none is drifted, pass `--prefer` naming the side you changed. The `(--prefer newer)` label on `drifted` lines in `--check` output only shows which side the default would pick; it does not mean that side wins your sync.
 
 Install or refresh: `/ai-dlc:init` copies the skill's `templates/sync-harness.mjs` to `.claude/scripts/sync-harness.mjs`; to refresh it, copy the same template (*For agents*, "Install or refresh").
 
-Trigger: a developer created or edited agent artifacts by hand on one platform, asks whether both platforms match, or wants a command to sync them; and as the last step of any project-scope create / update, to confirm `--check` exits 0. The per-kind skills own the content of a change; the script reconciles everything at once.
+Trigger: a developer created or edited agent artifacts by hand on one platform, asks whether both platforms match, or wants a command to sync them; and as the last step of any project-scope create / update (the whole-harness sync above), to confirm `--check` exits 0. The per-kind skills own the content of a change; the script reconciles everything at once.
 
 ### `workflow` — the repository's AI-DLC workflow file
 

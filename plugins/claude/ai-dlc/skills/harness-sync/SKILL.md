@@ -1,6 +1,6 @@
 ---
 name: harness-sync
-description: "Runs the two-way Claude Code ↔ GitHub Copilot harness sync, `node .claude/scripts/sync-harness.mjs`, so every agent, skill, command ↔ prompt, rule ↔ instruction and hook made or edited on one platform exists on the other. `--check` only reports; `--prefer`, `--only` and `--name` pass through to the script. When both twins of one artifact were edited, the file saved last wins, or the side `--prefer claude|copilot` names. User-invoked only; /ai-dlc:init installs the script."
+description: "Runs the two-way Claude Code ↔ GitHub Copilot harness sync, `node .claude/scripts/sync-harness.mjs`, so every agent, skill, command ↔ prompt, rule ↔ instruction and hook made or edited on one platform exists on the other. `--check` only reports; `--prefer`, `--only` and `--name` pass through to the script. When both twins of one artifact were edited, the file saved last wins, or the side `--prefer claude|copilot` names. That default, `newer`, is only for runs the user starts; agents ask the human first, then pass `--prefer claude|copilot`. User-invoked only; /ai-dlc:init installs the script."
 argument-hint: "[--check] [--prefer claude|copilot|newer] [--only <kinds>] [--name <n>]"
 disable-model-invocation: true
 ---
@@ -21,7 +21,7 @@ disable-model-invocation: true
 |---|---|
 | *(none)* | Sync both ways |
 | `--check` | Report only: `would …` lines, exit 1 when anything is pending; nothing is written |
-| `--prefer claude\|copilot\|newer` | Which side wins when both twins exist and differ (default `newer`) |
+| `--prefer claude\|copilot\|newer` | Which side wins when both twins exist and differ (default `newer`, for runs the user starts; agents always pass `claude` or `copilot`, see *For agents*) |
 | `--only <kinds>` | Limit to `agents`, `skills`, `commands`, `rules`, `hooks` (comma-separated) |
 | `--name <n>` | Limit to one artifact by name (hooks are skipped) |
 | `--help` | The script's own usage |
@@ -39,7 +39,7 @@ disable-model-invocation: true
 What the script does, so the output can be explained:
 
 - **Missing twin** → created from the side that exists, whichever platform that is.
-- **Both twins edited (they exist and differ)** → one side is copied over the other; the other side's edits to the synced fields are lost. `--prefer` picks the side: `newer` (default) takes the file saved last, on either platform; `claude` or `copilot` forces that side. Before syncing a pair you edited on both sides, run with `--check` and then pass the `--prefer` you want, or merge the two by hand first.
+- **Both twins edited (they exist and differ)** → one side is copied over the other; the other side's edits to the synced fields are lost. `--prefer` picks the side: `newer` (default) takes the file saved last, on either platform (equal timestamps go to Claude); `claude` or `copilot` forces that side. The `newer` default is only for runs the user starts with `/ai-dlc:harness-sync`; an agent never relies on it, but asks the human which side wins and passes `--prefer claude` or `--prefer copilot` (*For agents*). Before syncing a pair you edited on both sides, run with `--check` and then pass the `--prefer` you want, or merge the two by hand first.
 - **Shared fields only.** Agents: `name`, `description`, `tools` (translated with the same alias table as the plugin build), `status`, body. Commands: `description`, `argument-hint`, body (`$ARGUMENTS` ↔ `${input:arguments}`). Rules: `description`, scope (`paths` ↔ `applyTo`; no `paths` ↔ `applyTo: "**"`), body. Skills are copied file by file. Platform-only keys on the target (`model`, `color`, `user-invocable`, `excludeAgent`, …) are kept.
 - **Hooks are additive and matched by command.** Claude hooks missing from Copilot go to `.github/hooks/synced-from-claude.json`; Copilot hooks missing from Claude are appended to `.claude/settings.json`. A hook whose command was changed is a new hook: the old one stays on the other side until it is removed there. `synced-from-claude.json` is the script's own output and is not read back into Claude.
 - **Nothing is deleted.** Removing an artifact, and each `note:` line, stay with the developer or **Boris Cherny** (`agent-manager`).
@@ -49,7 +49,9 @@ What the script does, so the output can be explained:
 This command is user-invoked only, so an agent never calls it. **Boris Cherny** (`agent-manager`), and the management skills it runs, read this file and run the script directly:
 
 - **Install or refresh.** `/ai-dlc:init` copies [templates/sync-harness.mjs](templates/sync-harness.mjs) to `.claude/scripts/sync-harness.mjs`. To refresh it later, copy the same template; if a different copy exists, show the diff and write only with the developer's consent. Offer, and add only on consent, a CI step `node .claude/scripts/sync-harness.mjs --check` (hand it to **Gene Kim** (`devops-engineer`) through the orchestrator), so a pull request that changes only one platform fails.
-- **Sync after a change.** When you sync one item and both of its twins were edited, run `node .claude/scripts/sync-harness.mjs --check --only <kind> --name <name>` first, ask the human which side wins, then sync with `--prefer claude` or `--prefer copilot`; never let `newer` decide. `--check` shows any pair that exists on both sides and differs as `drifted`, whichever side changed. When only the side you changed was edited, or the human named a side, sync with `--prefer` naming that side. Hooks have no such pair: they are matched by command, and `--name` skips them.
+- **Sync after a change.** When you sync one item and both of its twins were edited, run `node .claude/scripts/sync-harness.mjs --check --only <kind> --name <name>` first, ask the human which side wins, then sync with `--prefer claude` or `--prefer copilot`; never let `newer` decide. `--check` shows any pair that exists on both sides and differs as `drifted`, whichever side changed. When only the side you changed was edited, or the human named a side, sync with `--prefer` naming that side.
+- **Whole-harness sync.** Always pass `--prefer claude` or `--prefer copilot` when you sync; never rely on the default, `newer`. For a whole-harness sync (no `--name`, such as the last step of a project-scope create or update), run `node .claude/scripts/sync-harness.mjs --check` first. If any pair shows as `drifted`, ask the human which side wins and pass that side with `--prefer`; if none is drifted, pass `--prefer` naming the side you changed. The `(--prefer newer)` label on `drifted` lines in `--check` output only shows which side the default would pick; it does not mean that side wins your sync.
+- **Hooks** have no twin pair: they are matched by command, and `--name` skips them.
 - **Resolve every `note:` line** through the owning skill, or report it as left for the developer:
   - a tool with no counterpart on the other platform → `agent-management` `update-agent`;
   - a hook with no counterpart event, a non-command hook, or a hook that uses `CLAUDE_*` variables → `hook-management` (`migrate` with an intentional difference, documented);
