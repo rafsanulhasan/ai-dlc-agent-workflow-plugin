@@ -4,7 +4,7 @@ Throwaway spike plugins for the run `FEAT-20261020-ai-dlc-lens`. They answer, by
 
 | Folder | Plugin | Work item | Question |
 |---|---|---|---|
-| `027/` | `ai-dlc-lens-spike-027` | ITEM-027 | VS Code pane: resize at the dock boundary, Svg blink, buttons, transcript cards, Stop `systemMessage` alert |
+| `027/` | `ai-dlc-lens-spike-027` | ITEM-027 | Round 1: the lens card (flowchart with an avatar per agent, five figures under each, hand-off and agent panels, collapsible thinking and gathered context) and experiments E1 to E8. Round 0 kit: resize at the dock boundary, Svg blink, buttons, transcript cards, Stop `systemMessage` alert |
 | `028/spike028-ka/` | `spike028-ka` | ITEM-028 | provider: a fake keep-alive that publishes its state |
 | `028/spike028-lens/` | `spike028-lens` | ITEM-028 | reader: can another plugin read keep-alive's state (`$.state`, a tool, a file) |
 | `029/` | `spike029-avatars` | ITEM-029 | avatar images and the Svg scrub in the mod pane |
@@ -23,14 +23,14 @@ claude plugin install spike028-lens@ai-dlc-agent-workflow --scope local
 claude plugin install spike029-avatars@ai-dlc-agent-workflow --scope local
 ```
 
-Then run `/reload-plugins` in an open Claude Code session, or open a new one in VS Code. The commands are `/spike027`, `/spike027-gate`, `/spike028-lens`, `/spike028-probe`, `/spike029` and `/spike029-overcap`.
+Then run `/reload-plugins` in an open Claude Code session, or open a new one in VS Code. The commands are `/spike027` (the lens card), `/spike027-kit`, `/spike027-probe`, `/spike027-gate`, `/spike028-lens`, `/spike028-probe`, `/spike029` and `/spike029-overcap`.
 
 For one session in the terminal without installing: `claude --plugin-dir "<SPIKES>\027"` (likewise `028`, which loads both of its plugins, and `029`). Each `CHECK.md` also gives the `CLAUDE_CODE_PLUGIN_DIRS` alternative, which you set and remove yourself.
 
 ## Order of checks
 
-1. `027/CHECK.md`: checks 1–5. Check 1 (does the pane redraw on resize) decides how much of the rest of the lens design holds.
-2. `029/CHECK.md`: VS Code rows 1–23, then terminal rows 24–27.
+1. `027/CHECK.md`: the round 1 checks L1 to L6 (one per item of the human's card design) and experiments E1 to E8, then the round-0 kit checks K1 to K5 if they were not done. L2 and L4 (the flowchart and the hand-off pane) decide how much of the card holds; K1 (does the pane redraw on resize) still decides the compact and flowchart switch.
+2. `029/CHECK.md`: VS Code rows 1 to 23, then terminal rows 24 to 27.
 3. `028/CHECK.md`: the manual check, from the terminal with `--plugin-dir`.
 
 ## Recording results
@@ -51,9 +51,9 @@ claude plugin test 028/spike028-lens
 claude plugin test 029
 ```
 
-`tsc` needs the Claude Code engine types, which are not committed (as in the rest of this repository). Copy `types/claude-code.d.ts` from the `plugin-authoring` skill bundled with your Claude Code build into `027/.tsc/` and `029/typecheck/`, then run `npx -p typescript@5 tsc -p 027/.tsc` and `npx -p typescript@5 tsc -p 029/typecheck`. The copies are gitignored.
+`tsc` needs the Claude Code engine types, which are not committed (as in the rest of this repository). Copy `types/claude-code.d.ts` from the `plugin-authoring` skill bundled with your Claude Code build (it is written under the temp folder `claude/bundled-skills/<version>/<hash>/plugin-authoring/` when that skill loads; round 1 of 027 was checked with 2.1.309) into `027/.tsc/` and `029/typecheck/`, then run `npx -p typescript@5 tsc -p 027/.tsc` and `npx -p typescript@5 tsc -p 029/typecheck`. The copies are gitignored.
 
-Run-time output (`027/GATE-ALERT.txt`, `028/flags.json`, `028/state/`, `028/results/`) is gitignored too.
+Run-time output (`027/GATE-ALERT.txt`, `027/PROBE-LOG.jsonl`, `028/flags.json`, `028/state/`, `028/results/`) is gitignored too.
 
 ## Teardown
 

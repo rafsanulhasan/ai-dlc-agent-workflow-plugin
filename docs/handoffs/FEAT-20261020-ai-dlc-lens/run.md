@@ -8,9 +8,9 @@ current-stage: spikes
 owner: orchestrator
 session: 734fd039-2bfd-4247-86ee-1d8d2cc510fa
 branch: feat/ai-dlc-lens
-commit: 4f6fe46
-last-record: 14-agent-manager-to-orchestrator.handback.md
-updated: 2026-10-23 11:35
+commit: 652a716
+last-record: 17-agent-manager-to-orchestrator.handback.md
+updated: 2026-10-23 12:50
 ---
 
 # Run: FEAT-20261020-ai-dlc-lens — run-state CLI, gate alert and the ai-dlc-lens mod plugin: one dashboard merging savvy-progress, cache-tax, context-view and agent-flow, with a flowchart view
@@ -64,6 +64,11 @@ Step numbering: steps 1–2 are the 2026-10-20 briefs `01-…` and `02-…` (old
 | 12.3 | spike (b) ITEM-028: keep-alive state across plugins (EXT cleared: PR #23, #25 on main, merged here at 14c9e79) | agent-manager | subagent | done (passed) · recommend `$.state` (works across plugins, no dependency; omit line when absent); tool-call works with caveats; state file weaker; keep-alive change proposed for build waves | `12.3-orchestrator-to-agent-manager.handoff.md` | `12.3-agent-manager-to-orchestrator.handback.md` | 2026-10-23 10:20 |
 | 13 | spikes into the branch (spikes/ai-dlc-lens/, one marketplace) for the human check | agent-manager | subagent | done (passed) · marketplace ai-dlc-lens-spikes, 4 plugins; validate/tests pass; repo checks pass | `13-orchestrator-to-agent-manager.handoff.md` | `13-agent-manager-to-orchestrator.handback.md` | 2026-10-23 11:00 |
 | 14 | spikes into the root ai-dlc-agent-workflow marketplace (human: same marketplace; remove worktree) | agent-manager | subagent | done (passed) · 4 spikes in root marketplace (Claude only), separate marketplace deleted, author added for --strict; OPEN: 1 repo test fails (`tests/build-copilot-hooks-module.test.mjs:167` pins marketplace to ["ai-dlc"]) — decision to the human | `14-orchestrator-to-agent-manager.handoff.md` | `14-agent-manager-to-orchestrator.handback.md` | 2026-10-23 11:35 |
+| 15.1 | research: @foyzulkarim/claude-lens 1.3.0 feature inventory (plan mode; records written after) | research-assistant | subagent | done (passed) · 60 features; view list from its pages spec (medium) | `15.1-orchestrator-to-research-assistant.handoff.md` | `15.1-research-assistant-to-orchestrator.handback.md` | 2026-10-23 12:05 |
+| 15.2 | research: ai-dlc-lens feature inventory (plan mode; records written after) | research-assistant | subagent | done (passed) · 0 built, 5 spiked; gap table `15-claude-lens-gap-analysis.md` | `15.2-orchestrator-to-research-assistant.handoff.md` | `15.2-research-assistant-to-orchestrator.handback.md` | 2026-10-23 12:05 |
+| 16 | research: can the mods API build the reworked 027 card? | research-assistant | subagent | done (passed) · Svg not clickable → Buttons; no thinking site in transcript → pane section; `$.ui.open` for panels; cache miss derived (uncached); subagent window via table; E1–E8 for step 17; types 2.1.308 vs installed 2.1.309 | `16-orchestrator-to-research-assistant.handoff.md` | `16-research-assistant-to-orchestrator.handback.md` | 2026-10-23 12:20 |
+| 17 | spike 027 rework to the human's card design (round 1 / 2) | agent-manager | subagent | done (passed) · `/spike027` card, `/spike027-kit`, `/spike027-probe` E1–E8; validate ✔, tsc 0, test 16/16; fallbacks: Buttons under Svg, thinking in pane (0 chars headless), subagent window table; awaits human VS Code check | `17-orchestrator-to-agent-manager.handoff.md` | `17-agent-manager-to-orchestrator.handback.md` | 2026-10-23 12:50 |
+| — | scope pass: brief (+ claude-lens gaps, options C/D, 027 findings) → critique → stories → critique + backlog → accept → G1 again | product-owner, research-assistant, brutal-critique, requirement-analyst, product-manager | subagent | pending | — | — | — |
 | — | PDLC stories → backlog → accept → G1 | requirement-analyst → product-manager → product-owner; brutal-critique on brief and stories | subagent | pending | — | — | — |
 | — | design (spec, ADRs, LLD) → G2 | software-architect + system-engineer; brutal-critique | subagent | pending | — | — | — |
 | — | task plan → G3 | product-manager | subagent | pending | — | — | — |
@@ -78,6 +83,10 @@ Step numbering: steps 1–2 are the 2026-10-20 briefs `01-…` and `02-…` (old
 | Plan (Routing Plan, S5) | human | approved | human | 2026-10-20 |
 | Plan (widened scope, `00b-approved-plan-2026-10-22.md`) | human | approved | human | 2026-10-22 |
 | G1 | human | **approved** (`11-orchestrator-to-human.handoff.md`; stories.md, A1–A24 confirmed) | human | 2026-10-23 |
+| Spike 027 human check (card in chat) | human | **missed**: card shows in the chat but not as expected; rework to the design in `15-claude-lens-gap-analysis.md` §2 | human | 2026-10-23 |
+| Scope (claude-lens gaps) | human | **widened**: add the live-session gaps and reopen options C and D; G1 to be approved again after the scope pass | human | 2026-10-23 |
+| Order | human | spike 027 rework first, then the scope pass | human | 2026-10-23 |
+| spike 027 rework loop | 2 rounds / 1 failure (source `loop`, `rounds --json`) | round 1 / 2 done; human check pending | orchestrator | 2026-10-23 |
 | G2, G3, G4, release | human | pending | — | — |
 | Every lifecycle loop (FDLC tests / architecture-review / review, AAW critique / test / code-review, PDLC accept) | limits 2 rounds / 1 failure (source `loop`, from `rounds --json`) | recorded at resume | orchestrator | 2026-10-22 |
 | clarify | 2 / 1 (source `loop`) | recorded at resume | orchestrator | 2026-10-22 |
@@ -100,4 +109,4 @@ Step numbering: steps 1–2 are the 2026-10-20 briefs `01-…` and `02-…` (old
 | 7 | requirement-analyst → human | Q1–Q12 (alert latency/channels; constants as settings; guard off/warn/refuse default off; layout + blink; context per row; unknown price; task bar from run.md; language en; autoOpen; ledger per run; settings reload; Desktop automated only) — see `8-requirement-analyst-to-orchestrator.handback.md` | 1 | closed 2026-10-22: all 12 defaults accepted by the human |
 
 ## Next action
-Worktree removed and the main checkout switched to `feat/ai-dlc-lens` (human's choice, 2026-10-23); spikes installed from `ai-dlc-agent-workflow` with `--scope local`. Open: ask the human about the failing test `tests/build-copilot-hooks-module.test.mjs:167` (relax it to ignore spike entries, reverted with the spikes, or leave CI red on the draft PR). Then wait for the manual checks (`spikes/ai-dlc-lens/README.md`), record results, ASDLC (ITEM-005), G2. Delete `spikes/` and the four marketplace entries before the lens PR leaves draft.
+Human checks the reworked 027 card in VS Code: uninstall and reinstall `ai-dlc-lens-spike-027@ai-dlc-agent-workflow` (version unchanged at 0.1.0), `/reload-plugins`, then `/spike027` and the checks in `spikes/ai-dlc-lens/027/CHECK.md` (L1–L6, E1–E8). Record the result here. A miss → step 17.l1 (round 2 / 2). A pass → the scope pass (brief with the claude-lens gaps, options C/D, 027 findings), G1 again, ASDLC, G2. Still open for the human: `tests/build-copilot-hooks-module.test.mjs:167`. Delete `spikes/` and the four marketplace entries before the lens PR leaves draft.

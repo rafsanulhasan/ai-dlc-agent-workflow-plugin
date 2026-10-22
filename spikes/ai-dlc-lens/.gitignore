@@ -1,5 +1,6 @@
 # Run-time output of the spikes: written while they run, never committed.
 027/GATE-ALERT.txt
+027/PROBE-LOG.jsonl
 027/.tsc/*.jsonl
 027/.tsc/*.err
 028/flags.json
