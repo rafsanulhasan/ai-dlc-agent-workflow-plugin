@@ -1,4 +1,6 @@
 [
   "cache-keepalive",
-  "cache-keepalive-config"
+  "cache-keepalive-configure",
+  "cache-keepalive-install",
+  "cache-keepalive-merge"
 ]

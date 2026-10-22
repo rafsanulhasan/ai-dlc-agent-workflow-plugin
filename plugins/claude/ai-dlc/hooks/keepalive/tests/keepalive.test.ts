@@ -2,9 +2,9 @@ import { describe, expect, mock, test } from 'claude-code/testing'
 import type { TestBody } from 'claude-code/testing'
 import type { On } from 'claude-code'
 import { formatDuration, parseCommandArgs, parseDuration } from '../duration.ts'
-import { SETTINGS, TRUST_GATED, check, defaults, parsePrices, readMult, resolveSettings } from '../settings.ts'
+import { NULL_IN_FILE, SETTINGS, TRUST_GATED, check, defaults, differsFromDefault, gatedDiffering, parsePrices, readMult, resolveSettings } from '../settings.ts'
 import type { Level } from '../settings.ts'
-import { seedLineOf, splitFromTranscript, splitOf } from '../keepalive.ts'
+import { pingCap, pingsWithin, seedLineOf, splitFromTranscript, splitOf } from '../keepalive.ts'
 import { PREVIEW_CHARS, SETTINGS as HANDOFF_SETTINGS, previewValue } from '../../auto-handoff/config.ts'
 
 // Keep-alive, folded in from the vendored cache-keepalive mod (../ATTRIBUTION.md).
@@ -192,8 +192,8 @@ describe('durations and arguments: --track edge cases', () => {
 describe('settings', () => {
   test('one defaults table: every default parses, and the tracks match the plan', () => {
     const d = defaults()
-    expect(d.oneHour).toEqual({ enabled: true, ttl: 60 * MIN, pingEvery: 50 * MIN, keepWarmFor: 8 * 60 * MIN, maxPings: 0 })
-    expect(d.fiveMinute).toEqual({ enabled: true, ttl: 5 * MIN, pingEvery: 3 * MIN, keepWarmFor: 60 * MIN, maxPings: 0 })
+    expect(d.oneHour).toEqual({ enabled: true, ttl: 60 * MIN, pingEvery: 50 * MIN, keepWarmFor: 8 * 60 * MIN, maxPings: 9 })
+    expect(d.fiveMinute).toEqual({ enabled: true, ttl: 5 * MIN, pingEvery: 3 * MIN, keepWarmFor: 60 * MIN, maxPings: 20 })
     expect(d.budgetMultiplier).toBe(2)
     expect(d.compactOnCap).toBe(false)
     expect(d.scope).toBe('session')
@@ -209,6 +209,32 @@ describe('settings', () => {
   // node --test has its own, in tests/auto-handoff/settings-levels-aligned.test.mjs.
   test('no /config rows: neither settings table names a userConfig key', () => {
     for (const s of [...SETTINGS, ...HANDOFF_SETTINGS]) expect('userConfig' in s).toBe(false)
+  })
+
+  // Human decision, 2026-10-23: maxPings is a whole number of 1 or more, and its defaults are the pings
+  // each track's default keepWarmFor allows at its default pingEvery, counted as the module counts them.
+  test('the default ping limits are the pings the default keep-warm times allow: 9 and 20', () => {
+    const d = defaults()
+    expect(d.oneHour.maxPings).toBe(pingsWithin(d.oneHour.keepWarmFor, d.oneHour.pingEvery))
+    expect(d.fiveMinute.maxPings).toBe(pingsWithin(d.fiveMinute.keepWarmFor, d.fiveMinute.pingEvery))
+    expect([d.oneHour.maxPings, d.fiveMinute.maxPings]).toEqual([9, 20])
+  })
+
+  test('maxPings 0 or below is invalid at every level: a warning, and the next level applies', () => {
+    for (const bad of [0, '0', -1, 1.5]) expect(check('positiveWhole', bad, 'json', MIN)).toEqual({ invalid: 'not a whole number of 1 or more' })
+    const r = resolveSettings([
+      { where: '.claude/settings.local.json', by: 'env', values: { AI_DLC_KEEPALIVE_1H_MAX_PINGS: '0' } },
+      { where: '.ai-dlc/cache-keepalive.json', by: 'json', values: { oneHour: { maxPings: 0 } } },
+    ])
+    expect(r.settings.oneHour.maxPings).toBe(9)
+    expect(r.warnings).toHaveLength(2)
+  })
+
+  test('pingCap: maxPings, lifted by a command override to the pings its duration allows', () => {
+    expect(pingCap(9, 50 * MIN, { ms: 8 * 60 * MIN })).toBe(9)
+    expect(pingCap(9, 50 * MIN, { ms: 24 * 60 * MIN })).toBe(9) // a settings keep-warm time keeps its limit
+    expect(pingCap(9, 50 * MIN, { ms: 24 * 60 * MIN, override: true })).toBe(28)
+    expect(pingCap(9, 50 * MIN, { ms: 2 * 60 * MIN, override: true })).toBe(9) // never lowered
   })
 
   // The five levels, highest first: the command override (tested with the command below), the env of
@@ -244,6 +270,24 @@ describe('settings', () => {
     const r = resolveSettings(levels('x', 7, { a: 1 }))
     expect(formatDuration(r.settings.oneHour.keepWarmFor)).toBe('8h')
     expect(r.warnings.length).toBe(3)
+  })
+
+  test('null in the repository file is invalid; in an env it is unset', () => {
+    expect(check('duration', null, 'json', MIN)).toEqual({ invalid: NULL_IN_FILE })
+    expect(check('boolean', null, 'json', MIN)).toEqual({ invalid: NULL_IN_FILE })
+    expect(check('duration', null, 'env', MIN)).toBe(null)
+    expect(check('duration', undefined, 'json', MIN)).toBe(null)
+  })
+
+  test('differsFromDefault reads both as the module does; gatedDiffering lists only the gated values that differ', () => {
+    const s = (key: string) => SETTINGS.find(x => x.key === key)!
+    expect(differsFromDefault(s('oneHour.keepWarmFor'), '480m', 'json')).toBe(false)
+    expect(differsFromDefault(s('oneHour.keepWarmFor'), '2h', 'json')).toBe(true)
+    expect(differsFromDefault(s('enabled'), 'yes', 'env')).toBe(false)
+    expect(differsFromDefault(s('enabled'), null, 'json')).toBe(true)
+    expect(differsFromDefault(s('readPrice'), ' fable|mythos=0.025, opus[- ]?5[-. ]5=0.05, *=0.1 ', 'json')).toBe(false)
+    expect(gatedDiffering({ enabled: true, scope: 'machine', oneHour: { keepWarmFor: '2h', maxPings: 9 } }, 'json')).toEqual(['oneHour.keepWarmFor'])
+    expect(gatedDiffering({ AI_DLC_KEEPALIVE_BUDGET_MULTIPLIER: '2', AI_DLC_KEEPALIVE_COMPACT_ON_CAP: 'true' }, 'env')).toEqual(['AI_DLC_KEEPALIVE_COMPACT_ON_CAP'])
   })
 
   test('blank text in an env is unset, not invalid; in the repository file it is invalid', () => {
@@ -352,13 +396,13 @@ describe('keep-alive', () => {
     const { seen, clock, status, line } = engine(on)
     await $.classic.Stop(stop())
     expect(status()?.split('\n')).toHaveLength(2)
-    expect(line('1h')).toMatch(/^keepalive 1h: armed, 1 task\(s\), warm until \d+:\d\d, ping 0\/∞, keep warm 8h, stop by \d+:\d\d$/)
+    expect(line('1h')).toMatch(/^keepalive 1h: armed, 1 task\(s\), warm until \d+:\d\d, ping 0\/9, keep warm 8h, stop by \d+:\d\d$/)
     expect(line('5m')).toBe('keepalive 5m: off')
     await clock.fire(49)
     expect(seen.forks).toBe(0)
     await clock.fire(1)
     expect(seen.forks).toBe(1)
-    expect(line('1h')).toMatch(/^keepalive 1h: warm until \d+:\d\d, ping 1\/∞, keep warm 8h, stop by \d+:\d\d$/)
+    expect(line('1h')).toMatch(/^keepalive 1h: warm until \d+:\d\d, ping 1\/9, keep warm 8h, stop by \d+:\d\d$/)
     expect(line('5m')).toBe('keepalive 5m: off')
   })
 
@@ -374,10 +418,10 @@ describe('keep-alive', () => {
     const { seen, clock, line } = engine(on, { split: [0, 4_000] })
     await $.classic.Stop(stop())
     expect(line('1h')).toBe('keepalive 1h: off')
-    expect(line('5m')).toMatch(/^keepalive 5m: armed, 1 task\(s\), warm until \d+:\d\d, ping 0\/∞, keep warm 1h, stop by \d+:\d\d$/)
+    expect(line('5m')).toMatch(/^keepalive 5m: armed, 1 task\(s\), warm until \d+:\d\d, ping 0\/20, keep warm 1h, stop by \d+:\d\d$/)
     await clock.fire(3)
     expect(seen.forks).toBe(1)
-    expect(line('5m')).toContain('ping 1/∞')
+    expect(line('5m')).toContain('ping 1/20')
     // Pings at 3, 6, ... 60 minutes: the ping due exactly at the hour still goes out (D1). At 63 the hour is spent.
     expect(await runChain(clock, seen, () => line('5m'), 3)).toBe(20)
     expect(line('5m')).toMatch(/^keepalive 5m: kept warm 1h, stopped, warm until \d+:\d\d$/)
@@ -390,8 +434,8 @@ describe('keep-alive', () => {
     expect(line('5m')).toContain('armed')
     for (let i = 0; i < 17; i++) await clock.fire(3) // 51 minutes: sixteen 5m pings and one 1h ping
     expect(seen.forks).toBe(18)
-    expect(line('1h')).toContain('ping 1/∞')
-    expect(line('5m')).toContain('ping 17/∞')
+    expect(line('1h')).toContain('ping 1/9')
+    expect(line('5m')).toContain('ping 17/20')
   })
 
   test('the ping limit stops a track after that many pings', async ($, on) => {
@@ -453,7 +497,7 @@ describe('keep-alive', () => {
     await $.classic.Stop(stop())
     await clock.fire(50)
     expect(seen.forks).toBe(1)
-    expect(line('1h')).toContain('ping 1/∞')
+    expect(line('1h')).toContain('ping 1/9')
   })
 
   test('the spend limit stops the pings before the duration, on every track', async ($, on) => {
@@ -585,6 +629,43 @@ describe('keep-alive', () => {
     expect(line('5m')).toMatch(/^keepalive 5m: spend limit reached, stopped/)
   })
 
+  // Run AAW-20261023-keepalive-explicit-defaults: init writes every default into the file, so a gated
+  // value equal to its default must not be skipped or warned about in an untrusted folder.
+  test('untrusted, a file holding every default (init writes it) logs no trust warning, and the defaults apply', async ($, on) => {
+    const all: Record<string, unknown> = { oneHour: {}, fiveMinute: {} }
+    for (const s of SETTINGS) { const [h, t] = s.key.split('.') as [string, string | undefined]; if (t) (all[h] as Record<string, unknown>)[t] = s.default; else all[h] = s.default }
+    const { seen, line } = engine(on, { files: { [`${ROOT}/.ai-dlc/cache-keepalive.json`]: JSON.stringify({ ...all, oneHour: { ...(all.oneHour as object), keepWarmFor: '480m' } }) } })
+    await $.classic.Stop(stop())
+    expect(seen.logs.some(l => l.includes('does not trust'))).toBe(false)
+    expect(line('1h')).toContain('keep warm 8h')
+  })
+
+  test('untrusted, of the gated values in the file only those that differ from the default are skipped and warned about', async ($, on) => {
+    const { seen, line } = engine(on, { files: { [`${ROOT}/.ai-dlc/cache-keepalive.json`]: JSON.stringify({ enabled: true, budgetMultiplier: 2, oneHour: { enabled: true, keepWarmFor: '2h', maxPings: 9 } }) } })
+    await $.classic.Stop(stop())
+    const warning = seen.logs.find(l => l.includes('does not trust'))
+    expect(warning).toContain('oneHour.keepWarmFor="2h" in .ai-dlc/cache-keepalive.json ignored')
+    expect(warning).not.toContain('enabled=')
+    expect(warning).not.toContain('budgetMultiplier=')
+    expect(warning).not.toContain('maxPings=')
+    expect(line('1h')).toContain('keep warm 8h')
+  })
+
+  test('a null left in the file by hand is an invalid value: one warning, the next level applies, nothing breaks', async ($, on) => {
+    const { seen, clock, line } = engine(on, { trusted: true, files: {
+      [`${ROOT}/.claude/settings.local.json`]: JSON.stringify({ env: { AI_DLC_KEEPALIVE_5M_KEEP_WARM_FOR: '30m' } }),
+      [`${ROOT}/.ai-dlc/cache-keepalive.json`]: JSON.stringify({ enabled: null, oneHour: { keepWarmFor: null }, fiveMinute: { keepWarmFor: null } }),
+    }, split: [5, 5] })
+    await $.classic.Stop(stop())
+    await $.turn.start({ turnId: 't-2' } as never)
+    await $.classic.Stop(stop())
+    expect(seen.logs.filter(l => l.includes(`oneHour.keepWarmFor=null in .ai-dlc/cache-keepalive.json ignored: ${NULL_IN_FILE}`))).toHaveLength(1)
+    expect(seen.logs.filter(l => l.includes(`enabled=null in .ai-dlc/cache-keepalive.json ignored: ${NULL_IN_FILE}`))).toHaveLength(1)
+    expect(line('1h')).toContain('keep warm 8h') // the default
+    expect(line('5m')).toContain('keep warm 30m') // settings.local.json outranks the file anyway
+    expect(await runChain(clock, seen, () => line('5m'), 3)).toBe(10)
+  })
+
   test('untrusted, .ai-dlc/cache-keepalive.json sets no spend or behaviour setting; the others still apply', async ($, on) => {
     const repo = { enabled: false, compactOnCap: true, budgetMultiplier: 0, oneHour: { keepWarmFor: '1d', maxPings: 3, ttl: '55m' }, compactInstructions: 'x', overagePercent: 90 }
     const { seen, line } = engine(on, { rateLimits: [{ percentUsed: 95 }], files: { [`${ROOT}/.ai-dlc/cache-keepalive.json`]: JSON.stringify(repo) } })
@@ -661,6 +742,15 @@ describe('/ai-dlc:cache-keepalive', () => {
     await $.classic.Stop(stop())
     expect(line('1h')).toContain('keep warm 2h')
     expect(await runChain(clock, seen, () => line('1h'), 50)).toBe(2)
+  })
+
+  test('/ai-dlc:cache-keepalive 1d lifts the ping limit of the 1h track past 9, to the pings a day allows', async ($, on) => {
+    const { seen, clock, line } = engine(on)
+    await keepalive($, '1d --track 1h')
+    await $.classic.Stop(stop())
+    expect(line('1h')).toContain('ping 0/28, keep warm 1d')
+    expect(await runChain(clock, seen, () => line('1h'), 50)).toBe(28)
+    expect(line('1h')).toMatch(/^keepalive 1h: kept warm 1d, stopped/)
   })
 
   test('a session override does not reach another session', async ($, on) => {
@@ -785,7 +875,8 @@ describe('/ai-dlc:cache-keepalive', () => {
 // R1 (D1): the ping that falls exactly on keepWarmFor still goes out, on the 1h track too.
 describe('the ping on the limit', () => {
   test('[R1] 1h track, pingEvery 48m and keepWarmFor 8h: the tenth ping, at 480 minutes, goes out; the next is not sent', async ($, on) => {
-    const { seen, clock, line } = engine(on, { files: { [`${ROOT}/.claude/settings.local.json`]: JSON.stringify({ env: { AI_DLC_KEEPALIVE_1H_PING_EVERY: '48m' } }) } })
+    // maxPings 10 lets the time decide; the default 9 would stop the track first (next test).
+    const { seen, clock, line } = engine(on, { files: { [`${ROOT}/.claude/settings.local.json`]: JSON.stringify({ env: { AI_DLC_KEEPALIVE_1H_PING_EVERY: '48m', AI_DLC_KEEPALIVE_1H_MAX_PINGS: '10' } }) } })
     await $.classic.Stop(stop())
     expect(await runChain(clock, seen, () => line('1h'), 48)).toBe(10)
     expect(line('1h')).toMatch(/^keepalive 1h: kept warm 8h, stopped/)
@@ -793,11 +884,111 @@ describe('the ping on the limit', () => {
     expect(seen.forks).toBe(10)
   })
 
+  test('the default ping limit 9 stops the 1h track at 48m pings before its 8h run out, and says so', async ($, on) => {
+    const { seen, clock, line } = engine(on, { files: { [`${ROOT}/.claude/settings.local.json`]: JSON.stringify({ env: { AI_DLC_KEEPALIVE_1H_PING_EVERY: '48m' } }) } })
+    await $.classic.Stop(stop())
+    expect(await runChain(clock, seen, () => line('1h'), 48)).toBe(9)
+    expect(line('1h')).toMatch(/^keepalive 1h: ping limit 9 reached, stopped/)
+  })
+
   test('[R1] a maxPings below the limit still wins on the 5m track (3 of the 20)', async ($, on) => {
     const { seen, clock, line } = engine(on, { split: [0, 10], files: { [`${ROOT}/.claude/settings.local.json`]: JSON.stringify({ env: { AI_DLC_KEEPALIVE_5M_MAX_PINGS: '3' } }) } })
     await $.classic.Stop(stop())
     expect(await runChain(clock, seen, () => line('5m'), 3)).toBe(3)
     expect(line('5m')).toContain('ping limit 3 reached')
+  })
+
+  // SQA review of run AAW-20261023-keepalive-explicit-defaults: the limit against the keep-warm time.
+  const local = (env: Record<string, string>) => ({ [`${ROOT}/.claude/settings.local.json`]: JSON.stringify({ env }) })
+
+  test('pingsWithin counts the ping due exactly on the keep-warm time, and pingCap is exact at that boundary', () => {
+    expect(pingsWithin(8 * 60 * MIN, 50 * MIN)).toBe(9)
+    expect(pingsWithin(8 * 60 * MIN - 1, 50 * MIN)).toBe(9)
+    expect(pingsWithin(450 * MIN - 1, 50 * MIN)).toBe(8)
+    expect(pingsWithin(10 * MIN, 50 * MIN)).toBe(0)
+    expect(pingCap(9, 50 * MIN, { ms: 450 * MIN, override: true })).toBe(9)
+    expect(pingCap(9, 50 * MIN, { ms: 500 * MIN, override: true })).toBe(10)
+    expect(pingCap(9, 50 * MIN, { ms: 500 * MIN, override: false })).toBe(9)
+    expect(pingCap(3, 3 * MIN, { ms: 60 * MIN })).toBe(3)
+  })
+
+  test('a maxPings equal to the pings the time allows ends the track as kept warm, not as a ping limit', async ($, on) => {
+    const { seen, clock, line } = engine(on, { files: local({ AI_DLC_KEEPALIVE_1H_MAX_PINGS: '2', AI_DLC_KEEPALIVE_1H_KEEP_WARM_FOR: '2h' }) })
+    await $.classic.Stop(stop())
+    expect(await runChain(clock, seen, () => line('1h'), 50)).toBe(2)
+    expect(line('1h')).toMatch(/^keepalive 1h: kept warm 2h, stopped/)
+  })
+
+  test('a maxPings one below the pings the time allows ends the track on the limit, with the number', async ($, on) => {
+    const { seen, clock, line } = engine(on, { files: local({ AI_DLC_KEEPALIVE_1H_MAX_PINGS: '1', AI_DLC_KEEPALIVE_1H_KEEP_WARM_FOR: '2h' }) })
+    await $.classic.Stop(stop())
+    expect(await runChain(clock, seen, () => line('1h'), 50)).toBe(1)
+    expect(line('1h')).toMatch(/^keepalive 1h: ping limit 1 reached, stopped/)
+  })
+
+  test('a keep-warm time raised in the settings, without maxPings, is held to the default 9 pings', async ($, on) => {
+    const { seen, clock, line } = engine(on, { files: local({ AI_DLC_KEEPALIVE_1H_KEEP_WARM_FOR: '1d' }) })
+    await $.classic.Stop(stop())
+    expect(line('1h')).toContain('ping 0/9, keep warm 1d')
+    expect(await runChain(clock, seen, () => line('1h'), 50)).toBe(9)
+    expect(line('1h')).toMatch(/^keepalive 1h: ping limit 9 reached, stopped/)
+  })
+
+  test('a machine-wide /ai-dlc:cache-keepalive time lifts the 5m track past 20, to the pings it allows', async ($, on) => {
+    // The spend limit (budgetMultiplier 2) would stop the track near 40 pings, so it is raised here.
+    const { seen, clock, line } = engine(on, { split: [0, 5], files: local({ AI_DLC_KEEPALIVE_BUDGET_MULTIPLIER: '10' }) })
+    await keepalive($, '3h --track 5m --machine')
+    await $.classic.Stop(stop())
+    expect(line('5m')).toContain('ping 0/60, keep warm 3h')
+    expect(await runChain(clock, seen, () => line('5m'), 3)).toBe(60)
+    expect(line('5m')).toMatch(/^keepalive 5m: kept warm 3h, stopped/)
+  })
+
+  test('a command time that allows fewer pings than maxPings does not lower the limit shown, and a maxPings above it ends as kept warm', async ($, on) => {
+    const { seen, clock, line } = engine(on)
+    await keepalive($, '2h --track 1h')
+    await $.classic.Stop(stop())
+    expect(line('1h')).toContain('ping 0/9, keep warm 2h')
+    expect(await runChain(clock, seen, () => line('1h'), 50)).toBe(2)
+    expect(line('1h')).toMatch(/^keepalive 1h: kept warm 2h, stopped/)
+  })
+
+  test('the personal env pair (a keep-warm time with its maxPings = time / interval) runs the whole time: 10h gives 12 pings on 1h, 2h gives 40 on 5m', async ($, on) => {
+    const one = engine(on, { files: local({ AI_DLC_KEEPALIVE_1H_KEEP_WARM_FOR: '10h', AI_DLC_KEEPALIVE_1H_MAX_PINGS: '12' }) })
+    await $.classic.Stop(stop())
+    expect(one.line('1h')).toContain('ping 0/12, keep warm 10h')
+    expect(await runChain(one.clock, one.seen, () => one.line('1h'), 50)).toBe(12)
+    expect(one.line('1h')).toMatch(/^keepalive 1h: kept warm 10h, stopped/)
+  })
+
+  test('the pair on the 5m track: 2h with maxPings 40 runs all 40 pings and ends as kept warm', async ($, on) => {
+    const full = engine(on, { split: [0, 5], files: local({ AI_DLC_KEEPALIVE_5M_KEEP_WARM_FOR: '2h', AI_DLC_KEEPALIVE_5M_MAX_PINGS: '40', AI_DLC_KEEPALIVE_BUDGET_MULTIPLIER: '10' }) })
+    await $.classic.Stop(stop())
+    expect(await runChain(full.clock, full.seen, () => full.line('5m'), 3)).toBe(40)
+    expect(full.line('5m')).toMatch(/^keepalive 5m: kept warm 2h, stopped/)
+  })
+
+  test('the 5m pair one short (2h with maxPings 39) ends on the limit, naming 39', async ($, on) => {
+    const c = engine(on, { split: [0, 5], files: local({ AI_DLC_KEEPALIVE_5M_KEEP_WARM_FOR: '2h', AI_DLC_KEEPALIVE_5M_MAX_PINGS: '39', AI_DLC_KEEPALIVE_BUDGET_MULTIPLIER: '10' }) })
+    await $.classic.Stop(stop())
+    expect(await runChain(c.clock, c.seen, () => c.line('5m'), 3)).toBe(39)
+    expect(c.line('5m')).toMatch(/^keepalive 5m: ping limit 39 reached, stopped/)
+  })
+
+  test('maxPings 0 in an env is invalid: one warning, the default 9 applies, and the limit works', async ($, on) => {
+    const { seen, clock, line } = engine(on, { files: local({ AI_DLC_KEEPALIVE_1H_MAX_PINGS: '0', AI_DLC_KEEPALIVE_1H_PING_EVERY: '48m' }) })
+    await $.classic.Stop(stop())
+    expect(seen.logs.filter(l => l.includes('AI_DLC_KEEPALIVE_1H_MAX_PINGS="0" in .claude/settings.local.json ignored: not a whole number of 1 or more'))).toHaveLength(1)
+    expect(line('1h')).toContain('ping 0/9')
+    expect(await runChain(clock, seen, () => line('1h'), 48)).toBe(9)
+  })
+
+  test('untrusted, a maxPings equal to the default in the file is not warned about, and one that differs is', async ($, on) => {
+    const { seen } = engine(on, { files: { [`${ROOT}/.ai-dlc/cache-keepalive.json`]: JSON.stringify({ oneHour: { maxPings: 9 }, fiveMinute: { maxPings: 21 } }) } })
+    await $.classic.Stop(stop())
+    const warning = seen.logs.find(l => l.includes('does not trust'))
+    expect(warning).toContain('fiveMinute.maxPings=21')
+    expect(warning).not.toContain('oneHour.maxPings')
   })
 })
 
@@ -824,11 +1015,11 @@ const GATED: Gated[] = [
   { key: 'oneHour.enabled', env: 'AI_DLC_KEEPALIVE_1H_ENABLED', a: false, probe: async c => { await armed(c); return c.line('1h')?.includes('disabled') ? 'off' : 'on' }, ta: 'off', td: 'on' },
   { key: 'oneHour.pingEvery', env: 'AI_DLC_KEEPALIVE_1H_PING_EVERY', a: '40m', probe: async c => { await armed(c); return forksAt(c, [30, 10]) }, ta: '0/1', td: '0/0' },
   { key: 'oneHour.keepWarmFor', env: 'AI_DLC_KEEPALIVE_1H_KEEP_WARM_FOR', a: '2h', probe: async c => { await armed(c); return warmOf(c, '1h') }, ta: '2h', td: '8h' },
-  { key: 'oneHour.maxPings', env: 'AI_DLC_KEEPALIVE_1H_MAX_PINGS', a: 7, probe: async c => { await armed(c); return maxOf(c, '1h') }, ta: '7', td: '∞' },
+  { key: 'oneHour.maxPings', env: 'AI_DLC_KEEPALIVE_1H_MAX_PINGS', a: 7, probe: async c => { await armed(c); return maxOf(c, '1h') }, ta: '7', td: '9' },
   { key: 'fiveMinute.enabled', env: 'AI_DLC_KEEPALIVE_5M_ENABLED', a: false, split: [0, 5], probe: async c => { await armed(c); return c.line('5m')?.includes('disabled') ? 'off' : 'on' }, ta: 'off', td: 'on' },
   { key: 'fiveMinute.pingEvery', env: 'AI_DLC_KEEPALIVE_5M_PING_EVERY', a: '2m', split: [0, 5], probe: async c => { await armed(c); return forksAt(c, [1, 1]) }, ta: '0/1', td: '0/0' },
   { key: 'fiveMinute.keepWarmFor', env: 'AI_DLC_KEEPALIVE_5M_KEEP_WARM_FOR', a: '30m', split: [0, 5], probe: async c => { await armed(c); return warmOf(c, '5m') }, ta: '30m', td: '1h' },
-  { key: 'fiveMinute.maxPings', env: 'AI_DLC_KEEPALIVE_5M_MAX_PINGS', a: 7, split: [0, 5], probe: async c => { await armed(c); return maxOf(c, '5m') }, ta: '7', td: '∞' },
+  { key: 'fiveMinute.maxPings', env: 'AI_DLC_KEEPALIVE_5M_MAX_PINGS', a: 7, split: [0, 5], probe: async c => { await armed(c); return maxOf(c, '5m') }, ta: '7', td: '20' },
   { key: 'budgetMultiplier', env: 'AI_DLC_KEEPALIVE_BUDGET_MULTIPLIER', a: 3, probe: async c => { await armed(c); return /of (\d+)/.exec((await keepalive(c.$)).text)?.[1] ?? 'none' }, ta: '3000000', td: '2000000' },
   { key: 'compactOnCap', env: 'AI_DLC_KEEPALIVE_COMPACT_ON_CAP', a: true, forkOutput: 400_000, probe: compactProbe(c => c.seen.logs.some(l => l.includes('--resume-session-at')) ? 'compacts' : 'does not'), ta: 'compacts', td: 'does not' },
   { key: 'compactInstructions', env: 'AI_DLC_KEEPALIVE_COMPACT_INSTRUCTIONS', a: 'y', forkOutput: 400_000, base: { AI_DLC_KEEPALIVE_COMPACT_ON_CAP: 'true' }, probe: compactProbe((_, i) => i[0] ?? 'none'), ta: 'y', td: "Also keep the background tasks' IDs, output paths, and what to do when they finish." },

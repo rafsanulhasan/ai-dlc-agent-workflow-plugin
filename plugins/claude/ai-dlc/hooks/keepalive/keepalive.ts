@@ -1,7 +1,7 @@
 import type { EngineInterface, Register, Timer } from 'claude-code'
 import { TRACK_NAMES, formatDuration, parseCommandArgs } from './duration.ts'
 import type { Scope, TrackName } from './duration.ts'
-import { defaults, gatedNames, readMult, resolveSettings } from './settings.ts'
+import { defaults, gatedDiffering, readMult, resolveSettings } from './settings.ts'
 import type { Level, Settings, TrackKey } from './settings.ts'
 import { creationSplit, k, repoConfig, settingsEnv } from '../auto-handoff/config.ts'
 import { log, readRaw, repoRoot, trustGate } from '../auto-handoff/io.ts'
@@ -143,8 +143,10 @@ const GATED_INSTEAD = `set them in the env of .claude/settings.local.json instea
 // `env` of .claude/settings.json, .ai-dlc/cache-keepalive.json, the default (settings.ts). Keep-alive
 // has no /config rows, and the process environment is not read. The two committed sources, the env
 // of .claude/settings.json and the repository file, set the trust-gated settings (settings.ts,
-// TRUST_GATED) only in a folder Claude Code trusts; elsewhere each is skipped with a warning and the
-// next level applies. Never throws: on an error, the defaults apply.
+// TRUST_GATED) only in a folder Claude Code trusts; elsewhere each one whose value differs from its
+// default is skipped with a warning and the next level applies (one equal to its default changes
+// nothing, so it applies quietly: settings.ts, gatedDiffering). Never throws: on an error, the
+// defaults apply.
 async function load($: EngineInterface) {
   const problems: string[] = []
   const levels: Level[] = []
@@ -155,12 +157,12 @@ async function load($: EngineInterface) {
       const { env, problem } = settingsEnv(await readRaw($, `${root}/${where}`))
       if (problem) problems.push(`${where} ${problem}`)
       if (!env) continue
-      const values = where === '.claude/settings.json' ? await trustGate($, env, gatedNames('env'), `the env of ${where}`, GATED_INSTEAD, problems, trust) : env
+      const values = where === '.claude/settings.json' ? await trustGate($, env, gatedDiffering(env, 'env'), `the env of ${where}`, GATED_INSTEAD, problems, trust) : env
       levels.push({ where, by: 'env', values })
     }
     const repo = repoConfig(await readRaw($, `${root}/${REPO_FILE}`))
     if (repo.problem) problems.push(`${REPO_FILE} ${repo.problem}`)
-    if (repo.values) levels.push({ where: REPO_FILE, by: 'json', values: await trustGate($, repo.values, gatedNames('json'), REPO_FILE, GATED_INSTEAD, problems, trust) })
+    if (repo.values) levels.push({ where: REPO_FILE, by: 'json', values: await trustGate($, repo.values, gatedDiffering(repo.values, 'json'), REPO_FILE, GATED_INSTEAD, problems, trust) })
   } catch (err) {
     problems.push(`settings files unreadable (${String(err)}); using the defaults`)
   }
@@ -170,7 +172,8 @@ async function load($: EngineInterface) {
   for (const line of [...problems, ...r.warnings]) await warn($, line)
 }
 
-type Keep = { ms: number; from: string }
+// The keep-warm time in force and where it comes from; `override` when /ai-dlc:cache-keepalive set it.
+type Keep = { ms: number; from: string; override?: boolean }
 
 async function sessionOverrides($: EngineInterface, n: TrackName): Promise<[string, number][]> {
   const v = await $.store.get(sessionKey(n))
@@ -184,12 +187,12 @@ async function keepWarm($: EngineInterface, key: TrackKey): Promise<Keep> {
   const id = await $.session.id()
   const own = (await sessionOverrides($, n)).find(([s]) => s === id)
   if (own) {
-    if (own[1] >= settings.minDuration) return { ms: own[1], from: `this session, /${COMMAND}` }
+    if (own[1] >= settings.minDuration) return { ms: own[1], from: `this session, /${COMMAND}`, override: true }
     await warn($, `the /${COMMAND} override of the ${n} track for this session (${formatDuration(own[1])}) is shorter than minDuration (${formatDuration(settings.minDuration)}); ignored`)
   }
   const machine = await $.store.get(machineKey(n))
   if (typeof machine === 'number' && machine > 0) {
-    if (machine >= settings.minDuration) return { ms: machine, from: `this machine, /${COMMAND}` }
+    if (machine >= settings.minDuration) return { ms: machine, from: `this machine, /${COMMAND}`, override: true }
     await warn($, `the /${COMMAND} override of the ${n} track for this machine (${formatDuration(machine)}) is shorter than minDuration (${formatDuration(settings.minDuration)}); ignored`)
   }
   return { ms: settings[key].keepWarmFor, from: sources[`${key}.keepWarmFor`] ?? 'default' }
@@ -271,9 +274,18 @@ async function compact($: EngineInterface) {
   }
 }
 
-const pingsOf = (t: Track) => `ping ${t.pings}/${settings[t.key].maxPings > 0 ? settings[t.key].maxPings : '∞'}`
+/** The pings a keep-warm time allows on a track: the n-th ping is due n × pingEvery after the turn
+ * ended and goes out when that is within the keep-warm time, the last one included (see arm). */
+export const pingsWithin = (keepMs: number, pingEvery: number) => Math.floor(keepMs / pingEvery)
+
+/** A track's ping limit: maxPings, or, when /ai-dlc:cache-keepalive set the keep-warm time, at least the
+ * pings that time allows, so the command always keeps warm for the time it says. */
+export const pingCap = (maxPings: number, pingEvery: number, keep: { ms: number; override?: boolean }) =>
+  keep.override ? Math.max(maxPings, pingsWithin(keep.ms, pingEvery)) : maxPings
+
+const pingsOf = (t: Track, keep: Keep) => `ping ${t.pings}/${pingCap(settings[t.key].maxPings, settings[t.key].pingEvery, keep)}`
 const runningLine = (t: Track, keep: Keep, lead = '') =>
-  `keepalive ${t.name}: ${lead}warm until ${until(t.warmUntil)}, ${pingsOf(t)}, keep warm ${formatDuration(keep.ms)}, stop by ${until(t.armedTime + keep.ms)}`
+  `keepalive ${t.name}: ${lead}warm until ${until(t.warmUntil)}, ${pingsOf(t, keep)}, keep warm ${formatDuration(keep.ms)}, stop by ${until(t.armedTime + keep.ms)}`
 
 function end($: EngineInterface, t: Track, text: string) {
   stopTrack(t)
@@ -313,7 +325,10 @@ function arm($: EngineInterface, t: Track) {
       t.pings++
       // Awaited, so a failure in it lands in the catch below
       if (spent >= budget) return await spendLimit($, t)
-      if (cfg.maxPings > 0 && t.pings >= cfg.maxPings) return end($, t, `ping limit ${cfg.maxPings} reached, stopped, warm until ${until(t.warmUntil)}`)
+      // The ping limit stops the track only when the keep-warm time would allow another ping; when it
+      // does not, the next tick ends the track as "kept warm", as without a limit.
+      const cap = pingCap(cfg.maxPings, cfg.pingEvery, keep)
+      if (t.pings >= cap && (t.pings + 1) * cfg.pingEvery <= keep.ms) return end($, t, `ping limit ${cap} reached, stopped, warm until ${until(t.warmUntil)}`)
       t.line = runningLine(t, keep)
       render($)
       return arm($, t)

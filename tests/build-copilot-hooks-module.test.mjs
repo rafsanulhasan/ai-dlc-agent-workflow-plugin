@@ -222,7 +222,7 @@ test("a name in tools/claude-only-skills.json that is not a plugin skill fails t
 });
 
 test("this repository's keep-alive skills are Claude-only: listed, and absent from the Copilot plugin", () => {
-  const names = ["cache-keepalive", "cache-keepalive-config"];
+  const names = ["cache-keepalive", "cache-keepalive-configure", "cache-keepalive-install", "cache-keepalive-merge"];
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(REPO, "tools", "claude-only-skills.json"), "utf8")), names);
   for (const name of names) {
     assert.ok(fs.existsSync(path.join(REPO, "plugins", "claude", "ai-dlc", "skills", name, "SKILL.md")), name);

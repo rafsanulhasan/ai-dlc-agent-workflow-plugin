@@ -289,9 +289,12 @@ human decisions of 2026-10-22):
   `.claude/settings.json`, `.ai-dlc/cache-keepalive.json`, the default. A
   setting skipped in an untrusted folder is now pointed to
   `.claude/settings.local.json` (or the command) only.
-- **`.ai-dlc/cache-keepalive.json` from init.** `/ai-dlc:init` creates it with
+- **`.ai-dlc/cache-keepalive.json` from init.** (Superseded the same day, run
+  AAW-20261023-keepalive-explicit-defaults: init now writes every key's
+  value, and `null` is invalid; see the entries below.) `/ai-dlc:init` creates it with
   every key unset except `oneHour.keepWarmFor` and `scope`, and merges it on a
-  re-run, through the new `cache-keepalive-config` skill
+  re-run, through the new `cache-keepalive-config` skill (itself superseded in step 1.l3 by
+  `cache-keepalive-install`, `-merge` and `-configure`)
   (`/ai-dlc:cache-keepalive-config`, Claude Code only), which also shows and
   changes the settings. Its CLI
   (`skills/cache-keepalive-config/templates/cache-keepalive.mjs`)
@@ -314,3 +317,83 @@ Made by Rafsanul Hasan, 2026-10-23 (same run, review follow-up):
   test`, that neither keep-alive's settings table nor the automatic handoff's
   names a `userConfig` key (it replaces the per-setting assertion here and the
   one in `../auto-handoff/tests/config.test.ts`).
+
+Made by Rafsanul Hasan, 2026-10-23 (run AAW-20261023-keepalive-explicit-defaults; human decisions of
+the same day):
+
+- **Every key holds a value.** `/ai-dlc:init` (the `cache-keepalive-config`
+  skill's install) now writes `.ai-dlc/cache-keepalive.json` with all 26 keys
+  at this plugin version's defaults, taken from `SETTINGS` through the
+  skill's schema, which the plugin's tests hold to it. A later plugin
+  default does not reach a key already written.
+- **`null` is invalid in the repository file.** `settings.ts`, `check`: a
+  `null` there is an invalid value (`NULL_IN_FILE`), warned about once, and
+  the next level applies; in an `env` it is still unset.
+- **Defaults are not trust-gated.** `settings.ts`: `differsFromDefault` and
+  `gatedDiffering`. `keepalive.ts` passes the trust gate only the gated
+  values that differ from their defaults, read as the module reads them
+  (`480m` equals `8h`), from both committed sources; a value equal to its
+  default changes nothing, so an untrusted folder applies it without a
+  warning.
+- **README.** *Settings*: the file holds every default, a `null` is invalid,
+  `validate` checks the settings files' `env` too, and the trust paragraph
+  says a value equal to its default is not skipped.
+- **Tests.** `tests/keepalive.test.ts`: a file of every default logs no trust
+  warning; only differing gated values are skipped; a `null` is one warning
+  and the next level applies; `check` on `null`; `differsFromDefault` and
+  `gatedDiffering`.
+
+Made by Rafsanul Hasan, 2026-10-23 (same run, step 1.l1; human decisions of the same day):
+
+- **`maxPings` is 1 or more.** `settings.ts`: both tracks' `maxPings` are
+  `positiveWhole`; `0` ("no limit") and below are invalid, warned about once,
+  and the next level applies. The defaults are 9 on the 1h track and 20 on
+  the 5m track: the pings each default keep-warm time allows at its default
+  interval (8h at 50m, 1h at 3m), counted as the module counts them.
+- **The command lifts the limit.** `keepalive.ts`: `pingsWithin` and
+  `pingCap`. When `/ai-dlc:cache-keepalive <duration>` set a track's
+  keep-warm time, its ping limit is the larger of `maxPings` and the pings
+  that duration allows, so the command keeps warm for the time it says. The
+  limit stops a track only while the keep-warm time would allow another
+  ping, so with the defaults the track still ends as "kept warm". The status
+  line shows the limit in force (`ping 2/9`) instead of `∞`.
+- **README.** The status line example, the two `maxPings` rows and *When the
+  pings stop* describe the limit, its defaults, the command lifting it, and
+  that a raised `keepWarmFor` in the settings needs a raised `maxPings`.
+- **Tests.** `tests/keepalive.test.ts`: the defaults pinned to the pings the
+  default keep-warm times allow; `0` invalid at every level; `pingCap`; the
+  default limit stopping the 1h track at 48m pings; `1d` on the 1h track
+  pinging 28 times; the R1 test now sets `maxPings` 10; the status lines and
+  the gated-key table show 9 and 20.
+
+Made by Rafsanul Hasan, 2026-10-23 (same run, review round 1):
+
+- **Messages.** (Superseded in step 1.l3: the fix is now
+  `/ai-dlc:cache-keepalive-merge`.) `settings.ts`, `NULL_IN_FILE`: the fix it names is
+  `/ai-dlc:cache-keepalive-config install`, the skill's mode, instead of the
+  CLI's `merge`.
+- **README.** *When the pings stop*: `set` and init make a track's
+  `maxPings` follow a `keepWarmFor` they write; the command raises the limit
+  to at least the pings its duration allows. *Settings*: `set` and install
+  stop with exit 1 on a file that is not valid JSON or a track that is not an
+  object.
+- **Tests.** `tests/keepalive.test.ts`: the pinned null message.
+
+Made by Rafsanul Hasan, 2026-10-23 (same run, step 1.l3; the final command design, human decision of
+the same day):
+
+- **Settings commands.** The `cache-keepalive-config` skill is gone, with
+  no alias (the plugin is an unreleased preview). Three skills replace it:
+  `cache-keepalive-install` (first use: creates the file with every
+  default; an existing file is left alone with a warning pointing to merge),
+  `cache-keepalive-merge` (an existing file, after an upgrade or to repair
+  it; without a file, a warning pointing to install) and
+  `cache-keepalive-configure` (shows the settings and their problems, or
+  previews a change from plain words and writes it after confirmation). The
+  CLI and the schema moved to `skills/cache-keepalive-configure/templates/`;
+  its `install` and `merge` modes are separate, and its write mode is
+  internal, never a user command.
+- **Messages.** `settings.ts`, `NULL_IN_FILE`: the fix it names is
+  `/ai-dlc:cache-keepalive-merge`.
+- **README.** The settings commands are the three new ones. No test in this
+  folder changed: `tests/keepalive.test.ts` reads the message from `NULL_IN_FILE`.

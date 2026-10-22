@@ -1,4 +1,4 @@
-// The cache-keepalive-config CLI keeps its own copy of the file and trust helpers of the
+// The cache-keepalive CLI (skills/cache-keepalive-configure/templates/) keeps its own copy of the file and trust helpers of the
 // configure-auto-handoff CLI, so that each skill runs on its own (the human ruled, in run
 // AAW-20261022-cache-keepalive-init, that keep-alive's CLI must not import from configure-auto-handoff).
 // This suite stops the two copies drifting apart: the source of each helper must match, and the helpers
@@ -12,12 +12,12 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import * as ah from "../../plugins/claude/ai-dlc/skills/configure-auto-handoff/templates/auto-handoff.mjs";
-import * as ka from "../../plugins/claude/ai-dlc/skills/cache-keepalive-config/templates/cache-keepalive.mjs";
+import * as ka from "../../plugins/claude/ai-dlc/skills/cache-keepalive-configure/templates/cache-keepalive.mjs";
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const SKILLS = path.join(REPO, "plugins", "claude", "ai-dlc", "skills");
 const AH_SRC = fs.readFileSync(path.join(SKILLS, "configure-auto-handoff", "templates", "auto-handoff.mjs"), "utf8").replace(/\r\n/g, "\n");
-const KA_SRC = fs.readFileSync(path.join(SKILLS, "cache-keepalive-config", "templates", "cache-keepalive.mjs"), "utf8").replace(/\r\n/g, "\n");
+const KA_SRC = fs.readFileSync(path.join(SKILLS, "cache-keepalive-configure", "templates", "cache-keepalive.mjs"), "utf8").replace(/\r\n/g, "\n");
 
 /** A helper's source: a function to its closing brace at the start of a line, or a one-line const.
  * `export` is dropped, and a literal byte-order mark is written as its escape, so only the code counts. */

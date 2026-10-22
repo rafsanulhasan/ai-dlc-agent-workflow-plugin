@@ -20,6 +20,6 @@ In Claude Code, the ai-dlc plugin's hooks module answers `/ai-dlc:cache-keepaliv
 | `/ai-dlc:cache-keepalive 1d --machine` | Sets it for every session on this machine until cleared |
 | `/ai-dlc:cache-keepalive clear`, `/ai-dlc:cache-keepalive clear --track 5m --machine` | Removes the override of the tracks named (both unless `--track` is given) in that scope |
 
-The team's keep-alive settings, in `.ai-dlc/cache-keepalive.json`, are shown and changed with `/ai-dlc:cache-keepalive-config`.
+The team's keep-alive settings, in `.ai-dlc/cache-keepalive.json`, are created with `/ai-dlc:cache-keepalive-install`, brought up to date with `/ai-dlc:cache-keepalive-merge`, and shown and changed with `/ai-dlc:cache-keepalive-configure`.
 
 If you are reading this in Claude Code, the module did not answer: the ai-dlc hooks module is not loaded (Claude Code older than 2.1.287, or the plugin's hooks are turned off). Tell the person that, point them to the keep-alive README in the plugin (`hooks/keepalive/README.md`), and do nothing else: never ping or change a setting yourself.

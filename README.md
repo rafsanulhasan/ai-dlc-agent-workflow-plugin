@@ -75,9 +75,9 @@ The Claude plugin includes a [Claude Code mod](https://code.claude.com/docs/en/p
 | Part | Where | What it does |
 |---|---|---|
 | Automatic session handoff | Part of `ai-dlc` (`plugins/claude/ai-dlc/hooks/auto-handoff/`) | Before the context window fills, it has Haiku write a session handoff, runs `/clear`, and seeds the fresh session to carry on, instead of auto-compacting. When the repository has an active AI-DLC run on the current branch that this session drives (or the only one, unclaimed), it writes the `handoff` skill's session handoff to `.scratch/<run-folder>/` and points the run's `run.md` at it, so the orchestrator resumes the run. Otherwise it writes its own brief to `~/.claude/state/auto-handoff/`. Adapted from [alexknowshtml/claude-auto-handoff](https://github.com/alexknowshtml/claude-auto-handoff). |
-| Keep-alive | Part of `ai-dlc` (`plugins/claude/ai-dlc/hooks/keepalive/`) | When a turn ends with background work still running (a teammate, a long build), pings the prompt cache so it doesn't expire before the work reports back. It has a 1-hour track (a ping every 50 minutes, for up to 8 hours) and a 5-minute track (every 3 minutes, for up to 1 hour), run by the lifetime the session's cache was written with, each with its own status line. It stops when the work is done (a new turn, no background task left, the session ending or handing off), on a cache miss, at a track's time or ping limit, or at the optional spend limit. `/ai-dlc:cache-keepalive` pings now, `/ai-dlc:cache-keepalive 2h` sets the keep-warm time of both tracks for this session, `/ai-dlc:cache-keepalive 30m --track 5m` of the 5m track only, `/ai-dlc:cache-keepalive 1d --machine` for every session on this machine. Every setting is an `AI_DLC_KEEPALIVE_*` variable in a settings file's `env` and a key in `.ai-dlc/cache-keepalive.json` (keep-alive has no `/config` rows); `/ai-dlc:init` writes its keep-warm time and the default scope of `/ai-dlc:cache-keepalive` there and leaves every other key unset, and `/ai-dlc:cache-keepalive-config` shows and changes the team's values in that file, or one developer's in the `env` of `.claude/settings.local.json`; the full table, the status lines and what the cache can reuse across a handoff are in its [README](plugins/claude/ai-dlc/hooks/keepalive/README.md). Adapted from the `cache-keepalive` mod of [RichardJSun/claude-code-mods](https://github.com/RichardJSun/claude-code-mods); the changes are listed in its `ATTRIBUTION.md`. |
+| Keep-alive | Part of `ai-dlc` (`plugins/claude/ai-dlc/hooks/keepalive/`) | When a turn ends with background work still running (a teammate, a long build), pings the prompt cache so it doesn't expire before the work reports back. It has a 1-hour track (a ping every 50 minutes, for up to 8 hours) and a 5-minute track (every 3 minutes, for up to 1 hour), run by the lifetime the session's cache was written with, each with its own status line. It stops when the work is done (a new turn, no background task left, the session ending or handing off), on a cache miss, at a track's time or ping limit, or at the optional spend limit. `/ai-dlc:cache-keepalive` pings now, `/ai-dlc:cache-keepalive 2h` sets the keep-warm time of both tracks for this session, `/ai-dlc:cache-keepalive 30m --track 5m` of the 5m track only, `/ai-dlc:cache-keepalive 1d --machine` for every session on this machine. Every setting is an `AI_DLC_KEEPALIVE_*` variable in a settings file's `env` and a key in `.ai-dlc/cache-keepalive.json` (keep-alive has no `/config` rows); `/ai-dlc:init` writes its keep-warm time and the default scope of `/ai-dlc:cache-keepalive` there and writes every other key with this plugin version's default (a later plugin default does not reach a key already written), `/ai-dlc:cache-keepalive-merge` brings that file up to date after a plugin upgrade, and `/ai-dlc:cache-keepalive-configure` shows and changes the team's values in it, or one developer's in the `env` of `.claude/settings.local.json`; the full table, the status lines and what the cache can reuse across a handoff are in its [README](plugins/claude/ai-dlc/hooks/keepalive/README.md). Adapted from the `cache-keepalive` mod of [RichardJSun/claude-code-mods](https://github.com/RichardJSun/claude-code-mods); the changes are listed in its `ATTRIBUTION.md`. |
 
-Both need Claude Code 2.1.287 or later, and both make model requests that count against your plan or API usage. GitHub Copilot has no mods, so the Copilot plugin includes neither, nor the `cache-keepalive` skill that names keep-alive's command or the `cache-keepalive-config` skill that changes its settings; there, the `handoff` skill's session handoff is written by hand, and keep-alive does not exist.
+Both need Claude Code 2.1.287 or later, and both make model requests that count against your plan or API usage. GitHub Copilot has no mods, so the Copilot plugin includes neither, nor the `cache-keepalive` skill that names keep-alive's command or the `cache-keepalive-install`, `cache-keepalive-merge` and `cache-keepalive-configure` skills that manage its settings; there, the `handoff` skill's session handoff is written by hand, and keep-alive does not exist.
 
 Only the main session (the lead of an agent team) is handed off automatically. Subagents and teammates each have their own context window, and `/clear` cannot reset one; for in-process teammates, set `autoCompactWindow` in the subagent definition they are spawned from so they compact instead. `/ai-dlc:init` asks for the handoff percentage, which it writes to `.ai-dlc/auto-handoff.json`. The handoff keeps the prompt cache's shared prefix (tools, system prompt, project context) as it was, and the fresh session's first request logs and shows whether it read that prefix from the cache; the old conversation itself can never be reused.
 
@@ -134,6 +134,84 @@ If a project still has its own copies of these agents in `.claude/agents` / `.gi
 - For the .NET test gate: PowerShell 7 (`pwsh`) on PATH — on any OS
 - For JS / TS projects and their test gate: Node.js 18 or later, and the project's package manager (npm, pnpm, yarn or bun)
 - Optional MCP servers the agents use when present: GitHub, SonarQube, Playwright, context7. Agents that need them (`product-manager`, `software-engineer`, `sqa-engineer`, `devops-engineer`, `code-reviewer`, `research-assistant`) inherit whatever MCP tools your session has instead of hard-coding one gateway's tool names.
+
+## Commands
+
+<!-- ai-dlc:commands:begin -->
+
+<!-- Generated by tools/build-copilot.mjs from the skills' frontmatter. Do not edit this list. -->
+
+Every skill of the plugin is a command. In Claude Code, type `/ai-dlc:<name>`; in GitHub Copilot, `/<name>` (the commands marked Claude Code only are not in the Copilot plugin).
+
+| Command | Arguments | What it does |
+| --- | --- | --- |
+| `/ai-dlc:agent-invocation` | — | Authoritative skill for spawning or invoking another agent with proper context. |
+| `/ai-dlc:agent-management` | — | Creates, updates, and deprecates agent definitions for both Claude Code (.claude/agents/*.md) and GitHub Copilot/VS Code (.github/agents/*.agent.md). |
+| `/ai-dlc:ai-dlc` | — | AI-DLC lifecycle router and operating model. |
+| `/ai-dlc:architecture-design` | — | Structured architectural design skill for the project. |
+| `/ai-dlc:architecture-narrative` | — | Turn an architecture solution into a story stakeholders can follow — business problem first, then constraints and trade-offs, then the proposed design, ADRs and risks. |
+| `/ai-dlc:architecture-review` | — | Structured architectural review skill for the project. |
+| `/ai-dlc:bunit-blazor-testing` | — | Comprehensive guidance for writing Blazor component tests using bUnit with TUnit as the test runner. |
+| `/ai-dlc:cache-keepalive` | `[<n>m\|<n>h\|<n>d\|clear] [--track 1h\|5m\|both] [--session\|--machine]` | Pings the prompt cache now, or sets how long keep-alive keeps it warm while background tasks run, on the 1h track, the 5m track or both. **Claude Code only.** |
+| `/ai-dlc:cache-keepalive-configure` | `[<change in plain words>]` | Shows or changes keep-alive's settings in .ai-dlc/cache-keepalive.json. **Claude Code only.** |
+| `/ai-dlc:cache-keepalive-install` | — | Creates .ai-dlc/cache-keepalive.json with every key at its default, and its schema, on first use; an existing file is left alone (use /ai-dlc:cache-keepalive-merge). **Claude Code only.** |
+| `/ai-dlc:cache-keepalive-merge` | — | Brings .ai-dlc/cache-keepalive.json up to date after a plugin upgrade, or repairs it. **Claude Code only.** |
+| `/ai-dlc:command-management` | — | Create, modify, and delete GitHub Copilot prompt files (.github/prompts/*.prompt.md) and Claude command files (.claude/commands/*.md) safely using a discovery-first, non-destructive workflow. |
+| `/ai-dlc:configure-auto-handoff` | — | Shows and changes the automatic session handoff's settings in the repository's .ai-dlc/auto-handoff.json, with the source of each value, and checks whether this Claude Code can rename sessions. **Claude Code only.** |
+| `/ai-dlc:csharp-architecture-testing` | — | Comprehensive guidance for writing C# architecture tests using NetArchTest.Rules, TUnit, and TUnit.Assertions.Should to enforce layer dependencies, namespace rules, and naming conventions |
+| `/ai-dlc:csharp-integration-testing` | — | Comprehensive guidance for writing C# integration tests using TUnit, TestWebApplicationFactory, Testcontainers, Bogus, and TUnit.Assertions.Should — real infrastructure, no mocks of your own code |
+| `/ai-dlc:csharp-mutation-testing` | — | Runs and interprets Stryker.NET mutation testing for C# projects — installing the tool, configuring stryker-config.json, running full, incremental (--since) and baseline runs, and triaging surviving mutants into real test gaps vs … |
+| `/ai-dlc:csharp-unit-testing` | — | Comprehensive guidance for writing C# unit tests using TUnit, TUnit.Mocks, Bogus, and TUnit.Assertions.Should with project conventions |
+| `/ai-dlc:design-test-cases` | — | Structured test case design skill for software projects. |
+| `/ai-dlc:dotnet-rules` | — | Installs the AI-DLC .NET rules into the current repository: C# coding style, the GlobalUsings convention and the dotnet test / dotnet stryker testing gates, as Claude rules (.claude/rules) with identical GitHub Copilot instruction twins … |
+| `/ai-dlc:dotnet-test-gate` | — | Installs the AI-DLC .NET test gate into the current repository: a Claude Code Stop hook and a GitHub Copilot agentStop hook that block the agent from finishing while `dotnet test` fails after runtime changes. |
+| `/ai-dlc:fix-bug` | — | Structured bug investigation workflow for software projects. |
+| `/ai-dlc:github-cd-automation` | — | Structured workflow for designing GitHub Actions continuous deployment for .NET and JavaScript/TypeScript projects. |
+| `/ai-dlc:github-ci-automation` | — | Structured workflow for designing and maintaining GitHub Actions continuous integration for .NET and JavaScript/TypeScript projects. |
+| `/ai-dlc:handoff` | — | Records and verifies every hand-off in an AI-DLC run and keeps its run state. |
+| `/ai-dlc:harness-sync` | — | Sync a repository's agent harness between Claude Code and GitHub Copilot: agents, skills, commands / prompts, rules / instructions and hooks that a developer created or edited on one platform only. |
+| `/ai-dlc:hook-management` | — | Create, modify, and delete Claude Code hooks and GitHub Copilot hook integrations safely using a discovery-first, non-destructive workflow. |
+| `/ai-dlc:implement-feature` | — | Structured feature implementation workflow for software projects. |
+| `/ai-dlc:init` | — | Bootstraps a repository for the AI-DLC agent team: scaffolds AGENTS.md (the orchestrator persona with all its skills, plus the project's gates and workspace folders, free of stack-specific commands), CLAUDE.md (an @AGENTS.md import, the … |
+| `/ai-dlc:k6-docker` | — | Invoke this skill when the question is **how to run k6 tests via Docker** — for either local development or CI automation. |
+| `/ai-dlc:k6-load-testing` | — | Invoke this skill when the task is to validate that the system sustains its SLOs at **realistic production throughput over time** — including endurance (soak) testing for memory leaks, connection pool exhaustion, and GC pressure. |
+| `/ai-dlc:k6-performance-testing` | — | Invoke this skill when the task is to validate that a system meets its SLOs under **normal operating conditions** — expected concurrency and throughput levels. |
+| `/ai-dlc:k6-stress-testing` | — | Invoke this skill when the task is to validate system behaviour **beyond normal capacity** — to observe how it degrades and whether it recovers. |
+| `/ai-dlc:manage-memory` | — | Manages persistent file-based memory for all agents in .claude/agent-memory/<folder>/ (ai-dlc-<agent> for plugin agents), committed with the repository. |
+| `/ai-dlc:node-rules` | — | Installs the AI-DLC JavaScript / TypeScript rules into the current repository: coding style (strict TypeScript, no any, ESM, naming), module and import boundaries, async and error handling, and the test / Stryker testing gates, as Claude … |
+| `/ai-dlc:node-test-gate` | — | Installs the AI-DLC JavaScript / TypeScript test gate into the current repository: a Claude Code Stop hook and a GitHub Copilot agentStop hook that block the agent from finishing while the repository's test command fails after runtime … |
+| `/ai-dlc:npm-package-deployment` | — | Structured workflow for publishing JavaScript/TypeScript packages to the npm registry. |
+| `/ai-dlc:nuget-package-deployment` | — | Structured workflow for publishing NuGet packages to nuget.org. |
+| `/ai-dlc:playwright-mcp-ui-testing` | — | AI-driven browser UI testing using the Playwright MCP server. |
+| `/ai-dlc:plugin-management` | — | Creates and maintains a plugin that ships the same agents and skills to Claude Code and GitHub Copilot (CLI and VS Code) from one source: the Claude plugin is the source of truth and a zero-dependency build projects it into the Copilot … |
+| `/ai-dlc:presentation-authoring` | — | Authors and maintains PowerPoint (.pptx) decks: reading a deck, editing slide text in place without breaking the layout, building a new deck, rendering slides to images for visual QA, and keeping a deck in sync with its source of truth … |
+| `/ai-dlc:product-planning` | — | Product backlog management and release planning skill. |
+| `/ai-dlc:request-routing` | — | The orchestrator's single routing skill. |
+| `/ai-dlc:requirement-analysis` | — | Structured requirement elicitation for software projects. |
+| `/ai-dlc:research` | — | Structured external-knowledge and codebase-exploration research skill for software projects. |
+| `/ai-dlc:review` | — | Structured code review workflow for software projects. |
+| `/ai-dlc:rules-management` | — | Create, modify, delete, and sync Claude rules files (.claude/rules/*.md) and GitHub Copilot instruction files (.github/instructions/*.instructions.md) safely using a discovery-first, non-destructive workflow. |
+| `/ai-dlc:security-review` | — | Security-focused review workflow for software projects. |
+| `/ai-dlc:skill-management` | — | Creates, updates, syncs, and lists skill files (.claude/skills/*/SKILL.md) and (.github/skills/*/SKILL.md) for the AI-DLC multi-agent system, and holds the writing guide and review checklist for any agent-facing document (skills, agent … |
+| `/ai-dlc:sonarqube-pr-quality-gate` | — | Structured workflow for enforcing SonarQube quality gate on pull requests for .NET and JavaScript/TypeScript projects. |
+| `/ai-dlc:spec-driven-development` | — | Manages the full lifecycle of a feature specification — from collaborative drafting (after a requirement-analysis session, or by synthesising a spec from requirements already discussed in the conversation, a product brief or an issue … |
+| `/ai-dlc:system-design` | — | Low-level design skill. |
+| `/ai-dlc:task-triage` | — | The product-manager's task and bug triage skill. |
+| `/ai-dlc:terse-output` | `[lite \| full \| ultra \| off \| status]` | Terse response register: answer first, keep every technical fact, drop the filler, at three levels (lite, full, ultra). |
+| `/ai-dlc:test-doubles` | — | Mock, stub, fake, spy or test double policy — the single rule for whether a test may replace part of the system and with what. |
+| `/ai-dlc:ts-architecture-testing` | — | Comprehensive guidance for writing architecture tests in JavaScript/TypeScript projects (Node, TypeScript, plain JavaScript) using dependency-cruiser forbidden and required rules (layer dependencies, no circular dependencies, no orphans, … |
+| `/ai-dlc:ts-integration-testing` | — | Comprehensive guidance for writing integration tests in JavaScript/TypeScript projects (Node, TypeScript, plain JavaScript) using Vitest (or Jest when the repository already uses it), Testcontainers for Node for real databases, caches … |
+| `/ai-dlc:ts-mutation-testing` | — | Runs and interprets StrykerJS mutation testing for JavaScript/TypeScript projects (Node, TypeScript, plain JavaScript): installing @stryker-mutator/core with the vitest-runner or jest-runner, configuring stryker.config.json, running … |
+| `/ai-dlc:ts-playwright-ui-testing` | — | Comprehensive guidance for writing coded end-to-end UI tests for web applications in JavaScript/TypeScript projects (Node, TypeScript, plain JavaScript) using Playwright Test (@playwright/test). |
+| `/ai-dlc:ts-unit-testing` | — | Comprehensive guidance for writing unit tests in JavaScript/TypeScript projects (Node, TypeScript, plain JavaScript) using Vitest (or Jest when the repository already uses it), @faker-js/faker builders, vi.fn / vi.mock for the test … |
+| `/ai-dlc:tunit-playwright-ui-testing` | — | Comprehensive guidance for writing coded end-to-end UI tests in C# using TUnit.Playwright. |
+| `/ai-dlc:workflow` | — | Customise the AI-DLC workflow of a repository: which stages each lifecycle runs, which agent owns each stage and hands off to whom, what runs in parallel, refinement loops and their round and failure limits, gates and who approves them, … |
+| `/ai-dlc:workspace-folders` | — | Sets or changes the repository's worktree root and scratch root: records them in AGENTS.md, CLAUDE.md and .github/copilot-instructions.md, gitignores them, and installs the Claude WorktreeCreate / WorktreeRemove hooks that place … |
+| `/ai-dlc:write-adr` | — | Writes a numbered Architecture Decision Record (ADR) for a significant architectural choice in the project, after first checking the decision deserves one (hard to reverse, surprising without context, a real trade-off). |
+| `/ai-dlc:write-documentation` | — | Structured documentation writing workflow for software projects. |
+| `/ai-dlc:write-tests` | — | Stack-neutral test implementation skill. |
+
+<!-- ai-dlc:commands:end -->
 
 ## The test gates
 

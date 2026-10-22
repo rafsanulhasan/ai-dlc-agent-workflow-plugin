@@ -1,33 +1,33 @@
 {
   "$schema": "./cache-keepalive.schema.json",
-  "enabled": null,
+  "enabled": true,
   "scope": "session",
-  "status": null,
-  "pingPrompt": null,
-  "hitThreshold": null,
-  "overagePercent": null,
-  "minDuration": null,
-  "sessionOverridesMax": null,
+  "status": true,
+  "pingPrompt": "Keep-alive ping. Reply with only: ok",
+  "hitThreshold": 0.9,
+  "overagePercent": 100,
+  "minDuration": "1m",
+  "sessionOverridesMax": 20,
   "oneHour": {
-    "enabled": null,
-    "ttl": null,
-    "pingEvery": null,
+    "enabled": true,
+    "ttl": "60m",
+    "pingEvery": "50m",
     "keepWarmFor": "8h",
-    "maxPings": null
+    "maxPings": 9
   },
   "fiveMinute": {
-    "enabled": null,
-    "ttl": null,
-    "pingEvery": null,
-    "keepWarmFor": null,
-    "maxPings": null
+    "enabled": true,
+    "ttl": "5m",
+    "pingEvery": "3m",
+    "keepWarmFor": "1h",
+    "maxPings": 20
   },
-  "budgetMultiplier": null,
-  "compactOnCap": null,
-  "compactInstructions": null,
-  "writeMult": null,
-  "outputMult": null,
-  "readPrice": null,
-  "compactCostGuess": null,
-  "summaryRatioGuess": null
+  "budgetMultiplier": 2,
+  "compactOnCap": false,
+  "compactInstructions": "Also keep the background tasks' IDs, output paths, and what to do when they finish.",
+  "writeMult": 2,
+  "outputMult": 5,
+  "readPrice": "fable|mythos=0.025,opus[- ]?5[-. ]5=0.05,*=0.1",
+  "compactCostGuess": 0.6,
+  "summaryRatioGuess": 0.15
 }

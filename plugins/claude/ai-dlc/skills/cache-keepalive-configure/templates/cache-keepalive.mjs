@@ -1,15 +1,18 @@
 #!/usr/bin/env node
 // cache-keepalive.mjs: shows, writes and checks a repository's .ai-dlc/cache-keepalive.json, the settings of
 // the ai-dlc plugin's keep-alive (Claude Code only). Zero dependencies; tested on Node 22 and later.
-// It runs from the plugin's cache-keepalive-config skill folder; the schema next to it lists every key, its
+// It lives in the plugin's cache-keepalive-configure skill folder; the cache-keepalive-install and
+// cache-keepalive-merge skills, and init, run it from there by relative path. The schema next to it lists every key, its
 // environment variable, its kind and its default. The hooks module
 // (hooks/keepalive/settings.ts, SETTINGS) is the source of those; tests/auto-handoff/ in the plugin
 // repository checks the two agree, and that this file resolves values as the module does.
 //
 //   show [--json]               each key's effective value and where it comes from
-//   merge [--dry-run]           create the file, or add new keys and remove retired ones, keeping values
-//   set <key>=<value>... [--dry-run]   set values (a dot is one nesting level; JSON literal or plain text; null unsets)
-//   validate                    check the file; exit 1 on an error
+//   install [--dry-run]         create the file with every default (first use only; an existing file is left alone)
+//   merge [--dry-run]           bring an existing file up to date: add new keys, rewrite null and legacy values, remove retired ones, keep values
+//   validate                    check the file and the AI_DLC_KEEPALIVE_* variables in the settings files' env; each finding is a warning (exit 0)
+//   set <key>=<value>... [--dry-run]   internal write, for the cache-keepalive-configure skill and init only, never a
+//                               user command (a dot is one nesting level; JSON literal or plain text; null is refused)
 //
 // Options: --root <dir> (default: git root, else the working directory).
 // Each key is read, highest first, from a /ai-dlc:cache-keepalive override (keep-warm times only, per track;
@@ -174,7 +177,9 @@ function parsePrices(text) {
  * `minDuration`: the shortest duration a `duration` may be.
  */
 export function checkValue(p, raw, byEnv, minDuration = 0) {
-  if (raw === undefined || raw === null) return { unset: true };
+  if (raw === undefined) return { unset: true };
+  // Every key of the file holds a value: a null there is invalid, as in the module (settings.ts, NULL_IN_FILE).
+  if (raw === null) return byEnv ? { unset: true } : { error: NULL_IN_FILE };
   if (byEnv && typeof raw === "string" && !raw.trim()) return { unset: true };
   const n = num(raw);
   const bad = (error) => ({ error });
@@ -207,6 +212,18 @@ export function checkValue(p, raw, byEnv, minDuration = 0) {
   }
 }
 
+/** Whether a set value differs from the key's default, both read as the module reads them (a duration
+ * in milliseconds, prices as their pairs), so `60m` equals `1h`. An invalid value differs. */
+export function differsFromDefault(p, raw, byEnv) {
+  const norm = (v, env) => {
+    const r = checkValue(p, v, env, 0);
+    if (r.error || r.unset) return undefined;
+    return p["x-kind"] === "prices" ? JSON.stringify(parsePrices(r.value)) : JSON.stringify(r.value);
+  };
+  const mine = norm(raw, byEnv);
+  return mine === undefined || mine !== norm(p.default, false);
+}
+
 /** A key's value in a nested document: { has, raw }. */
 export function valueAt(doc, key) {
   let cur = doc;
@@ -220,8 +237,12 @@ export function valueAt(doc, key) {
 const shown = (v) => JSON.stringify(v);
 // The module's trust warning folds white space and cuts a value at 40 characters; this one names the
 // keys only, as configure-auto-handoff's does.
-function withoutGated(values, keys, names) {
-  const ignored = keys.filter((p) => p["x-trustGated"]).map(names).filter((name) => { const v = valueAt(values, name); return v.has && v.raw !== null && v.raw !== undefined; });
+// A gated value equal to its default changes nothing, so it is neither skipped nor warned about, as in
+// the module (hooks/keepalive/settings.ts, differsFromDefault). A null is not skipped here either: the
+// module's trust gate (auto-handoff/io.ts, trustGate, through config.ts withoutKeys) passes a null on,
+// and it then gets the null warning like any other null. tests/auto-handoff/ checks the two agree.
+function withoutGated(values, keys, names, byEnv) {
+  const ignored = keys.filter((p) => p["x-trustGated"]).filter((p) => { const v = valueAt(values, names(p)); return v.has && v.raw !== null && v.raw !== undefined && differsFromDefault(p, v.raw, byEnv); }).map(names);
   if (!ignored.length) return { values, ignored };
   const kept = structuredClone(values);
   for (const name of ignored) {
@@ -292,7 +313,7 @@ export function effective(root, keys, trust = trustOf(readMaybe(path.join(os.hom
     const where = `.claude/${name}`;
     let values = settingsEnv(root, name, warnings);
     if (values && name === "settings.json" && !trust.trusted) {
-      const g = withoutGated(values, keys, (p) => p["x-env"]);
+      const g = withoutGated(values, keys, (p) => p["x-env"], true);
       if (g.ignored.length) warnings.push(`${g.ignored.join(", ")} in the env of ${where} ignored: Claude Code does not trust this folder (${trust.why}); ${GATED_INSTEAD}`);
       values = g.values;
     }
@@ -302,7 +323,7 @@ export function effective(root, keys, trust = trustOf(readMaybe(path.join(os.hom
   if (repo.error) warnings.push(`.ai-dlc/${FILE_NAME}: ${repo.error}; it is skipped`);
   let values = repo.doc;
   if (values && !trust.trusted) {
-    const g = withoutGated(values, keys, (p) => p.key);
+    const g = withoutGated(values, keys, (p) => p.key, false);
     if (g.ignored.length) warnings.push(`${g.ignored.join(", ")} in .ai-dlc/${FILE_NAME} ignored: Claude Code does not trust this folder (${trust.why}); ${GATED_INSTEAD}`);
     values = g.values;
   }
@@ -316,18 +337,29 @@ export function effective(root, keys, trust = trustOf(readMaybe(path.join(os.hom
   return { rows, warnings: [...warnings, ...r.warnings] };
 }
 
-/** The file's text after a merge: every schema key in schema order, each value kept, new keys null,
- * keys the schema no longer has removed. Throws when a track is not an object. */
+/** The file's text after a merge: every schema key in schema order. A value already set is kept; a
+ * missing key, or a null one left by an earlier version or by hand, gets its default (the schema's,
+ * which tests check against the module's SETTINGS); keys the schema no longer has are removed. The
+ * defaults written are this plugin version's: a later default does not reach a key already set. */
+// Values earlier versions wrote that this one rewrites to the default on merge (and set).
+const LEGACY = { "oneHour.maxPings": [0, "0"], "fiveMinute.maxPings": [0, "0"] };
+
 export function merged(doc, keys) {
   const out = { $schema: `./${SCHEMA_NAME}` };
-  const added = [], removed = [];
+  const added = [], filled = [], removed = [];
   for (const p of keys) {
     const parts = p.key.split(".");
     const { has, raw } = valueAt(doc ?? {}, p.key);
     if (parts.length === 2) out[parts[0]] ??= {};
     const target = parts.length === 2 ? out[parts[0]] : out;
-    target[parts.at(-1)] = has ? raw : null;
-    if (!has && doc) added.push(p.key);
+    // A legacy value an earlier version allowed and this one does not (maxPings 0, "no limit") is
+    // rewritten to the default like a null.
+    const legacy = has && LEGACY[p.key]?.some((x) => JSON.stringify(x) === JSON.stringify(raw));
+    if (has && raw !== null && !legacy) target[parts.at(-1)] = raw;
+    else {
+      target[parts.at(-1)] = p.default;
+      if (doc) (has ? filled : added).push(p.key);
+    }
   }
   if (doc) {
     for (const [k, v] of Object.entries(doc)) {
@@ -336,27 +368,111 @@ export function merged(doc, keys) {
       else if (!Object.hasOwn(out, k)) removed.push(k);
     }
   }
-  return { text: `${JSON.stringify(out, null, 2)}\n`, added, removed };
+  return { text: `${JSON.stringify(out, null, 2)}\n`, added, filled, removed };
 }
 
-/** Errors in the file: unknown keys, a track that is not an object, invalid values, and broken rules
- * (read against the file's own values and the defaults). */
-export function validateDoc(doc, keys) {
-  const errors = [];
+/** The problems in the file, each with the key it is about (undefined for a key that is not a setting):
+ * unknown keys, missing keys, a track that is not an object, invalid values (null included), and broken
+ * rules (read against the file's own values and the defaults). None stops keep-alive: the module warns
+ * and uses the next level or the default. */
+export function fileProblems(doc, keys) {
+  const found = [];
   const tracks = new Set(keys.filter((p) => p.key.includes(".")).map((p) => p.key.split(".")[0]));
   for (const [k, v] of Object.entries(doc)) {
-    if (k === "$schema") { if (typeof v !== "string") errors.push("$schema: not text"); continue; }
+    if (k === "$schema") { if (typeof v !== "string") found.push({ problem: "$schema: not text" }); continue; }
     if (tracks.has(k)) {
-      if (v === null) continue;
-      if (!isObj(v)) { errors.push(`${k}: not an object`); continue; }
-      for (const sub of Object.keys(v)) if (!keys.some((p) => p.key === `${k}.${sub}`)) errors.push(`${k}.${sub}: not a setting (run merge to remove it)`);
+      if (!isObj(v)) { found.push({ key: k, problem: `${k}: not an object` }); continue; }
+      for (const sub of Object.keys(v)) if (!keys.some((p) => p.key === `${k}.${sub}`)) found.push({ problem: `${k}.${sub}: not a setting (run /ai-dlc:cache-keepalive-merge to remove it)` });
       continue;
     }
-    if (!keys.some((p) => p.key === k)) errors.push(`${k}: not a setting (run merge to remove it)`);
+    if (!keys.some((p) => p.key === k)) found.push({ problem: `${k}: not a setting (run /ai-dlc:cache-keepalive-merge to remove it)` });
   }
+  for (const p of keys) if (!valueAt(doc, p.key).has) found.push({ key: p.key, problem: `${p.key}: missing (run /ai-dlc:cache-keepalive-merge to write its default)` });
   const r = resolve([{ where: `.ai-dlc/${FILE_NAME}`, byEnv: false, values: doc }], keys);
-  for (const w of r.warnings) errors.push(w.replace(` in .ai-dlc/${FILE_NAME} ignored: `, ": ").replace(/; falling back to the next source$/, ""));
-  return errors;
+  for (const w of r.warnings) {
+    const key = keys.find((p) => w.startsWith(`${p.key}=`) || w.startsWith(`${p.key} from `))?.key;
+    found.push({ key, problem: w.replace(` in .ai-dlc/${FILE_NAME} ignored: `, ": ").replace(/; falling back to the next source$/, "") });
+  }
+  return found;
+}
+
+/** The problems in the file, as text. */
+export const validateDoc = (doc, keys) => fileProblems(doc, keys).map((f) => f.problem);
+
+/** Why a null in the file is invalid: the module's words (hooks/keepalive/settings.ts, NULL_IN_FILE). */
+export const NULL_IN_FILE = "null: every key holds a value (run /ai-dlc:cache-keepalive-merge to write its default)";
+
+/**
+ * The env half of `validate`: every AI_DLC_KEEPALIVE_* variable in the env of .claude/settings.local.json
+ * and .claude/settings.json, read with the same check as the file and the module (checkValue, held to
+ * hooks/keepalive/settings.ts by tests/auto-handoff/), against the minDuration and each track's ttl in
+ * force. Each finding is a warning, never an error, since keep-alive only skips a bad value: an unknown
+ * name, a value that fails its kind, limits or a rule, a settings file that does not parse, and, in a
+ * folder Claude Code does not trust, a gated variable in .claude/settings.json that differs from its
+ * default. `applied(key)` names what applies instead. Returns { warnings }.
+ */
+export function validateEnv(root, keys, trust = trustOf(readMaybe(path.join(os.homedir(), ".claude.json")), trustTarget(root)), applied = appliedFrom(effective(root, keys, trust).rows)) {
+  const warnings = [];
+  const rows = effective(root, keys, trust).rows;
+  const inForce = (key) => { const v = rows.find((r) => r.key === key).value; return typeof v === "string" ? parseDuration(v) : v; };
+  const minDuration = inForce("minDuration");
+  for (const name of ["settings.local.json", "settings.json"]) {
+    const where = `.claude/${name}`;
+    const problems = [];
+    const env = settingsEnv(root, name, problems);
+    warnings.push(...problems);
+    if (!env) continue;
+    for (const [variable, raw] of Object.entries(env)) {
+      if (!variable.startsWith("AI_DLC_KEEPALIVE_")) continue;
+      const p = keys.find((x) => x["x-env"] === variable);
+      if (!p) { warnings.push(`${where}: ${variable}: not a keep-alive setting; ignored`); continue; }
+      if (name === "settings.json" && !trust.trusted && p["x-trustGated"] && differsFromDefault(p, raw, true)) {
+        warnings.push(`${where}: ${variable}: skipped, Claude Code does not trust this folder (${trust.why}); ${GATED_INSTEAD}; ${applied(p.key)}`);
+        continue;
+      }
+      const r = checkValue(p, raw, true, p.key === "minDuration" ? 0 : minDuration);
+      if (r.unset) continue;
+      if (r.error) { warnings.push(`${where}: ${variable}=${JSON.stringify(raw)}: ${r.error}; ${applied(p.key)}`); continue; }
+      const track = /^(oneHour|fiveMinute)\.pingEvery$/.exec(p.key)?.[1];
+      if (track && r.value >= inForce(`${track}.ttl`)) warnings.push(`${where}: ${variable}=${JSON.stringify(raw)}: not shorter than ${track}.ttl (${formatDuration(inForce(`${track}.ttl`))}); ${applied(p.key)}`);
+    }
+  }
+  return { warnings };
+}
+
+/** A track's maxPings as its keep-warm time sets it: the pings keepWarmFor allows at pingEvery (the n-th
+ * ping goes out when n × pingEvery is within the keep-warm time), at least 1. Both are the values in force
+ * for the file over the defaults, as the module reads them: a pingEvery (or keepWarmFor) that is not a
+ * valid duration, or breaks a rule, gives way to the next level, the default, so the result is always a
+ * whole number of 1 or more, never NaN. */
+export function followingMaxPings(doc, track, keys = loadSchema().keys) {
+  const { values } = resolve([{ where: `.ai-dlc/${FILE_NAME}`, byEnv: false, values: doc }], keys);
+  return Math.max(1, Math.floor(values[`${track}.keepWarmFor`] / values[`${track}.pingEvery`]));
+}
+
+/** show-style rows for the file alone over the defaults: what set's file would give. */
+export function rowsOf(doc, keys) {
+  const r = resolve([{ where: `.ai-dlc/${FILE_NAME}`, byEnv: false, values: doc }], keys);
+  return keys.map((p) => ({ key: p.key, value: display(p, r.values[p.key]), source: r.sources[p.key] }));
+}
+
+/** "in force: <value> (<source>)" for a key, from show's rows. */
+export const appliedFrom = (rows) => (key) => {
+  const row = rows.find((r) => r.key === key);
+  return row ? `in force: ${JSON.stringify(row.value)} (${row.source})` : "ignored";
+};
+
+/** Each track whose maxPings is below the pings its keep-warm time allows, as a warning: the limit
+ * stops the pings first (only /ai-dlc:cache-keepalive lifts it). From show's rows. */
+export function capWarnings(rows) {
+  const v = (key) => { const x = rows.find((r) => r.key === key).value; return typeof x === "string" ? parseDuration(x) : x; };
+  const out = [];
+  for (const track of ["oneHour", "fiveMinute"]) {
+    const allows = Math.floor(v(`${track}.keepWarmFor`) / v(`${track}.pingEvery`));
+    const max = v(`${track}.maxPings`);
+    if (max < allows) out.push(`${track}.maxPings is ${max}, but ${track}.keepWarmFor (${formatDuration(v(`${track}.keepWarmFor`))}) at ${track}.pingEvery (${formatDuration(v(`${track}.pingEvery`))}) allows ${allows} pings: the pings stop after ${max}; set ${track}.maxPings=${allows} to keep warm for the whole time`);
+  }
+  return out;
 }
 
 // The kinds whose value is text: a `set` value for them is the text as typed, so `pingPrompt=123` is
@@ -364,8 +480,8 @@ export function validateDoc(doc, keys) {
 const TEXT_KINDS = new Set(["text", "duration", "minDuration", "prices"]);
 
 /**
- * A `set` value. For a text kind (`kind`, a key's x-kind): the text as typed, except `null`, which
- * unsets, and a quoted JSON string ("..."), which is unquoted. For any other kind: JSON when it parses
+ * A `set` value. For a text kind (`kind`, a key's x-kind): the text as typed, except `null` (which
+ * `set` refuses: every key holds a value) and a quoted JSON string ("..."), which is unquoted. For any other kind: JSON when it parses
  * (true, 10, null), else the text as typed.
  */
 export function parseAssignment(arg, kind) {
@@ -407,18 +523,26 @@ function main(argv) {
       for (const w of warnings) out(`warning: ${w}`);
       return 0;
     }
+    case "install":
     case "merge": {
+      // install is for a repository without the file; merge for one that has it. Each points to the other
+      // otherwise and writes nothing (a warning, exit 0).
+      const exists = readMaybe(file) !== undefined;
+      if (command === "install" && exists) { out(`warning: .ai-dlc/${FILE_NAME} already exists: run /ai-dlc:cache-keepalive-merge to bring it up to date; nothing written`); return 0; }
+      if (command === "merge" && !exists) { out(`warning: .ai-dlc/${FILE_NAME} does not exist: run /ai-dlc:cache-keepalive-install to create it; nothing written`); return 0; }
       const repo = readRepoFile(file);
       if (repo.error || !tracksOk(repo.doc)) { out(`.ai-dlc/${FILE_NAME}: ${repo.error ?? "a track (oneHour, fiveMinute) is not an object"}; fix it by hand first`); return 1; }
       const m = merged(repo.doc, keys);
-      if (!repo.doc) out(`create .ai-dlc/${FILE_NAME} with every key unset (null)`);
-      for (const k of m.added) out(`+ ${k}: null`);
+      const defaultOf = (k) => JSON.stringify(keys.find((p) => p.key === k).default);
+      if (!repo.doc) out(`create .ai-dlc/${FILE_NAME} with every key at its default`);
+      for (const k of m.added) out(`+ ${k}: ${defaultOf(k)}`);
+      for (const k of m.filled) out(`+ ${k}: ${JSON.stringify(valueAt(repo.doc, k).raw)} -> ${defaultOf(k)}`);
       for (const k of m.removed) out(`- ${k}: ${JSON.stringify(valueAt(repo.doc, k).raw)}`);
       const schemaTarget = path.join(root, ".ai-dlc", SCHEMA_NAME);
       const schemaText = fs.readFileSync(SCHEMA_FILE, "utf8");
       const schemaStale = readMaybe(schemaTarget) !== schemaText.replace(/^﻿/, "");
       if (schemaStale) out(`${readMaybe(schemaTarget) === undefined ? "create" : "update"} .ai-dlc/${SCHEMA_NAME}`);
-      const changed = !repo.doc || m.added.length || m.removed.length || readMaybe(file) !== m.text;
+      const changed = !repo.doc || m.added.length || m.filled.length || m.removed.length || readMaybe(file) !== m.text;
       if (!changed && !schemaStale) out("up to date");
       if (dryRun) return 0;
       fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -430,41 +554,85 @@ function main(argv) {
       if (!rest.length) { out("set needs <key>=<value>"); return 2; }
       const repo = readRepoFile(file);
       if (repo.error || !tracksOk(repo.doc)) { out(`.ai-dlc/${FILE_NAME}: ${repo.error ?? "a track (oneHour, fiveMinute) is not an object"}; fix it by hand first`); return 1; }
-      const doc = JSON.parse(merged(repo.doc, keys).text);
-      const errors = [];
+      // Every key holds a value: a key missing from the file, or null in it, gets its default first.
+      const m = merged(repo.doc, keys);
+      const doc = JSON.parse(m.text);
+      // The same lines as merge: `+ key: default` for a missing key, `+ key: null -> default` for a null one.
+      const defaultOf = (k) => JSON.stringify(keys.find((p) => p.key === k).default);
+      if (repo.doc) for (const k of m.added) out(`+ ${k}: ${defaultOf(k)}`);
+      for (const k of m.filled) out(`+ ${k}: ${JSON.stringify(valueAt(repo.doc, k).raw)} -> ${defaultOf(k)}`);
+      const shown = (k) => JSON.stringify(valueAt(doc, k).raw);
+      const wroteKeep = new Set(), namedMax = new Set();
       for (const arg of rest) {
         let a;
         const named = keys.find((x) => x.key === arg.slice(0, Math.max(arg.indexOf("="), 0)).trim());
-        try { a = parseAssignment(arg, named?.["x-kind"]); } catch (e) { errors.push(e.message); continue; }
+        try { a = parseAssignment(arg, named?.["x-kind"]); } catch (e) { out(`warning: ${e.message}; skipped`); continue; }
         const p = keys.find((x) => x.key === a.key);
-        if (!p) { errors.push(`${a.key}: not a setting`); continue; }
+        if (!p) { out(`warning: ${a.key}: not a setting; skipped`); continue; }
+        const track = /^(oneHour|fiveMinute)\.maxPings$/.exec(a.key)?.[1];
+        if (track) namedMax.add(track); // an explicit maxPings in the same call wins over the recomputed one
+        const skip = (why) => out(`warning: ${a.key}=${JSON.stringify(a.value)} skipped: ${why}; ${a.key} stays ${shown(a.key)}`);
+        if (a.value === null) { skip("null is not a value: every key holds one"); continue; }
         const r = checkValue(p, a.value, false, 0);
-        if (r.error) { errors.push(`${a.key}: ${JSON.stringify(a.value)} is ${r.error}`); continue; }
+        if (r.error) { skip(r.error); continue; }
         const parts = a.key.split(".");
         const target = parts.length === 2 ? doc[parts[0]] : doc;
         // Durations, prices and text are kept as written; booleans, the scope and numbers as the module reads them.
         const asWritten = ["duration", "minDuration", "prices", "text"].includes(p["x-kind"]);
-        const next = r.unset ? null : asWritten ? a.value.trim() : r.value;
-        if (JSON.stringify(target[parts.at(-1)]) !== JSON.stringify(next)) out(`${a.key}: ${JSON.stringify(target[parts.at(-1)])} -> ${JSON.stringify(next)}`);
+        const next = asWritten ? a.value.trim() : r.value;
+        const before = target[parts.at(-1)];
+        // The rules read the file as a whole (a duration against minDuration, a pingEvery against its
+        // ttl): a pair that would break one is skipped, and the file keeps its value.
+        const had = new Set(validateDoc(doc, keys));
         target[parts.at(-1)] = next;
+        const broke = validateDoc(doc, keys).filter((x) => !had.has(x));
+        if (broke.length) { target[parts.at(-1)] = before; skip(broke.join("; ")); continue; }
+        if (JSON.stringify(before) !== JSON.stringify(next)) out(`${a.key}: ${JSON.stringify(before)} -> ${JSON.stringify(next)}`);
+        const kept = /^(oneHour|fiveMinute)\.keepWarmFor$/.exec(a.key)?.[1];
+        if (kept) wroteKeep.add(kept);
       }
-      // The rules read the file as a whole: a duration against minDuration, a pingEvery against its ttl.
-      if (!errors.length) errors.push(...validateDoc(doc, keys));
-      if (errors.length) { for (const e of errors) out(`error: ${e}`); return 1; }
+      // A track's maxPings follows a keepWarmFor written without an explicit maxPings in the same call
+      // (human decision, 2026-10-23): the pings the keep-warm time allows at the track's pingEvery,
+      // counted as the module counts them (the one on the limit included), at least 1.
+      for (const track of wroteKeep) {
+        if (namedMax.has(track)) continue;
+        const n = followingMaxPings(doc, track, keys);
+        if (n !== doc[track].maxPings) {
+          const every = formatDuration(resolve([{ where: "file", byEnv: false, values: doc }], keys).values[`${track}.pingEvery`]);
+          out(`${track}.maxPings: ${JSON.stringify(doc[track].maxPings)} -> ${n} (follows ${track}.keepWarmFor ${doc[track].keepWarmFor} at ${track}.pingEvery ${every})`);
+          doc[track].maxPings = n;
+        }
+      }
+      for (const w of capWarnings(rowsOf(doc, keys))) out(`warning: ${w}`);
       if (!dryRun) { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, `${JSON.stringify(doc, null, 2)}\n`); }
       return 0;
     }
     case "validate": {
+      // Both sources: the file (schema, values, required keys, no null) and the AI_DLC_KEEPALIVE_*
+      // variables in the env of the two settings files. Every finding is a warning naming what applies
+      // instead, since keep-alive only skips a bad value; validate exits 0 (human, 2026-10-23).
+      const shownRows = effective(root, keys).rows;
+      const applied = appliedFrom(shownRows);
+      let clean = true;
       const repo = readRepoFile(file);
-      if (repo.error) { out(`.ai-dlc/${FILE_NAME}: ${repo.error}`); return 1; }
-      if (!repo.doc) { out(`.ai-dlc/${FILE_NAME} does not exist: the defaults apply`); return 0; }
-      const errors = validateDoc(repo.doc, keys);
-      for (const e of errors) out(`error: ${e}`);
-      if (!errors.length) out(`.ai-dlc/${FILE_NAME} is valid`);
-      return errors.length ? 1 : 0;
+      if (repo.error) { out(`warning: .ai-dlc/${FILE_NAME}: ${repo.error}; it is skipped, so the next level or the default applies to every key`); clean = false; }
+      else if (!repo.doc) out(`.ai-dlc/${FILE_NAME} does not exist: the defaults apply (run /ai-dlc:cache-keepalive-install to write them)`);
+      else {
+        const found = fileProblems(repo.doc, keys);
+        for (const f of found) out(`warning: .ai-dlc/${FILE_NAME}: ${f.problem}; ${f.key ? applied(f.key) : "ignored"}`);
+        if (found.length) clean = false;
+        else out(`.ai-dlc/${FILE_NAME} is valid`);
+      }
+      const env = validateEnv(root, keys, undefined, applied);
+      for (const w of env.warnings) out(`warning: ${w}`);
+      if (env.warnings.length) clean = false;
+      else out("the AI_DLC_KEEPALIVE_* variables in the settings files are valid");
+      for (const w of capWarnings(shownRows)) out(`warning: ${w}`);
+      if (!clean) out("keep-alive runs on the values in force above; the warnings name each value it skips");
+      return 0;
     }
     default:
-      out("usage: cache-keepalive.mjs show [--json] | merge [--dry-run] | set <key>=<value>... [--dry-run] | validate  [--root <dir>]");
+      out("usage: cache-keepalive.mjs show [--json] | install [--dry-run] | merge [--dry-run] | validate  [--root <dir>]");
       return command === "--help" || command === "help" ? 0 : 2;
   }
 }

@@ -1,6 +1,6 @@
 // Keep-alive's settings: one table (SETTINGS) holds every key, its environment variable and its default;
 // nothing else repeats a default. Engine-free: keepalive.ts reads the files and hands the levels in, and
-// tests/ in the repository checks the table against the README and the cache-keepalive-config schema.
+// tests/ in the repository checks the table against the README and the cache-keepalive-configure skill's schema.
 // Keep-alive has no /config rows (human decision, 2026-10-22, run AAW-20261022-cache-keepalive-init).
 import { ABSOLUTE_MIN, formatDuration, parseDuration } from './duration.ts'
 import type { Scope } from './duration.ts'
@@ -56,12 +56,15 @@ export const SETTINGS: readonly Setting[] = [
   { key: 'oneHour.ttl', env: 'AI_DLC_KEEPALIVE_1H_TTL', kind: 'duration', default: '60m' },
   { key: 'oneHour.pingEvery', env: 'AI_DLC_KEEPALIVE_1H_PING_EVERY', kind: 'duration', default: '50m' },
   { key: 'oneHour.keepWarmFor', env: 'AI_DLC_KEEPALIVE_1H_KEEP_WARM_FOR', kind: 'duration', default: '8h' },
-  { key: 'oneHour.maxPings', env: 'AI_DLC_KEEPALIVE_1H_MAX_PINGS', kind: 'whole', default: 0 },
+  // The two ping limits are the pings each track's default keepWarmFor allows at its default pingEvery,
+  // counted as keepalive.ts counts them (the one on the limit included): 8h / 50m = 9, 1h / 3m = 20.
+  // tests/keepalive.test.ts pins them to those defaults. 0 ("no limit") is no longer valid (human, 2026-10-23).
+  { key: 'oneHour.maxPings', env: 'AI_DLC_KEEPALIVE_1H_MAX_PINGS', kind: 'positiveWhole', default: 9 },
   { key: 'fiveMinute.enabled', env: 'AI_DLC_KEEPALIVE_5M_ENABLED', kind: 'boolean', default: true },
   { key: 'fiveMinute.ttl', env: 'AI_DLC_KEEPALIVE_5M_TTL', kind: 'duration', default: '5m' },
   { key: 'fiveMinute.pingEvery', env: 'AI_DLC_KEEPALIVE_5M_PING_EVERY', kind: 'duration', default: '3m' },
   { key: 'fiveMinute.keepWarmFor', env: 'AI_DLC_KEEPALIVE_5M_KEEP_WARM_FOR', kind: 'duration', default: '1h' },
-  { key: 'fiveMinute.maxPings', env: 'AI_DLC_KEEPALIVE_5M_MAX_PINGS', kind: 'whole', default: 0 },
+  { key: 'fiveMinute.maxPings', env: 'AI_DLC_KEEPALIVE_5M_MAX_PINGS', kind: 'positiveWhole', default: 20 },
   { key: 'budgetMultiplier', env: 'AI_DLC_KEEPALIVE_BUDGET_MULTIPLIER', kind: 'nonNegative', default: 2 },
   { key: 'compactOnCap', env: 'AI_DLC_KEEPALIVE_COMPACT_ON_CAP', kind: 'boolean', default: false },
   { key: 'compactInstructions', env: 'AI_DLC_KEEPALIVE_COMPACT_INSTRUCTIONS', kind: 'text', default: COMPACT_INSTRUCTIONS },
@@ -90,6 +93,29 @@ export const TRUST_GATED: readonly string[] = [
 /** The names the trust-gated settings go by in a level: their variables in an `env`, their keys in the repository file. */
 export const gatedNames = (by: 'env' | 'json'): string[] =>
   SETTINGS.filter(s => TRUST_GATED.includes(s.key)).map(s => by === 'env' ? s.env : s.key)
+
+/**
+ * Whether a value differs from its setting's default, both read as the module reads them (a duration
+ * in milliseconds, prices as their pairs), so `60m` equals `1h`. An invalid or unset value differs.
+ */
+export function differsFromDefault(s: Setting, raw: unknown, by: Level['by']): boolean {
+  const mine = check(s.kind, raw, by, 0)
+  if (mine === null || isInvalid(mine)) return true
+  return JSON.stringify(mine) !== JSON.stringify(check(s.kind, s.default, 'json', 0))
+}
+
+/**
+ * The trust-gated names in a level whose value differs from its default: the ones the trust gate skips
+ * in a folder Claude Code does not trust. A gated value equal to its default changes nothing, so it is
+ * neither skipped nor warned about; .ai-dlc/cache-keepalive.json holds every default since init writes
+ * them (run AAW-20261023-keepalive-explicit-defaults).
+ */
+export function gatedDiffering(values: Record<string, unknown>, by: 'env' | 'json'): string[] {
+  return SETTINGS.filter(s => TRUST_GATED.includes(s.key)).filter(s => {
+    const r = rawOf({ where: '', by, values }, s)
+    return r.has && differsFromDefault(s, r.raw, by)
+  }).map(s => by === 'env' ? s.env : s.key)
+}
 
 /** One place values are read from, highest first. `by`: how a setting is named there. */
 export type Level = { where: string; by: 'env' | 'json'; values: Record<string, unknown> }
@@ -127,14 +153,17 @@ export function readMult(prices: readonly PricePattern[], model: string): number
 }
 
 /**
- * A raw value checked against its kind: the value, `null` when it is not set (missing, null, or a
- * blank text in an `env`), or `{ invalid }` with the reason. `minDuration`:
+ * A raw value checked against its kind: the value, `null` when it is not set (missing; in an `env`, also
+ * null or blank text), or `{ invalid }` with the reason (in the repository file, null is invalid). `minDuration`:
  * the shortest duration a `duration` may be.
  */
 export function check(kind: Kind, raw: unknown, by: Level['by'], minDuration: number): unknown {
-  if (raw === undefined || raw === null) return null
-  if (by === 'env' && typeof raw === 'string' && !raw.trim()) return null
   const bad = (why: string) => ({ invalid: why })
+  if (raw === undefined) return null
+  // .ai-dlc/cache-keepalive.json holds a value for every key (run AAW-20261023-keepalive-explicit-
+  // defaults): a null left there by hand is invalid, warned about once, and the next level applies.
+  if (raw === null) return by === 'json' ? bad(NULL_IN_FILE) : null
+  if (by === 'env' && typeof raw === 'string' && !raw.trim()) return null
   switch (kind) {
     case 'boolean': return parseBool(raw) ?? bad('not true or false')
     case 'scope': {
@@ -158,6 +187,9 @@ export function check(kind: Kind, raw: unknown, by: Level['by'], minDuration: nu
     case 'prices': return parsePrices(raw) ?? bad('not pattern=multiplier pairs separated by commas, with exactly one *')
   }
 }
+
+/** Why a null in the repository file is ignored. */
+export const NULL_IN_FILE = 'null: every key holds a value (run /ai-dlc:cache-keepalive-merge to write its default)'
 
 const isInvalid = (v: unknown): v is { invalid: string } => !!v && typeof v === 'object' && !Array.isArray(v) && 'invalid' in v
 const show = (v: unknown) => typeof v === 'string' ? JSON.stringify(v) : String(JSON.stringify(v))

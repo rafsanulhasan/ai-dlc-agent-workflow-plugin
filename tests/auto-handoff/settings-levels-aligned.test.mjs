@@ -13,7 +13,7 @@ const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", ".
 const PLUGIN = path.join(REPO, "plugins", "claude", "ai-dlc");
 const read = (...p) => fs.readFileSync(path.join(PLUGIN, ...p), "utf8");
 const AH = { skill: read("skills", "configure-auto-handoff", "SKILL.md"), cli: read("skills", "configure-auto-handoff", "templates", "auto-handoff.mjs"), schema: read("skills", "configure-auto-handoff", "templates", "auto-handoff.schema.json") };
-const KA = { skill: read("skills", "cache-keepalive-config", "SKILL.md"), cli: read("skills", "cache-keepalive-config", "templates", "cache-keepalive.mjs"), schema: read("skills", "cache-keepalive-config", "templates", "cache-keepalive.schema.json") };
+const KA = { skill: read("skills", "cache-keepalive-configure", "SKILL.md"), cli: read("skills", "cache-keepalive-configure", "templates", "cache-keepalive.mjs"), schema: read("skills", "cache-keepalive-configure", "templates", "cache-keepalive.schema.json") };
 
 // The one check, for this runner, that no /config row is left (human decisions, 2026-10-22 and 2026-10-23,
 // run AAW-20261022-cache-keepalive-init). The hooks module's own runner (claude plugin test) has its

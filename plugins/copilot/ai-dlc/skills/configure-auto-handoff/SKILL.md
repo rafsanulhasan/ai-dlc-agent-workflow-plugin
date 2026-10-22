@@ -10,7 +10,7 @@ The ai-dlc plugin's hooks module hands the main session off to a fresh one when 
 
 **Claude Code only.** On GitHub Copilot there is no automatic handoff: say that these settings do not apply there and stop.
 
-Keep-alive, the module's other part, is not configured here: its settings are `AI_DLC_KEEPALIVE_*` variables in the `env` of the settings files and keys in `.ai-dlc/cache-keepalive.json`, with their own precedence (no process environment, no `/config` rows), all listed in the keep-alive README (`hooks/keepalive/README.md` in the plugin). For a change to one of them, point the developer to `/cache-keepalive-config`, and to `/cache-keepalive` for a keep-warm time of their own.
+Keep-alive, the module's other part, is not configured here: its settings are `AI_DLC_KEEPALIVE_*` variables in the `env` of the settings files and keys in `.ai-dlc/cache-keepalive.json`, with their own precedence (no process environment, no `/config` rows), all listed in the keep-alive README (`hooks/keepalive/README.md` in the plugin). For a change to one of them, point the developer to `/cache-keepalive-configure`, and to `/cache-keepalive` for a keep-warm time of their own.
 
 `<skill dir>` below is this skill's folder: `${CLAUDE_SKILL_DIR}` when it runs as `/configure-auto-handoff`, `../configure-auto-handoff` when `init` follows it. The CLI is `node <skill dir>/templates/auto-handoff.mjs` (Node 22 or later, the versions it is tested on; no dependencies); run it from the repository root.
 

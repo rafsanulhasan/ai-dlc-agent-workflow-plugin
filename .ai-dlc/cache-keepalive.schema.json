@@ -2,16 +2,17 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/rafsanulhasan/ai-dlc-agent-workflow-plugin/cache-keepalive.schema.json",
   "title": "AI-DLC keep-alive settings",
-  "description": "Settings of the ai-dlc plugin's keep-alive (Claude Code only), committed in .ai-dlc/cache-keepalive.json. Each key is read, highest first, from a /ai-dlc:cache-keepalive override (keep-warm times only, per track), the env of .claude/settings.local.json (its x-env variable), the env of .claude/settings.json, this file, then the default. Keep-alive has no /config rows, and the process environment is not read. null means not set here: the next source applies. An invalid value, or one that breaks a rule (a duration shorter than minDuration, a pingEvery not shorter than its track's ttl), is logged and the next source applies. Keys marked x-trustGated apply from this file and from the env of .claude/settings.json only when Claude Code trusts the folder (projects[<repository root>].hasTrustDialogAccepted in ~/.claude.json); elsewhere they are skipped and logged with their values. /ai-dlc:cache-keepalive-config shows and changes them.",
+  "description": "Settings of the ai-dlc plugin's keep-alive (Claude Code only), committed in .ai-dlc/cache-keepalive.json. Every key is required and holds a value: /ai-dlc:init (/ai-dlc:cache-keepalive-install) writes this plugin version's defaults, and a later plugin default does not reach a key already written; change a value with /ai-dlc:cache-keepalive-configure. Each key is read, highest first, from a /ai-dlc:cache-keepalive override (keep-warm times only, per track), the env of .claude/settings.local.json (its x-env variable), the env of .claude/settings.json, this file, then the default. Keep-alive has no /config rows, and the process environment is not read. An invalid value (null included), or one that breaks a rule (a duration shorter than minDuration, a pingEvery not shorter than its track's ttl), is logged and the next source applies. Keys marked x-trustGated apply from this file and from the env of .claude/settings.json only when Claude Code trusts the folder (projects[<repository root>].hasTrustDialogAccepted in ~/.claude.json); elsewhere a value that differs from the default is skipped and logged with its value, and one equal to the default applies, since it changes nothing. /ai-dlc:cache-keepalive-configure shows and changes them; /ai-dlc:cache-keepalive-merge brings the file up to date after a plugin upgrade.",
   "type": "object",
   "additionalProperties": false,
+  "required": ["enabled", "scope", "status", "pingPrompt", "hitThreshold", "overagePercent", "minDuration", "sessionOverridesMax", "oneHour", "fiveMinute", "budgetMultiplier", "compactOnCap", "compactInstructions", "writeMult", "outputMult", "readPrice", "compactCostGuess", "summaryRatioGuess"],
   "properties": {
     "$schema": {
       "type": "string",
       "description": "Points editors at this schema: ./cache-keepalive.schema.json."
     },
     "enabled": {
-      "type": ["boolean", "null"],
+      "type": "boolean",
       "default": true,
       "x-kind": "boolean",
       "x-env": "AI_DLC_KEEPALIVE_ENABLED",
@@ -19,22 +20,22 @@
       "description": "Keep-alive on or off. From this file it applies only when Claude Code trusts the folder."
     },
     "scope": {
-      "type": ["string", "null"],
-      "enum": ["session", "machine", null],
+      "type": "string",
+      "enum": ["session", "machine"],
       "default": "session",
       "x-kind": "scope",
       "x-env": "AI_DLC_KEEPALIVE_SCOPE",
       "description": "The scope of /ai-dlc:cache-keepalive <duration> without a flag: session or machine."
     },
     "status": {
-      "type": ["boolean", "null"],
+      "type": "boolean",
       "default": true,
       "x-kind": "boolean",
       "x-env": "AI_DLC_KEEPALIVE_STATUS",
       "description": "Show the status lines."
     },
     "pingPrompt": {
-      "type": ["string", "null"],
+      "type": "string",
       "minLength": 1,
       "default": "Keep-alive ping. Reply with only: ok",
       "x-kind": "text",
@@ -43,7 +44,7 @@
       "description": "The text each ping sends. From this file it applies only when Claude Code trusts the folder."
     },
     "hitThreshold": {
-      "type": ["number", "null"],
+      "type": "number",
       "minimum": 0,
       "exclusiveMaximum": 1,
       "default": 0.9,
@@ -52,7 +53,7 @@
       "description": "A ping is a hit when more than this share of its input, 0 up to 1, was read from the cache."
     },
     "overagePercent": {
-      "type": ["number", "null"],
+      "type": "number",
       "minimum": 1,
       "maximum": 100,
       "default": 100,
@@ -61,7 +62,7 @@
       "description": "No pings while any plan usage window is at or above this percent, 1 to 100."
     },
     "minDuration": {
-      "type": ["string", "null"],
+      "type": "string",
       "pattern": "^\\s*[0-9]+(\\.[0-9]+)?\\s*[mhdMHD]\\s*$",
       "default": "1m",
       "x-kind": "minDuration",
@@ -69,7 +70,7 @@
       "description": "The shortest duration accepted from your settings and the command (at least 1 second). Written <n>m, <n>h or <n>d."
     },
     "sessionOverridesMax": {
-      "type": ["integer", "null"],
+      "type": "integer",
       "minimum": 1,
       "default": 20,
       "x-kind": "positiveWhole",
@@ -77,12 +78,13 @@
       "description": "Session overrides the store keeps."
     },
     "oneHour": {
-      "type": ["object", "null"],
+      "type": "object",
       "additionalProperties": false,
+      "required": ["enabled", "ttl", "pingEvery", "keepWarmFor", "maxPings"],
       "description": "The 1h track: used when the session's cache is written with the 1-hour lifetime.",
       "properties": {
         "enabled": {
-          "type": ["boolean", "null"],
+          "type": "boolean",
           "default": true,
           "x-kind": "boolean",
           "x-env": "AI_DLC_KEEPALIVE_1H_ENABLED",
@@ -90,7 +92,7 @@
           "description": "The 1h track on or off. From this file it applies only when Claude Code trusts the folder."
         },
         "ttl": {
-          "type": ["string", "null"],
+          "type": "string",
           "pattern": "^\\s*[0-9]+(\\.[0-9]+)?\\s*[mhdMHD]\\s*$",
           "default": "60m",
           "x-kind": "duration",
@@ -98,7 +100,7 @@
           "description": "The lifetime the 1h track assumes after each ping. Written <n>m, <n>h or <n>d."
         },
         "pingEvery": {
-          "type": ["string", "null"],
+          "type": "string",
           "pattern": "^\\s*[0-9]+(\\.[0-9]+)?\\s*[mhdMHD]\\s*$",
           "default": "50m",
           "x-kind": "duration",
@@ -107,7 +109,7 @@
           "description": "The 1h track's interval. Written <n>m, <n>h or <n>d. From this file it applies only when Claude Code trusts the folder."
         },
         "keepWarmFor": {
-          "type": ["string", "null"],
+          "type": "string",
           "pattern": "^\\s*[0-9]+(\\.[0-9]+)?\\s*[mhdMHD]\\s*$",
           "default": "8h",
           "x-kind": "duration",
@@ -116,23 +118,24 @@
           "description": "How long the 1h track keeps pinging. Written <n>m, <n>h or <n>d. From this file it applies only when Claude Code trusts the folder."
         },
         "maxPings": {
-          "type": ["integer", "null"],
-          "minimum": 0,
-          "default": 0,
-          "x-kind": "whole",
+          "type": "integer",
+          "minimum": 1,
+          "default": 9,
+          "x-kind": "positiveWhole",
           "x-env": "AI_DLC_KEEPALIVE_1H_MAX_PINGS",
           "x-trustGated": true,
-          "description": "The 1h track's ping limit; 0 is none. From this file it applies only when Claude Code trusts the folder."
+          "description": "The 1h track's ping limit, a whole number of 1 or more (8h at 50m allows 9 pings). From this file it applies only when Claude Code trusts the folder."
         }
       }
     },
     "fiveMinute": {
-      "type": ["object", "null"],
+      "type": "object",
       "additionalProperties": false,
+      "required": ["enabled", "ttl", "pingEvery", "keepWarmFor", "maxPings"],
       "description": "The 5m track: used when the session's cache is written with the 5-minute lifetime.",
       "properties": {
         "enabled": {
-          "type": ["boolean", "null"],
+          "type": "boolean",
           "default": true,
           "x-kind": "boolean",
           "x-env": "AI_DLC_KEEPALIVE_5M_ENABLED",
@@ -140,7 +143,7 @@
           "description": "The 5m track on or off. From this file it applies only when Claude Code trusts the folder."
         },
         "ttl": {
-          "type": ["string", "null"],
+          "type": "string",
           "pattern": "^\\s*[0-9]+(\\.[0-9]+)?\\s*[mhdMHD]\\s*$",
           "default": "5m",
           "x-kind": "duration",
@@ -148,7 +151,7 @@
           "description": "The lifetime the 5m track assumes after each ping. Written <n>m, <n>h or <n>d."
         },
         "pingEvery": {
-          "type": ["string", "null"],
+          "type": "string",
           "pattern": "^\\s*[0-9]+(\\.[0-9]+)?\\s*[mhdMHD]\\s*$",
           "default": "3m",
           "x-kind": "duration",
@@ -157,7 +160,7 @@
           "description": "The 5m track's interval. Written <n>m, <n>h or <n>d. From this file it applies only when Claude Code trusts the folder."
         },
         "keepWarmFor": {
-          "type": ["string", "null"],
+          "type": "string",
           "pattern": "^\\s*[0-9]+(\\.[0-9]+)?\\s*[mhdMHD]\\s*$",
           "default": "1h",
           "x-kind": "duration",
@@ -166,18 +169,18 @@
           "description": "How long the 5m track keeps pinging. Written <n>m, <n>h or <n>d. From this file it applies only when Claude Code trusts the folder."
         },
         "maxPings": {
-          "type": ["integer", "null"],
-          "minimum": 0,
-          "default": 0,
-          "x-kind": "whole",
+          "type": "integer",
+          "minimum": 1,
+          "default": 20,
+          "x-kind": "positiveWhole",
           "x-env": "AI_DLC_KEEPALIVE_5M_MAX_PINGS",
           "x-trustGated": true,
-          "description": "The 5m track's ping limit; 0 is none (the hour allows 20 pings). From this file it applies only when Claude Code trusts the folder."
+          "description": "The 5m track's ping limit, a whole number of 1 or more (1h at 3m allows 20 pings). From this file it applies only when Claude Code trusts the folder."
         }
       }
     },
     "budgetMultiplier": {
-      "type": ["number", "null"],
+      "type": "number",
       "minimum": 0,
       "default": 2,
       "x-kind": "nonNegative",
@@ -186,7 +189,7 @@
       "description": "The spend limit, in multiples of the context's tokens; 0 turns it off. From this file it applies only when Claude Code trusts the folder."
     },
     "compactOnCap": {
-      "type": ["boolean", "null"],
+      "type": "boolean",
       "default": false,
       "x-kind": "boolean",
       "x-env": "AI_DLC_KEEPALIVE_COMPACT_ON_CAP",
@@ -194,7 +197,7 @@
       "description": "Compact instead of stopping when the spend limit is reached. From this file it applies only when Claude Code trusts the folder."
     },
     "compactInstructions": {
-      "type": ["string", "null"],
+      "type": "string",
       "minLength": 1,
       "default": "Also keep the background tasks' IDs, output paths, and what to do when they finish.",
       "x-kind": "text",
@@ -203,7 +206,7 @@
       "description": "What that compaction is told to keep. From this file it applies only when Claude Code trusts the folder."
     },
     "writeMult": {
-      "type": ["number", "null"],
+      "type": "number",
       "exclusiveMinimum": 0,
       "default": 2,
       "x-kind": "positive",
@@ -212,7 +215,7 @@
       "description": "A cache write's price over the base input price. From this file it applies only when Claude Code trusts the folder."
     },
     "outputMult": {
-      "type": ["number", "null"],
+      "type": "number",
       "exclusiveMinimum": 0,
       "default": 5,
       "x-kind": "positive",
@@ -221,7 +224,7 @@
       "description": "An output token's price over the base input price. From this file it applies only when Claude Code trusts the folder."
     },
     "readPrice": {
-      "type": ["string", "null"],
+      "type": "string",
       "minLength": 1,
       "default": "fable|mythos=0.025,opus[- ]?5[-. ]5=0.05,*=0.1",
       "x-kind": "prices",
@@ -230,7 +233,7 @@
       "description": "A cache read's price over the base input price, by model: pattern=multiplier pairs, the first pattern (a case-insensitive regular expression) that matches the model id wins, * for any other. From this file it applies only when Claude Code trusts the folder."
     },
     "compactCostGuess": {
-      "type": ["number", "null"],
+      "type": "number",
       "exclusiveMinimum": 0,
       "default": 0.6,
       "x-kind": "positive",
@@ -238,7 +241,7 @@
       "description": "A compaction's cost per context token, until one has been measured."
     },
     "summaryRatioGuess": {
-      "type": ["number", "null"],
+      "type": "number",
       "exclusiveMinimum": 0,
       "exclusiveMaximum": 1,
       "default": 0.15,
