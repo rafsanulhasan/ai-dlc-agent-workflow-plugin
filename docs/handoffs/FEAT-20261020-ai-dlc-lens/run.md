@@ -8,9 +8,9 @@ current-stage: spikes
 owner: orchestrator
 session: 734fd039-2bfd-4247-86ee-1d8d2cc510fa
 branch: feat/ai-dlc-lens
-commit: 723b9a8
-last-record: 13-agent-manager-to-orchestrator.handback.md
-updated: 2026-10-23 11:00
+commit: 4f6fe46
+last-record: 14-agent-manager-to-orchestrator.handback.md
+updated: 2026-10-23 11:35
 ---
 
 # Run: FEAT-20261020-ai-dlc-lens — run-state CLI, gate alert and the ai-dlc-lens mod plugin: one dashboard merging savvy-progress, cache-tax, context-view and agent-flow, with a flowchart view
@@ -63,6 +63,7 @@ Step numbering: steps 1–2 are the 2026-10-20 briefs `01-…` and `02-…` (old
 | 12.2 | spike (c) ITEM-029: avatar images, Svg scrub | agent-manager | subagent | done (passed) · validate/tsc/test 4/4/headless OK; engine passes all Svg markup, 131,072-char cap refuses whole pane; 27 visual checks needs-human | `12.2-orchestrator-to-agent-manager.handoff.md` | `12.2-agent-manager-to-orchestrator.handback.md` | 2026-10-23 10:15 |
 | 12.3 | spike (b) ITEM-028: keep-alive state across plugins (EXT cleared: PR #23, #25 on main, merged here at 14c9e79) | agent-manager | subagent | done (passed) · recommend `$.state` (works across plugins, no dependency; omit line when absent); tool-call works with caveats; state file weaker; keep-alive change proposed for build waves | `12.3-orchestrator-to-agent-manager.handoff.md` | `12.3-agent-manager-to-orchestrator.handback.md` | 2026-10-23 10:20 |
 | 13 | spikes into the branch (spikes/ai-dlc-lens/, one marketplace) for the human check | agent-manager | subagent | done (passed) · marketplace ai-dlc-lens-spikes, 4 plugins; validate/tests pass; repo checks pass | `13-orchestrator-to-agent-manager.handoff.md` | `13-agent-manager-to-orchestrator.handback.md` | 2026-10-23 11:00 |
+| 14 | spikes into the root ai-dlc-agent-workflow marketplace (human: same marketplace; remove worktree) | agent-manager | subagent | done (passed) · 4 spikes in root marketplace (Claude only), separate marketplace deleted, author added for --strict; OPEN: 1 repo test fails (`tests/build-copilot-hooks-module.test.mjs:167` pins marketplace to ["ai-dlc"]) — decision to the human | `14-orchestrator-to-agent-manager.handoff.md` | `14-agent-manager-to-orchestrator.handback.md` | 2026-10-23 11:35 |
 | — | PDLC stories → backlog → accept → G1 | requirement-analyst → product-manager → product-owner; brutal-critique on brief and stories | subagent | pending | — | — | — |
 | — | design (spec, ADRs, LLD) → G2 | software-architect + system-engineer; brutal-critique | subagent | pending | — | — | — |
 | — | task plan → G3 | product-manager | subagent | pending | — | — | — |
@@ -99,4 +100,4 @@ Step numbering: steps 1–2 are the 2026-10-20 briefs `01-…` and `02-…` (old
 | 7 | requirement-analyst → human | Q1–Q12 (alert latency/channels; constants as settings; guard off/warn/refuse default off; layout + blink; context per row; unknown price; task bar from run.md; language en; autoOpen; ledger per run; settings reload; Desktop automated only) — see `8-requirement-analyst-to-orchestrator.handback.md` | 1 | closed 2026-10-22: all 12 defaults accepted by the human |
 
 ## Next action
-Spikes are on the branch in `spikes/ai-dlc-lens/` (step 13). Waiting for the human's manual checks (README there: 027, then 029, then 028). Record the results, then brief software-architect + system-engineer for ASDLC (ITEM-005), citing 12.1–12.3 and the manual results; then G2. Delete `spikes/` before the lens PR leaves draft.
+Worktree removed and the main checkout switched to `feat/ai-dlc-lens` (human's choice, 2026-10-23); spikes installed from `ai-dlc-agent-workflow` with `--scope local`. Open: ask the human about the failing test `tests/build-copilot-hooks-module.test.mjs:167` (relax it to ignore spike entries, reverted with the spikes, or leave CI red on the draft PR). Then wait for the manual checks (`spikes/ai-dlc-lens/README.md`), record results, ASDLC (ITEM-005), G2. Delete `spikes/` and the four marketplace entries before the lens PR leaves draft.

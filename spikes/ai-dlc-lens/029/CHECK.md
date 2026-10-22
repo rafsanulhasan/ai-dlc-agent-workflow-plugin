@@ -4,7 +4,7 @@ Throwaway mod `spike029-avatars`. Nothing here ships. It answers: do avatar imag
 
 Built and checked on Claude Code 2.1.308, Windows 11, Node 24.11.1. It is deleted before the lens PR leaves draft.
 
-`<REPO>` is your checkout of the `feat/ai-dlc-lens` branch (for example its worktree folder). `<SPIKES>` = `<REPO>\spikes\ai-dlc-lens`, the marketplace folder; `<SPIKE>` = `<SPIKES>\029`, this plugin.
+`<REPO>` is the main checkout of this repository, the folder registered as the `ai-dlc-agent-workflow` marketplace (`CLAUDE.md`), switched to the `feat/ai-dlc-lens` branch. `<SPIKES>` = `<REPO>\spikes\ai-dlc-lens`; `<SPIKE>` = `<SPIKES>\029`, this plugin.
 
 ## Folder
 
@@ -54,10 +54,10 @@ What the engine itself decides (from `claude plugin test`; the kit never paints,
 
 ### VS Code (Claude Code extension 2.1.299 or later)
 
-Main route: the spikes' local marketplace, `ai-dlc-lens-spikes`.
+Main route: the repository's own marketplace, `ai-dlc-agent-workflow`, read from `<REPO>`, which must be on `feat/ai-dlc-lens`.
 
-1. In a terminal: `claude plugin marketplace add "<SPIKES>"`, then `claude plugin install spike029-avatars@ai-dlc-lens-spikes --scope user`.
-2. In VS Code, open a new Claude Code session, or run `/reload-plugins` in an open one.
+1. In a terminal at `<REPO>`: `claude plugin marketplace update ai-dlc-agent-workflow`, then `claude plugin install spike029-avatars@ai-dlc-agent-workflow --scope local`.
+2. Run `/reload-plugins` in an open Claude Code session, or open a new one in VS Code.
 3. In the chat, type `/spike029`. It answers `Spike 029 pane opened (isPlaced: true)` and the pane **Spike 029 avatars** opens.
 4. Widen the pane so cells sit 3–4 per row. Read each cell against the table below.
 5. Then `/spike029-overcap` for S26.

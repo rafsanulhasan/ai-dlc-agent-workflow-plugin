@@ -2,7 +2,7 @@
 
 Claude Code 2.1.308, Windows 11, 2026-10-23. Throwaway code only: nothing under `plugins/`, `tools/`, `tests/` or `docs/` changed. It is deleted before the lens PR leaves draft.
 
-`<REPO>` is your checkout of the `feat/ai-dlc-lens` branch (for example its worktree folder). `<SPIKES>` = `<REPO>\spikes\ai-dlc-lens`, the marketplace folder; `<SPIKE>` = `<SPIKES>\028`, this folder.
+`<REPO>` is the main checkout of this repository, the folder registered as the `ai-dlc-agent-workflow` marketplace (`CLAUDE.md`), switched to the `feat/ai-dlc-lens` branch. `<SPIKES>` = `<REPO>\spikes\ai-dlc-lens`; `<SPIKE>` = `<SPIKES>\028`, this folder.
 
 ## Layout
 
@@ -39,10 +39,10 @@ A `$.state` read sees one moment per dispatch. Two `get`s 5 s apart inside the s
 
 ## Install
 
-Main route: the spikes' local marketplace, `ai-dlc-lens-spikes`.
+Main route: the repository's own marketplace, `ai-dlc-agent-workflow`, read from `<REPO>`, which must be on `feat/ai-dlc-lens`.
 
-1. In a terminal: `claude plugin marketplace add "<SPIKES>"`, then `claude plugin install spike028-ka@ai-dlc-lens-spikes --scope user` and `claude plugin install spike028-lens@ai-dlc-lens-spikes --scope user`. The lens lists `spike028-ka` under `dependencies`, so install the provider too.
-2. Open a new Claude Code session (VS Code or terminal), or run `/reload-plugins` in an open one.
+1. In a terminal at `<REPO>`: `claude plugin marketplace update ai-dlc-agent-workflow`, then `claude plugin install spike028-ka@ai-dlc-agent-workflow --scope local` and `claude plugin install spike028-lens@ai-dlc-agent-workflow --scope local`. The lens lists `spike028-ka` under `dependencies`, so install the provider too.
+2. Run `/reload-plugins` in an open Claude Code session, or open a new one (VS Code or terminal).
 
 The installed copies do not follow edits under `<SPIKE>`: after a change, uninstall and install again (the version stays `0.1.0`), then `/reload-plugins`.
 
@@ -62,9 +62,8 @@ Alternative, only if the marketplace route fails: add `"CLAUDE_CODE_PLUGIN_DIRS"
 ## Teardown
 
 ```text
-claude plugin uninstall spike028-lens@ai-dlc-lens-spikes
-claude plugin uninstall spike028-ka@ai-dlc-lens-spikes
-claude plugin marketplace remove ai-dlc-lens-spikes
+claude plugin uninstall spike028-lens@ai-dlc-agent-workflow --scope local
+claude plugin uninstall spike028-ka@ai-dlc-agent-workflow --scope local
 ```
 
-Remove the marketplace only after uninstalling every spike plugin from it (see `<SPIKES>\README.md`). Delete `flags.json`, `state/` and `results/` in this folder if a `--plugin-dir` run wrote them; they are gitignored.
+Uninstall `spike028-lens` before `spike028-ka`: the lens lists the provider under `dependencies`, so uninstalling the provider first warns that it is required by `spike028-lens`. Keep the `ai-dlc-agent-workflow` marketplace; it also serves `ai-dlc`. Delete `flags.json`, `state/` and `results/` in this folder if a `--plugin-dir` run wrote them; they are gitignored.

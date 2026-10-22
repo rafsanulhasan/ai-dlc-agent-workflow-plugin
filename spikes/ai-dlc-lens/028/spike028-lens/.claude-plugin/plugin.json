@@ -2,5 +2,11 @@
   "name": "spike028-lens",
   "version": "0.1.0",
   "description": "Spike 028 reader: reads the fake keep-alive's state by $.state, $.tool.call and the state file",
-  "dependencies": ["spike028-ka"]
+  "author": {
+    "name": "Rafsanul Hasan",
+    "url": "https://github.com/rafsanulhasan"
+  },
+  "dependencies": [
+    "spike028-ka"
+  ]
 }
