@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "hooks": {
+    "agentStop": [
+      {
+        "type": "command",
+        "bash": "node .claude/hooks/check-copilot-stale.mjs",
+        "powershell": "node .claude/hooks/check-copilot-stale.mjs",
+        "timeoutSec": 120
+      }
+    ]
+  }
+}
