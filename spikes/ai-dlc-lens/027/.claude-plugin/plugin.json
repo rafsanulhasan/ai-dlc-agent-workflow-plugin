@@ -1,0 +1,6 @@
+{
+  "name": "ai-dlc-lens-spike-027",
+  "version": "0.1.0",
+  "description": "Throwaway spike (ITEM-027): VS Code pane resize, Svg blink, buttons, transcript cards, Stop systemMessage",
+  "types": "./types/index.d.ts"
+}
