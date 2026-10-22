@@ -10,7 +10,7 @@
 | Purpose | Command |
 |---|---|
 | Build | `node tools/build-copilot.mjs`, then `node tools/build-copilot.mjs --check` |
-| Test | `node --test` (run it bare: `node --test tests/` fails on Node 24) |
+| Test | `node --test "tests/**/*.test.mjs"` (quote the glob; bare `node --test` also picks up the hooks module's TypeScript tests, and `node --test tests/` fails on Node 24) |
 | Mutation test | none — no mutation testing is set up for this stack |
 
 Use these wherever `AGENTS.md` or an agent says "the project's build, test or mutation command". They live here, not in `AGENTS.md`, which stays free of stack-specific commands.
