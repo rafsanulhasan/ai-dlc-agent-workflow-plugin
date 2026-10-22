@@ -11,4 +11,6 @@ Scripted edits whose text holds backslash escapes (`\n` in a TS string, regex es
 
 **How to apply:** for multi-line edits with escapes, use Edit, or Write the script to `.scratch/<task>/` and run it; heredocs are fine for plain text.
 
+Also (2026-10-22): Python `open(p, 'w')` / `write_text` without `newline='\n'` writes CRLF on this machine, but `.gitattributes` wants LF; always pass `newline='\n'` (or `''` after reading with `newline=''`). Fix CRLF only in files you changed: a blanket `w/crlf` sweep touches files git checked out with CRLF and leaves phantom modifications (undo with `git checkout -- <file>`).
+
 Also seen 2026-10-21 (mods-config run): a heredoc holding many escaped backticks failed with "unexpected EOF while looking for matching `''", and `node -e "..."` with Markdown backticks ran each backticked word as a shell command. Neither changed the file, but both wasted a round. For Markdown or TS with backticks, use Edit or a Written script.

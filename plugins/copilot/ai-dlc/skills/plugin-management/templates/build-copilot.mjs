@@ -25,6 +25,7 @@
 //
 // Claude-only: a hooks module (hooks/hooks.json `modules`, a Claude Code mod) and the manifest's
 // `userConfig` are never projected; the build fails if a module or a mod test sits in a copied folder.
+// Skills listed in tools/claude-only-skills.json are left out too.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -294,9 +295,19 @@ if (fs.existsSync(MIRRORS)) {
   }
 }
 
+// ---- Claude-only skills: kept out of the Copilot plugin ----------------------------
+// tools/claude-only-skills.json lists plugin skills that only work in Claude Code, such as one that
+// gives a hooks module's command its name (ai-dlc's `keepalive`). Copilot gets none of their files.
+const CLAUDE_ONLY = path.join(ROOT, "tools", "claude-only-skills.json");
+const claudeOnly = new Set(fs.existsSync(CLAUDE_ONLY) ? JSON.parse(fs.readFileSync(CLAUDE_ONLY, "utf8")) : []);
+for (const name of claudeOnly) {
+  if (!fs.existsSync(path.join(SRC, "skills", name, "SKILL.md"))) throw new Error(`tools/claude-only-skills.json: no plugin skill "${name}"`);
+}
+
 // ---- skills (copied, namespace stripped in markdown) ----------------------------
 for (const p of walk(path.join(SRC, "skills"))) {
   const rel = path.relative(SRC, p).split(path.sep).join("/");
+  if (claudeOnly.has(rel.split("/")[1])) continue;
   files.set(rel, readSource(p));
 }
 
@@ -403,4 +414,4 @@ for (const rel of stale) {
 }
 const agents = [...files.keys()].filter((k) => k.startsWith("agents/")).length;
 const skills = [...files.keys()].filter((k) => /^skills\/[^/]+\/SKILL\.md$/.test(k)).length;
-console.log(`Copilot plugin written to ${path.relative(ROOT, OUT)}: ${agents} agents, ${skills} skills, ${Object.keys(copilotHooks).length} hook event(s), ${modules.length} Claude-only hooks module(s) left out; ${changed.length} file(s) updated, ${stale.length} removed.`);
+console.log(`Copilot plugin written to ${path.relative(ROOT, OUT)}: ${agents} agents, ${skills} skills, ${Object.keys(copilotHooks).length} hook event(s), ${modules.length} Claude-only hooks module(s) and ${claudeOnly.size} Claude-only skill(s) left out; ${changed.length} file(s) updated, ${stale.length} removed.`);

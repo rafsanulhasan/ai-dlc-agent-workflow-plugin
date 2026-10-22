@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'claude-code/testing'
-import { DEFAULTS, SETTINGS, TRUST_GATED, baseName, check, normPath, parseUserConfig, repoConfig, resolveConfig, sessionName, settingsEnv, transcriptTitle, trustOf, trustRoot, withoutGated } from '../config.ts'
+import { DEFAULTS, SETTINGS, TRUST_GATED, baseName, check, normPath, parseUserConfig, repoConfig, resolveConfig, sessionName, settingsEnv, transcriptTitle, trustOf, trustRoot, withoutGated, withoutKeys, parseBool, PREVIEW_CHARS, previewValue, keysWithValues } from '../config.ts'
 import { parseAddress } from '../server.ts'
 import type { Level } from '../config.ts'
 
@@ -244,5 +244,56 @@ describe('workspace trust (W1)', () => {
     expect(withoutGated(values)).toEqual({ values: { instructionsTemplate: null, thresholdPercent: 70 }, ignored: ['briefTemplate', 'viewer'] })
     const plain = { thresholdPercent: 70 }
     expect(withoutGated(plain)).toEqual({ values: plain, ignored: [] })
+  })
+  test('[R6] parseBool: booleans and their words, any case, spaces ignored; anything else is undefined, own keys only', () => {
+    expect(parseBool(true)).toBe(true)
+    expect(parseBool(false)).toBe(false)
+    for (const w of ['true', '1', 'yes', 'on', ' TRUE ', 'On']) expect(parseBool(w)).toBe(true)
+    for (const w of ['false', '0', 'no', 'off', ' Off ', 'NO']) expect(parseBool(w)).toBe(false)
+    for (const w of ['', 'maybe', 'constructor', '__proto__', 'toString']) expect(parseBool(w)).toBeUndefined()
+    for (const v of [1, 0, null, undefined, {}, []]) expect(parseBool(v)).toBeUndefined()
+  })
+
+  test('[R6] withoutKeys: dotted keys take out one nested level, copies only, missing and null keys are not ignored', () => {
+    const values = { a: 1, b: null, n: { x: 1, y: 2 }, keep: 'k' }
+    const before = JSON.stringify(values)
+    const out = withoutKeys(values, ['a', 'b', 'c', 'n.x', 'm.z'])
+    expect(out).toEqual({ values: { b: null, n: { y: 2 }, keep: 'k' }, ignored: ['a', 'n.x'] })
+    expect(JSON.stringify(values)).toBe(before)
+    expect(out.values.n).not.toBe(values.n)
+    const plain = { keep: 1 }
+    expect(withoutKeys(plain, ['a'])).toEqual({ values: plain, ignored: [] })
+    expect(withoutKeys(plain, ['a']).values).toBe(plain)
+  })
+
+  test('previewValue: text quoted, other values as JSON, white space folded, long values cut with their length', () => {
+    expect(previewValue('0.0.0.0:3846')).toBe('"0.0.0.0:3846"')
+    expect(previewValue(false)).toBe('false')
+    expect(previewValue(3)).toBe('3')
+    expect(previewValue('a\n\t b')).toBe('"a b"')
+    expect(previewValue('x'.repeat(PREVIEW_CHARS))).toBe(`"${'x'.repeat(PREVIEW_CHARS)}"`)
+    expect(previewValue('x'.repeat(PREVIEW_CHARS + 1))).toBe(`"${'x'.repeat(PREVIEW_CHARS)}…" (${PREVIEW_CHARS + 1} chars)`)
+    expect(previewValue({ a: 'y'.repeat(60) })).toBe(`{"a":"${'y'.repeat(PREVIEW_CHARS - 6)}… (68 chars)`)
+  })
+
+  test('previewValue: cuts on code points, so a character outside the BMP is never split into a lone surrogate', () => {
+    // 39 x's then an emoji (two UTF-16 units) at the 40th character: a cut by code unit kept half of it.
+    const value = `${'x'.repeat(PREVIEW_CHARS - 1)}😀${'z'.repeat(10)}`
+    const out = previewValue(value)
+    expect(out).toBe(`"${'x'.repeat(PREVIEW_CHARS - 1)}😀…" (${PREVIEW_CHARS + 10} chars)`)
+    expect(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(out)).toBe(false)
+    // Exactly PREVIEW_CHARS characters, one of them an emoji (41 code units), is not cut.
+    expect(previewValue(`${'x'.repeat(PREVIEW_CHARS - 1)}😀`)).toBe(`"${'x'.repeat(PREVIEW_CHARS - 1)}😀"`)
+  })
+
+  test('previewValue: (N chars) counts the folded text that was cut, not the raw value', () => {
+    // 50 characters of text with a run of 11 white-space characters: 61 raw, 51 after folding.
+    const value = `${'a'.repeat(25)}\n\n\t${' '.repeat(8)}${'b'.repeat(25)}`
+    expect(value.length).toBe(61)
+    expect(previewValue(value)).toBe(`"${'a'.repeat(25)} ${'b'.repeat(PREVIEW_CHARS - 26)}…" (51 chars)`)
+  })
+
+  test('keysWithValues: each key with its value, dotted keys read one nested level', () => {
+    expect(keysWithValues({ viewer: '0.0.0.0:3846', n: { x: 2 } }, ['viewer', 'n.x'])).toBe('viewer="0.0.0.0:3846", n.x=2')
   })
 })

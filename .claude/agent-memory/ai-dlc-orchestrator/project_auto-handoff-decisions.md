@@ -13,9 +13,19 @@ Decisions the human made in run `AAW-20261022-auto-handoff-chain` (closed 2026-1
 - **Settings precedence:** `.claude/settings.local.json` env, then `.claude/settings.json` env, then process env, then `.ai-dlc/auto-handoff.json`, then `/config`, then the default. **Local always wins.** The human first wrote the order reversed, then corrected it.
 - **Trust gate:** `viewer`, `briefTemplate` and `instructionsTemplate` from the repo file apply only when `~/.claude.json` records the folder as trusted (`hasTrustDialogAccepted`).
   - In VS Code and the SDK the trust dialog never shows, and this repository reads as untrusted, so a gate on the whole file would make it useless there.
-- **cache-keepalive:** fold it into the ai-dlc auto-handoff module and drop the mod dependency.
-  - This is a separate AAW run that starts by measuring cache reads on a seeded session.
+- **cache-keepalive:** folded into ai-dlc on 2026-10-23; the code is in `hooks/keepalive/`, imported and registered by the auto-handoff module (run `AAW-20261022-fold-cache-keepalive`); the mod dependency is dropped.
   - Research found that only the shared prefix (system prompt, tools, CLAUDE.md) can be warm after a `/clear`, never the old conversation.
+  - Human decisions in that run:
+    - **Two tracks:** 1h (ping every 50m, keep warm 8h) and 5m (every 3m, keep warm 1h, 20 pings, the ping that falls on the limit included), with one status line per track and a seed `cache hit/miss` line.
+    - **Stopping:** pinging stops when the work is done or when the optional spend limit is reached (`BUDGET_MULTIPLIER=0` turns the limit off).
+    - **Settings:** 26 `AI_DLC_KEEPALIVE_*` settings. Precedence: the `/ai-dlc:keepalive` override > settings.local env > settings.json env > `.ai-dlc/cache-keepalive.json` > `/config` > default. The process env is **not** read here, unlike auto-handoff.
+    - **Trust gate:** in an untrusted folder, 16 spend, behaviour and price keys (13 on 2026-10-22; writeMult, outputMult and readPrice added 2026-10-23) are skipped from both committed sources (settings.json env and the repo file).
+    - **Commands:** every one carries the `ai-dlc:` prefix. Mods-API commands can't contain a colon, so `/ai-dlc:keepalive` is a plugin skill the module answers in `command.run`. The skill is Claude-only and left out of Copilot.
+  - **Trust facts (2026-10-23):**
+    - Interactive terminal sessions record `hasTrustDialogAccepted`.
+    - `-p` and SDK sessions never show the dialog, so they never record it (an inference).
+    - The human verified that mods and their UI run in VS Code. Whether VS Code records trust is still to be confirmed live by the human.
+  - Open live checks for the human: a seeded session's `cache_read_input_tokens`, the multi-line status rendering, and VS Code trust.
 
 **Why:** the human wants one module to manage both context and cache, and to keep every setting configurable per repository without letting a cloned repository expose briefs or pick file paths.
 

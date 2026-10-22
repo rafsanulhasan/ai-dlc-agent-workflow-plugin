@@ -4,7 +4,8 @@ import type { On, SessionMessage } from 'claude-code'
 import { briefPrompt, extractFacts, factsBlock, hasUnansweredLastRequest, isValidBrief, markUnverifiedFigures } from '../brief.ts'
 import { renderTemplate } from '../templates.ts'
 import { parseBrief } from '../viewer.ts'
-import { DEFAULT_WINDOW, contextLine, hostFields, parseConfig, windowFields, windowInfo, windowOf } from '../config.ts'
+import { orLog } from '../io.ts'
+import { DEFAULT_WINDOW, contextLine, creationSplit, hostFields, parseConfig, seedCacheFields, seedCacheLine, windowFields, windowInfo, windowOf } from '../config.ts'
 
 // renamed: the names /rename was run with, in order; commandOrder: every slash command run, in order.
 type Calls = { compacts: number; steps: number; cleared: number; seeded: string[]; written: Record<string, string>; completes: number; tokens: number; prompts: string[]; toasts: string[]; ran: number; clearedAtWrite: Record<string, number>; renamed: string[]; commandOrder: string[]; branchQueries: number; usageArgs: unknown[] }
@@ -80,7 +81,7 @@ const files = (written: Record<string, string>) => Object.keys(written).filter(p
 
 // The engine beneath the plugin: everything the mod calls, answered from memory.
 // commands: the slash commands the engine lists (default: clear and rename); failRename: /rename rejects.
-function engine(on: On, opts: { tokens: number; files?: Record<string, string>; env?: Record<string, string>; brief?: string | null; messages?: SessionMessage[]; toolChars?: number; streamToolChars?: number; store?: Record<string, unknown>; stepUsage?: boolean; surfaces?: ('terminal' | 'desktop' | 'mobile' | 'vscode')[]; noSh?: boolean; git?: Git; failWrite?: RegExp; window?: number | null; percent?: number; breakdown?: Record<string, unknown> | 'throw'; commands?: string[]; failRename?: boolean }): Calls {
+function engine(on: On, opts: { tokens: number; files?: Record<string, string>; env?: Record<string, string>; brief?: string | null; messages?: SessionMessage[]; toolChars?: number; streamToolChars?: number; store?: Record<string, unknown>; stepUsage?: boolean; surfaces?: ('terminal' | 'desktop' | 'mobile' | 'vscode')[]; noSh?: boolean; git?: Git; failWrite?: RegExp; window?: number | null; percent?: number; breakdown?: Record<string, unknown> | 'throw'; commands?: string[]; failRename?: boolean; hold?: Promise<unknown>; stepRead?: number }): Calls {
   const calls: Calls = { compacts: 0, steps: 0, cleared: 0, seeded: [], written: {}, completes: 0, tokens: opts.tokens, prompts: [], toasts: [], ran: 0, clearedAtWrite: {}, renamed: [], commandOrder: [], branchQueries: 0, usageArgs: [] }
   let sessionId = 'old-session'
   let clears = 0
@@ -119,6 +120,8 @@ function engine(on: On, opts: { tokens: number; files?: Record<string, string>; 
   on('model.complete', async (_$, e) => {
     calls.completes++
     calls.prompts.push(e.prompt)
+    // hold: the brief's model call waits for it, so a test can act while the handoff is in flight.
+    if (opts.hold) await opts.hold
     return {
       value: opts.brief === null
         ? { isAnswered: false, reason: 'empty-reply', usage: USAGE }
@@ -199,7 +202,8 @@ function engine(on: On, opts: { tokens: number; files?: Record<string, string>; 
     calls.steps++
     // stepUsage: the response reports the request's size, as the real engine does.
     const usage = opts.streamToolChars ? { input_tokens: 0, output_tokens: 100, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } as never
-      : opts.stepUsage ? { input_tokens: 10, output_tokens: 0, cache_read_input_tokens: calls.tokens - 10, cache_creation_input_tokens: 0 } as never
+      // stepRead: what the request read from the cache, the rest written to it (all read unless set)
+      : opts.stepUsage ? { input_tokens: 10, output_tokens: 0, cache_read_input_tokens: opts.stepRead ?? calls.tokens - 10, cache_creation_input_tokens: opts.stepRead === undefined ? 0 : calls.tokens - 10 - opts.stepRead } as never
       : null
     if (usage) yield { kind: 'text', index: 0, text: 'reading' }
     yield { kind: 'stop', stopReason: 'tool_use', usage }
@@ -1833,7 +1837,8 @@ describe('workspace trust for the repository file', () => {
   const risky = JSON.stringify({ viewer: '0.0.0.0:3846', briefTemplate: '/repo/chosen.md', thresholdTokens: 60000 })
   const trust = (path: string, value: unknown = true) => JSON.stringify({ projects: { [path]: { hasTrustDialogAccepted: value } } })
   const thresholdIn = (calls: Calls) => /threshold session=old-session tokens=\d+ threshold=(\d+)/.exec(calls.written[LOG_FILE] ?? '')?.[1]
-  const IGNORED = 'config: briefTemplate, viewer in .ai-dlc/auto-handoff.json ignored: Claude Code does not trust this folder'
+  // Each skipped key is logged with its value (io.ts, trustGate).
+  const IGNORED = 'config: briefTemplate="/repo/chosen.md", viewer="0.0.0.0:3846" in .ai-dlc/auto-handoff.json ignored: Claude Code does not trust this folder'
 
   test('untrusted: viewer and the templates from the repository file are ignored and logged, other keys apply', async ($, on) => {
     const calls = engine(on, { tokens: 190_000, git: GIT, files: { [REPO_FILE]: risky } })
@@ -1895,5 +1900,209 @@ describe('one run lookup per handoff attempt', () => {
     const results = await Promise.all([$.tool.call(READ), $.tool.call(READ), $.tool.call(READ), $.tool.call(READ)])
     expect(results.every(r => typeof r === 'object' && r !== null && 'deny' in r)).toBe(true)
     expect(calls.branchQueries).toBeLessThanOrEqual(1)
+  })
+})
+
+// AAW-20261022-fold-cache-keepalive: the handoff and the prompt cache. Keep-alive is registered by
+// the same module, so its timers are stopped before the /clear, and the seed turn logs what its
+// first request read from the cache.
+describe('the handoff and the prompt cache', () => {
+  const KA_TASK = { id: 'b1', type: 'shell', status: 'running', description: 'build' }
+  // A transcript row of a main-conversation response that wrote h tokens for 1 hour and m for 5 minutes.
+  const cacheRow = (h: number, m: number) => JSON.stringify({ type: 'assistant', message: { usage: { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: h + m, cache_creation: { ephemeral_1h_input_tokens: h, ephemeral_5m_input_tokens: m } } } })
+
+  test('keep-alive timers stop before the /clear, so no ping of the old session reaches the new one', async ($, on) => {
+    const calls = engine(on, { tokens: 165_000, files: { '/home/test/old.jsonl': cacheRow(0, 2_000) } })
+    let forks = 0
+    const statuses: { text: string | undefined; cleared: number }[] = []
+    on('model.fork', async () => (forks++, { value: { isAnswered: true, text: 'ok', usage: USAGE } }) as never)
+    on('ui.status', async (_$, e) => (statuses.push({ text: e.text, cleared: calls.cleared }), { value: undefined }) as never)
+    on('classic.Stop', async () => ({}) as never)
+    await $.classic.Stop({ background_tasks: [KA_TASK], transcript_path: '/home/test/old.jsonl' } as never)
+    expect(statuses.at(-1)?.text).toContain('keepalive 5m: armed')
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    const stopped = statuses.find(s => s.text?.includes('keepalive 5m: handed off, stopped'))
+    expect(stopped?.cleared).toBe(0) // shown before the /clear ran
+    expect(calls.written['/home/test/.claude/state/auto-handoff/auto-handoff.log']).toContain('keepalive timers stopped for the handoff session=old-session')
+    await $.classic.SessionStart({ source: 'clear' })
+    await settle(() => calls.seeded.length > 0)
+    // Past the 5m track's 3-minute interval (the panel's spinner caps how far one advance may go)
+    await clock.advance(4 * 60_000)
+    expect(forks).toBe(0)
+  })
+
+  test('no ping is armed while a handoff is under way', async ($, on) => {
+    const calls = engine(on, { tokens: 165_000, files: { '/home/test/old.jsonl': cacheRow(1_000, 0) } })
+    const statuses: (string | undefined)[] = []
+    on('ui.status', async (_$, e) => (statuses.push(e.text), { value: undefined }) as never)
+    on('classic.Stop', async () => ({}) as never)
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0 || calls.completes > 0)
+    await $.classic.Stop({ background_tasks: [KA_TASK], transcript_path: '/home/test/old.jsonl' } as never)
+    expect(statuses.some(s => s?.includes('armed'))).toBe(false)
+  })
+
+  test('a Stop while the handoff writes its brief, or waits for its seed, arms nothing; after it, one does', async ($, on) => {
+    let release!: () => void
+    const hold = new Promise<void>(r => { release = r })
+    const calls = engine(on, { tokens: 165_000, hold, files: { '/home/test/old.jsonl': cacheRow(0, 2_000), '/home/test/new.jsonl': cacheRow(0, 2_000) } })
+    const statuses: (string | undefined)[] = []
+    on('ui.status', async (_$, e) => (statuses.push(e.text), { value: undefined }) as never)
+    on('classic.Stop', async () => ({}) as never)
+    const stopWith = (path: string) => $.classic.Stop({ background_tasks: [KA_TASK], transcript_path: path } as never)
+    await $.turn.complete(TURN)
+    await settle(() => calls.completes > 0)
+    // In flight: the brief's model call has not answered yet.
+    expect([calls.completes, calls.cleared]).toEqual([1, 0])
+    await stopWith('/home/test/old.jsonl')
+    expect(statuses.some(s => s?.includes('armed'))).toBe(false)
+    release()
+    await settle(() => calls.cleared > 0)
+    // Pending: the /clear ran, and the new session has not been seeded yet.
+    expect(calls.seeded).toHaveLength(0)
+    await stopWith('/home/test/old.jsonl')
+    expect(statuses.some(s => s?.includes('armed'))).toBe(false)
+    await $.classic.SessionStart({ source: 'clear', transcript_path: '/home/test/new.jsonl' } as never)
+    await settle(() => calls.seeded.length > 0)
+    // The handoff is over: the same Stop now arms the 5m track, so the guard is what held it back.
+    await stopWith('/home/test/new.jsonl')
+    expect(statuses.at(-1)).toContain('keepalive 5m: armed')
+  })
+
+  test('the seed turn logs what its first request read from and wrote to the cache, and the panel says hit', async ($, on) => {
+    const calls = engine(on, { tokens: 165_000, stepUsage: true, files: { '/home/test/new.jsonl': cacheRow(300, 0) } })
+    const statuses: (string | undefined)[] = []
+    on('ui.status', async (_$, e) => (statuses.push(e.text), { value: undefined }) as never)
+    on('classic.Stop', async () => ({}) as never)
+    on('turn.start', async (_$, e) => e as never)
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    await $.classic.SessionStart({ source: 'clear', transcript_path: '/home/test/new.jsonl' } as never)
+    await settle(() => calls.seeded.length > 0)
+    calls.tokens = 47_000
+    await step($, 0) // the seed turn's first request
+    const log = calls.written['/home/test/.claude/state/auto-handoff/auto-handoff.log']!
+    expect(log).toContain("floor session=new-session-1 tokens=47000 (seed turn's first request) input_tokens=10 cache_read_input_tokens=46990 cache_creation_input_tokens=0 cache_creation_1h=300 cache_creation_5m=0 cache=hit")
+    expect(await band($)).toContain('cache hit: 47k read, 0k written (1h 0k, 5m 0k)')
+    // D4: keep-alive's status line says it too, under the track lines once a Stop arms one, until the next turn.
+    expect(statuses.at(-1)).toBe('keepalive seed: cache hit, 47k read')
+    await $.classic.Stop({ background_tasks: [KA_TASK], transcript_path: '/home/test/new.jsonl' } as never)
+    expect(statuses.at(-1)?.split('\n')).toEqual([expect.stringContaining('keepalive 1h: armed'), 'keepalive 5m: off', 'keepalive seed: cache hit, 47k read'])
+    await $.turn.start({ turnId: 't-2' } as never)
+    await $.classic.Stop({ background_tasks: [KA_TASK], transcript_path: '/home/test/new.jsonl' } as never)
+    expect(statuses.at(-1)?.split('\n')).toHaveLength(2)
+  })
+
+  // The engine drops a failed status line itself, so the seed line cannot fail through it today;
+  // register.tsx runs showSeedCache through orLog, and this is what orLog does with a throw. A test's
+  // own $ has no env or process, so orLog gets a stand-in with the two calls log() makes.
+  test('a step run through orLog that throws is logged, not passed on; one that succeeds logs nothing', async () => {
+    const lines: string[] = []
+    const stub = {
+      env: { get: async (name: string) => name === 'HOME' ? '/home/test' : undefined },
+      process: { run: async (argv: string[]) => (lines.push(argv[4] ?? ''), { exitCode: 0, stdout: '', stderr: '' }) },
+    } as never
+    await expect(orLog(stub, 'keepalive seed line', async () => { throw new Error('status line unavailable') })).resolves.toBeUndefined()
+    await orLog(stub, 'keepalive seed line', async () => undefined)
+    expect(lines).toHaveLength(1)
+    expect(lines[0]).toContain('keepalive seed line error Error: status line unavailable')
+  })
+
+  // [B1] End to end: the seed line's status call fails during the seed turn. The floor is already set,
+  // so the tight-threshold warning (the next step in register.tsx) must still run and the turn must return.
+  // Whether the engine drops the failed call itself or the orLog guard catches it, both are fine here:
+  // the stub test above pins the guard, this one pins the outcome the guard exists for.
+  // Not pinned: the guard's wiring at its call site in register.tsx. No test can make showSeedCache
+  // throw past the engine: every engine call in it is caught (load, log) or dropped by the engine
+  // (ui.status, ui.log), userConfig values are validated before register sees them, and the test
+  // harness loads its own copy of the module, so a fault a test sets on an imported module never
+  // reaches it (tried 2026-10-23). Removing the wrapper therefore fails no test; that gap is accepted.
+  test('[B1] a failing seed-line status does not stop the seed turn: the floor is set and the tight-threshold warning still shows', { options: {} }, async ($, on) => {
+    const calls = engine(on, { tokens: 85_000, stepUsage: true, env: { AI_DLC_AUTO_HANDOFF_THRESHOLD_TOKENS: '80000' } })
+    let attempts = 0
+    on('ui.status', async (_$, e) => { if (e.text?.includes('keepalive seed')) { attempts++; throw new Error('status line unavailable') } return { value: undefined } as never })
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    await $.classic.SessionStart({ source: 'clear' })
+    await settle(() => calls.seeded.length > 0)
+    calls.tokens = 45_000
+    await step($, 0) // the seed turn's first request: sets the floor, then shows the seed line, then warns
+    const log = calls.written['/home/test/.claude/state/auto-handoff/auto-handoff.log']!
+    expect(attempts).toBe(1)
+    expect(log).toContain("floor session=new-session-1 tokens=45000 (seed turn's first request)")
+    expect(log).toContain('tight threshold session=new-session-1')
+    expect(await band($)).toContain("leaves 35k this session's 45k start")
+  })
+
+  test('a seed turn that read nothing from the cache says miss on the status line', async ($, on) => {
+    const calls = engine(on, { tokens: 165_000, stepUsage: true, stepRead: 0 })
+    const statuses: (string | undefined)[] = []
+    on('ui.status', async (_$, e) => (statuses.push(e.text), { value: undefined }) as never)
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    await $.classic.SessionStart({ source: 'clear' })
+    await settle(() => calls.seeded.length > 0)
+    calls.tokens = 47_000
+    await step($, 0)
+    expect(statuses.at(-1)).toBe('keepalive seed: cache miss')
+  })
+
+  test('with keep-alive status lines off, the seed line is not shown', async ($, on) => {
+    const calls = engine(on, { tokens: 165_000, stepUsage: true, files: { '/home/test/proj/.claude/settings.local.json': JSON.stringify({ env: { AI_DLC_KEEPALIVE_STATUS: 'false' } }) } })
+    const statuses: (string | undefined)[] = []
+    on('ui.status', async (_$, e) => (statuses.push(e.text), { value: undefined }) as never)
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    await $.classic.SessionStart({ source: 'clear' })
+    await settle(() => calls.seeded.length > 0)
+    calls.tokens = 47_000
+    await step($, 0)
+    expect(calls.written['/home/test/.claude/state/auto-handoff/auto-handoff.log']).toContain('cache=hit')
+    expect(statuses.some(s => s?.includes('seed'))).toBe(false)
+  })
+
+  test('[R4] with keep-alive off (enabled=false), the seed line is not shown', async ($, on) => {
+    const calls = engine(on, { tokens: 165_000, stepUsage: true, files: { '/home/test/proj/.claude/settings.local.json': JSON.stringify({ env: { AI_DLC_KEEPALIVE_ENABLED: 'false' } }) } })
+    const statuses: (string | undefined)[] = []
+    on('ui.status', async (_$, e) => (statuses.push(e.text), { value: undefined }) as never)
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    await $.classic.SessionStart({ source: 'clear' })
+    await settle(() => calls.seeded.length > 0)
+    calls.tokens = 47_000
+    await step($, 0)
+    expect(calls.written['/home/test/.claude/state/auto-handoff/auto-handoff.log']).toContain('cache=hit')
+    expect(statuses.some(s => s?.includes('seed'))).toBe(false)
+  })
+
+  test('[R4] the session ending clears the seed line, and the next Stop shows the track lines alone', async ($, on) => {
+    const calls = engine(on, { tokens: 165_000, stepUsage: true, files: { '/home/test/new.jsonl': cacheRow(300, 0) } })
+    const statuses: (string | undefined)[] = []
+    on('ui.status', async (_$, e) => (statuses.push(e.text), { value: undefined }) as never)
+    on('classic.Stop', async () => ({}) as never)
+    on('session.end', async (_$, e) => ({ sessionId: e.sessionId }) as never)
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    await $.classic.SessionStart({ source: 'clear', transcript_path: '/home/test/new.jsonl' } as never)
+    await settle(() => calls.seeded.length > 0)
+    calls.tokens = 47_000
+    await step($, 0)
+    expect(statuses.at(-1)).toBe('keepalive seed: cache hit, 47k read')
+    await $.session.end({ reason: 'clear', sessionId: 'new-session-1' } as never)
+    expect(statuses.at(-1)).toBeUndefined()
+    await $.classic.Stop({ background_tasks: [KA_TASK], transcript_path: '/home/test/new.jsonl' } as never)
+    expect(statuses.at(-1)?.split('\n')).toHaveLength(2)
+    expect(statuses.at(-1)).not.toContain('seed')
+  })
+
+  test('the seed cache fields and panel line, for a hit, a miss and a split not reported', () => {
+    expect(seedCacheFields({ input: 5, read: 0, written: 40_000, split: { '1h': 40_000, '5m': 0 } }))
+      .toBe('input_tokens=5 cache_read_input_tokens=0 cache_creation_input_tokens=40000 cache_creation_1h=40000 cache_creation_5m=0 cache=miss')
+    expect(seedCacheFields({ input: 5, read: 30_000, written: 2_000 })).toContain('cache_creation_1h=none cache_creation_5m=none cache=hit')
+    expect(seedCacheLine({ input: 5, read: 0, written: 40_000, split: { '1h': 40_000, '5m': 0 } })).toBe('cache miss: nothing read, 40k written (1h 40k, 5m 0k)')
+    expect(seedCacheLine({ input: 5, read: 30_000, written: 2_000 })).toBe('cache hit: 30k read, 2k written (1h/5m split not reported)')
+    expect(creationSplit({ cache_creation: { ephemeral_1h_input_tokens: 0, ephemeral_5m_input_tokens: 0 } })).toEqual({ '1h': 0, '5m': 0 })
+    expect(creationSplit({ input_tokens: 1 })).toBeUndefined()
   })
 })
