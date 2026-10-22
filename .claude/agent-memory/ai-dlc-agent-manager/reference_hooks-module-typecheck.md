@@ -7,7 +7,7 @@ metadata:
 
 `claude plugin test` runs the hooks module tests with types stripped, so a type error passes. To check types (2026-10-22, run AAW-20261022-auto-handoff-chain): copy `types/claude-code.d.ts` from the `plugin-authoring` skill's bundled folder (under the temp `claude/bundled-skills/<version>/<hash>/plugin-authoring/`) into `.scratch/<task>/tc/`, add a tsconfig listing it plus the module files (`strict`, `lib: es2023`, `allowImportingTsExtensions`, `jsxImportSource: claude-code`), and run `npx -p typescript@5 tsc -p`. Ignore TS2875 (no jsx-runtime types); since 2026-10-22 the `session.usage` mock returns `as never`, so no other error is expected. The live window run used this setup in `.scratch/window-observability/tc/`.
 
-`tools/build-copilot.mjs` copies every plugin skill to Copilot; there is no exclude list. A Claude-only skill (e.g. `configure-auto-handoff`) says on its first lines that it does not apply on Copilot and stops; changing the build is a separate request.
+`tools/build-copilot.mjs` copies every plugin skill to Copilot except those listed in `tools/claude-only-skills.json` (since 2026-10-22: `keepalive`). A Claude-only skill still copied (e.g. `configure-auto-handoff`) says on its first lines that it does not apply on Copilot and stops; listing it is the alternative.
 
 **Why:** `plugin test` and CI never check the module's types, so a type error ships unnoticed unless this is run by hand.
 

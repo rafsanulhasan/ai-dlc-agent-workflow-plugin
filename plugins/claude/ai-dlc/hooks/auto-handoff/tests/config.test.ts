@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'claude-code/testing'
-import { DEFAULTS, SETTINGS, TRUST_GATED, baseName, check, normPath, parseUserConfig, repoConfig, resolveConfig, sessionName, settingsEnv, transcriptTitle, trustOf, trustRoot, withoutGated } from '../config.ts'
+import { DEFAULTS, SETTINGS, TRUST_GATED, baseName, check, normPath, parseUserConfig, repoConfig, resolveConfig, sessionName, settingsEnv, transcriptTitle, trustOf, trustRoot, withoutGated, withoutKeys, parseBool } from '../config.ts'
 import { parseAddress } from '../server.ts'
 import type { Level } from '../config.ts'
 
@@ -244,5 +244,25 @@ describe('workspace trust (W1)', () => {
     expect(withoutGated(values)).toEqual({ values: { instructionsTemplate: null, thresholdPercent: 70 }, ignored: ['briefTemplate', 'viewer'] })
     const plain = { thresholdPercent: 70 }
     expect(withoutGated(plain)).toEqual({ values: plain, ignored: [] })
+  })
+  test('[R6] parseBool: booleans and their words, any case, spaces ignored; anything else is undefined, own keys only', () => {
+    expect(parseBool(true)).toBe(true)
+    expect(parseBool(false)).toBe(false)
+    for (const w of ['true', '1', 'yes', 'on', ' TRUE ', 'On']) expect(parseBool(w)).toBe(true)
+    for (const w of ['false', '0', 'no', 'off', ' Off ', 'NO']) expect(parseBool(w)).toBe(false)
+    for (const w of ['', 'maybe', 'constructor', '__proto__', 'toString']) expect(parseBool(w)).toBeUndefined()
+    for (const v of [1, 0, null, undefined, {}, []]) expect(parseBool(v)).toBeUndefined()
+  })
+
+  test('[R6] withoutKeys: dotted keys take out one nested level, copies only, missing and null keys are not ignored', () => {
+    const values = { a: 1, b: null, n: { x: 1, y: 2 }, keep: 'k' }
+    const before = JSON.stringify(values)
+    const out = withoutKeys(values, ['a', 'b', 'c', 'n.x', 'm.z'])
+    expect(out).toEqual({ values: { b: null, n: { y: 2 }, keep: 'k' }, ignored: ['a', 'n.x'] })
+    expect(JSON.stringify(values)).toBe(before)
+    expect(out.values.n).not.toBe(values.n)
+    const plain = { keep: 1 }
+    expect(withoutKeys(plain, ['a'])).toEqual({ values: plain, ignored: [] })
+    expect(withoutKeys(plain, ['a']).values).toBe(plain)
   })
 })

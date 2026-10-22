@@ -5,10 +5,12 @@ import type { Entry } from './viewer.ts'
 import { SERVER_JS, parseAddress } from './server.ts'
 import { isSpinning, panelTree } from './panel.tsx'
 import type { Line, Panel } from './panel.tsx'
-import { BRIEF_DIR, CAPABILITIES_FILE, DEFAULTS, LAST_RESORT_INSTRUCTIONS, MODULE_DIR, REPO_CONFIG, SEED_PREFIX, SESSION_TEMPLATE, TEMPLATES, baseName, contextLine, expand, k, linkify, repoConfig, resolveConfig, sessionName, settingsEnv, short, transcriptTitle, trustOf, trustRoot, hostFields, windowFields, windowInfo, withoutGated } from './config.ts'
-import type { Config, HostWindow, Level, TemplateKey, TrustTarget, WindowInfo } from './config.ts'
+import { BRIEF_DIR, CAPABILITIES_FILE, DEFAULTS, LAST_RESORT_INSTRUCTIONS, MODULE_DIR, REPO_CONFIG, SEED_PREFIX, SESSION_TEMPLATE, TEMPLATES, TRUST_GATED, baseName, contextLine, creationSplit, expand, k, linkify, repoConfig, resolveConfig, seedCacheFields, seedCacheLine, sessionName, settingsEnv, short, transcriptTitle, hostFields, windowFields, windowInfo } from './config.ts'
+import type { Config, HostWindow, Level, SeedCache, TemplateKey, WindowInfo } from './config.ts'
 import { ENDED, assembleSessionHandoff, handoffsRoot, inRepo, openRecords, parseRunState, pickRun, scratchRoot, sessionHandoffPath, withNextAction } from './run.ts'
 import type { RunState, RunTarget } from './run.ts'
+import { noteUsage, registerKeepalive, showSeedCache, stopForHandoff, transcriptSplit } from './keepalive/keepalive.ts'
+import { git, homeDir, log, readRaw, readText, repoRoot, trustGate } from './io.ts'
 
 // At the handoff threshold (thresholdPercent of the context window), Haiku writes a handoff brief, the mod runs /clear, then seeds the
 // fresh session with a pointer to the brief. Interactive terminal sessions only: where a
@@ -19,6 +21,11 @@ import type { RunState, RunTarget } from './run.ts'
 // While the run this chain claimed stays active, the chain goes on past maxConsecutiveHandoffs; it
 // ends when the run is done, blocked or abandoned. Each session of a chain is named
 // "<prefix>: <original name> (Session N)".
+// The cache: the fresh session can read only the shared prefix (tools, system prompt, project
+// context) from the prompt cache, never the old conversation. So the handoff keeps that prefix as
+// it was: it changes neither the model nor the effort, and the brief and the seed travel only as
+// messages. Keep-alive (keepalive/) is registered here too; its timers stop before the /clear, and
+// the seed turn logs what its first request read from the cache.
 
 // The effective settings (config.ts, resolveConfig) and where each came from. Loaded on first use
 // and again at each session start, so a chain picks up edits to the repository file.
@@ -72,55 +79,6 @@ let gated: string | undefined
 // From the latest SessionStart; /clear starts a new transcript file.
 let transcriptPath: string | undefined
 
-// Windows sets USERPROFILE, not HOME. With HOME unset, every path built on it began with
-// "undefined/", which $.fs resolves under the session's working directory: briefs, templates
-// and pages landed inside the user's project.
-async function homeDir($: EngineInterface): Promise<string | undefined> {
-  return (await $.env.get('HOME')) || (await $.env.get('USERPROFILE'))
-}
-
-async function log($: EngineInterface, line: string) {
-  try {
-    const path = `${await homeDir($)}/${BRIEF_DIR}/auto-handoff.log`
-    const stamped = `${new Date().toISOString()} ${line}`
-    // Where there is a `sh`, append: an append is atomic, so concurrent sessions and the viewer
-    // server (which appends its own output here) never drop each other's lines.
-    try {
-      const { exitCode } = await $.process.run(['sh', '-c', 'mkdir -p "$(dirname "$2")" && printf "%s\\n" "$1" >> "$2"', 'sh', stamped, path])
-      if (exitCode === 0) return
-    } catch {}
-    // Windows has no `sh`. $.fs has no append, so the log is read and rewritten: two lines logged
-    // at the same instant can lose one. It keeps the last ~500 KB, cut at a line, so a read never
-    // hits $.fs's 4 MiB cap.
-    const old = await $.fs.read(path).catch(() => '')
-    const kept = typeof old !== 'string' ? '' : old.length > 1_000_000 ? old.slice(old.indexOf('\n', old.length - 500_000) + 1) : old
-    await $.fs.write(path, `${kept}${stamped}\n`)
-  } catch {}
-}
-
-const readText =async ($: EngineInterface, path: string) => {
-  try {
-    const text = await $.fs.read(path)
-    if (typeof text === 'string' && text.trim()) return text
-  } catch {}
-  return undefined
-}
-// A file's text as it is, blank included; undefined when it cannot be read.
-const readRaw = async ($: EngineInterface, path: string) => {
-  try {
-    const text = await $.fs.read(path)
-    return typeof text === 'string' ? text : undefined
-  } catch {
-    return undefined
-  }
-}
-
-// The repository root (git), else the session's working directory.
-async function repoRoot($: EngineInterface): Promise<string> {
-  const cwd = (await $.session.cwd()).replace(/\\/g, '/')
-  return await git($, ['-C', cwd, 'rev-parse', '--show-toplevel']) ?? cwd
-}
-
 // The module's variables in the process environment. Literal names: the host lists the variables
 // a module reads.
 async function processEnv($: EngineInterface): Promise<Record<string, unknown>> {
@@ -160,7 +118,9 @@ async function loadConfig($: EngineInterface): Promise<void> {
     levels.push({ where: 'the environment', byEnv: true, values: await processEnv($) })
     const repo = repoConfig(await readRaw($, `${root}/${REPO_CONFIG}`))
     if (repo.problem) problems.push(`${REPO_CONFIG} ${repo.problem}`)
-    if (repo.values) levels.push({ where: REPO_CONFIG, byEnv: false, values: await trustGated($, repo.values, problems) })
+    // viewer, briefTemplate and instructionsTemplate apply from the repository file only in a folder
+    // Claude Code trusts (config.ts, TRUST_GATED; io.ts, trustGate).
+    if (repo.values) levels.push({ where: REPO_CONFIG, byEnv: false, values: await trustGate($, repo.values, TRUST_GATED, REPO_CONFIG, 'set them in the env of .claude/settings.local.json or in /config instead', problems) })
     const r = resolveConfig(levels, options)
     cfg = r.cfg
     cfgSources = r.sources
@@ -171,28 +131,6 @@ async function loadConfig($: EngineInterface): Promise<void> {
     cfgSources = r.sources
     await log($, `config error ${String(err)}; using /config and the defaults`)
   }
-}
-
-// The repository file's values, without viewer, briefTemplate and instructionsTemplate unless Claude
-// Code trusts this folder (config.ts, TRUST_GATED). ~/.claude.json is read only when one of them is
-// set, and only its trust flag is used: nothing else from it is logged or kept. Fails closed.
-async function trustGated($: EngineInterface, values: Record<string, unknown>, problems: string[]): Promise<Record<string, unknown>> {
-  const gated = withoutGated(values)
-  if (!gated.ignored.length) return values
-  const home = await homeDir($)
-  const { trusted, why } = trustOf(home ? await readRaw($, `${home}/.claude.json`) : undefined, await trustTarget($))
-  if (trusted) return values
-  problems.push(`${gated.ignored.join(', ')} in ${REPO_CONFIG} ignored: Claude Code does not trust this folder (${why}); set them in the env of .claude/settings.local.json or in /config instead`)
-  return gated.values
-}
-
-// What trust is keyed on (config.ts, TrustTarget): the repository root, or in a linked worktree the
-// main checkout's root; outside a repository, the session's working directory.
-async function trustTarget($: EngineInterface): Promise<TrustTarget> {
-  const cwd = (await $.session.cwd()).replace(/\\/g, '/')
-  const top = await git($, ['-C', cwd, 'rev-parse', '--show-toplevel'])
-  if (!top) return { start: cwd }
-  return { root: trustRoot(top, await git($, ['-C', cwd, 'rev-parse', '--path-format=absolute', '--git-common-dir'])) }
 }
 
 // The settings, loaded once per session start; concurrent callers share one load.
@@ -324,18 +262,6 @@ async function viewer($: EngineInterface, briefDir: string, pagesDir: string, se
   } catch (err) {
     await log($, `viewer error session=${sessionId} ${String(err)}`)
     return ''
-  }
-}
-
-// git, run through -C in the given directory. Undefined when git is missing, the directory is not
-// a repository, or the command prints nothing.
-async function git($: EngineInterface, args: string[]): Promise<string | undefined> {
-  try {
-    const { exitCode, stdout } = await $.process.run(['git', ...args])
-    const out = stdout.trim()
-    return exitCode === 0 && out ? out : undefined
-  } catch {
-    return undefined
   }
 }
 
@@ -501,6 +427,8 @@ async function handoff($: EngineInterface, sessionId: string, tokens: number, th
     await log($, `brief written ${briefPath} (${brief.length} chars); queueing /clear`)
     // The session being cleared takes its place in the chain's names, Session 1 for the first.
     if (cfg.renameSessions && depth !== undefined) await renameOld($, sessionId, sessionName(cfg.sessionNamePrefix, name, depth), title)
+    // Module timers survive /clear: keep-alive's must not ping the old conversation into the new session.
+    if (stopForHandoff($)) await log($, `keepalive timers stopped before /clear session=${sessionId}`)
     queueClear($, briefPath)
   } catch (err) {
     pending = undefined
@@ -651,6 +579,8 @@ async function tryHandoff($: EngineInterface, sessionId: string, tokens: number,
 
   inFlight = true
   gated = undefined
+  // No keep-alive ping while the brief is written: it would only re-cache a conversation about to go.
+  if (stopForHandoff($)) await log($, `keepalive timers stopped for the handoff session=${sessionId}`)
   await $.store.set(`fired:${sessionId}`, 'briefing')
   // via goes last: it can hold spaces ("turn.step measured=123 gated").
   await log($, `threshold session=${sessionId} tokens=${tokens} threshold=${threshold} ${windowFields(lastWindow, cfg)} ${hostFields(await hostWindow($))} via=${via}`)
@@ -750,10 +680,12 @@ function failed($: EngineInterface, what: string, next: string) {
 
 // The fresh session's first measurement: the panel's last step, which says the handoff worked.
 // It collapses on its own unless the brief was facts only.
-function showHandedOff($: EngineInterface, fresh: number) {
+// With `cache`, a step says whether the fresh session's first request read the shared prefix from the cache.
+function showHandedOff($: EngineInterface, fresh: number, cache?: SeedCache) {
   if (!handedFrom) return
   const { tokens, link, problem } = handedFrom
-  showPanel($, { header: { mark: 'done', text: `handed off · ${k(tokens)} → ${k(fresh)}` }, steps: problem ? [briefStep(problem)] : [], link: link || undefined, sticky: !!problem },
+  const lines: Line[] = [...(problem ? [briefStep(problem)] : []), ...(cache ? [{ mark: cache.read > 0 ? 'done' : 'warn', text: seedCacheLine(cache) } as Line] : [])]
+  showPanel($, { header: { mark: 'done', text: `handed off · ${k(tokens)} → ${k(fresh)}` }, steps: lines, link: link || undefined, sticky: !!problem },
     `↪ handed off · ${k(tokens)} → ${k(fresh)}${problem ? ' · the brief is facts only' : ''}`)
   handedFrom = undefined
 }
@@ -830,6 +762,9 @@ export const register: Register = (on, opts) => {
   options = opts
   cfg = resolveConfig([], options).cfg
   cfgLoaded = false
+  // Keep-alive (keepalive/keepalive.ts): its own events and the /ai-dlc:keepalive command. It arms no
+  // pings while a handoff is under way.
+  registerKeepalive(on, opts, { handingOff: () => inFlight || pending !== undefined })
   on('turn.complete', async ($, e, next) => {
     const r = await next(e)
     try {
@@ -921,14 +856,26 @@ export const register: Register = (on, opts) => {
     const r = yield* next(e)
     // The response measured everything up to its request; its own output is new, and so is
     // any tool output that landed while it streamed (core runs tools before the stream ends).
-    if (!e.agentId && r.usage) unmeasured = unmeasured - before + r.usage.output_tokens
+    if (!e.agentId && r.usage) {
+      unmeasured = unmeasured - before + r.usage.output_tokens
+      noteUsage(r.usage) // keep-alive's tracks follow the 1h/5m split of the cache writes
+    }
     // The seed turn's first request is the fresh session's true starting size. Measuring at
     // the end of that turn instead let a busy first turn (47k to 129k of reads) set
     // the floor at 129k, with the pre-request check off the whole way.
+    // It also proves what the handoff kept of the cache: only the shared prefix can be read.
     if (seeding && r.usage) {
       floor = r.usage.input_tokens + r.usage.cache_read_input_tokens + r.usage.cache_creation_input_tokens
-      await log($, `floor session=${seededSession} tokens=${floor} (seed turn's first request)`)
-      showHandedOff($, floor)
+      const cache: SeedCache = {
+        input: r.usage.input_tokens,
+        read: r.usage.cache_read_input_tokens,
+        written: r.usage.cache_creation_input_tokens,
+        split: creationSplit(r.usage) ?? await transcriptSplit($, transcriptPath ? expand(transcriptPath, await homeDir($) ?? '') : undefined),
+      }
+      await log($, `floor session=${seededSession} tokens=${floor} (seed turn's first request) ${seedCacheFields(cache)}`)
+      showHandedOff($, floor, cache)
+      // Also on keep-alive's status line, until the next turn starts.
+      await showSeedCache($, cache)
       await warnTightThreshold($, seededSession!)
     }
     return r

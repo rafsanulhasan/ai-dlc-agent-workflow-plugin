@@ -52,12 +52,12 @@ Show the user a table of files to **create**, files to **merge** (an existing `A
 - Team names: a table agent ID → current name (default, or the name chosen at an earlier init). Ask whether to rename any agents; the developer replies with `agent → new name` pairs, or "keep". Validate:
   - names are unique across the team (case-insensitive) and never equal an agent ID or a role alias (the ID with spaces, or a short form in the role-alias table under "Addressing agents by name or role" in `${CLAUDE_SKILL_DIR}/../../agents/orchestrator.md`, e.g. "architect", "QA");
   - `product-owner`, `product-manager` and `requirement-analyst` share one default name, so addressing that name is ambiguous — suggest distinct names, but do not force them.
-- Automatic handoff and cache keep-warm, **Claude Code only**. On GitHub Copilot, leave this bullet out of the message, skip "Automatic handoff settings" and "Plugin settings" in Phase 2, and say in the Phase 3 report that these settings exist only in Claude Code, which has the automatic handoff and the `cache-keepalive` mod. On Claude Code, ask for three values:
+- Automatic handoff and cache keep-alive, **Claude Code only**. On GitHub Copilot, leave this bullet out of the message, skip "Automatic handoff settings" and "Plugin settings" in Phase 2, and say in the Phase 3 report that these settings exist only in Claude Code, whose ai-dlc hooks module has the automatic handoff and keep-alive. On Claude Code, ask for three values:
   - the handoff percentage: the share of the context window, 1 to 100, at which the main session hands off to a fresh one (default 80, or the value the existing `.ai-dlc/auto-handoff.json` sets). Say that only the main session, the lead of an agent team, is handed off; subagents and teammates are not. Say that it goes into `.ai-dlc/auto-handoff.json`, committed for the whole team, with the file's other settings (`/ai-dlc:configure-auto-handoff` shows and changes them later), and that a developer overrides any of them for themselves in `env` of `.claude/settings.local.json`. For an existing file, list what `merge` would add or remove (Phase 0).
-  - the keep-warm duration: how long `cache-keepalive` may keep the prompt cache warm while background work runs, as `<n>m`, `<n>h` or `<n>d` (default `8h`).
-  - the default scope of `/keepalive <duration>`: `session` (default) or `machine`.
+  - the keep-warm duration: how long keep-alive's 1-hour track may keep the prompt cache warm while background work runs, as `<n>m`, `<n>h` or `<n>d` (default `8h`). Say that the 5-minute track, used when the session's cache is written for 5 minutes, keeps warm for `1h` unless set otherwise, and that every keep-alive setting is listed in the keep-alive README (`hooks/auto-handoff/keepalive/README.md` in the plugin).
+  - the default scope of `/ai-dlc:keepalive <duration>`: `session` (default) or `machine`.
 
-  Check that the percentage is a whole number from 1 to 100 and the duration matches `<n>m`, `<n>h` or `<n>d`; ask again for a value that does not. Say that init does not write the two keep-warm values: each developer sets them in `/config`, and the Phase 3 report lists the rows.
+  Check that the percentage is a whole number from 1 to 100 and the duration matches `<n>m`, `<n>h` or `<n>d`; ask again for a value that does not. Say that init does not write the two keep-alive values: each developer sets them in `/config`, and the Phase 3 report lists the rows. A team that wants them for everyone sets them in `.ai-dlc/cache-keepalive.json` instead, which outranks `/config`; its keep-warm time, like one in the `env` of `.claude/settings.json`, applies only where Claude Code trusts the folder. Interactive terminal sessions record that trust; `claude -p` and SDK sessions, as far as the docs show, never do; whether the IDE extensions and Desktop do is undocumented. On a machine where the folder was never accepted in a terminal, the developer's `/config` row (else the default) applies instead (see the keep-alive README, *Workspace trust*).
 
 Stack-specific rules, the automatic test gate and the Stryker config exist for .NET and JavaScript / TypeScript. For any other stack, say that they are not available for that stack yet and will be skipped; the stack-neutral files (AGENTS.md, CLAUDE.md, settings, docs) are still written.
 
@@ -109,7 +109,7 @@ Done when `check-ignore` exits 1. If step 2 stops, or `check-ignore` still exits
 
 **Automatic handoff settings** (Claude Code only): read `${CLAUDE_SKILL_DIR}/../configure-auto-handoff/SKILL.md` and follow its **install** mode, with `<skill dir>` = `${CLAUDE_SKILL_DIR}/../configure-auto-handoff`. It creates `.ai-dlc/auto-handoff.json` with its schema, or, on a re-run, adds the keys this plugin version has, removes the ones it no longer has and keeps every value set. Pass it the handoff percentage from Phase 1 when it differs from the file's current value (80 when the file is new). Its last step, **rename check**, confirms at runtime whether this Claude Code has `/rename`; record its result for the Phase 3 report. A missing `/rename` or a missing record never fails init. Done when `validate` exits 0.
 
-**Plugin settings** (Claude Code only): write no file for the keep-warm values from Phase 1. Plugin options live under `pluginConfigs` in the developer's user settings, never in the project's `.claude/settings.json`, so they are per developer and set through `/config`.
+**Plugin settings** (Claude Code only): write no file for the keep-alive values from Phase 1. Plugin options live under `pluginConfigs` in the developer's user settings, never in the project's `.claude/settings.json`, so they are per developer and set through `/config`.
 
 Also create empty folders with a `.gitkeep`: `docs/specs/`, `docs/architecture/decisions/`, `docs/architecture/narratives/`, `docs/plans/`, `docs/handoffs/`, `docs/product/`.
 
@@ -153,14 +153,14 @@ List every file created or changed, the items of the `workspace-folders` **Repor
 
 On Claude Code, report the automatic handoff settings: `.ai-dlc/auto-handoff.json` created or merged (the keys added and removed), the handoff percentage in effect and its source (`show`), and the **rename check** result. When `/rename` is not available or not recorded, say what that means, in the words of `configure-auto-handoff`. Say that `/ai-dlc:configure-auto-handoff` shows and changes these settings, and that the old `AUTO_HANDOFF_*` variables are no longer read: their replacements are the `AI_DLC_AUTO_HANDOFF_*` variables in the schema.
 
-Then add the `/config` steps for the keep-warm values from Phase 1. Run `/config` and set:
+Then add the `/config` steps for the keep-alive values from Phase 1. Run `/config` and set:
 
 | Plugin | Row | Value |
 |---|---|---|
-| `cache-keepalive` | `Keep the cache warm for` | the keep-warm duration |
-| `cache-keepalive` | `Scope of /keepalive <duration>` | `session` or `machine` |
+| `ai-dlc` | `Keep-alive: 1h track, keep warm for` | the keep-warm duration |
+| `ai-dlc` | `Keep-alive: scope of /ai-dlc:keepalive <duration>` | `session` or `machine` |
 
-List only the rows whose value differs from its default (`8h`, `session`); when none differs, say that the defaults apply and nothing needs setting. Say that every developer sets these for themselves and that `/keepalive 2h` (or `/keepalive 1d --machine`) changes the duration without `/config`. On GitHub Copilot, say instead that these settings are Claude Code only.
+List only the rows whose value differs from its default (`8h`, `session`); when none differs, say that the defaults apply and nothing needs setting. Say that every developer sets these for themselves, that a value in `.ai-dlc/cache-keepalive.json` or in the `env` of a settings file outranks the row (from the two committed files, the keep-warm time only in a folder Claude Code trusts, which an interactive terminal session records and `claude -p` and SDK sessions, as far as the docs show, never do; see the keep-alive README, *Workspace trust*), and that `/ai-dlc:keepalive 2h` (or `/ai-dlc:keepalive 1d --machine`) changes the keep-warm time of both tracks without `/config`. On GitHub Copilot, say instead that these settings are Claude Code only.
 
 Then the next step:
 

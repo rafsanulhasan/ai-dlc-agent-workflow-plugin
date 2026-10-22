@@ -5,7 +5,8 @@
 - [Handoff naming](project_handoff-naming.md) — run folder + step-coded handoff/handback names; writer by orchestration mode (2026-10-21)
 - [Agent memory tracked](project_agent-memory-tracked.md) — memory committed everywhere since 2026-10-21; one folder per agent, `ai-dlc-<agent>`
 - [Handoff gaps](project_handoff-gaps.md) — deferred: O5 session matching, stale run data, Copilot nesting, main-agent rule untested
-- [Bash heredoc backslashes](feedback_bash-heredoc-backslashes.md) — Bash heredocs mangle backslash escapes here; use Edit or a Written script
-- [Claude plugin config facts](reference_claude-plugin-config-facts.md) — userConfig min/max, /<name> mod commands, $.store scope, trust flag, command.run order
+- [Bash heredoc backslashes](feedback_bash-heredoc-backslashes.md) — heredocs mangle escapes; Python writes CRLF unless newline='
+'
+- [Claude plugin config facts](reference_claude-plugin-config-facts.md) — userConfig rules, prefixed command via skill + command.run, $ only into declarations
 - [.ai-dlc copy test](project_ai-dlc-copy-test.md) — handoff-naming test fails until repo .ai-dlc/ is resynced after a template change
 - [Hooks module typecheck](reference_hooks-module-typecheck.md) — plugin test skips types; tsc recipe with bundled engine types; Claude-only skills on Copilot

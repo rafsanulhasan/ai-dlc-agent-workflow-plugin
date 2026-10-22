@@ -46,7 +46,7 @@ test("a hooks module under hooks/ leaves no module file, hooks.json or userConfi
   fixture();
   const r = build();
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /1 Claude-only hooks module\(s\) left out/);
+  assert.match(r.stdout, /1 Claude-only hooks module\(s\) and 0 Claude-only skill\(s\) left out/);
   assert.deepEqual(copilotFiles(), ["GENERATED.md", "agents/helper.agent.md", "plugin.json", "skills/hello/SKILL.md"]);
   const manifest = JSON.parse(read("plugins/copilot/demo/plugin.json"));
   assert.ok(!("userConfig" in manifest), "userConfig leaked");
@@ -93,8 +93,11 @@ test("this repository's ai-dlc hooks module is Claude-only: hooks.json is module
   assert.ok(!("userConfig" in manifest));
   assert.ok(!("hooks" in manifest));
   const claudeManifest = JSON.parse(fs.readFileSync(path.join(claude, ".claude-plugin", "plugin.json"), "utf8"));
-  assert.deepEqual(Object.keys(claudeManifest.userConfig).sort(), ["briefTemplate", "ignoreFiles", "instructionsTemplate", "maxConsecutiveHandoffs", "thresholdPercent", "viewer"]);
-  assert.ok(!(claudeManifest.dependencies ?? []).includes("auto-handoff"));
+  // The six auto-handoff rows, then keep-alive's, each named keepalive<Key> (tests/auto-handoff/keepalive-settings.test.mjs checks them).
+  const keys = Object.keys(claudeManifest.userConfig);
+  assert.deepEqual(keys.filter((k) => !k.startsWith("keepalive")).sort(), ["briefTemplate", "ignoreFiles", "instructionsTemplate", "maxConsecutiveHandoffs", "thresholdPercent", "viewer"]);
+  assert.ok(keys.some((k) => k.startsWith("keepalive")));
+  assert.ok(!("dependencies" in claudeManifest), "ai-dlc depends on no other plugin: keep-alive is part of its hooks module");
 });
 
 test("the session handoff template the hooks module ships has the handoff skill's sections, in order", () => {
@@ -141,7 +144,7 @@ test("a build with no hooks.json reports zero hooks modules", () => {
   fixture({ hooks: null });
   const r = build();
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /0 Claude-only hooks module\(s\) left out/);
+  assert.match(r.stdout, /0 Claude-only hooks module\(s\) and 0 Claude-only skill\(s\) left out/);
 });
 
 test("a modules entry that is not a path string fails the build with a clear message", () => {
@@ -165,12 +168,51 @@ test("the ai-dlc manifest declares thresholdPercent as a 1..100 number defaultin
   assert.match(field.description, /500000/);
 });
 
-test("the cache-keepalive manifest declares keepWarmFor (string, 8h) and keepaliveScope (session or machine, session)", () => {
-  const manifest = JSON.parse(fs.readFileSync(path.join(REPO, "plugins", "claude-mods", "cache-keepalive", ".claude-plugin", "plugin.json"), "utf8"));
-  assert.equal(manifest.userConfig.keepWarmFor.type, "string");
-  assert.equal(manifest.userConfig.keepWarmFor.default, "8h");
-  assert.equal(manifest.userConfig.keepaliveScope.type, "string");
-  assert.equal(manifest.userConfig.keepaliveScope.default, "session");
-  assert.deepEqual(manifest.userConfig.keepaliveScope.options, ["session", "machine"]);
-  assert.equal(manifest.userConfig.compactOnCap.default, false);
+test("the cache-keepalive mod is folded into ai-dlc: no mod folder, marketplace entry or CI loop is left", () => {
+  assert.ok(!fs.existsSync(path.join(REPO, "plugins", "claude-mods")), "plugins/claude-mods/ should be gone");
+  const market = JSON.parse(fs.readFileSync(path.join(REPO, ".claude-plugin", "marketplace.json"), "utf8"));
+  assert.deepEqual(market.plugins.map((p) => p.name), ["ai-dlc"]);
+  const ci = fs.readFileSync(path.join(REPO, ".github", "workflows", "validate.yml"), "utf8");
+  assert.ok(!ci.includes("claude-mods"), "the CI loop over vendored mods should be gone");
+  const keepalive = path.join(REPO, "plugins", "claude", "ai-dlc", "hooks", "auto-handoff", "keepalive");
+  assert.ok(fs.existsSync(path.join(keepalive, "LICENSE")), "the upstream MIT LICENSE ships with the folded-in code");
+  assert.match(fs.readFileSync(path.join(keepalive, "LICENSE"), "utf8"), /Copyright \(c\) 2026 RichardJSun/);
+});
+
+// D3 (AAW-20261022-fold-cache-keepalive): skills that only work in Claude Code stay out of the Copilot plugin.
+test("a skill listed in tools/claude-only-skills.json is left out of the Copilot plugin; the others are copied", () => {
+  fixture({ hooks: null });
+  write("plugins/claude/demo/skills/claude-thing/SKILL.md", "---\nname: claude-thing\ndescription: Claude only\n---\n\nRun /demo:claude-thing.\n");
+  write("plugins/claude/demo/skills/claude-thing/references/notes.md", "notes\n");
+  write("tools/claude-only-skills.json", JSON.stringify(["claude-thing"]));
+  const r = build();
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /and 1 Claude-only skill\(s\) left out/);
+  assert.deepEqual(copilotFiles(), ["GENERATED.md", "agents/helper.agent.md", "plugin.json", "skills/hello/SKILL.md"]);
+  assert.equal(build("--check").status, 0);
+});
+
+test("a Claude-only skill already in the Copilot plugin is removed by the next build, and --check reports it until then", () => {
+  fixture({ hooks: null });
+  write("plugins/claude/demo/skills/claude-thing/SKILL.md", "---\nname: claude-thing\ndescription: Claude only\n---\n\nBody.\n");
+  assert.equal(build().status, 0);
+  assert.ok(copilotFiles().includes("skills/claude-thing/SKILL.md"));
+  write("tools/claude-only-skills.json", JSON.stringify(["claude-thing"]));
+  assert.equal(build("--check").status, 1);
+  assert.equal(build().status, 0);
+  assert.ok(!copilotFiles().includes("skills/claude-thing/SKILL.md"));
+});
+
+test("a name in tools/claude-only-skills.json that is not a plugin skill fails the build", () => {
+  fixture({ hooks: null });
+  write("tools/claude-only-skills.json", JSON.stringify(["nope"]));
+  const r = build();
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /tools\/claude-only-skills\.json: no plugin skill "nope"/);
+});
+
+test("this repository's keepalive skill is Claude-only: listed, and absent from the Copilot plugin", () => {
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(REPO, "tools", "claude-only-skills.json"), "utf8")), ["keepalive"]);
+  assert.ok(fs.existsSync(path.join(REPO, "plugins", "claude", "ai-dlc", "skills", "keepalive", "SKILL.md")));
+  assert.ok(!fs.existsSync(path.join(REPO, "plugins", "copilot", "ai-dlc", "skills", "keepalive", "SKILL.md")));
 });
