@@ -255,7 +255,7 @@ The plugin ships **no hooks and no rules**. A plugin hook would run in every pro
 | Claude source | Copilot output |
 |---|---|
 | `agents/<a>.md` | `agents/<a>.agent.md` with a platform note. Tools are mapped (see below). Claude-only tools are dropped. `mcp__*` tools are kept. Agents marked `status: deprecated` are skipped |
-| `skills/**` | Copied, with the `ai-dlc:` namespace and the `${CLAUDE_SKILL_DIR}/` prefix stripped from Markdown. Skills listed in [`tools/claude-only-skills.json`](../tools/claude-only-skills.json) (currently `keepalive`, which names the hooks module's command) are left out; a name there that is not a plugin skill fails the build |
+| `skills/**` | Copied, with the `ai-dlc:` namespace and the `${CLAUDE_SKILL_DIR}/` prefix stripped from Markdown. Skills listed in [`tools/claude-only-skills.json`](../tools/claude-only-skills.json) (currently `cache-keepalive`, which names the hooks module's command, and `cache-keepalive-config`, which changes keep-alive's settings) are left out; a name there that is not a plugin skill fails the build |
 | `tools/overlays/non-claude/skills/**` | Added to `skills/` the same way (Copilot only, e.g. `scratchpad`); a name shared with a Claude skill fails the build |
 | `scripts/**` | Copied verbatim |
 | `hooks/hooks.json` (none today) | `hooks.json` in Copilot's `version: 1` format (`Stop` → `agentStop`) |

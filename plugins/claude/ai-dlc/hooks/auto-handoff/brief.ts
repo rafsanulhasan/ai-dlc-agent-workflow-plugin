@@ -23,7 +23,7 @@ export type Facts = {
   lastUserMessage?: string
   handoffTokens?: number
   threshold?: number
-  /** Where the base threshold came from: the env override or the /config setting. */
+  /** Where the base threshold came from: an env override, the repository file or the default. */
   thresholdSource?: string
   seededSessionStartSize?: number
   /** Handoffs since the user last typed, this one included. */

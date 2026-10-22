@@ -1,6 +1,7 @@
-// Keep-alive's settings: one table (SETTINGS) holds every key, its environment variable, its /config
-// row and its default; nothing else repeats a default. Engine-free: keepalive.ts reads the files and
-// hands the levels in, and tests/ in the repository checks the table against the manifest and the README.
+// Keep-alive's settings: one table (SETTINGS) holds every key, its environment variable and its default;
+// nothing else repeats a default. Engine-free: keepalive.ts reads the files and hands the levels in, and
+// tests/ in the repository checks the table against the README and the cache-keepalive-config schema.
+// Keep-alive has no /config rows (human decision, 2026-10-22, run AAW-20261022-cache-keepalive-init).
 import { ABSOLUTE_MIN, formatDuration, parseDuration } from './duration.ts'
 import type { Scope } from './duration.ts'
 import { parseBool } from '../auto-handoff/config.ts'
@@ -33,8 +34,8 @@ export type Settings = {
 export type Kind = 'boolean' | 'scope' | 'text' | 'threshold' | 'percent' | 'minDuration' | 'duration' | 'whole' | 'positiveWhole' | 'nonNegative' | 'positive' | 'ratio' | 'prices'
 
 /** A setting: its key in .ai-dlc/cache-keepalive.json (a dot is one nesting level), its environment
- * variable, its /config row, its kind and its default, written as a person would write it. */
-export type Setting = { key: string; env: string; userConfig: string; kind: Kind; default: unknown }
+ * variable, its kind and its default, written as a person would write it. */
+export type Setting = { key: string; env: string; kind: Kind; default: unknown }
 
 export const ENV_PREFIX = 'AI_DLC_KEEPALIVE_'
 const PING_PROMPT = 'Keep-alive ping. Reply with only: ok'
@@ -43,32 +44,32 @@ const COMPACT_INSTRUCTIONS = "Also keep the background tasks' IDs, output paths,
 // Order matters: minDuration comes before every duration, and each track's ttl before its pingEvery,
 // because their rules read those values.
 export const SETTINGS: readonly Setting[] = [
-  { key: 'enabled', env: 'AI_DLC_KEEPALIVE_ENABLED', userConfig: 'keepaliveEnabled', kind: 'boolean', default: true },
-  { key: 'scope', env: 'AI_DLC_KEEPALIVE_SCOPE', userConfig: 'keepaliveScope', kind: 'scope', default: 'session' },
-  { key: 'status', env: 'AI_DLC_KEEPALIVE_STATUS', userConfig: 'keepaliveStatus', kind: 'boolean', default: true },
-  { key: 'pingPrompt', env: 'AI_DLC_KEEPALIVE_PING_PROMPT', userConfig: 'keepalivePingPrompt', kind: 'text', default: PING_PROMPT },
-  { key: 'hitThreshold', env: 'AI_DLC_KEEPALIVE_HIT_THRESHOLD', userConfig: 'keepaliveHitThreshold', kind: 'threshold', default: 0.9 },
-  { key: 'overagePercent', env: 'AI_DLC_KEEPALIVE_OVERAGE_PERCENT', userConfig: 'keepaliveOveragePercent', kind: 'percent', default: 100 },
-  { key: 'minDuration', env: 'AI_DLC_KEEPALIVE_MIN_DURATION', userConfig: 'keepaliveMinDuration', kind: 'minDuration', default: '1m' },
-  { key: 'sessionOverridesMax', env: 'AI_DLC_KEEPALIVE_SESSION_OVERRIDES_MAX', userConfig: 'keepaliveSessionOverridesMax', kind: 'positiveWhole', default: 20 },
-  { key: 'oneHour.enabled', env: 'AI_DLC_KEEPALIVE_1H_ENABLED', userConfig: 'keepaliveOneHourEnabled', kind: 'boolean', default: true },
-  { key: 'oneHour.ttl', env: 'AI_DLC_KEEPALIVE_1H_TTL', userConfig: 'keepaliveOneHourTtl', kind: 'duration', default: '60m' },
-  { key: 'oneHour.pingEvery', env: 'AI_DLC_KEEPALIVE_1H_PING_EVERY', userConfig: 'keepaliveOneHourPingEvery', kind: 'duration', default: '50m' },
-  { key: 'oneHour.keepWarmFor', env: 'AI_DLC_KEEPALIVE_1H_KEEP_WARM_FOR', userConfig: 'keepaliveOneHourKeepWarmFor', kind: 'duration', default: '8h' },
-  { key: 'oneHour.maxPings', env: 'AI_DLC_KEEPALIVE_1H_MAX_PINGS', userConfig: 'keepaliveOneHourMaxPings', kind: 'whole', default: 0 },
-  { key: 'fiveMinute.enabled', env: 'AI_DLC_KEEPALIVE_5M_ENABLED', userConfig: 'keepaliveFiveMinuteEnabled', kind: 'boolean', default: true },
-  { key: 'fiveMinute.ttl', env: 'AI_DLC_KEEPALIVE_5M_TTL', userConfig: 'keepaliveFiveMinuteTtl', kind: 'duration', default: '5m' },
-  { key: 'fiveMinute.pingEvery', env: 'AI_DLC_KEEPALIVE_5M_PING_EVERY', userConfig: 'keepaliveFiveMinutePingEvery', kind: 'duration', default: '3m' },
-  { key: 'fiveMinute.keepWarmFor', env: 'AI_DLC_KEEPALIVE_5M_KEEP_WARM_FOR', userConfig: 'keepaliveFiveMinuteKeepWarmFor', kind: 'duration', default: '1h' },
-  { key: 'fiveMinute.maxPings', env: 'AI_DLC_KEEPALIVE_5M_MAX_PINGS', userConfig: 'keepaliveFiveMinuteMaxPings', kind: 'whole', default: 0 },
-  { key: 'budgetMultiplier', env: 'AI_DLC_KEEPALIVE_BUDGET_MULTIPLIER', userConfig: 'keepaliveBudgetMultiplier', kind: 'nonNegative', default: 2 },
-  { key: 'compactOnCap', env: 'AI_DLC_KEEPALIVE_COMPACT_ON_CAP', userConfig: 'keepaliveCompactOnCap', kind: 'boolean', default: false },
-  { key: 'compactInstructions', env: 'AI_DLC_KEEPALIVE_COMPACT_INSTRUCTIONS', userConfig: 'keepaliveCompactInstructions', kind: 'text', default: COMPACT_INSTRUCTIONS },
-  { key: 'writeMult', env: 'AI_DLC_KEEPALIVE_WRITE_MULT', userConfig: 'keepaliveWriteMult', kind: 'positive', default: 2 },
-  { key: 'outputMult', env: 'AI_DLC_KEEPALIVE_OUTPUT_MULT', userConfig: 'keepaliveOutputMult', kind: 'positive', default: 5 },
-  { key: 'readPrice', env: 'AI_DLC_KEEPALIVE_READ_PRICE', userConfig: 'keepaliveReadPrice', kind: 'prices', default: 'fable|mythos=0.025,opus[- ]?5[-. ]5=0.05,*=0.1' },
-  { key: 'compactCostGuess', env: 'AI_DLC_KEEPALIVE_COMPACT_COST_GUESS', userConfig: 'keepaliveCompactCostGuess', kind: 'positive', default: 0.6 },
-  { key: 'summaryRatioGuess', env: 'AI_DLC_KEEPALIVE_SUMMARY_RATIO_GUESS', userConfig: 'keepaliveSummaryRatioGuess', kind: 'ratio', default: 0.15 },
+  { key: 'enabled', env: 'AI_DLC_KEEPALIVE_ENABLED', kind: 'boolean', default: true },
+  { key: 'scope', env: 'AI_DLC_KEEPALIVE_SCOPE', kind: 'scope', default: 'session' },
+  { key: 'status', env: 'AI_DLC_KEEPALIVE_STATUS', kind: 'boolean', default: true },
+  { key: 'pingPrompt', env: 'AI_DLC_KEEPALIVE_PING_PROMPT', kind: 'text', default: PING_PROMPT },
+  { key: 'hitThreshold', env: 'AI_DLC_KEEPALIVE_HIT_THRESHOLD', kind: 'threshold', default: 0.9 },
+  { key: 'overagePercent', env: 'AI_DLC_KEEPALIVE_OVERAGE_PERCENT', kind: 'percent', default: 100 },
+  { key: 'minDuration', env: 'AI_DLC_KEEPALIVE_MIN_DURATION', kind: 'minDuration', default: '1m' },
+  { key: 'sessionOverridesMax', env: 'AI_DLC_KEEPALIVE_SESSION_OVERRIDES_MAX', kind: 'positiveWhole', default: 20 },
+  { key: 'oneHour.enabled', env: 'AI_DLC_KEEPALIVE_1H_ENABLED', kind: 'boolean', default: true },
+  { key: 'oneHour.ttl', env: 'AI_DLC_KEEPALIVE_1H_TTL', kind: 'duration', default: '60m' },
+  { key: 'oneHour.pingEvery', env: 'AI_DLC_KEEPALIVE_1H_PING_EVERY', kind: 'duration', default: '50m' },
+  { key: 'oneHour.keepWarmFor', env: 'AI_DLC_KEEPALIVE_1H_KEEP_WARM_FOR', kind: 'duration', default: '8h' },
+  { key: 'oneHour.maxPings', env: 'AI_DLC_KEEPALIVE_1H_MAX_PINGS', kind: 'whole', default: 0 },
+  { key: 'fiveMinute.enabled', env: 'AI_DLC_KEEPALIVE_5M_ENABLED', kind: 'boolean', default: true },
+  { key: 'fiveMinute.ttl', env: 'AI_DLC_KEEPALIVE_5M_TTL', kind: 'duration', default: '5m' },
+  { key: 'fiveMinute.pingEvery', env: 'AI_DLC_KEEPALIVE_5M_PING_EVERY', kind: 'duration', default: '3m' },
+  { key: 'fiveMinute.keepWarmFor', env: 'AI_DLC_KEEPALIVE_5M_KEEP_WARM_FOR', kind: 'duration', default: '1h' },
+  { key: 'fiveMinute.maxPings', env: 'AI_DLC_KEEPALIVE_5M_MAX_PINGS', kind: 'whole', default: 0 },
+  { key: 'budgetMultiplier', env: 'AI_DLC_KEEPALIVE_BUDGET_MULTIPLIER', kind: 'nonNegative', default: 2 },
+  { key: 'compactOnCap', env: 'AI_DLC_KEEPALIVE_COMPACT_ON_CAP', kind: 'boolean', default: false },
+  { key: 'compactInstructions', env: 'AI_DLC_KEEPALIVE_COMPACT_INSTRUCTIONS', kind: 'text', default: COMPACT_INSTRUCTIONS },
+  { key: 'writeMult', env: 'AI_DLC_KEEPALIVE_WRITE_MULT', kind: 'positive', default: 2 },
+  { key: 'outputMult', env: 'AI_DLC_KEEPALIVE_OUTPUT_MULT', kind: 'positive', default: 5 },
+  { key: 'readPrice', env: 'AI_DLC_KEEPALIVE_READ_PRICE', kind: 'prices', default: 'fable|mythos=0.025,opus[- ]?5[-. ]5=0.05,*=0.1' },
+  { key: 'compactCostGuess', env: 'AI_DLC_KEEPALIVE_COMPACT_COST_GUESS', kind: 'positive', default: 0.6 },
+  { key: 'summaryRatioGuess', env: 'AI_DLC_KEEPALIVE_SUMMARY_RATIO_GUESS', kind: 'ratio', default: 0.15 },
 ]
 
 // The settings a cloned repository may set only in a folder Claude Code trusts, from either source it
@@ -91,7 +92,7 @@ export const gatedNames = (by: 'env' | 'json'): string[] =>
   SETTINGS.filter(s => TRUST_GATED.includes(s.key)).map(s => by === 'env' ? s.env : s.key)
 
 /** One place values are read from, highest first. `by`: how a setting is named there. */
-export type Level = { where: string; by: 'env' | 'json' | 'userConfig'; values: Record<string, unknown> }
+export type Level = { where: string; by: 'env' | 'json'; values: Record<string, unknown> }
 export type Resolved = { settings: Settings; sources: Record<string, string>; warnings: string[] }
 
 // Booleans parse as in the automatic handoff's settings (../auto-handoff/config.ts, parseBool).
@@ -127,12 +128,12 @@ export function readMult(prices: readonly PricePattern[], model: string): number
 
 /**
  * A raw value checked against its kind: the value, `null` when it is not set (missing, null, or a
- * blank text in an environment or a /config row), or `{ invalid }` with the reason. `minDuration`:
+ * blank text in an `env`), or `{ invalid }` with the reason. `minDuration`:
  * the shortest duration a `duration` may be.
  */
 export function check(kind: Kind, raw: unknown, by: Level['by'], minDuration: number): unknown {
   if (raw === undefined || raw === null) return null
-  if (by !== 'json' && typeof raw === 'string' && !raw.trim()) return null
+  if (by === 'env' && typeof raw === 'string' && !raw.trim()) return null
   const bad = (why: string) => ({ invalid: why })
   switch (kind) {
     case 'boolean': return parseBool(raw) ?? bad('not true or false')
@@ -161,10 +162,9 @@ export function check(kind: Kind, raw: unknown, by: Level['by'], minDuration: nu
 const isInvalid = (v: unknown): v is { invalid: string } => !!v && typeof v === 'object' && !Array.isArray(v) && 'invalid' in v
 const show = (v: unknown) => typeof v === 'string' ? JSON.stringify(v) : String(JSON.stringify(v))
 
-/** A setting's raw value in a level: by its variable, its /config row, or its nested JSON key. */
+/** A setting's raw value in a level: by its variable, or by its nested JSON key. */
 function rawOf(level: Level, s: Setting): { has: boolean; raw: unknown; name: string } {
   if (level.by === 'env') return { has: Object.hasOwn(level.values, s.env), raw: level.values[s.env], name: s.env }
-  if (level.by === 'userConfig') return { has: Object.hasOwn(level.values, s.userConfig), raw: level.values[s.userConfig], name: s.userConfig }
   let cur: unknown = level.values
   for (const part of s.key.split('.')) {
     if (!cur || typeof cur !== 'object' || Array.isArray(cur) || !Object.hasOwn(cur, part)) return { has: false, raw: undefined, name: s.key }
@@ -202,8 +202,8 @@ export function defaults(): Settings {
 
 /**
  * Each setting from the first level that holds a valid value, highest first: the levels given (the
- * `env` of .claude/settings.local.json, the `env` of .claude/settings.json, .ai-dlc/cache-keepalive.json,
- * then /config), then the default. A value that is set but invalid, or that breaks a rule (a duration
+ * `env` of .claude/settings.local.json, the `env` of .claude/settings.json, then
+ * .ai-dlc/cache-keepalive.json), then the default. A value that is set but invalid, or that breaks a rule (a duration
  * shorter than minDuration, a pingEvery not shorter than its track's ttl), is reported in `warnings`
  * and resolution falls through to the next level. Defaults are exempt from minDuration. When even the
  * default pingEvery is not shorter than a ttl set at some level, that ttl is dropped for its default too.

@@ -5,10 +5,10 @@ import { formatDuration, parseCommandArgs, parseDuration } from '../duration.ts'
 import { SETTINGS, TRUST_GATED, check, defaults, parsePrices, readMult, resolveSettings } from '../settings.ts'
 import type { Level } from '../settings.ts'
 import { seedLineOf, splitFromTranscript, splitOf } from '../keepalive.ts'
-import { PREVIEW_CHARS, previewValue } from '../../auto-handoff/config.ts'
+import { PREVIEW_CHARS, SETTINGS as HANDOFF_SETTINGS, previewValue } from '../../auto-handoff/config.ts'
 
 // Keep-alive, folded in from the vendored cache-keepalive mod (../ATTRIBUTION.md).
-// The upstream tests are kept where the behaviour is, renamed for the two tracks and /ai-dlc:keepalive.
+// The upstream tests are kept where the behaviour is, renamed for the two tracks and /ai-dlc:cache-keepalive.
 
 const MIN = 60_000
 const START = Date.UTC(2026, 9, 7, 12)
@@ -118,7 +118,7 @@ async function runChain(clock: { fire(m: number): Promise<void> }, seen: { forks
   return seen.forks
 }
 
-const keepalive = ($: Parameters<TestBody>[0], args = '') => $.command.run({ command: 'ai-dlc:keepalive', args } as never)
+const keepalive = ($: Parameters<TestBody>[0], args = '') => $.command.run({ command: 'ai-dlc:cache-keepalive', args } as never)
 
 describe('durations and arguments', () => {
   test('parseDuration reads minutes, hours and days and refuses anything else', () => {
@@ -136,20 +136,56 @@ describe('durations and arguments', () => {
   })
 
   test('parseCommandArgs: a duration, clear, the scope flags and usage errors', () => {
+    const both = ['1h', '5m']
     expect(parseCommandArgs('', 'session')).toEqual({ kind: 'ping' })
-    expect(parseCommandArgs('2h', 'session')).toEqual({ kind: 'set', ms: 120 * MIN, scope: 'session' })
-    expect(parseCommandArgs('2h', 'machine')).toEqual({ kind: 'set', ms: 120 * MIN, scope: 'machine' })
-    expect(parseCommandArgs('--machine 1d', 'session')).toEqual({ kind: 'set', ms: 24 * 60 * MIN, scope: 'machine' })
-    expect(parseCommandArgs('30m --session', 'machine')).toEqual({ kind: 'set', ms: 30 * MIN, scope: 'session' })
-    expect(parseCommandArgs('clear --machine', 'session')).toEqual({ kind: 'clear', scope: 'machine' })
-    expect(parseCommandArgs('--clear', 'session')).toEqual({ kind: 'clear', scope: 'session' })
-    expect(parseCommandArgs('CLEAR --MACHINE', 'session')).toEqual({ kind: 'clear', scope: 'machine' })
+    expect(parseCommandArgs('2h', 'session')).toEqual({ kind: 'set', ms: 120 * MIN, scope: 'session', tracks: both })
+    expect(parseCommandArgs('2h', 'machine')).toEqual({ kind: 'set', ms: 120 * MIN, scope: 'machine', tracks: both })
+    expect(parseCommandArgs('--machine 1d', 'session')).toEqual({ kind: 'set', ms: 24 * 60 * MIN, scope: 'machine', tracks: both })
+    expect(parseCommandArgs('30m --session', 'machine')).toEqual({ kind: 'set', ms: 30 * MIN, scope: 'session', tracks: both })
+    expect(parseCommandArgs('clear --machine', 'session')).toEqual({ kind: 'clear', scope: 'machine', tracks: both })
+    expect(parseCommandArgs('--clear', 'session')).toEqual({ kind: 'clear', scope: 'session', tracks: both })
+    expect(parseCommandArgs('CLEAR --MACHINE', 'session')).toEqual({ kind: 'clear', scope: 'machine', tracks: both })
     expect(parseCommandArgs('--machine', 'session')).toEqual({ kind: 'ping' }) // a flag alone changes nothing
     expect(parseCommandArgs('soon', 'session').kind).toBe('usage')
     expect(parseCommandArgs('2h clear', 'session').kind).toBe('usage')
     expect(parseCommandArgs('2h 3h', 'session')).toEqual({ kind: 'usage', problem: 'give one duration' })
     expect(parseCommandArgs('0.4m', 'session').kind).toBe('usage')
     expect(parseCommandArgs('10m', 'session', 20 * MIN).kind).toBe('usage') // under minDuration
+  })
+
+  test('parseCommandArgs: --track picks the 1h track, the 5m track or both; both when not given', () => {
+    expect(parseCommandArgs('2h --track 5m', 'session')).toEqual({ kind: 'set', ms: 120 * MIN, scope: 'session', tracks: ['5m'] })
+    expect(parseCommandArgs('--track 1h 30m --machine', 'session')).toEqual({ kind: 'set', ms: 30 * MIN, scope: 'machine', tracks: ['1h'] })
+    expect(parseCommandArgs('2h --track=5M', 'session')).toEqual({ kind: 'set', ms: 120 * MIN, scope: 'session', tracks: ['5m'] })
+    expect(parseCommandArgs('2h --TRACK Both', 'session')).toEqual({ kind: 'set', ms: 120 * MIN, scope: 'session', tracks: ['1h', '5m'] })
+    expect(parseCommandArgs('clear --track 5m', 'machine')).toEqual({ kind: 'clear', scope: 'machine', tracks: ['5m'] })
+    // The word after --track is the track, never the duration
+    expect(parseCommandArgs('--track 5m', 'session')).toEqual({ kind: 'ping' })
+    expect(parseCommandArgs('2h --track', 'session')).toEqual({ kind: 'usage', problem: '--track needs 1h, 5m or both' })
+    expect(parseCommandArgs('2h --track 30m', 'session')).toEqual({ kind: 'usage', problem: '"30m" is not a track: --track takes 1h, 5m or both' })
+    expect(parseCommandArgs('2h --track 1h --track 5m', 'session')).toEqual({ kind: 'usage', problem: 'give --track once' })
+  })
+})
+
+describe('durations and arguments: --track edge cases', () => {
+  test('the word after --track is read as the track even when it is a duration, a flag or empty', () => {
+    expect(parseCommandArgs('2h --track 2h', 'session')).toEqual({ kind: 'usage', problem: '"2h" is not a track: --track takes 1h, 5m or both' })
+    expect(parseCommandArgs('2h --track --machine', 'session')).toEqual({ kind: 'usage', problem: '"--machine" is not a track: --track takes 1h, 5m or both' })
+    expect(parseCommandArgs('2h --track=', 'session')).toEqual({ kind: 'usage', problem: '"" is not a track: --track takes 1h, 5m or both' })
+    expect(parseCommandArgs('--track=1h --track 5m', 'session')).toEqual({ kind: 'usage', problem: 'give --track once' })
+  })
+
+  test('--track both names both tracks; the track is kept with clear in either order and with either scope', () => {
+    expect(parseCommandArgs('2h --track both', 'session')).toEqual({ kind: 'set', ms: 120 * MIN, scope: 'session', tracks: ['1h', '5m'] })
+    expect(parseCommandArgs('--track 1h clear', 'session')).toEqual({ kind: 'clear', scope: 'session', tracks: ['1h'] })
+    expect(parseCommandArgs('--clear --track=5m --machine', 'session')).toEqual({ kind: 'clear', scope: 'machine', tracks: ['5m'] })
+    expect(parseCommandArgs('2h clear --track 5m', 'session').kind).toBe('usage')
+  })
+
+  test('minDuration applies to a duration given with --track, and a bad track is reported before a bad duration', () => {
+    expect(parseCommandArgs('10m --track 5m', 'session', 20 * MIN).kind).toBe('usage')
+    expect(parseCommandArgs('20m --track 5m', 'session', 20 * MIN)).toEqual({ kind: 'set', ms: 20 * MIN, scope: 'session', tracks: ['5m'] })
+    expect(parseCommandArgs('--track 3m 10m', 'session', 20 * MIN)).toEqual({ kind: 'usage', problem: '"3m" is not a track: --track takes 1h, 5m or both' })
   })
 })
 
@@ -164,36 +200,39 @@ describe('settings', () => {
     expect(d.minDuration).toBe(MIN)
     for (const s of SETTINGS) {
       expect(s.env.startsWith('AI_DLC_KEEPALIVE_')).toBe(true)
-      expect(s.userConfig.startsWith('keepalive')).toBe(true)
     }
     expect(new Set(SETTINGS.map(s => s.env)).size).toBe(SETTINGS.length)
   })
 
-  // The six levels, highest first: the command override (tested with the command below), the env of
-  // .claude/settings.local.json, the env of .claude/settings.json, .ai-dlc/cache-keepalive.json,
-  // /config, the default. Here each file level holds a value; the highest one wins.
-  const levels = (local: unknown, team: unknown, repo: unknown, user: unknown): Level[] => [
+  // The one check, for this runner, that no /config row is left: neither keep-alive's settings table
+  // nor the automatic handoff's names a userConfig key (human decisions, 2026-10-22 and 2026-10-23).
+  // node --test has its own, in tests/auto-handoff/settings-levels-aligned.test.mjs.
+  test('no /config rows: neither settings table names a userConfig key', () => {
+    for (const s of [...SETTINGS, ...HANDOFF_SETTINGS]) expect('userConfig' in s).toBe(false)
+  })
+
+  // The five levels, highest first: the command override (tested with the command below), the env of
+  // .claude/settings.local.json, the env of .claude/settings.json, .ai-dlc/cache-keepalive.json, the
+  // default. Keep-alive has no /config level. Here each file level holds a value; the highest one wins.
+  const levels = (local: unknown, team: unknown, repo: unknown): Level[] => [
     { where: '.claude/settings.local.json', by: 'env', values: local === undefined ? {} : { AI_DLC_KEEPALIVE_1H_KEEP_WARM_FOR: local } },
     { where: '.claude/settings.json', by: 'env', values: team === undefined ? {} : { AI_DLC_KEEPALIVE_1H_KEEP_WARM_FOR: team } },
     { where: '.ai-dlc/cache-keepalive.json', by: 'json', values: repo === undefined ? {} : { oneHour: { keepWarmFor: repo } } },
-    { where: '/config', by: 'userConfig', values: user === undefined ? {} : { keepaliveOneHourKeepWarmFor: user } },
   ]
 
-  test('precedence: settings.local env, then settings env, then the repository file, then /config, then the default', () => {
+  test('precedence: settings.local env, then settings env, then the repository file, then the default', () => {
     const at = (l: Level[]) => { const r = resolveSettings(l); return [formatDuration(r.settings.oneHour.keepWarmFor), r.sources['oneHour.keepWarmFor']] }
-    expect(at(levels('1h', '2h', '3h', '4h'))).toEqual(['1h', 'AI_DLC_KEEPALIVE_1H_KEEP_WARM_FOR in .claude/settings.local.json'])
-    expect(at(levels(undefined, '2h', '3h', '4h'))).toEqual(['2h', 'AI_DLC_KEEPALIVE_1H_KEEP_WARM_FOR in .claude/settings.json'])
-    expect(at(levels(undefined, undefined, '3h', '4h'))).toEqual(['3h', 'oneHour.keepWarmFor in .ai-dlc/cache-keepalive.json'])
-    expect(at(levels(undefined, undefined, undefined, '4h'))).toEqual(['4h', 'keepaliveOneHourKeepWarmFor in /config'])
-    expect(at(levels(undefined, undefined, undefined, undefined))).toEqual(['8h', 'default'])
+    expect(at(levels('1h', '2h', '3h'))).toEqual(['1h', 'AI_DLC_KEEPALIVE_1H_KEEP_WARM_FOR in .claude/settings.local.json'])
+    expect(at(levels(undefined, '2h', '3h'))).toEqual(['2h', 'AI_DLC_KEEPALIVE_1H_KEEP_WARM_FOR in .claude/settings.json'])
+    expect(at(levels(undefined, undefined, '3h'))).toEqual(['3h', 'oneHour.keepWarmFor in .ai-dlc/cache-keepalive.json'])
+    expect(at(levels(undefined, undefined, undefined))).toEqual(['8h', 'default'])
   })
 
   test('an invalid value at each level is ignored with a warning, and the next level applies', () => {
     const cases: [Level[], string, RegExp][] = [
-      [levels('soon', '2h', '3h', '4h'), '2h', /AI_DLC_KEEPALIVE_1H_KEEP_WARM_FOR="soon" in .claude\/settings.local.json ignored/],
-      [levels(undefined, 'soon', '3h', '4h'), '3h', /AI_DLC_KEEPALIVE_1H_KEEP_WARM_FOR="soon" in .claude\/settings.json ignored/],
-      [levels(undefined, undefined, 'soon', '4h'), '4h', /oneHour.keepWarmFor="soon" in .ai-dlc\/cache-keepalive.json ignored/],
-      [levels(undefined, undefined, undefined, 'soon'), '8h', /keepaliveOneHourKeepWarmFor="soon" in \/config ignored/],
+      [levels('soon', '2h', '3h'), '2h', /AI_DLC_KEEPALIVE_1H_KEEP_WARM_FOR="soon" in .claude\/settings.local.json ignored/],
+      [levels(undefined, 'soon', '3h'), '3h', /AI_DLC_KEEPALIVE_1H_KEEP_WARM_FOR="soon" in .claude\/settings.json ignored/],
+      [levels(undefined, undefined, 'soon'), '8h', /oneHour.keepWarmFor="soon" in .ai-dlc\/cache-keepalive.json ignored/],
     ]
     for (const [l, want, warning] of cases) {
       const r = resolveSettings(l)
@@ -201,15 +240,14 @@ describe('settings', () => {
       expect(r.warnings.length).toBe(1)
       expect(r.warnings[0]).toMatch(warning)
     }
-    // Several invalid levels in a row: each warns, the first valid one below applies.
-    const r = resolveSettings(levels('x', 7, { a: 1 }, '5h'))
-    expect(formatDuration(r.settings.oneHour.keepWarmFor)).toBe('5h')
+    // Several invalid levels in a row: each warns, and the default applies below them.
+    const r = resolveSettings(levels('x', 7, { a: 1 }))
+    expect(formatDuration(r.settings.oneHour.keepWarmFor)).toBe('8h')
     expect(r.warnings.length).toBe(3)
   })
 
-  test('blank text in an env or a /config row is unset, not invalid; in the repository file it is invalid', () => {
+  test('blank text in an env is unset, not invalid; in the repository file it is invalid', () => {
     expect(check('duration', '  ', 'env', MIN)).toBe(null)
-    expect(check('duration', '', 'userConfig', MIN)).toBe(null)
     expect(check('duration', '', 'json', MIN)).toEqual({ invalid: 'not a duration (<n>m, <n>h or <n>d)' })
   })
 
@@ -556,11 +594,13 @@ describe('keep-alive', () => {
     expect(line('1h')).toBe('keepalive 1h: off in overage')
   })
 
-  test('untrusted, the gated settings still apply from the env of .claude/settings.local.json and from /config', { options: { keepaliveOneHourKeepWarmFor: '3h' } }, async ($, on) => {
+  // Keep-alive has no /config rows: an option under a former row name is not read (human decision,
+  // 2026-10-22, run AAW-20261022-cache-keepalive-init).
+  test('untrusted, the gated settings still apply from the env of .claude/settings.local.json; a former /config row is not read', { options: { keepaliveOneHourKeepWarmFor: '3h' } }, async ($, on) => {
     const { seen, clock, line } = engine(on, { split: [5, 5], files: { [`${ROOT}/.claude/settings.local.json`]: JSON.stringify({ env: { AI_DLC_KEEPALIVE_5M_KEEP_WARM_FOR: '30m' } }) } })
     await $.classic.Stop(stop())
     expect(line('5m')).toContain('keep warm 30m')
-    expect(line('1h')).toContain('keep warm 3h')
+    expect(line('1h')).toContain('keep warm 8h')
     expect(seen.logs.some(l => l.includes('does not trust this folder'))).toBe(false)
     expect(await runChain(clock, seen, () => line('5m'), 3)).toBe(10)
   })
@@ -606,14 +646,15 @@ describe('keep-alive', () => {
   })
 })
 
-describe('/ai-dlc:keepalive', () => {
-  test('the command is ai-dlc:keepalive; no bare keepalive is answered', async ($, on) => {
+describe('/ai-dlc:cache-keepalive', () => {
+  test('the command is ai-dlc:cache-keepalive; neither a bare keepalive nor the former ai-dlc:keepalive is answered', async ($, on) => {
     engine(on)
     expect((await $.command.run({ command: 'keepalive', args: '2h' } as never)).text).toBe('unanswered: keepalive')
-    expect((await keepalive($, '2h')).text).toBe('keepalive: keep-warm set to 2h for this session; now keep warm 2h on both tracks (this session, /ai-dlc:keepalive)')
+    expect((await $.command.run({ command: 'ai-dlc:keepalive', args: '2h' } as never)).text).toBe('unanswered: ai-dlc:keepalive')
+    expect((await keepalive($, '2h')).text).toBe('keepalive: keep-warm set to 2h on both tracks for this session; now keep warm 2h on both tracks (this session, /ai-dlc:cache-keepalive)')
   })
 
-  test('/ai-dlc:keepalive 2h overrides the duration for this session only, and outranks every settings level', async ($, on) => {
+  test('/ai-dlc:cache-keepalive 2h overrides the duration for this session only, and outranks every settings level', async ($, on) => {
     const { seen, clock, line } = engine(on, { files: { [`${ROOT}/.claude/settings.local.json`]: JSON.stringify({ env: { AI_DLC_KEEPALIVE_1H_KEEP_WARM_FOR: '5h' } }) } })
     await keepalive($, '2h')
     expect(seen.forks).toBe(0) // setting the duration does not ping
@@ -623,64 +664,97 @@ describe('/ai-dlc:keepalive', () => {
   })
 
   test('a session override does not reach another session', async ($, on) => {
-    const { seen, clock, line } = engine(on, { store: { 'keepalive:keepWarmFor:sessions': [['other', 120 * MIN]] } })
+    const { seen, clock, line } = engine(on, { store: { 'keepalive:keepWarmFor:sessions:1h': [['other', 120 * MIN]] } })
     await $.classic.Stop(stop())
     expect(line('1h')).toContain('keep warm 8h')
     expect(await runChain(clock, seen, () => line('1h'), 50)).toBe(9)
   })
 
-  test('/ai-dlc:keepalive 1d --machine applies to every session until cleared', async ($, on) => {
+  test('/ai-dlc:cache-keepalive 1d --machine applies to every session until cleared', async ($, on) => {
     engine(on)
     expect((await keepalive($, '1d --machine')).text)
-      .toBe('keepalive: keep-warm set to 1d for every session on this machine; now keep warm 1d on both tracks (this machine, /ai-dlc:keepalive)')
-    expect((await keepalive($)).text).toContain('; keep warm 1d on both tracks (this machine, /ai-dlc:keepalive)')
+      .toBe('keepalive: keep-warm set to 1d on both tracks for every session on this machine; now keep warm 1d on both tracks (this machine, /ai-dlc:cache-keepalive)')
+    expect((await keepalive($)).text).toContain('; keep warm 1d on both tracks (this machine, /ai-dlc:cache-keepalive)')
     expect((await keepalive($, 'clear --machine')).text)
-      .toBe('keepalive: keep-warm override cleared for every session on this machine; now keep warm: 1h track 8h (default), 5m track 1h (default)')
+      .toBe('keepalive: keep-warm override cleared on both tracks for every session on this machine; now keep warm: 1h track 8h (default), 5m track 1h (default)')
+  })
+
+  test('--track sets or clears the keep-warm time of one track and leaves the other', async ($, on) => {
+    const { seen, clock, line } = engine(on, { split: [5, 5] })
+    expect((await keepalive($, '30m --track 5m')).text)
+      .toBe('keepalive: keep-warm set to 30m on the 5m track for this session; now keep warm: 1h track 8h (default), 5m track 30m (this session, /ai-dlc:cache-keepalive)')
+    expect((await keepalive($, '2h --track 1h --machine')).text)
+      .toBe('keepalive: keep-warm set to 2h on the 1h track for every session on this machine; now keep warm: 1h track 2h (this machine, /ai-dlc:cache-keepalive), 5m track 30m (this session, /ai-dlc:cache-keepalive)')
+    expect(seen.forks).toBe(0)
+    await $.classic.Stop(stop())
+    expect(line('5m')).toContain('keep warm 30m')
+    expect(line('1h')).toContain('keep warm 2h')
+    expect(await runChain(clock, seen, () => line('5m'), 3)).toBe(10)
+    expect((await keepalive($, 'clear --track 5m')).text)
+      .toBe('keepalive: keep-warm override cleared on the 5m track for this session; now keep warm: 1h track 2h (this machine, /ai-dlc:cache-keepalive), 5m track 1h (default)')
+    expect((await keepalive($, '2h --track 30m')).text).toContain('"30m" is not a track: --track takes 1h, 5m or both')
+  })
+
+  test('the keys are per track and scope: a 5m-only machine key and a 1h-only session key each reach only their own track', async ($, on) => {
+    const { line } = engine(on, { split: [5, 5], store: { 'keepalive:keepWarmFor:machine:5m': 20 * MIN, 'keepalive:keepWarmFor:sessions:1h': [['s-1', 3 * 60 * MIN]] } })
+    await $.classic.Stop(stop())
+    expect(line('1h')).toContain('keep warm 3h')
+    expect(line('5m')).toContain('keep warm 20m')
+    expect((await keepalive($, 'clear --track 1h')).text).toContain('now keep warm: 1h track 8h (default), 5m track 20m (this machine, /ai-dlc:cache-keepalive)')
+  })
+
+  test('the former single-key overrides are not read: keepalive:keepWarmFor:sessions and :machine without a track change nothing', async ($, on) => {
+    const { line } = engine(on, { store: { 'keepalive:keepWarmFor:sessions': [['s-1', 2 * MIN]], 'keepalive:keepWarmFor:machine': 2 * MIN } })
+    await $.classic.Stop(stop())
+    expect(line('1h')).toContain('keep warm 8h')
   })
 
   test('a session override beats the machine one; clear in one scope leaves the other', async ($, on) => {
-    const { line } = engine(on, { store: { 'keepalive:keepWarmFor:machine': 24 * 60 * MIN, 'keepalive:keepWarmFor:sessions': [['s-1', 30 * MIN], ['other', 45 * MIN]] } })
+    const { line } = engine(on, { store: {
+      'keepalive:keepWarmFor:machine:1h': 24 * 60 * MIN, 'keepalive:keepWarmFor:machine:5m': 24 * 60 * MIN,
+      'keepalive:keepWarmFor:sessions:1h': [['s-1', 30 * MIN], ['other', 45 * MIN]], 'keepalive:keepWarmFor:sessions:5m': [['s-1', 30 * MIN]],
+    } })
     await $.classic.Stop(stop())
     expect(line('1h')).toContain('keep warm 30m')
-    expect((await keepalive($, 'clear')).text).toContain('now keep warm 1d on both tracks (this machine, /ai-dlc:keepalive)')
+    expect((await keepalive($, 'clear')).text).toContain('now keep warm 1d on both tracks (this machine, /ai-dlc:cache-keepalive)')
     expect((await keepalive($, 'clear --machine')).text).toContain('now keep warm: 1h track 8h (default), 5m track 1h (default)')
   })
 
   test('scope machine makes machine the default scope; --session overrides it', async ($, on) => {
     engine(on, { files: { [`${ROOT}/.ai-dlc/cache-keepalive.json`]: JSON.stringify({ scope: 'machine' }) } })
     expect((await keepalive($, '3h')).text).toContain('for every session on this machine')
-    expect((await keepalive($, '30m --session')).text).toContain('for this session; now keep warm 30m on both tracks (this session, /ai-dlc:keepalive)')
+    expect((await keepalive($, '30m --session')).text).toContain('for this session; now keep warm 30m on both tracks (this session, /ai-dlc:cache-keepalive)')
   })
 
   test('a bad argument shows the usage, names the command and each track interval, and changes nothing', async ($, on) => {
     const { seen } = engine(on)
     const { text } = await keepalive($, 'forever')
     expect(text).toContain('"forever" is not a duration')
-    expect(text).toContain('Usage: /ai-dlc:keepalive [<n>m|<n>h|<n>d|clear] [--session|--machine]')
+    expect(text).toContain('Usage: /ai-dlc:cache-keepalive [<n>m|<n>h|<n>d|clear] [--track 1h|5m|both] [--session|--machine]')
     expect(text).toContain('the 1h track every 50m and the 5m track every 3m')
     expect(text).not.toMatch(/(^|[^:])\/keepalive/)
     expect(seen.forks).toBe(0)
   })
 
   test('an override shorter than minDuration is ignored with a warning, and the next level applies', async ($, on) => {
-    const { seen, line } = engine(on, { store: { 'keepalive:keepWarmFor:sessions': [['s-1', 2 * MIN]] }, files: { [`${ROOT}/.ai-dlc/cache-keepalive.json`]: JSON.stringify({ minDuration: '10m' }) } })
+    const { seen, line } = engine(on, { store: { 'keepalive:keepWarmFor:sessions:1h': [['s-1', 2 * MIN]] }, files: { [`${ROOT}/.ai-dlc/cache-keepalive.json`]: JSON.stringify({ minDuration: '10m' }) } })
     await $.classic.Stop(stop())
     expect(line('1h')).toContain('keep warm 8h')
-    expect(seen.logs.some(l => l.includes('override for this session (2m) is shorter than minDuration (10m); ignored'))).toBe(true)
+    expect(seen.logs.some(l => l.includes('override of the 1h track for this session (2m) is shorter than minDuration (10m); ignored'))).toBe(true)
   })
 
   test('only the newest sessionOverridesMax session overrides are kept', async ($, on) => {
     const old = Array.from({ length: 3 }, (_, i) => [`old-${i}`, (i + 1) * MIN])
     let id = 's-1'
-    engine(on, { store: { 'keepalive:keepWarmFor:sessions': old }, session: () => id, files: { [`${ROOT}/.claude/settings.json`]: JSON.stringify({ env: { AI_DLC_KEEPALIVE_SESSION_OVERRIDES_MAX: '3' } }) } })
+    engine(on, { store: { 'keepalive:keepWarmFor:sessions:1h': old, 'keepalive:keepWarmFor:sessions:5m': old }, session: () => id, files: { [`${ROOT}/.claude/settings.json`]: JSON.stringify({ env: { AI_DLC_KEEPALIVE_SESSION_OVERRIDES_MAX: '3' } }) } })
     await keepalive($, '2h')
     id = 'old-0'
-    expect((await keepalive($, '')).text).toContain('1h track 8h (default)')
+    expect((await keepalive($, '')).text).toContain('1h track 8h (default), 5m track 1h (default)')
     id = 'old-1'
-    expect((await keepalive($, '')).text).toContain('keep warm 2m on both tracks (this session, /ai-dlc:keepalive)')
+    expect((await keepalive($, '')).text).toContain('keep warm 2m on both tracks (this session, /ai-dlc:cache-keepalive)')
   })
 
-  test('a bare /ai-dlc:keepalive pings now and reports the hit', async ($, on) => {
+  test('a bare /ai-dlc:cache-keepalive pings now and reports the hit', async ($, on) => {
     const { seen } = engine(on)
     const { text } = await keepalive($)
     expect(seen.forks).toBe(1)
@@ -692,11 +766,10 @@ describe('/ai-dlc:keepalive', () => {
     ['the env of .claude/settings.local.json', { files: { [`${ROOT}/.claude/settings.local.json`]: JSON.stringify({ env: { AI_DLC_KEEPALIVE_1H_KEEP_WARM_FOR: '5h' } }) } }, {}],
     ['the env of .claude/settings.json', { trusted: true, files: { [`${ROOT}/.claude/settings.json`]: JSON.stringify({ env: { AI_DLC_KEEPALIVE_1H_KEEP_WARM_FOR: '5h' } }) } }, {}],
     ['.ai-dlc/cache-keepalive.json', { trusted: true, files: { [`${ROOT}/.ai-dlc/cache-keepalive.json`]: JSON.stringify({ oneHour: { keepWarmFor: '5h' } }) } }, {}],
-    ['/config', {}, { keepaliveOneHourKeepWarmFor: '5h' }],
     ['the default', {}, {}],
   ]
   for (const [where, o, options] of lower) {
-    test(`/ai-dlc:keepalive 2h outranks ${where}`, { options }, async ($, on) => {
+    test(`/ai-dlc:cache-keepalive 2h outranks ${where}`, { options }, async ($, on) => {
       const { seen, clock, line } = engine(on, o)
       await $.classic.Stop(stop())
       expect(line('1h')).toContain(where === 'the default' ? 'keep warm 8h' : 'keep warm 5h')
@@ -731,7 +804,7 @@ describe('the ping on the limit', () => {
 // R2 (D2): all 16 gated keys, from both committed sources, one set of tests per key. Each key is
 // probed through what it changes, since the module under test is not importable from the test.
 type Ctx = { $: Parameters<TestBody>[0]; on: On; seen: ReturnType<typeof engine>['seen']; clock: ReturnType<typeof engine>['clock']; line: ReturnType<typeof engine>['line']; status: ReturnType<typeof engine>['status'] }
-type Gated = { key: string; env: string; userConfig: string; a: unknown; cfg?: unknown; split?: [number, number]; forkOutput?: number; cacheRead?: number; base?: Record<string, string>; probe: (c: Ctx) => Promise<string>; ta: string; tb?: string; td: string }
+type Gated = { key: string; env: string; a: unknown; split?: [number, number]; forkOutput?: number; cacheRead?: number; base?: Record<string, string>; probe: (c: Ctx) => Promise<string>; ta: string; td: string }
 const warmOf = (c: Ctx, track: '1h' | '5m') => /keep warm (\S+?),/.exec(c.line(track) ?? '')?.[1] ?? 'none'
 const maxOf = (c: Ctx, track: '1h' | '5m') => /ping 0\/(\S+?),/.exec(c.line(track) ?? '')?.[1] ?? 'none'
 const forksAt = async (c: Ctx, minutes: number[]) => { const out: number[] = []; for (const m of minutes) { await c.clock.fire(m); out.push(c.seen.forks) } return out.join('/') }
@@ -746,24 +819,24 @@ const compactProbe = (read: (c: Ctx, instructions: string[]) => string) => async
 // What the first 1h ping spent, from its debug log line.
 const spentProbe = async (c: Ctx) => { await armed(c); await c.clock.fire(50); return /spent (\d+)/.exec(c.seen.logs.find(l => l.includes(' spent ')) ?? '')?.[1] ?? 'none' }
 const GATED: Gated[] = [
-  { key: 'enabled', env: 'AI_DLC_KEEPALIVE_ENABLED', userConfig: 'keepaliveEnabled', a: false, probe: async c => { await armed(c); return c.status() === undefined ? 'off' : 'on' }, ta: 'off', td: 'on' },
-  { key: 'pingPrompt', env: 'AI_DLC_KEEPALIVE_PING_PROMPT', userConfig: 'keepalivePingPrompt', a: 'x', cfg: 'z', probe: async c => { await armed(c); await c.clock.fire(50); return c.seen.prompts[0] ?? 'none' }, ta: 'x', tb: 'z', td: 'Keep-alive ping. Reply with only: ok' },
-  { key: 'oneHour.enabled', env: 'AI_DLC_KEEPALIVE_1H_ENABLED', userConfig: 'keepaliveOneHourEnabled', a: false, probe: async c => { await armed(c); return c.line('1h')?.includes('disabled') ? 'off' : 'on' }, ta: 'off', td: 'on' },
-  { key: 'oneHour.pingEvery', env: 'AI_DLC_KEEPALIVE_1H_PING_EVERY', userConfig: 'keepaliveOneHourPingEvery', a: '40m', cfg: '30m', probe: async c => { await armed(c); return forksAt(c, [30, 10]) }, ta: '0/1', tb: '1/1', td: '0/0' },
-  { key: 'oneHour.keepWarmFor', env: 'AI_DLC_KEEPALIVE_1H_KEEP_WARM_FOR', userConfig: 'keepaliveOneHourKeepWarmFor', a: '2h', cfg: '3h', probe: async c => { await armed(c); return warmOf(c, '1h') }, ta: '2h', tb: '3h', td: '8h' },
-  { key: 'oneHour.maxPings', env: 'AI_DLC_KEEPALIVE_1H_MAX_PINGS', userConfig: 'keepaliveOneHourMaxPings', a: 7, cfg: 9, probe: async c => { await armed(c); return maxOf(c, '1h') }, ta: '7', tb: '9', td: '∞' },
-  { key: 'fiveMinute.enabled', env: 'AI_DLC_KEEPALIVE_5M_ENABLED', userConfig: 'keepaliveFiveMinuteEnabled', a: false, split: [0, 5], probe: async c => { await armed(c); return c.line('5m')?.includes('disabled') ? 'off' : 'on' }, ta: 'off', td: 'on' },
-  { key: 'fiveMinute.pingEvery', env: 'AI_DLC_KEEPALIVE_5M_PING_EVERY', userConfig: 'keepaliveFiveMinutePingEvery', a: '2m', cfg: '1m', split: [0, 5], probe: async c => { await armed(c); return forksAt(c, [1, 1]) }, ta: '0/1', tb: '1/2', td: '0/0' },
-  { key: 'fiveMinute.keepWarmFor', env: 'AI_DLC_KEEPALIVE_5M_KEEP_WARM_FOR', userConfig: 'keepaliveFiveMinuteKeepWarmFor', a: '30m', cfg: '20m', split: [0, 5], probe: async c => { await armed(c); return warmOf(c, '5m') }, ta: '30m', tb: '20m', td: '1h' },
-  { key: 'fiveMinute.maxPings', env: 'AI_DLC_KEEPALIVE_5M_MAX_PINGS', userConfig: 'keepaliveFiveMinuteMaxPings', a: 7, cfg: 9, split: [0, 5], probe: async c => { await armed(c); return maxOf(c, '5m') }, ta: '7', tb: '9', td: '∞' },
-  { key: 'budgetMultiplier', env: 'AI_DLC_KEEPALIVE_BUDGET_MULTIPLIER', userConfig: 'keepaliveBudgetMultiplier', a: 3, cfg: 4, probe: async c => { await armed(c); return /of (\d+)/.exec((await keepalive(c.$)).text)?.[1] ?? 'none' }, ta: '3000000', tb: '4000000', td: '2000000' },
-  { key: 'compactOnCap', env: 'AI_DLC_KEEPALIVE_COMPACT_ON_CAP', userConfig: 'keepaliveCompactOnCap', a: true, forkOutput: 400_000, probe: compactProbe(c => c.seen.logs.some(l => l.includes('--resume-session-at')) ? 'compacts' : 'does not'), ta: 'compacts', td: 'does not' },
-  { key: 'compactInstructions', env: 'AI_DLC_KEEPALIVE_COMPACT_INSTRUCTIONS', userConfig: 'keepaliveCompactInstructions', a: 'y', cfg: 'w', forkOutput: 400_000, base: { AI_DLC_KEEPALIVE_COMPACT_ON_CAP: 'true' }, probe: compactProbe((_, i) => i[0] ?? 'none'), ta: 'y', tb: 'w', td: "Also keep the background tasks' IDs, output paths, and what to do when they finish." },
+  { key: 'enabled', env: 'AI_DLC_KEEPALIVE_ENABLED', a: false, probe: async c => { await armed(c); return c.status() === undefined ? 'off' : 'on' }, ta: 'off', td: 'on' },
+  { key: 'pingPrompt', env: 'AI_DLC_KEEPALIVE_PING_PROMPT', a: 'x', probe: async c => { await armed(c); await c.clock.fire(50); return c.seen.prompts[0] ?? 'none' }, ta: 'x', td: 'Keep-alive ping. Reply with only: ok' },
+  { key: 'oneHour.enabled', env: 'AI_DLC_KEEPALIVE_1H_ENABLED', a: false, probe: async c => { await armed(c); return c.line('1h')?.includes('disabled') ? 'off' : 'on' }, ta: 'off', td: 'on' },
+  { key: 'oneHour.pingEvery', env: 'AI_DLC_KEEPALIVE_1H_PING_EVERY', a: '40m', probe: async c => { await armed(c); return forksAt(c, [30, 10]) }, ta: '0/1', td: '0/0' },
+  { key: 'oneHour.keepWarmFor', env: 'AI_DLC_KEEPALIVE_1H_KEEP_WARM_FOR', a: '2h', probe: async c => { await armed(c); return warmOf(c, '1h') }, ta: '2h', td: '8h' },
+  { key: 'oneHour.maxPings', env: 'AI_DLC_KEEPALIVE_1H_MAX_PINGS', a: 7, probe: async c => { await armed(c); return maxOf(c, '1h') }, ta: '7', td: '∞' },
+  { key: 'fiveMinute.enabled', env: 'AI_DLC_KEEPALIVE_5M_ENABLED', a: false, split: [0, 5], probe: async c => { await armed(c); return c.line('5m')?.includes('disabled') ? 'off' : 'on' }, ta: 'off', td: 'on' },
+  { key: 'fiveMinute.pingEvery', env: 'AI_DLC_KEEPALIVE_5M_PING_EVERY', a: '2m', split: [0, 5], probe: async c => { await armed(c); return forksAt(c, [1, 1]) }, ta: '0/1', td: '0/0' },
+  { key: 'fiveMinute.keepWarmFor', env: 'AI_DLC_KEEPALIVE_5M_KEEP_WARM_FOR', a: '30m', split: [0, 5], probe: async c => { await armed(c); return warmOf(c, '5m') }, ta: '30m', td: '1h' },
+  { key: 'fiveMinute.maxPings', env: 'AI_DLC_KEEPALIVE_5M_MAX_PINGS', a: 7, split: [0, 5], probe: async c => { await armed(c); return maxOf(c, '5m') }, ta: '7', td: '∞' },
+  { key: 'budgetMultiplier', env: 'AI_DLC_KEEPALIVE_BUDGET_MULTIPLIER', a: 3, probe: async c => { await armed(c); return /of (\d+)/.exec((await keepalive(c.$)).text)?.[1] ?? 'none' }, ta: '3000000', td: '2000000' },
+  { key: 'compactOnCap', env: 'AI_DLC_KEEPALIVE_COMPACT_ON_CAP', a: true, forkOutput: 400_000, probe: compactProbe(c => c.seen.logs.some(l => l.includes('--resume-session-at')) ? 'compacts' : 'does not'), ta: 'compacts', td: 'does not' },
+  { key: 'compactInstructions', env: 'AI_DLC_KEEPALIVE_COMPACT_INSTRUCTIONS', a: 'y', forkOutput: 400_000, base: { AI_DLC_KEEPALIVE_COMPACT_ON_CAP: 'true' }, probe: compactProbe((_, i) => i[0] ?? 'none'), ta: 'y', td: "Also keep the background tasks' IDs, output paths, and what to do when they finish." },
   // The prices the spend limit counts in. The mock's ping: 10 input, 1 output, 1M read and nothing
   // written, or with cacheRead below 1M, 1M written; claude-opus-5-5 reads at 0.05 by default.
-  { key: 'writeMult', env: 'AI_DLC_KEEPALIVE_WRITE_MULT', userConfig: 'keepaliveWriteMult', a: 3, cfg: 4, cacheRead: 990_000, probe: spentProbe, ta: '3049515', tb: '4049515', td: '2049515' },
-  { key: 'outputMult', env: 'AI_DLC_KEEPALIVE_OUTPUT_MULT', userConfig: 'keepaliveOutputMult', a: 7, cfg: 9, probe: spentProbe, ta: '50017', tb: '50019', td: '50015' },
-  { key: 'readPrice', env: 'AI_DLC_KEEPALIVE_READ_PRICE', userConfig: 'keepaliveReadPrice', a: '*=0.2', cfg: '*=0.3', probe: spentProbe, ta: '200015', tb: '300015', td: '50015' },
+  { key: 'writeMult', env: 'AI_DLC_KEEPALIVE_WRITE_MULT', a: 3, cacheRead: 990_000, probe: spentProbe, ta: '3049515', td: '2049515' },
+  { key: 'outputMult', env: 'AI_DLC_KEEPALIVE_OUTPUT_MULT', a: 7, probe: spentProbe, ta: '50017', td: '50015' },
+  { key: 'readPrice', env: 'AI_DLC_KEEPALIVE_READ_PRICE', a: '*=0.2', probe: spentProbe, ta: '200015', td: '50015' },
 ]
 
 describe('trust gate, every gated key', () => {
@@ -777,7 +850,7 @@ describe('trust gate, every gated key', () => {
     expect(GATED.map(g => g.key).sort()).toEqual([...TRUST_GATED].sort())
     for (const g of GATED) {
       const s = SETTINGS.find(x => x.key === g.key)!
-      expect([s.env, s.userConfig]).toEqual([g.env, g.userConfig])
+      expect(s.env).toBe(g.env)
     }
   })
 
@@ -792,12 +865,6 @@ describe('trust gate, every gated key', () => {
       expect(await g.probe(ctx($, on, e))).toBe(g.td)
       expect(e.seen.logs.some(l => l.includes(`${g.key}=${previewValue(g.a)} in .ai-dlc/cache-keepalive.json ignored: Claude Code does not trust this folder`))).toBe(true)
     })
-    if (g.cfg !== undefined) {
-      test(`[R2] untrusted: after ${g.key} is skipped from both sources, /config applies`, { options: { [g.userConfig]: g.cfg } }, async ($, on) => {
-        const e = eng(g, on, { [`${ROOT}/.claude/settings.json`]: JSON.stringify({ env: { [g.env]: String(g.a) } }), [`${ROOT}/.ai-dlc/cache-keepalive.json`]: JSON.stringify(nested(g.key, g.a)) })
-        expect(await g.probe(ctx($, on, e))).toBe(g.tb)
-      })
-    }
     test(`[R2] untrusted: ${g.key} still applies from the env of settings.local.json, with nothing logged as untrusted`, { options: {} }, async ($, on) => {
       const e = engine(on, { split: g.split, forkOutput: g.forkOutput, cacheRead: g.cacheRead, files: localFile(g, true) })
       expect(await g.probe(ctx($, on, e))).toBe(g.ta)

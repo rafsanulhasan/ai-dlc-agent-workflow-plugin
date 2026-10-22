@@ -1,6 +1,6 @@
 import type { EngineInterface, Register, Timer } from 'claude-code'
-import { formatDuration, parseCommandArgs } from './duration.ts'
-import type { Scope } from './duration.ts'
+import { TRACK_NAMES, formatDuration, parseCommandArgs } from './duration.ts'
+import type { Scope, TrackName } from './duration.ts'
 import { defaults, gatedNames, readMult, resolveSettings } from './settings.ts'
 import type { Level, Settings, TrackKey } from './settings.ts'
 import { creationSplit, k, repoConfig, settingsEnv } from '../auto-handoff/config.ts'
@@ -17,18 +17,20 @@ import type { TrustCache } from '../auto-handoff/io.ts'
 // files, never the process environment.
 
 // The command. A hooks module can only register a bare name (letters, digits, _ and -), so the name
-// comes from the plugin skill skills/keepalive, which Claude Code lists as /ai-dlc:keepalive, and the
-// command.run hook below answers its runs in the skill's place.
-export const COMMAND = 'ai-dlc:keepalive'
+// comes from the plugin skill skills/cache-keepalive, which Claude Code lists as /ai-dlc:cache-keepalive,
+// and the command.run hook below answers its runs in the skill's place.
+export const COMMAND = 'ai-dlc:cache-keepalive'
 export const REPO_FILE = '.ai-dlc/cache-keepalive.json'
-const SESSION_KEY = 'keepalive:keepWarmFor:sessions'
-const MACHINE_KEY = 'keepalive:keepWarmFor:machine'
+// The /ai-dlc:cache-keepalive overrides, one pair of store keys per track: this session's (a list of
+// [session id, ms]) and the machine's (ms).
+const sessionKey = (n: TrackName) => `keepalive:keepWarmFor:sessions:${n}`
+const machineKey = (n: TrackName) => `keepalive:keepWarmFor:machine:${n}`
 const COST_KEY = 'keepalive:compactCost'
 const RATIO_KEY = 'keepalive:summaryRatio'
 // How much of a transcript's end is read for the cache split when the file is too big to read whole.
 const TAIL_BYTES = 2_000_000
 
-export type TrackName = '1h' | '5m'
+export type { TrackName }
 const TRACKS: readonly (readonly [TrackName, TrackKey])[] = [['1h', 'oneHour'], ['5m', 'fiveMinute']]
 
 /** What register.tsx tells keep-alive: whether an automatic handoff is under way, when no pings are armed. */
@@ -44,7 +46,6 @@ const newTrack = (name: TrackName, key: TrackKey): Track => ({ name, key, genera
 // and at session.end.
 let settings: Settings = defaults()
 let sources: Record<string, string> = {}
-let options: Record<string, unknown> = {}
 const warned = new Set<string>()
 const tracks: Record<TrackName, Track> = { '1h': newTrack('1h', 'oneHour'), '5m': newTrack('5m', 'fiveMinute') }
 let compacting = false
@@ -136,14 +137,14 @@ async function warn($: EngineInterface, line: string) {
 }
 
 // Where a person sets a trust-gated setting instead: the sources a cloned repository cannot write.
-const GATED_INSTEAD = `set them in the env of .claude/settings.local.json or in /config instead (a keep-warm time also with /${COMMAND})`
+const GATED_INSTEAD = `set them in the env of .claude/settings.local.json instead (a keep-warm time also with /${COMMAND})`
 
 // Reads every level and resolves each setting, highest first: `env` of .claude/settings.local.json,
-// `env` of .claude/settings.json, .ai-dlc/cache-keepalive.json, /config, the default (settings.ts).
-// The process environment is not read. The two committed sources, the env of .claude/settings.json
-// and the repository file, set the trust-gated settings (settings.ts, TRUST_GATED) only in a folder
-// Claude Code trusts; elsewhere each is skipped with a warning and the next level applies. Never
-// throws: on an error, /config and the defaults apply.
+// `env` of .claude/settings.json, .ai-dlc/cache-keepalive.json, the default (settings.ts). Keep-alive
+// has no /config rows, and the process environment is not read. The two committed sources, the env
+// of .claude/settings.json and the repository file, set the trust-gated settings (settings.ts,
+// TRUST_GATED) only in a folder Claude Code trusts; elsewhere each is skipped with a warning and the
+// next level applies. Never throws: on an error, the defaults apply.
 async function load($: EngineInterface) {
   const problems: string[] = []
   const levels: Level[] = []
@@ -161,9 +162,8 @@ async function load($: EngineInterface) {
     if (repo.problem) problems.push(`${REPO_FILE} ${repo.problem}`)
     if (repo.values) levels.push({ where: REPO_FILE, by: 'json', values: await trustGate($, repo.values, gatedNames('json'), REPO_FILE, GATED_INSTEAD, problems, trust) })
   } catch (err) {
-    problems.push(`settings files unreadable (${String(err)}); using /config and the defaults`)
+    problems.push(`settings files unreadable (${String(err)}); using the defaults`)
   }
-  levels.push({ where: '/config', by: 'userConfig', values: options })
   const r = resolveSettings(levels)
   settings = r.settings
   sources = r.sources
@@ -172,33 +172,40 @@ async function load($: EngineInterface) {
 
 type Keep = { ms: number; from: string }
 
-async function sessionOverrides($: EngineInterface): Promise<[string, number][]> {
-  const v = await $.store.get(SESSION_KEY)
+async function sessionOverrides($: EngineInterface, n: TrackName): Promise<[string, number][]> {
+  const v = await $.store.get(sessionKey(n))
   return Array.isArray(v) ? v.filter((x): x is [string, number] => Array.isArray(x) && typeof x[0] === 'string' && typeof x[1] === 'number') : []
 }
 
 // The keep-warm time of a track: this session's override, the machine's, then the track's setting.
 // An override shorter than minDuration (set before minDuration was raised) is ignored with a warning.
 async function keepWarm($: EngineInterface, key: TrackKey): Promise<Keep> {
+  const n = TRACKS.find(([, k]) => k === key)![0]
   const id = await $.session.id()
-  const own = (await sessionOverrides($)).find(([s]) => s === id)
+  const own = (await sessionOverrides($, n)).find(([s]) => s === id)
   if (own) {
     if (own[1] >= settings.minDuration) return { ms: own[1], from: `this session, /${COMMAND}` }
-    await warn($, `the /${COMMAND} override for this session (${formatDuration(own[1])}) is shorter than minDuration (${formatDuration(settings.minDuration)}); ignored`)
+    await warn($, `the /${COMMAND} override of the ${n} track for this session (${formatDuration(own[1])}) is shorter than minDuration (${formatDuration(settings.minDuration)}); ignored`)
   }
-  const machine = await $.store.get(MACHINE_KEY)
+  const machine = await $.store.get(machineKey(n))
   if (typeof machine === 'number' && machine > 0) {
     if (machine >= settings.minDuration) return { ms: machine, from: `this machine, /${COMMAND}` }
-    await warn($, `the /${COMMAND} override for this machine (${formatDuration(machine)}) is shorter than minDuration (${formatDuration(settings.minDuration)}); ignored`)
+    await warn($, `the /${COMMAND} override of the ${n} track for this machine (${formatDuration(machine)}) is shorter than minDuration (${formatDuration(settings.minDuration)}); ignored`)
   }
   return { ms: settings[key].keepWarmFor, from: sources[`${key}.keepWarmFor`] ?? 'default' }
 }
 
-async function setKeepWarm($: EngineInterface, scope: Scope, ms: number | undefined) {
-  if (scope === 'machine') return ms === undefined ? $.store.delete(MACHINE_KEY) : $.store.set(MACHINE_KEY, ms)
-  const id = await $.session.id()
-  const rest = (await sessionOverrides($)).filter(([s]) => s !== id)
-  await $.store.set(SESSION_KEY, ms === undefined ? rest : [...rest, [id, ms]].slice(-settings.sessionOverridesMax))
+// Sets (ms) or clears (undefined) the override of each track named, in the scope given.
+async function setKeepWarm($: EngineInterface, scope: Scope, ms: number | undefined, which: readonly TrackName[]) {
+  for (const n of which) {
+    if (scope === 'machine') {
+      await (ms === undefined ? $.store.delete(machineKey(n)) : $.store.set(machineKey(n), ms))
+      continue
+    }
+    const id = await $.session.id()
+    const rest = (await sessionOverrides($, n)).filter(([s]) => s !== id)
+    await $.store.set(sessionKey(n), ms === undefined ? rest : [...rest, [id, ms]].slice(-settings.sessionOverridesMax))
+  }
 }
 
 // "keep warm 2h on both tracks (this session, ...)" when one override sets both, else each track's own.
@@ -369,8 +376,7 @@ export async function showSeedCache($: EngineInterface, cache: { read: number })
   $.ui.status(seedLine)
 }
 
-export function registerKeepalive(on: Parameters<Register>[0], opts: Record<string, unknown>, deps: KeepaliveDeps) {
-  options = opts
+export function registerKeepalive(on: Parameters<Register>[0], deps: KeepaliveDeps) {
 
   on('turn.start', async ($, e, next) => {
     stopAll()
@@ -452,19 +458,21 @@ export function registerKeepalive(on: Parameters<Register>[0], opts: Record<stri
     return next(e)
   })
 
-  // /ai-dlc:keepalive pings now (upstream). With a duration it sets the keep-warm time of both tracks,
-  // and with clear it removes the override, in the default scope or the one --session / --machine names.
+  // /ai-dlc:cache-keepalive pings now (upstream). With a duration it sets the keep-warm time of both
+  // tracks, or of the one --track names, and with clear it removes that override, in the default scope
+  // or the one --session / --machine names.
   on('command.run', { command: COMMAND }, async ($, e) => {
     await load($)
     const args = parseCommandArgs(e.args ?? '', settings.scope, settings.minDuration)
     if (args.kind === 'usage') {
       const every = TRACKS.map(([n, key]) => `the ${n} track every ${formatDuration(settings[key].pingEvery)}`).join(' and ')
-      return { text: `keepalive: ${args.problem}. Usage: /${COMMAND} [<n>m|<n>h|<n>d|clear] [--session|--machine]. A duration sets the keep-warm time of both tracks. Pings come on ${every}, so a duration no longer than a track's interval sends no ping on it: the cache's own lifetime covers it.` }
+      return { text: `keepalive: ${args.problem}. Usage: /${COMMAND} [<n>m|<n>h|<n>d|clear] [--track 1h|5m|both] [--session|--machine]. A duration sets the keep-warm time of both tracks, or of the one --track names. Pings come on ${every}, so a duration no longer than a track's interval sends no ping on it: the cache's own lifetime covers it.` }
     }
     if (args.kind !== 'ping') {
-      await setKeepWarm($, args.scope, args.kind === 'set' ? args.ms : undefined)
+      await setKeepWarm($, args.scope, args.kind === 'set' ? args.ms : undefined, args.tracks)
       const where = args.scope === 'machine' ? 'every session on this machine' : 'this session'
-      const what = args.kind === 'set' ? `set to ${formatDuration(args.ms)} for ${where}` : `override cleared for ${where}`
+      const which = args.tracks.length === TRACK_NAMES.length ? 'both tracks' : `the ${args.tracks[0]} track`
+      const what = args.kind === 'set' ? `set to ${formatDuration(args.ms)} on ${which} for ${where}` : `override cleared on ${which} for ${where}`
       return { text: `keepalive: keep-warm ${what}; now ${await keepLines($)}` }
     }
     if (!settings.enabled) return { text: `keepalive: off (enabled=false, ${sources.enabled ?? 'default'}); nothing pinged` }

@@ -4,3 +4,4 @@
 - [Auto-handoff decisions](project_auto-handoff-decisions.md) — chain by run state; local env wins; trust gate; keepalive 1h/5m tracks, 26 settings
 - [Lens decisions](project_lens-decisions.md) — 2026-10-22: merge 4 mods, no dup fields; /ai-dlc:lens via thin skills; no keepwarm; never hide responses
 - [Review budget](feedback_review-budget.md) — few review rounds; per-loop maxRounds/maxFailures 2/1; take limits from rounds --json
+- [Plugin command naming](feedback_plugin-command-naming.md) — /ai-dlc:<feature>[-action]; no /config rows; settings via .ai-dlc/*.json + env

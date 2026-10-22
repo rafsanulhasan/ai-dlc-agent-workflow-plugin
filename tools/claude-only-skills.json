@@ -1,3 +1,4 @@
 [
-  "keepalive"
+  "cache-keepalive",
+  "cache-keepalive-config"
 ]

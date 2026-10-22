@@ -297,7 +297,7 @@ if (fs.existsSync(MIRRORS)) {
 
 // ---- Claude-only skills: kept out of the Copilot plugin ----------------------------
 // tools/claude-only-skills.json lists plugin skills that only work in Claude Code, such as one that
-// gives a hooks module's command its name (ai-dlc's `keepalive`). Copilot gets none of their files.
+// gives a hooks module's command its name (ai-dlc's `cache-keepalive`). Copilot gets none of their files.
 const CLAUDE_ONLY = path.join(ROOT, "tools", "claude-only-skills.json");
 const claudeOnly = new Set(fs.existsSync(CLAUDE_ONLY) ? JSON.parse(fs.readFileSync(CLAUDE_ONLY, "utf8")) : []);
 for (const name of claudeOnly) {

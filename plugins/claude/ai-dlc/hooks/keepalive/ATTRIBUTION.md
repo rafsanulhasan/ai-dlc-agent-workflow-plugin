@@ -12,6 +12,13 @@ the move name the paths as they were then: `keepalive/<file>` is now `<file>`
 in this folder, and `tests/keepalive.test.ts`, then auto-handoff's, is now this
 folder's.
 
+The entries below are a history, each true when it was written. Those before
+2026-10-23 (run AAW-20261022-cache-keepalive-init) name the command
+`/ai-dlc:keepalive` and the skill `skills/keepalive/`, now
+`/ai-dlc:cache-keepalive` and `skills/cache-keepalive/`, and `/config` rows
+(`keepalive*` in the manifest's `userConfig`) as a settings level; those rows
+and that level are gone. The last entry describes the current state.
+
 | Field | Value |
 | --- | --- |
 | Upstream | <https://github.com/RichardJSun/claude-code-mods> (`plugins/cache-keepalive`) |
@@ -257,3 +264,53 @@ Made by Rafsanul Hasan, 2026-10-23 (same run, review round 1):
   this folder's trust warning uses) now cuts on code points and counts N as
   the folded value's length in characters; see auto-handoff's
   `ATTRIBUTION.md`, same round. No code in this folder changed.
+
+Made by Rafsanul Hasan, 2026-10-23 (run AAW-20261022-cache-keepalive-init;
+human decisions of 2026-10-22):
+
+- **The command is `/ai-dlc:cache-keepalive`.** It was `/ai-dlc:keepalive`;
+  the plugin skill that gives it its name moved from `skills/keepalive/` to
+  `skills/cache-keepalive/`, and `COMMAND` in `keepalive.ts` is now
+  `ai-dlc:cache-keepalive`. The former name is no longer answered.
+- **One track or both.** `/ai-dlc:cache-keepalive <duration>` and `clear`
+  take `--track 1h`, `--track 5m` or `--track both` (also `--track=5m`), both
+  by default (`duration.ts`, `parseCommandArgs`; the word after `--track` is
+  always the track). Each track keeps its own overrides in the plugin's store
+  (`keepalive:keepWarmFor:sessions:<track>` and
+  `keepalive:keepWarmFor:machine:<track>`, replacing the two shared keys; an
+  override under the former keys is no longer read). The command's reply and
+  usage text name the track, and the minDuration warning names it too.
+- **No `/config` rows.** The 26 `keepalive*` rows are gone from the plugin
+  manifest's `userConfig`; `settings.ts` has no `/config` level (`Setting`
+  lost `userConfig`, `Level` lost `by: 'userConfig'`), and
+  `registerKeepalive` no longer takes the plugin options
+  (`../auto-handoff/register.tsx` updated). Precedence: the command's
+  override, the `env` of `.claude/settings.local.json`, the `env` of
+  `.claude/settings.json`, `.ai-dlc/cache-keepalive.json`, the default. A
+  setting skipped in an untrusted folder is now pointed to
+  `.claude/settings.local.json` (or the command) only.
+- **`.ai-dlc/cache-keepalive.json` from init.** `/ai-dlc:init` creates it with
+  every key unset except `oneHour.keepWarmFor` and `scope`, and merges it on a
+  re-run, through the new `cache-keepalive-config` skill
+  (`/ai-dlc:cache-keepalive-config`, Claude Code only), which also shows and
+  changes the settings. Its CLI
+  (`skills/cache-keepalive-config/templates/cache-keepalive.mjs`)
+  re-implements the resolution in `settings.ts`;
+  `tests/auto-handoff/cache-keepalive-config-cli.test.mjs` in the plugin
+  repository checks the two agree.
+- **README.** *The command* documents `--track` and per-track overrides;
+  *Settings* drops the `/config` level and row names, and describes the file
+  init writes and the config command.
+- **Tests.** `tests/keepalive.test.ts`: `--track` parsing and the command per
+  track; the store keys per track; the precedence and invalid-value tests
+  without `/config`; a former `/config` row is not read; the gated-key table
+  without `/config` columns; the former command name is not answered.
+
+Made by Rafsanul Hasan, 2026-10-23 (same run, review follow-up):
+
+- **Style.** `keepalive.ts`: the comment above `load` is re-wrapped to the
+  file's line width. No behaviour changed.
+- **Tests.** `tests/keepalive.test.ts`: the one check, for `claude plugin
+  test`, that neither keep-alive's settings table nor the automatic handoff's
+  names a `userConfig` key (it replaces the per-setting assertion here and the
+  one in `../auto-handoff/tests/config.test.ts`).
