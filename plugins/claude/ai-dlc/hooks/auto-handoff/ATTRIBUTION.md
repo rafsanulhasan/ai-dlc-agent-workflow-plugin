@@ -227,3 +227,42 @@ Made by Rafsanul Hasan, 2026-10-22, code review round (run
   `Object.hasOwn`, so `constructor` and `__proto__` are invalid (as in the
   CLI) instead of resolving to `Object.prototype` members. `renderTemplate`
   likewise treats a `{{#name}}` that is not an own flag as unset.
+
+Made by Rafsanul Hasan, 2026-10-22 (run `AAW-20261022-window-observability`):
+
+- **Window in the threshold log line.** The per-turn line now names the
+  window the threshold was computed from, where it came from, and the basis:
+  `threshold session=<id> tokens=<n> threshold=<n> window=<n|none>
+  windowSource=<host|host-percent|default|none> basis=<thresholdPercent:<n>|thresholdTokens>
+  via=<trigger>`. `via` stays last because it can hold spaces. `config.ts`
+  gained `windowInfo` (the window and its source; `windowOf` now wraps it) and
+  `windowFields` (the three fields). In `register.tsx`, `contextWindow` keeps
+  the window it used in `lastWindow` and `configured` clears it first, so under
+  `thresholdTokens`, where no window is read, the line says `window=none
+  windowSource=none basis=thresholdTokens`; `windowFields` adds no usage call.
+- **Fallback log line corrected.** The one-time `no context window reported`
+  line said `no handoff fires` when the real window is smaller than the line.
+  The `session.compact` handler hands off in place of Claude Code's
+  auto-compact whatever the threshold, so the line now ends `if the real window
+  is smaller than <line>, the handoff waits for auto-compact: set
+  thresholdTokens (AI_DLC_AUTO_HANDOFF_THRESHOLD_TOKENS) to an absolute token
+  count`. The two tests that pin it follow.
+- **Tests.** `tests/auto-handoff.test.tsx` adds the line's fields for a window
+  the host reports, one derived from its percentage, the default window and
+  `thresholdTokens`, that `via` stays last, and unit tests of `windowInfo` and
+  `windowFields`.
+- **Claude Code's own window fields** (fix round 1). The line gains
+  `hostWindowSource=<source|none> autoCompactThreshold=<n|none>` between
+  `basis` and `via`: Claude Code's `autocompactSource` (how it settled the
+  window it compacts against) and `autoCompactThreshold`, read from
+  `$.session.usage({ breakdown: 'summary' }).context.breakdown`. `summary`
+  estimates locally (`full` would send token-count requests). `register.tsx`
+  gained `hostWindow`, called only in `tryHandoff` when the line is written,
+  never per turn; a missing breakdown, a missing field or a failed call logs
+  `none` and the handoff goes on. `config.ts` gained `HostWindow` and
+  `hostFields`, which also logs `none` for a value of the wrong type or one
+  that would put a space in the line. The test engine's `session.usage` mock
+  now records each call's args and can return a breakdown or throw; the
+  existing threshold-line tests take the two fields, and five tests cover a
+  breakdown with both fields, with neither, a call that throws, a single
+  `summary` request made only when the line is written, and `hostFields`.

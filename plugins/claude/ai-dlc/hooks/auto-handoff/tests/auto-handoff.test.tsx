@@ -4,10 +4,10 @@ import type { On, SessionMessage } from 'claude-code'
 import { briefPrompt, extractFacts, factsBlock, hasUnansweredLastRequest, isValidBrief, markUnverifiedFigures } from '../brief.ts'
 import { renderTemplate } from '../templates.ts'
 import { parseBrief } from '../viewer.ts'
-import { DEFAULT_WINDOW, contextLine, parseConfig, windowOf } from '../config.ts'
+import { DEFAULT_WINDOW, contextLine, hostFields, parseConfig, windowFields, windowInfo, windowOf } from '../config.ts'
 
 // renamed: the names /rename was run with, in order; commandOrder: every slash command run, in order.
-type Calls = { compacts: number; steps: number; cleared: number; seeded: string[]; written: Record<string, string>; completes: number; tokens: number; prompts: string[]; toasts: string[]; ran: number; clearedAtWrite: Record<string, number>; renamed: string[]; commandOrder: string[]; branchQueries: number }
+type Calls = { compacts: number; steps: number; cleared: number; seeded: string[]; written: Record<string, string>; completes: number; tokens: number; prompts: string[]; toasts: string[]; ran: number; clearedAtWrite: Record<string, number>; renamed: string[]; commandOrder: string[]; branchQueries: number; usageArgs: unknown[] }
 
 // The test runs sandboxed, with no file access, so these stand in for the files in templates/:
 // the same headings and switches, shorter prose.
@@ -80,8 +80,8 @@ const files = (written: Record<string, string>) => Object.keys(written).filter(p
 
 // The engine beneath the plugin: everything the mod calls, answered from memory.
 // commands: the slash commands the engine lists (default: clear and rename); failRename: /rename rejects.
-function engine(on: On, opts: { tokens: number; files?: Record<string, string>; env?: Record<string, string>; brief?: string | null; messages?: SessionMessage[]; toolChars?: number; streamToolChars?: number; store?: Record<string, unknown>; stepUsage?: boolean; surfaces?: ('terminal' | 'desktop' | 'mobile' | 'vscode')[]; noSh?: boolean; git?: Git; failWrite?: RegExp; window?: number | null; percent?: number; commands?: string[]; failRename?: boolean }): Calls {
-  const calls: Calls = { compacts: 0, steps: 0, cleared: 0, seeded: [], written: {}, completes: 0, tokens: opts.tokens, prompts: [], toasts: [], ran: 0, clearedAtWrite: {}, renamed: [], commandOrder: [], branchQueries: 0 }
+function engine(on: On, opts: { tokens: number; files?: Record<string, string>; env?: Record<string, string>; brief?: string | null; messages?: SessionMessage[]; toolChars?: number; streamToolChars?: number; store?: Record<string, unknown>; stepUsage?: boolean; surfaces?: ('terminal' | 'desktop' | 'mobile' | 'vscode')[]; noSh?: boolean; git?: Git; failWrite?: RegExp; window?: number | null; percent?: number; breakdown?: Record<string, unknown> | 'throw'; commands?: string[]; failRename?: boolean }): Calls {
+  const calls: Calls = { compacts: 0, steps: 0, cleared: 0, seeded: [], written: {}, completes: 0, tokens: opts.tokens, prompts: [], toasts: [], ran: 0, clearedAtWrite: {}, renamed: [], commandOrder: [], branchQueries: 0, usageArgs: [] }
   let sessionId = 'old-session'
   let clears = 0
   mock.env(on, { HOME: '/home/test', ...(opts.env ?? {}) })
@@ -95,7 +95,14 @@ function engine(on: On, opts: { tokens: number; files?: Record<string, string>; 
   on('turn.complete', async () => ({ text: 'ok' }))
   // window: the host's context window, 200k unless the test sets one; null: the host reports none.
   // percent: the host's own share, 0 to 100, sent only when the test sets it.
-  on('session.usage', async () => ({ value: { startedAt: 0, context: { tokens: calls.tokens, ...(opts.window === null ? {} : { window: opts.window ?? 200_000 }), ...(opts.percent === undefined ? {} : { percent: opts.percent }) }, rateLimits: [] } }))
+  // breakdown: what a call with { breakdown } gets as context.breakdown (absent unless the test sets it);
+  // 'throw': such a call fails. usageArgs records every call's args, so a test sees which asked for one.
+  on('session.usage', async (_$, e) => {
+    calls.usageArgs.push(e)
+    if (e?.breakdown && opts.breakdown === 'throw') throw new Error('breakdown failed')
+    const breakdown = e?.breakdown && opts.breakdown ? { breakdown: opts.breakdown } : {}
+    return { value: { startedAt: 0, context: { tokens: calls.tokens, ...(opts.window === null ? {} : { window: opts.window ?? 200_000 }), ...(opts.percent === undefined ? {} : { percent: opts.percent }), ...breakdown }, rateLimits: [] } } as never
+  })
   on('session.id', async () => ({ value: sessionId }))
   on('session.cwd', async () => ({ value: '/home/test/proj' }))
   on('fs.read', async (_$, e) => {
@@ -415,7 +422,7 @@ describe('auto-handoff', () => {
     expect(calls.cleared).toBe(0)
     const log = calls.written['/home/test/.claude/state/auto-handoff/auto-handoff.log'] ?? ''
     expect(log.split('no context window reported: thresholdPercent applies to 500000').length - 1).toBe(1)
-    expect(log).toContain('no context window reported: thresholdPercent applies to 500000, a line of 400000 tokens; if the real window is smaller than 400000, no handoff fires: set thresholdTokens (AI_DLC_AUTO_HANDOFF_THRESHOLD_TOKENS) to an absolute token count')
+    expect(log).toContain('no context window reported: thresholdPercent applies to 500000, a line of 400000 tokens; if the real window is smaller than 400000, the handoff waits for auto-compact: set thresholdTokens (AI_DLC_AUTO_HANDOFF_THRESHOLD_TOKENS) to an absolute token count')
     calls.tokens = 400_000
     await $.turn.complete(TURN)
     await settle(() => calls.cleared > 0)
@@ -427,7 +434,7 @@ describe('auto-handoff', () => {
     await $.turn.complete(TURN)
     await settle(() => false)
     const log = calls.written['/home/test/.claude/state/auto-handoff/auto-handoff.log'] ?? ''
-    expect(log).toContain('no context window reported: thresholdPercent applies to 500000, a line of 250000 tokens; if the real window is smaller than 250000, no handoff fires: set thresholdTokens (AI_DLC_AUTO_HANDOFF_THRESHOLD_TOKENS) to an absolute token count')
+    expect(log).toContain('no context window reported: thresholdPercent applies to 500000, a line of 250000 tokens; if the real window is smaller than 250000, the handoff waits for auto-compact: set thresholdTokens (AI_DLC_AUTO_HANDOFF_THRESHOLD_TOKENS) to an absolute token count')
     expect(log).not.toContain('400000')
   })
 
@@ -480,6 +487,167 @@ describe('auto-handoff', () => {
     await settle(() => calls.cleared > 0)
     const log = calls.written['/home/test/.claude/state/auto-handoff/auto-handoff.log'] ?? ''
     expect(log).toContain('threshold=160000')
+  })
+
+  // The per-turn threshold line names the window the threshold came from and its source, so a live
+  // session shows what Claude Code reports. via stays last: it can hold spaces.
+  const thresholdLine = (calls: Calls) => (calls.written['/home/test/.claude/state/auto-handoff/auto-handoff.log'] ?? '').split('\n').find((l) => l.includes('threshold session=')) ?? ''
+
+  test('the threshold log line names a window the host reports', async ($, on) => {
+    const calls = engine(on, { tokens: 800_000, window: 1_000_000 })
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    expect(thresholdLine(calls)).toContain('tokens=800000 threshold=800000 window=1000000 windowSource=host basis=thresholdPercent:80 hostWindowSource=none autoCompactThreshold=none via=turn.complete')
+  })
+
+  test('the threshold log line names a window derived from the host percentage', async ($, on) => {
+    // 800k at 80% means a 1M window, so the line is 800k.
+    const calls = engine(on, { tokens: 800_000, window: null, percent: 80 })
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    expect(thresholdLine(calls)).toContain('threshold=800000 window=1000000 windowSource=host-percent basis=thresholdPercent:80 hostWindowSource=none autoCompactThreshold=none via=')
+  })
+
+  test('the threshold log line names the default window when the host reports none', async ($, on) => {
+    const calls = engine(on, { tokens: 400_000, window: null })
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    expect(thresholdLine(calls)).toContain('threshold=400000 window=500000 windowSource=default basis=thresholdPercent:80 hostWindowSource=none autoCompactThreshold=none via=')
+  })
+
+  test('the threshold log line reads no window under thresholdTokens', async ($, on) => {
+    const calls = engine(on, { tokens: 150_000, window: 1_000_000, env: { AI_DLC_AUTO_HANDOFF_THRESHOLD_TOKENS: '150000' } })
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    expect(thresholdLine(calls)).toContain('threshold=150000 window=none windowSource=none basis=thresholdTokens hostWindowSource=none autoCompactThreshold=none via=')
+  })
+
+  test('the threshold log line keeps via last, after the window fields', async ($, on) => {
+    const calls = engine(on, { tokens: 165_000 })
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    expect(thresholdLine(calls)).toMatch(/threshold session=old-session tokens=165000 threshold=160000 window=200000 windowSource=host basis=thresholdPercent:80 hostWindowSource=none autoCompactThreshold=none via=turn\.complete$/)
+  })
+
+  test('windowInfo and windowFields give the window, its source and the basis', () => {
+    expect(windowInfo({ tokens: 1, window: 1_000_000 })).toEqual({ window: 1_000_000, source: 'host' })
+    expect(windowInfo({ tokens: 400_000, percent: 40 })).toEqual({ window: 1_000_000, source: 'host-percent' })
+    expect(windowInfo({ tokens: 400_000 })).toBeUndefined()
+    expect(windowFields({ window: 500_000, source: 'default' }, { thresholdPercent: 50 })).toBe('window=500000 windowSource=default basis=thresholdPercent:50')
+    expect(windowFields(undefined, { thresholdPercent: 80, thresholdTokens: 90_000 })).toBe('window=none windowSource=none basis=thresholdTokens')
+  })
+
+  test('windowInfo ignores a window that is not a number and falls through to the percentage', () => {
+    expect(windowInfo({ tokens: 200_000, window: '1000000' as unknown as number, percent: 20 })).toEqual({ window: 1_000_000, source: 'host-percent' })
+    expect(windowInfo({ tokens: 200_000, window: Number.NaN, percent: 20 })).toEqual({ window: 1_000_000, source: 'host-percent' })
+    expect(windowInfo({ tokens: 200_000, window: '1000000' as unknown as number })).toBeUndefined()
+    expect(windowInfo({ tokens: 200_000, window: 0, percent: 20 })?.source).toBe('host-percent')
+  })
+
+  // Claude Code's own window source and auto-compact line, from a summary breakdown asked for only
+  // when the threshold line is written.
+  test('the threshold log line names the host window source and auto-compact threshold', async ($, on) => {
+    const calls = engine(on, { tokens: 800_000, window: 1_000_000, breakdown: { autocompactSource: 'model-default', autoCompactThreshold: 967_000 } })
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    expect(thresholdLine(calls)).toContain('window=1000000 windowSource=host basis=thresholdPercent:80 hostWindowSource=model-default autoCompactThreshold=967000 via=turn.complete')
+  })
+
+  test('the threshold log line reads none when the host breakdown has neither field', async ($, on) => {
+    const calls = engine(on, { tokens: 165_000, breakdown: { totalTokens: 165_000 } })
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    expect(thresholdLine(calls)).toContain('basis=thresholdPercent:80 hostWindowSource=none autoCompactThreshold=none via=turn.complete')
+  })
+
+  test('the threshold log line reads none and still hands off when the breakdown call throws', async ($, on) => {
+    const calls = engine(on, { tokens: 165_000, breakdown: 'throw' })
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    expect(calls.cleared).toBe(1)
+    expect(thresholdLine(calls)).toContain('windowSource=host basis=thresholdPercent:80 hostWindowSource=none autoCompactThreshold=none via=turn.complete')
+  })
+
+  test('the host breakdown is asked for once, as a summary, and only when the threshold line is written', async ($, on) => {
+    const calls = engine(on, { tokens: 31_000, breakdown: { autocompactSource: 'env', autoCompactThreshold: 150_000 } })
+    await $.turn.complete(TURN)
+    await settle(() => false)
+    expect(calls.cleared).toBe(0)
+    expect(calls.usageArgs.length).toBeGreaterThan(0)
+    expect(calls.usageArgs.filter((a) => (a as { breakdown?: unknown } | undefined)?.breakdown !== undefined)).toEqual([])
+    calls.tokens = 165_000
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    const asked = calls.usageArgs.filter((a) => (a as { breakdown?: unknown } | undefined)?.breakdown !== undefined)
+    expect(asked).toEqual([{ breakdown: 'summary' }])
+    expect(thresholdLine(calls)).toContain('hostWindowSource=env autoCompactThreshold=150000 via=turn.complete')
+  })
+
+  test('hostFields keeps the line to key=value pairs', () => {
+    expect(hostFields(undefined)).toBe('hostWindowSource=none autoCompactThreshold=none')
+    expect(hostFields({ autocompactSource: 'settings', autoCompactThreshold: 180_000 })).toBe('hostWindowSource=settings autoCompactThreshold=180000')
+    expect(hostFields({ autocompactSource: 'two words', autoCompactThreshold: '180000' })).toBe('hostWindowSource=none autoCompactThreshold=none')
+    expect(hostFields({ autocompactSource: '', autoCompactThreshold: Number.NaN })).toBe('hostWindowSource=none autoCompactThreshold=none')
+  })
+
+  test('hostFields reads each field on its own and rejects what is not a plain string or finite number', () => {
+    expect(hostFields({ autocompactSource: 'env' })).toBe('hostWindowSource=env autoCompactThreshold=none')
+    expect(hostFields({ autoCompactThreshold: 150_000 })).toBe('hostWindowSource=none autoCompactThreshold=150000')
+    expect(hostFields({})).toBe('hostWindowSource=none autoCompactThreshold=none')
+    expect(hostFields({ autocompactSource: 7, autoCompactThreshold: Number.POSITIVE_INFINITY })).toBe('hostWindowSource=none autoCompactThreshold=none')
+    expect(hostFields({ autocompactSource: null, autoCompactThreshold: Number.NEGATIVE_INFINITY })).toBe('hostWindowSource=none autoCompactThreshold=none')
+    expect(hostFields({ autocompactSource: 'a	b' })).toBe('hostWindowSource=none autoCompactThreshold=none')
+    expect(hostFields({ autocompactSource: ' env' })).toBe('hostWindowSource=none autoCompactThreshold=none')
+    // Any finite number is logged as the host sent it; the module does not judge it.
+    expect(hostFields({ autoCompactThreshold: 0 })).toBe('hostWindowSource=none autoCompactThreshold=0')
+    expect(hostFields({ autoCompactThreshold: -5 })).toBe('hostWindowSource=none autoCompactThreshold=-5')
+    expect(hostFields({ autoCompactThreshold: 1.5 })).toBe('hostWindowSource=none autoCompactThreshold=1.5')
+  })
+
+  test('the threshold log line reads each host field on its own', async ($, on) => {
+    const calls = engine(on, { tokens: 165_000, breakdown: { autoCompactThreshold: 180_000 } })
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    expect(thresholdLine(calls)).toContain('hostWindowSource=none autoCompactThreshold=180000 via=turn.complete')
+  })
+
+  test('the threshold log line shows the host source when auto-compact is off (no threshold)', async ($, on) => {
+    const calls = engine(on, { tokens: 165_000, breakdown: { autocompactSource: 'settings' } })
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    expect(thresholdLine(calls)).toContain('hostWindowSource=settings autoCompactThreshold=none via=turn.complete')
+  })
+
+  test('the threshold log line names a host source with a space as none and keeps via last', async ($, on) => {
+    const calls = engine(on, { tokens: 165_000, breakdown: { autocompactSource: 'model default', autoCompactThreshold: 150_000 } })
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    expect(thresholdLine(calls)).toContain('hostWindowSource=none autoCompactThreshold=150000 via=turn.complete')
+  })
+
+  test('auto-compact asks the host breakdown once and logs it', async ($, on) => {
+    const calls = engine(on, { tokens: 174_000, window: null, breakdown: { autocompactSource: 'env', autoCompactThreshold: 170_000 } })
+    await $.session.compact({ trigger: 'auto', messages: BASIC })
+    await settle(() => calls.cleared > 0)
+    expect(thresholdLine(calls)).toContain('hostWindowSource=env autoCompactThreshold=170000 via=session.compact')
+    expect(calls.usageArgs.filter((a) => (a as { breakdown?: unknown } | undefined)?.breakdown !== undefined)).toEqual([{ breakdown: 'summary' }])
+  })
+
+  test('the threshold log line keeps via last when it holds spaces', async ($, on) => {
+    const calls = engine(on, { tokens: 61_000, env: { AI_DLC_AUTO_HANDOFF_THRESHOLD_TOKENS: '80000' }, toolChars: 80_000 })
+    await $.tool.call({ tool: 'Read', file_path: '/big.txt' })
+    await step($)
+    await settle(() => calls.cleared > 0)
+    expect(thresholdLine(calls)).toMatch(/ window=none windowSource=none basis=thresholdTokens hostWindowSource=none autoCompactThreshold=none via=turn\.step measured=\d+$/)
+  })
+
+  test('auto-compact on the default window fires and names the default window', async ($, on) => {
+    // The fallback message says the handoff waits for auto-compact: it does fire there, below the line.
+    const calls = engine(on, { tokens: 174_000, window: null })
+    await $.session.compact({ trigger: 'auto', messages: BASIC })
+    await settle(() => calls.cleared > 0)
+    expect(calls.cleared).toBe(1)
+    expect(thresholdLine(calls)).toContain('window=500000 windowSource=default basis=thresholdPercent:80 hostWindowSource=none autoCompactThreshold=none via=session.compact')
   })
 
   test('the brief opens with the handoff instructions', async ($, on) => {
@@ -1533,6 +1701,21 @@ describe('repository configuration', () => {
     await $.turn.complete(TURN)
     await settle(() => false)
     expect(calls.cleared).toBe(1)
+  })
+
+  test('a window read before a reload to thresholdTokens does not leak into the threshold line', async ($, on) => {
+    // The first turn computes a percent threshold (and caches its window); the settings then switch to an
+    // absolute count, so the next handoff must log window=none, not the stale 200000.
+    const calls = engine(on, { tokens: 31_000, git: GIT, files: { [REPO]: JSON.stringify({ thresholdPercent: 80 }) } })
+    await $.turn.complete(TURN)
+    await settle(() => false)
+    expect(calls.cleared).toBe(0)
+    calls.written[REPO] = JSON.stringify({ thresholdTokens: 20000 })
+    await $.classic.SessionStart({ source: 'resume' })
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    const line = (calls.written['/home/test/.claude/state/auto-handoff/auto-handoff.log'] ?? '').split(/\r?\n/).find((l) => l.includes('threshold session=')) ?? ''
+    expect(line).toContain('threshold=20000 window=none windowSource=none basis=thresholdTokens hostWindowSource=none autoCompactThreshold=none via=')
   })
 
   test('defaultContextWindow and seedHeadroomTokens come from the settings', async ($, on) => {

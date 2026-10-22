@@ -5,8 +5,8 @@ import type { Entry } from './viewer.ts'
 import { SERVER_JS, parseAddress } from './server.ts'
 import { isSpinning, panelTree } from './panel.tsx'
 import type { Line, Panel } from './panel.tsx'
-import { BRIEF_DIR, CAPABILITIES_FILE, DEFAULTS, LAST_RESORT_INSTRUCTIONS, MODULE_DIR, REPO_CONFIG, SEED_PREFIX, SESSION_TEMPLATE, TEMPLATES, baseName, contextLine, expand, k, linkify, repoConfig, resolveConfig, sessionName, settingsEnv, short, transcriptTitle, trustOf, trustRoot, windowOf, withoutGated } from './config.ts'
-import type { Config, Level, TemplateKey, TrustTarget } from './config.ts'
+import { BRIEF_DIR, CAPABILITIES_FILE, DEFAULTS, LAST_RESORT_INSTRUCTIONS, MODULE_DIR, REPO_CONFIG, SEED_PREFIX, SESSION_TEMPLATE, TEMPLATES, baseName, contextLine, expand, k, linkify, repoConfig, resolveConfig, sessionName, settingsEnv, short, transcriptTitle, trustOf, trustRoot, hostFields, windowFields, windowInfo, withoutGated } from './config.ts'
+import type { Config, HostWindow, Level, TemplateKey, TrustTarget, WindowInfo } from './config.ts'
 import { ENDED, assembleSessionHandoff, handoffsRoot, inRepo, openRecords, parseRunState, pickRun, scratchRoot, sessionHandoffPath, withNextAction } from './run.ts'
 import type { RunState, RunTarget } from './run.ts'
 
@@ -652,7 +652,8 @@ async function tryHandoff($: EngineInterface, sessionId: string, tokens: number,
   inFlight = true
   gated = undefined
   await $.store.set(`fired:${sessionId}`, 'briefing')
-  await log($, `threshold session=${sessionId} tokens=${tokens} threshold=${threshold} via=${via}`)
+  // via goes last: it can hold spaces ("turn.step measured=123 gated").
+  await log($, `threshold session=${sessionId} tokens=${tokens} threshold=${threshold} ${windowFields(lastWindow, cfg)} ${hostFields(await hostWindow($))} via=${via}`)
   showPanel($, { header: { mark: 'spin', text: `auto-handoff · ${k(tokens)} / ${k(threshold)}` }, steps: [{ mark: 'spin', text: 'writing brief' }] },
     `context ${k(tokens)} is past ${k(threshold)}: handing off`)
   // Not awaited: the brief can take a while and /clear only runs once the session is idle.
@@ -757,19 +758,35 @@ function showHandedOff($: EngineInterface, fresh: number) {
   handedFrom = undefined
 }
 
-// The context window the threshold is a share of: what $.session.usage() reports (windowOf), else
+// The context window the threshold is a share of: what $.session.usage() reports (windowInfo), else
 // defaultContextWindow. The fallback is logged once per process, so a session on a larger window that
 // hands off early can be traced to it, and one on a smaller window, where the line lies past the
-// window and no handoff fires, is told to set thresholdTokens.
+// window and the handoff waits for Claude Code's auto-compact (session.compact below), is told to set thresholdTokens.
 let windowFallbackLogged = false
+// The window the last threshold was computed from, and its source, for the per-turn threshold log
+// line. configured() clears it first, so with thresholdTokens (no window read) it stays undefined.
+// Every caller of tryHandoff computes the threshold just before, so the line shows that window.
+let lastWindow: WindowInfo | undefined
+// Claude Code's own view of the window, for the threshold log line only: asked for when that line is
+// written, never on every turn. `summary` estimates locally; `full` would send token-count requests,
+// as /context does. A missing breakdown or a failed call gives undefined, which logs `none`.
+async function hostWindow($: EngineInterface): Promise<HostWindow | undefined> {
+  try {
+    return (await $.session.usage({ breakdown: 'summary' })).context.breakdown
+  } catch {
+    return undefined
+  }
+}
+
 async function contextWindow($: EngineInterface): Promise<number> {
-  const w = windowOf((await $.session.usage()).context)
-  if (w !== undefined) return w
+  const w = windowInfo((await $.session.usage()).context)
+  lastWindow = w ?? { window: cfg.defaultContextWindow, source: 'default' }
+  if (w !== undefined) return w.window
   const fallback = cfg.defaultContextWindow
   if (!windowFallbackLogged) {
     windowFallbackLogged = true
     const line = contextLine(cfg.thresholdPercent, fallback)
-    await log($, `no context window reported: thresholdPercent applies to ${fallback}, a line of ${line} tokens; if the real window is smaller than ${line}, no handoff fires: set thresholdTokens (AI_DLC_AUTO_HANDOFF_THRESHOLD_TOKENS) to an absolute token count`)
+    await log($, `no context window reported: thresholdPercent applies to ${fallback}, a line of ${line} tokens; if the real window is smaller than ${line}, the handoff waits for auto-compact: set thresholdTokens (AI_DLC_AUTO_HANDOFF_THRESHOLD_TOKENS) to an absolute token count`)
   }
   return fallback
 }
@@ -779,6 +796,7 @@ async function contextWindow($: EngineInterface): Promise<number> {
 // or file, so the headroom warning tells the person what to change.
 // Main or lead session only: every caller skips events that carry an agentId.
 async function configured($: EngineInterface): Promise<{ base: number; source: string }> {
+  lastWindow = undefined
   if (cfg.thresholdTokens) return { base: cfg.thresholdTokens, source: cfgSources.thresholdTokens ?? 'thresholdTokens' }
   const window = await contextWindow($)
   const from = cfgSources.thresholdPercent

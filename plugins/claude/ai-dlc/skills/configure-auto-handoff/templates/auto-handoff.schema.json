@@ -37,7 +37,7 @@
       "minimum": 1,
       "default": 500000,
       "x-env": "AI_DLC_AUTO_HANDOFF_DEFAULT_CONTEXT_WINDOW",
-      "description": "The context window in tokens that thresholdPercent applies to when Claude Code reports none."
+      "description": "The context window in tokens that thresholdPercent applies to, used only when Claude Code reports none. 500000 matches neither documented Claude Code window (200000, or 1000000 with extended context): set your real window here, or thresholdTokens. See the ai-dlc README, The fallback window."
     },
     "seedHeadroomTokens": {
       "type": ["integer", "null"],

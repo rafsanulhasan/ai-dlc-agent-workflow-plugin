@@ -347,13 +347,43 @@ export function withoutGated(values: Record<string, unknown>): { values: Record<
   return { values: kept, ignored }
 }
 
-/** The context window in tokens, from $.session.usage().context: its `window`, else derived from its
- * `percent` (0 to 100) and `tokens`, else undefined, and the caller uses defaultContextWindow. */
-export function windowOf(context: { tokens?: number; window?: number; percent?: number }): number | undefined {
-  if (typeof context.window === 'number' && context.window > 0) return context.window
+/** Where the window a threshold was computed from came from: `host`, the `window` Claude Code
+ * reported; `host-percent`, derived from its `percent` and `tokens`; `default`, defaultContextWindow. */
+export type WindowSource = 'host' | 'host-percent' | 'default'
+export type WindowInfo = { window: number; source: WindowSource }
+
+/** The context window in tokens and its source, from $.session.usage().context: its `window`, else
+ * derived from its `percent` (0 to 100) and `tokens`, else undefined, and the caller uses defaultContextWindow. */
+export function windowInfo(context: { tokens?: number; window?: number; percent?: number }): WindowInfo | undefined {
+  if (typeof context.window === 'number' && context.window > 0) return { window: context.window, source: 'host' }
   const { tokens, percent: pct } = context
-  if (typeof tokens === 'number' && tokens > 0 && typeof pct === 'number' && pct > 0) return Math.round(tokens * 100 / pct)
+  if (typeof tokens === 'number' && tokens > 0 && typeof pct === 'number' && pct > 0) return { window: Math.round(tokens * 100 / pct), source: 'host-percent' }
   return undefined
+}
+
+/** The context window in tokens (windowInfo without its source). */
+export const windowOf = (context: { tokens?: number; window?: number; percent?: number }): number | undefined => windowInfo(context)?.window
+
+/** The window fields of the per-turn `threshold` log line: the window the threshold was computed
+ * from, where it came from, and the basis of the threshold. With thresholdTokens no window is read,
+ * so `window=none windowSource=none`. One space-separated run of key=value pairs, no spaces in a value. */
+export function windowFields(w: WindowInfo | undefined, cfg: Pick<Config, 'thresholdPercent' | 'thresholdTokens'>): string {
+  const basis = cfg.thresholdTokens ? 'thresholdTokens' : `thresholdPercent:${cfg.thresholdPercent}`
+  return `window=${w?.window ?? 'none'} windowSource=${w?.source ?? 'none'} basis=${basis}`
+}
+
+/** The part of $.session.usage({ breakdown }).context.breakdown the threshold line reads: how Claude
+ * Code settled its window (`autocompactSource`, a ContextWindowSource such as `model-default` or
+ * `env`) and the token count its auto-compact runs at (absent when auto-compact is off). */
+export type HostWindow = { autocompactSource?: unknown; autoCompactThreshold?: unknown }
+
+/** Claude Code's own window fields of the threshold log line, next to the module's windowFields:
+ * `hostWindowSource=<source|none> autoCompactThreshold=<n|none>`. A value that is missing, of the
+ * wrong type or would put a space in the line reads `none`. */
+export function hostFields(b: HostWindow | undefined): string {
+  const src = typeof b?.autocompactSource === 'string' && /^\S+$/.test(b.autocompactSource) ? b.autocompactSource : 'none'
+  const at = typeof b?.autoCompactThreshold === 'number' && Number.isFinite(b.autoCompactThreshold) ? b.autoCompactThreshold : 'none'
+  return `hostWindowSource=${src} autoCompactThreshold=${at}`
 }
 
 /** The handoff line in tokens: thresholdPercent of the window, rounded down. */
