@@ -143,7 +143,7 @@ Agent("agent-manager", prompt: "update-agent <name> <change-description>")
 
 Use when one platform's file is missing or the two have drifted, in either direction.
 
-1. Run `Skill("harness-sync", args: "sync --only agents --name <name>")`, adding `--prefer claude` or `--prefer copilot` when the caller named the authoritative side. It installs `.claude/scripts/sync-harness.mjs` if missing. The twin gets the same body; only `name`, `description`, `tools` and `status` are synced, and platform-only keys stay.
+1. Follow *For agents* in `../harness-sync/SKILL.md`. When you sync one item and both of its twins were edited, run `node .claude/scripts/sync-harness.mjs --check --only agents --name <name>` first, ask the human which side wins, then sync with `--prefer claude` or `--prefer copilot`; never let `newer` decide. Otherwise run `node .claude/scripts/sync-harness.mjs --only agents --name <name> --prefer claude|copilot`, naming the side the caller named or the side you changed. If the script is missing, install it as that section says. The twin gets the same body; only `name`, `description`, `tools` and `status` are synced, and platform-only keys stay.
 2. Resolve each `note:` it prints for this agent (a tool with no counterpart: keep it on its own platform, or replace it with one that has a counterpart).
 3. Confirm: "Agent '<name>' synced." Done when `node .claude/scripts/sync-harness.mjs --check --only agents --name <name>` exits 0.
 

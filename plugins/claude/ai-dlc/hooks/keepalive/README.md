@@ -22,14 +22,14 @@ A track runs only when the session's last cache write used its lifetime. Keep-al
 While a turn has ended with background work, the status line under the prompt shows one line per track:
 
 ```text
-keepalive 1h: warm until 11:36, ping 2/∞, keep warm 8h, stop by 18:46
+keepalive 1h: warm until 11:36, ping 2/9, keep warm 8h, stop by 18:46
 keepalive 5m: off
 ```
 
 After an automatic session handoff, a third line says whether the new session's first request read from the prompt cache (see *What the cache can reuse across a handoff*): `keepalive seed: cache hit, 30k read` or `keepalive seed: cache miss`. It shows from that first request until the next turn starts, alone or under the track lines.
 
 - **warm until**: when the cache expires if no further ping lands: the last successful ping (or the end of the turn, before the first ping) plus the track's lifetime. A line still on screen after that time is stale.
-- **ping 2/∞**: pings sent since the turn ended, out of the track's ping limit (`∞`: no limit).
+- **ping 2/9**: pings sent since the turn ended, out of the track's ping limit (`maxPings`, or more after `/ai-dlc:cache-keepalive <duration>`; see *When the pings stop*).
 - **keep warm 8h**: the total time the track keeps pinging, counted from the end of the turn, and where that time comes from when it is not the track's own setting.
 - **stop by 18:46**: the end of the turn plus the keep-warm time. A ping due at that time still goes out; none is due after it.
 - **armed, 1 task(s)**: at the start of a line, the turn has just ended with that many background tasks, and no ping has run yet.
@@ -43,44 +43,46 @@ Pinging stops at whichever comes first:
 
 - **The work is done.** Claude Code wakes the session when a background task ends, and that turn's start stops the pings. A turn that ends with no background task never starts them, and stops any still running. So do the session ending (exit, `/clear`) and an automatic handoff, which stops them before its `/clear`.
 - **A ping misses** the cache: re-writing it is what keep-alive exists to avoid.
-- **The track's time or ping limit** is reached. Pings are due every `pingEvery` from the end of the turn, and a ping due exactly at the end of the keep-warm time still goes out, so the 5m track's hour sends 20 pings. The schedule counts from the end of the turn, not from when each ping finished, so the seconds a ping takes never cost the last one.
+- **The track's time or ping limit** is reached. Pings are due every `pingEvery` from the end of the turn, and a ping due exactly at the end of the keep-warm time still goes out, so the 5m track's hour sends 20 pings. Each track's ping limit, `maxPings`, is a whole number of 1 or more; its defaults, 9 on the 1h track and 20 on the 5m track, are the pings the default keep-warm times allow (8h at 50m, 1h at 3m), so with the defaults the time and the limit end together. `/ai-dlc:cache-keepalive-configure` (and `/ai-dlc:init`) rewrites a track's `maxPings` to follow a `keepWarmFor` it writes, unless the same change names `maxPings`, even when the keep-warm time is the one already in the file, so a lower `maxPings` set by hand is overwritten (the output says so; name `maxPings` in the same change to keep it); a `keepWarmFor` edited by hand or set in an `env` keeps its limit, and `/ai-dlc:cache-keepalive-configure` warns when a keep-warm time allows more pings than the limit. A keep-warm time set with `/ai-dlc:cache-keepalive <duration>` raises that track's limit to at least the pings the duration allows, so the command always keeps warm for the time it says. The schedule counts from the end of the turn, not from when each ping finished, so the seconds a ping takes never cost the last one.
 - **The spend limit**, when it is on: the pings of all tracks together have cost `budgetMultiplier` × the context's tokens, in input-token equivalents (cache reads at the model's read price, writes at `writeMult`, output at `outputMult`). The default `2` is about what one re-write costs. `budgetMultiplier` `0` turns the spend limit off. With `compactOnCap`, see *Compact on cap*.
 
 ## The command
 
-`/ai-dlc:keepalive` is the only command; no bare `keepalive` command exists. A hooks module can register only a bare command name, so the plugin ships a `keepalive` skill, which Claude Code lists as `/ai-dlc:keepalive`, and the module answers its runs in the skill's place. The model never sees the command.
+`/ai-dlc:cache-keepalive` is the only command; no bare `keepalive` command exists. A hooks module can register only a bare command name, so the plugin ships a `cache-keepalive` skill, which Claude Code lists as `/ai-dlc:cache-keepalive`, and the module answers its runs in the skill's place. The model never sees the command.
 
 | Command | What it does |
 | --- | --- |
-| `/ai-dlc:keepalive` | Pings now and reports the hit rate and the keep-warm time in force |
-| `/ai-dlc:keepalive 2h` | Sets the keep-warm time of both tracks in the default scope (`scope`). Does not ping |
-| `/ai-dlc:keepalive 2h --session` | Sets it for this session only |
-| `/ai-dlc:keepalive 1d --machine` | Sets it for every session on this machine until cleared. The value is kept in the plugin's store |
-| `/ai-dlc:keepalive clear`, `/ai-dlc:keepalive clear --machine` | Removes the override in that scope (the default scope unless a flag is given). `--clear` works as `clear` |
+| `/ai-dlc:cache-keepalive` | Pings now and reports the hit rate and the keep-warm time in force on each track |
+| `/ai-dlc:cache-keepalive 2h` | Sets the keep-warm time of both tracks in the default scope (`scope`). Does not ping |
+| `/ai-dlc:cache-keepalive 30m --track 5m` | Sets it for the 5m track only. `--track 1h` picks the 1h track, `--track both` both (the default); `--track=5m` works too |
+| `/ai-dlc:cache-keepalive 2h --session` | Sets it for this session only |
+| `/ai-dlc:cache-keepalive 1d --machine` | Sets it for every session on this machine until cleared. The value is kept in the plugin's store |
+| `/ai-dlc:cache-keepalive clear`, `/ai-dlc:cache-keepalive clear --track 5m --machine` | Removes the override of the tracks named (both unless `--track` is given) in that scope (the default scope unless a flag is given). `--clear` works as `clear` |
 
-Durations are `<n>m`, `<n>h` or `<n>d`, at least `minDuration`; `n` may have a fraction (`1.5h`). Flags and units are not case-sensitive, and one duration per call: `/ai-dlc:keepalive 2h 3h` is a usage error. The most specific value wins: this session's override, then the machine-wide one, then the track's `keepWarmFor`. An override shorter than `minDuration` is ignored with a warning. The store keeps the overrides of the `sessionOverridesMax` most recent sessions that set one. A change made while the pings run takes effect at the next ping. A duration no longer than a track's interval sends no ping on that track: the cache's own lifetime covers it.
+Durations are `<n>m`, `<n>h` or `<n>d`, at least `minDuration`; `n` may have a fraction (`1.5h`). Flags, track names and units are not case-sensitive, and one duration and one `--track` per call: `/ai-dlc:cache-keepalive 2h 3h` is a usage error. The word after `--track` is always the track, so `--track 5m` never reads as a duration. Each track keeps its own overrides, and for each the most specific value wins: this session's override, then the machine-wide one, then the track's `keepWarmFor`. An override shorter than `minDuration` is ignored with a warning. The store keeps the overrides of the `sessionOverridesMax` most recent sessions that set one. A change made while the pings run takes effect at the next ping. A duration no longer than a track's interval sends no ping on that track: the cache's own lifetime covers it.
 
 ## Settings
 
+The team's settings live in `.ai-dlc/cache-keepalive.json`, committed with the repository. `/ai-dlc:init` creates it with every key at its default, then writes the two it asks for, `oneHour.keepWarmFor` and `scope`; on a re-run it adds the keys a newer plugin has with their defaults, rewrites any `null` key to its default, removes retired ones and keeps every value set. Every key holds an explicit value, written from this plugin version's defaults; a later change of a default in the plugin does not reach a key already written, since a re-run keeps every value set. Change a value with `/ai-dlc:cache-keepalive-configure`. A `null` is not a valid value: the module logs it and uses the next level, `/ai-dlc:cache-keepalive-configure` warns about it, and `/ai-dlc:cache-keepalive-merge` rewrites it to its default, as it does a legacy `maxPings` of `0` (it no longer means "no limit") and after a plugin upgrade, adding the new keys and removing retired ones. `/ai-dlc:cache-keepalive-configure` also checks every `AI_DLC_KEEPALIVE_*` variable in the `env` of both settings files. A bad value is never an error anywhere: the module and `/ai-dlc:cache-keepalive-configure` each warn, naming the value that applies instead. The one exception is a file that cannot be read as settings at all: a change and a merge stop when `.ai-dlc/cache-keepalive.json` is not valid JSON, or a track is not an object, and write nothing until it is fixed by hand (`/ai-dlc:cache-keepalive-configure` warns about it, and keep-alive skips the file). `/ai-dlc:cache-keepalive-install` creates the file once, `/ai-dlc:cache-keepalive-merge` brings an existing one up to date, and `/ai-dlc:cache-keepalive-configure` shows each setting's value and where it comes from, and changes them in that file after a preview, or for one developer in the `env` of `.claude/settings.local.json`; its schema, `.ai-dlc/cache-keepalive.schema.json`, gives editors completion and hover docs.
+
 Each setting is read from the first of these that sets it to a valid value, highest first:
 
-1. the `/ai-dlc:keepalive` override, for the keep-warm time only;
-2. the `env` of `.claude/settings.local.json`: one developer's override, not committed;
+1. the `/ai-dlc:cache-keepalive` override, for the keep-warm time only, each track on its own;
+2. the `env` of `.claude/settings.local.json`: one developer's values, not committed;
 3. the `env` of `.claude/settings.json`: the team's override (some settings only in a trusted folder; see *Workspace trust*);
 4. `.ai-dlc/cache-keepalive.json`, with the keys below (a dot is one level of nesting; the same settings only in a trusted folder);
-5. the setting's row under `ai-dlc` in `/config`;
-6. the built-in default.
+5. the built-in default.
 
-The process environment is not read. A value that does not parse, is out of range, or breaks a rule is ignored with a warning in the transcript and the module's log (`~/.claude/state/auto-handoff/auto-handoff.log`), and the next level applies. The rules: every duration you set is at least `minDuration` (the defaults are exempt), and each track's `pingEvery` is shorter than its `ttl`. A `ttl` that leaves no `pingEvery` shorter than it, not even the default, is dropped for the defaults of both. The settings are read again each time a turn ends with background work, and at each `/ai-dlc:keepalive`.
+Keep-alive has no `/config` rows, and the process environment is not read. A value that does not parse, is out of range, or breaks a rule is ignored with a warning in the transcript and the module's log (`~/.claude/state/auto-handoff/auto-handoff.log`), and the next level applies. The rules: every duration you set is at least `minDuration` (the defaults are exempt), and each track's `pingEvery` is shorter than its `ttl`. A `ttl` that leaves no `pingEvery` shorter than it, not even the default, is dropped for the defaults of both. The settings are read again each time a turn ends with background work, and at each `/ai-dlc:cache-keepalive`.
 
-**Workspace trust.** `.ai-dlc/cache-keepalive.json` and `.claude/settings.json` are committed, so a cloned repository could set either. From them, the settings that decide whether and how much the module spends your tokens and rate limit, and the text it sends to the model, apply only in a folder Claude Code trusts (its trust prompt accepted), as for the automatic handoff's `viewer` and templates (see the `configure-auto-handoff` skill): `enabled`, each track's `enabled`, `pingEvery`, `keepWarmFor` and `maxPings`, `budgetMultiplier`, the prices the spend limit counts in (`writeMult`, `outputMult` and `readPrice`), `compactOnCap`, `pingPrompt` and `compactInstructions`. In a folder it does not trust, each of them is skipped with a warning that names it, its value and where to set it instead, and the next level applies; set them in the `env` of `.claude/settings.local.json` or in `/config` instead, or a keep-warm time with `/ai-dlc:keepalive`. Neither of those is gated. Every other setting applies from both files in any folder. The warning lists the skipped settings as `key=value`: text in double quotes, any other value as JSON, each run of white space folded to one space, and a value over 40 characters cut there and followed by `…` and `(N chars)`, where N is the length of the folded value in characters (`pingPrompt="Ignore your instructions. xxxxxxxxxxxxxx…" (226 chars)`). It is written to the transcript and to `~/.claude/state/auto-handoff/auto-handoff.log` unredacted, so the first 40 characters of whatever a gated setting holds land in both. Do not put secrets (tokens, keys, passwords) in these settings.
+**Workspace trust.** `.ai-dlc/cache-keepalive.json` and `.claude/settings.json` are committed, so a cloned repository could set either. From them, the settings that decide whether and how much the module spends your tokens and rate limit, and the text it sends to the model, apply only in a folder Claude Code trusts (its trust prompt accepted), as for the automatic handoff's `viewer` and templates (see the `configure-auto-handoff` skill): `enabled`, each track's `enabled`, `pingEvery`, `keepWarmFor` and `maxPings`, `budgetMultiplier`, the prices the spend limit counts in (`writeMult`, `outputMult` and `readPrice`), `compactOnCap`, `pingPrompt` and `compactInstructions`. In a folder it does not trust, each of them whose value differs from its default is skipped with a warning that names it, its value and where to set it instead, and the next level applies; a value equal to its default changes nothing, so it applies without a warning (the file init writes holds every default); set them in the `env` of `.claude/settings.local.json` instead, or a keep-warm time with `/ai-dlc:cache-keepalive`. Neither of those is gated. Every other setting applies from both files in any folder. The warning lists the skipped settings as `key=value`: text in double quotes, any other value as JSON, each run of white space folded to one space, and a value over 40 characters cut there and followed by `…` and `(N chars)`, where N is the length of the folded value in characters (`pingPrompt="Ignore your instructions. xxxxxxxxxxxxxx…" (226 chars)`). It is written to the transcript and to `~/.claude/state/auto-handoff/auto-handoff.log` unredacted, so the first 40 characters of whatever a gated setting holds land in both. Do not put secrets (tokens, keys, passwords) in these settings.
 
-**Which sessions record trust.** Claude Code records it as `projects["<path>"].hasTrustDialogAccepted` in `~/.claude.json`, keyed on the repository root, when you accept its trust dialog. Interactive terminal sessions show that dialog. `claude -p` and Agent SDK sessions never show it, so, as far as the docs show, they never record trust (an inference: the dialog is the only documented way the flag gets written). Whether the VS Code extension records trust is not yet verified; whether the JetBrains extension or Claude Desktop show the dialog or record trust is not documented. The module and its status lines are verified to run in the VS Code extension (maintainer, 2026-10-23). The flag is shared by every surface: accept the folder once in an interactive terminal session, or set the flag to `true` by hand in `~/.claude.json`, and the folder is trusted everywhere. Until then, the 16 settings above never apply from `.claude/settings.json` or `.ai-dlc/cache-keepalive.json` on a surface that does not record trust (`claude -p`, the SDK); the `env` of `.claude/settings.local.json` and `/config` still work.
+**Which sessions record trust.** Claude Code records it as `projects["<path>"].hasTrustDialogAccepted` in `~/.claude.json`, keyed on the repository root, when you accept its trust dialog. Interactive terminal sessions show that dialog. `claude -p` and Agent SDK sessions never show it, so, as far as the docs show, they never record trust (an inference: the dialog is the only documented way the flag gets written). Whether the VS Code extension records trust is not yet verified; whether the JetBrains extension or Claude Desktop show the dialog or record trust is not documented. The module and its status lines are verified to run in the VS Code extension (maintainer, 2026-10-23). The flag is shared by every surface: accept the folder once in an interactive terminal session, or set the flag to `true` by hand in `~/.claude.json`, and the folder is trusted everywhere. Until then, the 16 settings above never apply from `.claude/settings.json` or `.ai-dlc/cache-keepalive.json` on a surface that does not record trust (`claude -p`, the SDK); the `env` of `.claude/settings.local.json` and the `/ai-dlc:cache-keepalive` overrides still work.
 
 | Environment variable | Key | Default | What it does |
 | --- | --- | --- | --- |
 | `AI_DLC_KEEPALIVE_ENABLED` | `enabled` | `true` | Keep-alive on or off |
-| `AI_DLC_KEEPALIVE_SCOPE` | `scope` | `session` | The scope of `/ai-dlc:keepalive <duration>` without a flag: `session` or `machine` |
+| `AI_DLC_KEEPALIVE_SCOPE` | `scope` | `session` | The scope of `/ai-dlc:cache-keepalive <duration>` without a flag: `session` or `machine` |
 | `AI_DLC_KEEPALIVE_STATUS` | `status` | `true` | Show the status lines |
 | `AI_DLC_KEEPALIVE_PING_PROMPT` | `pingPrompt` | `Keep-alive ping. Reply with only: ok` | The text each ping sends |
 | `AI_DLC_KEEPALIVE_HIT_THRESHOLD` | `hitThreshold` | `0.9` | A ping is a hit when more than this share of its input, 0 up to 1, was read from the cache |
@@ -91,12 +93,12 @@ The process environment is not read. A value that does not parse, is out of rang
 | `AI_DLC_KEEPALIVE_1H_TTL` | `oneHour.ttl` | `60m` | The lifetime the 1h track assumes after each ping |
 | `AI_DLC_KEEPALIVE_1H_PING_EVERY` | `oneHour.pingEvery` | `50m` | The 1h track's interval |
 | `AI_DLC_KEEPALIVE_1H_KEEP_WARM_FOR` | `oneHour.keepWarmFor` | `8h` | How long the 1h track keeps pinging |
-| `AI_DLC_KEEPALIVE_1H_MAX_PINGS` | `oneHour.maxPings` | `0` | The 1h track's ping limit; `0` is none |
+| `AI_DLC_KEEPALIVE_1H_MAX_PINGS` | `oneHour.maxPings` | `9` | The 1h track's ping limit, a whole number of 1 or more (8h at 50m allows 9 pings) |
 | `AI_DLC_KEEPALIVE_5M_ENABLED` | `fiveMinute.enabled` | `true` | The 5m track on or off |
 | `AI_DLC_KEEPALIVE_5M_TTL` | `fiveMinute.ttl` | `5m` | The lifetime the 5m track assumes after each ping |
 | `AI_DLC_KEEPALIVE_5M_PING_EVERY` | `fiveMinute.pingEvery` | `3m` | The 5m track's interval |
 | `AI_DLC_KEEPALIVE_5M_KEEP_WARM_FOR` | `fiveMinute.keepWarmFor` | `1h` | How long the 5m track keeps pinging |
-| `AI_DLC_KEEPALIVE_5M_MAX_PINGS` | `fiveMinute.maxPings` | `0` | The 5m track's ping limit; `0` is none (the hour allows 20 pings) |
+| `AI_DLC_KEEPALIVE_5M_MAX_PINGS` | `fiveMinute.maxPings` | `20` | The 5m track's ping limit, a whole number of 1 or more (1h at 3m allows 20 pings) |
 | `AI_DLC_KEEPALIVE_BUDGET_MULTIPLIER` | `budgetMultiplier` | `2` | The spend limit, in multiples of the context's tokens; `0` turns it off |
 | `AI_DLC_KEEPALIVE_COMPACT_ON_CAP` | `compactOnCap` | `false` | Compact instead of stopping when the spend limit is reached |
 | `AI_DLC_KEEPALIVE_COMPACT_INSTRUCTIONS` | `compactInstructions` | `Also keep the background tasks' IDs, output paths, and what to do when they finish.` | What that compaction is told to keep |
@@ -106,12 +108,12 @@ The process environment is not read. A value that does not parse, is out of rang
 | `AI_DLC_KEEPALIVE_COMPACT_COST_GUESS` | `compactCostGuess` | `0.6` | A compaction's cost per context token, until one has been measured |
 | `AI_DLC_KEEPALIVE_SUMMARY_RATIO_GUESS` | `summaryRatioGuess` | `0.15` | A compaction summary's size over the context, until one has been measured |
 
-The `/config` rows are named `keepalive` plus the key in camel case, such as `keepaliveOneHourKeepWarmFor`, and have no default of their own: an empty row means the built-in default. For example, a team that wants the 5-minute track to stop after ten pings and the 1-hour track to keep warm for a working day:
+For example, a team that wants the 5-minute track to stop after ten pings and the 1-hour track to keep warm for a working day runs `/ai-dlc:cache-keepalive-configure stop the 5-minute track after ten pings and keep the 1-hour track warm for 10h`, which changes these values in the file (its other keys keep their values; 10h at 50m allows 12 pings, so the 1h limit rises with it):
 
 ```json
 {
   "fiveMinute": { "maxPings": 10 },
-  "oneHour": { "keepWarmFor": "10h" }
+  "oneHour": { "keepWarmFor": "10h", "maxPings": 12 }
 }
 ```
 

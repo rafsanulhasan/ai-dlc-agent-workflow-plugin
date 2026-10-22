@@ -63,24 +63,25 @@ export const DEFAULTS: Config = {
 
 /** What a setting's value must be. */
 type Kind = 'boolean' | 'percent' | 'positive' | 'whole' | 'text' | 'path' | 'pattern' | 'address'
-/** A setting: its key in .ai-dlc/auto-handoff.json and in Config, its environment variable, its kind,
- * and its key in the plugin's userConfig when it has one. One line each: tests/auto-handoff/ in the
- * repository checks this table against the schema the configure-auto-handoff skill ships. */
-export type Setting = { key: string; field: keyof Config; env: string; kind: Kind; userConfig?: string }
+/** A setting: its key in .ai-dlc/auto-handoff.json and in Config, its environment variable and its
+ * kind. One line each: tests/auto-handoff/ in the repository checks this table against the schema the
+ * configure-auto-handoff skill ships. The automatic handoff has no /config rows (human decision,
+ * 2026-10-23, run AAW-20261022-cache-keepalive-init). */
+export type Setting = { key: string; field: keyof Config; env: string; kind: Kind }
 export const SETTINGS: readonly Setting[] = [
   { key: 'enabled', field: 'enabled', env: 'AI_DLC_AUTO_HANDOFF_ENABLED', kind: 'boolean' },
-  { key: 'thresholdPercent', field: 'thresholdPercent', env: 'AI_DLC_AUTO_HANDOFF_THRESHOLD_PERCENT', kind: 'percent', userConfig: 'thresholdPercent' },
+  { key: 'thresholdPercent', field: 'thresholdPercent', env: 'AI_DLC_AUTO_HANDOFF_THRESHOLD_PERCENT', kind: 'percent' },
   { key: 'thresholdTokens', field: 'thresholdTokens', env: 'AI_DLC_AUTO_HANDOFF_THRESHOLD_TOKENS', kind: 'positive' },
   { key: 'defaultContextWindow', field: 'defaultContextWindow', env: 'AI_DLC_AUTO_HANDOFF_DEFAULT_CONTEXT_WINDOW', kind: 'positive' },
   { key: 'seedHeadroomTokens', field: 'seedHeadroomTokens', env: 'AI_DLC_AUTO_HANDOFF_SEED_HEADROOM_TOKENS', kind: 'whole' },
-  { key: 'maxConsecutiveHandoffs', field: 'maxUnattended', env: 'AI_DLC_AUTO_HANDOFF_MAX_CONSECUTIVE', kind: 'positive', userConfig: 'maxConsecutiveHandoffs' },
+  { key: 'maxConsecutiveHandoffs', field: 'maxUnattended', env: 'AI_DLC_AUTO_HANDOFF_MAX_CONSECUTIVE', kind: 'positive' },
   { key: 'chainWhileRunActive', field: 'chainWhileRunActive', env: 'AI_DLC_AUTO_HANDOFF_CHAIN_WHILE_RUN_ACTIVE', kind: 'boolean' },
   { key: 'renameSessions', field: 'renameSessions', env: 'AI_DLC_AUTO_HANDOFF_RENAME_SESSIONS', kind: 'boolean' },
   { key: 'sessionNamePrefix', field: 'sessionNamePrefix', env: 'AI_DLC_AUTO_HANDOFF_SESSION_NAME_PREFIX', kind: 'text' },
-  { key: 'briefTemplate', field: 'briefTemplate', env: 'AI_DLC_AUTO_HANDOFF_BRIEF_TEMPLATE', kind: 'path', userConfig: 'briefTemplate' },
-  { key: 'instructionsTemplate', field: 'instructionsTemplate', env: 'AI_DLC_AUTO_HANDOFF_INSTRUCTIONS_TEMPLATE', kind: 'path', userConfig: 'instructionsTemplate' },
-  { key: 'ignoreFiles', field: 'ignoreFiles', env: 'AI_DLC_AUTO_HANDOFF_IGNORE_FILES', kind: 'pattern', userConfig: 'ignoreFiles' },
-  { key: 'viewer', field: 'viewer', env: 'AI_DLC_AUTO_HANDOFF_VIEWER', kind: 'address', userConfig: 'viewer' },
+  { key: 'briefTemplate', field: 'briefTemplate', env: 'AI_DLC_AUTO_HANDOFF_BRIEF_TEMPLATE', kind: 'path' },
+  { key: 'instructionsTemplate', field: 'instructionsTemplate', env: 'AI_DLC_AUTO_HANDOFF_INSTRUCTIONS_TEMPLATE', kind: 'path' },
+  { key: 'ignoreFiles', field: 'ignoreFiles', env: 'AI_DLC_AUTO_HANDOFF_IGNORE_FILES', kind: 'pattern' },
+  { key: 'viewer', field: 'viewer', env: 'AI_DLC_AUTO_HANDOFF_VIEWER', kind: 'address' },
 ]
 
 /** One place values are read from, highest first. `byEnv`: keyed by environment variable, not by key. */
@@ -149,14 +150,10 @@ const show = (v: unknown) => typeof v === 'string' ? JSON.stringify(v) : String(
 /**
  * Each setting from the first level that holds a valid value, highest first: the levels given (the
  * `env` of .claude/settings.local.json, the `env` of .claude/settings.json, the process environment,
- * then .ai-dlc/auto-handoff.json), then the plugin's userConfig from /config, then the default. A
- * value that is set but invalid is reported in `warnings` and resolution falls through to the next
- * level. userConfig keeps its old leniency: the host enforces its min and max, and a percentage
- * outside 1..100 is clamped, a bad one dropped (parseUserConfig). A /config value that is clamped or
- * dropped is reported in `warnings` too, when no higher level set that key.
+ * then .ai-dlc/auto-handoff.json), then the default. A value that is set but invalid is reported in
+ * `warnings` and resolution falls through to the next level.
  */
-export function resolveConfig(levels: readonly Level[], options: Record<string, unknown>): Resolved {
-  const { cfg: user, warnings: userWarnings } = parseUserConfig(options)
+export function resolveConfig(levels: readonly Level[]): Resolved {
   const cfg: Config = { ...DEFAULTS }
   const sources: Record<string, string> = {}
   const warnings: string[] = []
@@ -177,15 +174,7 @@ export function resolveConfig(levels: readonly Level[], options: Record<string, 
       found = true
       break
     }
-    if (found) continue
-    if (s.userConfig && options[s.userConfig] !== undefined && options[s.userConfig] !== null) {
-      (cfg as Record<string, unknown>)[s.field] = (user as Record<string, unknown>)[s.field]
-      sources[s.key] = `${s.userConfig} in /config`
-      const w = userWarnings[s.userConfig]
-      if (w) warnings.push(w)
-    } else {
-      sources[s.key] = 'default'
-    }
+    if (!found) sources[s.key] = 'default'
   }
   return { cfg, sources, warnings }
 }
@@ -198,53 +187,6 @@ function assign(cfg: Config, s: Setting, v: unknown) {
 export const k = (n: number) => `${Math.round(n / 1000)}k`
 export const short = (sessionId: string) => sessionId.slice(0, 8)
 export const expand = (path: string, home: string) => path.replace(/^~(?=\/|$)/, home)
-
-const isPositive = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v > 0
-
-/**
- * The /config values alone, each checked, with the defaults for anything missing or bad, and one
- * warning per /config key whose value was clamped or dropped. Lenient on purpose: a typo in /config
- * should not stop handoffs. A non-positive or non-numeric number falls back to the default rather
- * than handing off at 0; a percentage outside 1..100 is clamped into it.
- */
-export function parseUserConfig(options: Record<string, unknown>): { cfg: Config; warnings: Record<string, string> } {
-  const warnings: Record<string, string> = {}
-  const set = (key: string) => options[key] !== undefined && options[key] !== null
-  const drop = (key: string, why: string, fallback: unknown) => {
-    warnings[key] = `${key}=${show(options[key])} in /config ignored: ${why}; using ${show(fallback)}`
-  }
-  const cfg: Config = { ...DEFAULTS }
-
-  const pct = options.thresholdPercent
-  if (isPositive(pct)) {
-    cfg.thresholdPercent = Math.min(100, Math.max(1, pct))
-    if (cfg.thresholdPercent !== pct) warnings.thresholdPercent = `thresholdPercent=${pct} in /config clamped to ${cfg.thresholdPercent}`
-  } else if (set('thresholdPercent')) drop('thresholdPercent', 'not a positive number', DEFAULTS.thresholdPercent)
-
-  const max = options.maxConsecutiveHandoffs
-  if (isPositive(max)) cfg.maxUnattended = max
-  else if (set('maxConsecutiveHandoffs')) drop('maxConsecutiveHandoffs', 'not a positive number', DEFAULTS.maxUnattended)
-
-  for (const key of ['briefTemplate', 'instructionsTemplate'] as const) {
-    const v = options[key]
-    if (typeof v === 'string' && v.trim()) cfg[key] = v.trim()
-    else if (set(key)) drop(key, 'blank or not text', DEFAULTS[key])
-  }
-
-  const pat = options.ignoreFiles
-  if (typeof pat === 'string' && pat.trim()) {
-    try { cfg.ignoreFiles = new RegExp(pat) } catch { drop('ignoreFiles', 'not a valid regular expression', '') }
-  } else if (set('ignoreFiles') && typeof pat !== 'string') drop('ignoreFiles', 'not text', '')
-
-  const viewer = options.viewer
-  if (typeof viewer === 'string' && (!viewer.trim() || parseAddress(viewer))) cfg.viewer = viewer.trim()
-  else if (set('viewer')) drop('viewer', 'not host:port', DEFAULTS.viewer)
-
-  return { cfg, warnings }
-}
-
-/** The /config values alone, each checked, with the defaults for anything missing or bad. */
-export const parseConfig = (options: Record<string, unknown>): Config => parseUserConfig(options).cfg
 
 // Strip // and /* */ comments outside strings: Claude Code settings files may be JSONC.
 export function stripComments(text: string): string {
@@ -295,7 +237,7 @@ export function repoConfig(text: string | undefined): { values?: Record<string, 
 // its choosing into the Haiku prompt. Claude Code asks before trusting a folder's settings files, but
 // it knows nothing of this file, so the module checks Claude Code's own record instead: the keys
 // below apply from the repository file only when the folder is trusted. Every other key always does.
-// Settings `env`, the process environment and /config are the person's own, and are never gated.
+// Settings `env` and the process environment are the person's own, and are never gated.
 export const TRUST_GATED = ['briefTemplate', 'instructionsTemplate', 'viewer'] as const
 
 /** Where Claude Code records trust: `projects["<path>"].hasTrustDialogAccepted` in ~/.claude.json.

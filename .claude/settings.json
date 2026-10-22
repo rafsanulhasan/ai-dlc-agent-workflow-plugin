@@ -35,8 +35,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node .claude/hooks/check-copilot-stale.mjs",
-            "timeout": 120
+            "command": "node .claude/hooks/stop-sync-then-check.mjs",
+            "timeout": 240
           }
         ]
       },

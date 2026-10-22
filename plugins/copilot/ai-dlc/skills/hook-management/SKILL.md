@@ -87,7 +87,8 @@ Branch logic:
   - Edit only Copilot hook integration files and references.
 - `scope = both`
   - Keep semantic parity; document intentional differences.
-  - For a command hook on an event both platforms have, write the Claude entry, then mirror it with `Skill("harness-sync", args: "sync --only hooks")`; it matches hooks by command and also brings Copilot-only hooks into `.claude/settings.json`. Write by hand only what its `note:` lines list (prompt hooks, Claude-only events such as `WorktreeCreate`, commands that use `CLAUDE_*` variables).
+  - For a command hook on an event both platforms have, write the Claude entry, then mirror it with `node .claude/scripts/sync-harness.mjs --only hooks` (follow *For agents* in `../harness-sync/SKILL.md`); it matches hooks by command and also brings Copilot-only hooks into `.claude/settings.json`. Write by hand only what its `note:` lines list (prompt hooks, Claude-only events such as `WorktreeCreate`, commands that use `CLAUDE_*` variables).
+  - The rule for the other kinds — when you sync one item and both of its twins were edited, run `--check` first, ask the human which side wins, then sync with `--prefer claude` or `--prefer copilot`; never let `newer` decide — never fires for hooks: the script matches them by command and only adds, `--name` skips them and `--prefer` does not apply. A hook whose command changed on one side is a new hook; remove the old one on the other side by hand, with the developer's consent.
 
 - `operation = create`
   - Add hook implementation + registration/wiring + docs note.

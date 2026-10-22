@@ -16,6 +16,8 @@ jobs:
         run: node tools/build-copilot.mjs --check
       - name: Run Node tests
         run: node --test "tests/**/*.test.mjs"
+      - name: Claude Code and GitHub Copilot harness twins are in sync (check only; CI never writes)
+        run: node .claude/scripts/sync-harness.mjs --check
       - name: Validate Claude plugin manifest
         run: npx -y @anthropic-ai/claude-code plugin validate --strict ./plugins/claude/ai-dlc
       - name: Test the Claude plugin's hooks module (auto-handoff and keep-alive)

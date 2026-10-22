@@ -3,7 +3,17 @@
 ## Context
 You asked which mods on https://claude-mods.com/ would be useful or meaningful for this plugin. This is research only: nothing gets installed or changed. Two research-assistant reports (read 2026-10-20) are the sources:
 - **Catalogue:** 277 of the 278 listed mods were read from the grid. Descriptions are paraphrased, and source repos and licences were checked only for blast-radius.
-- **Plugin inventory:** the plugin has 15 agents and 60 skills, and ships no hooks, commands, status line, panes or MCP of its own.
+- **Plugin inventory:** the plugin has 15 agents and 60 skills, and ships no hooks, commands, status line, panes or MCP of its own. (True at the time of research. Since then the plugin has one hooks module, auto-handoff, which also registers keep-alive; see *Integration status*.)
+
+## Integration status (updated 2026-10-22)
+Two mods from the research have since been built into the `ai-dlc` plugin. Their licence texts are in [THIRD_PARTY_NOTICES.md](../../../THIRD_PARTY_NOTICES.md).
+
+| Mod | Upstream @ commit | Licence | Path in ai-dlc | Command / settings | VS Code |
+|---|---|---|---|---|---|
+| cache-keepalive | RichardJSun/claude-code-mods @ `6135ec5574609c9fcd865f517c24990d5f37321b` | MIT | `plugins/claude/ai-dlc/hooks/keepalive/` ([ATTRIBUTION.md](../../../plugins/claude/ai-dlc/hooks/keepalive/ATTRIBUTION.md)) | `/ai-dlc:keepalive`; settings from `AI_DLC_KEEPALIVE_*` variables and `.ai-dlc/cache-keepalive.json` | Integrated; confirmed working in VS Code by the maintainer (2026-10-22), status lines included |
+| auto-handoff | alexknowshtml/claude-auto-handoff @ `8d762ce726c962268e2dbe24c1c60f0889a2fcde` | MIT | `plugins/claude/ai-dlc/hooks/auto-handoff/` ([ATTRIBUTION.md](../../../plugins/claude/ai-dlc/hooks/auto-handoff/ATTRIBUTION.md)) | Automatic session handoff at a context threshold | Integrated; confirmed working in VS Code by the maintainer (2026-10-22), status lines included |
+
+auto-handoff is the plugin's single hooks module (`hooks/hooks.json` lists only it), and its `register.tsx` also registers keep-alive. Both are Claude-only and are not part of the Copilot plugin. The research findings below about other mods were not re-tested.
 
 **The main gap a mod can fill:** ai-dlc's runtime state exists only as files on disk:
 - run state in `docs/handoffs/*/run.md`: stage, gate, loop round N/3, next action
@@ -15,7 +25,7 @@ Nothing shows this while a session runs. Gates reach you only as chat messages. 
 ## What a mod is (limits that affect us)
 - **Format:** a mod is a Claude Code plugin with a JS/TS `hooks/register.js` module that runs inside Claude Code (`code.claude.com/docs/en/plugins/mods/overview`).
 - **Version:** needs Claude Code CLI 2.1.287 or later.
-- **VS Code:** the sources disagree on whether mods can draw in the VS Code chat panel. The site says no; the official docs say yes from extension 2.1.299. This matters because you work in VS Code.
+- **VS Code:** the sources disagreed on whether mods can draw in the VS Code chat panel. The site says no; the official docs say yes from extension 2.1.299. For the two integrated modules this is confirmed by the maintainer on 2026-10-22: auto-handoff and keep-alive work in the VS Code extension, status lines included. The 2.1.299+ requirement is from the official docs; not re-tested.
 - **Copilot:** mods are Claude-only and won't reach Copilot. `tools/build-copilot.mjs` drops non-command hooks.
 - **Trust:** mods are **not sandboxed** and run with your permissions. Review each one with `claude plugin validate ./<repo>` before installing.
 
@@ -36,7 +46,7 @@ Nothing shows this while a session runs. Gates reach you only as chat messages. 
 ### 2. Handoff, resume and context survival (matches our `handoff` skill)
 | Mod | Why |
 |---|---|
-| auto-handoff / ctx-handoff / compact-handoff / handoff-compact / compact-keeper | Turn compaction or a context threshold into a handoff brief. Same idea as "runs survive a lost session" |
+| auto-handoff / ctx-handoff / compact-handoff / handoff-compact / compact-keeper | Turn compaction or a context threshold into a handoff brief. Same idea as "runs survive a lost session". **auto-handoff is now integrated** into `ai-dlc` (see *Integration status*) |
 | pin-memo / workface | Notes re-shown on resume or after compaction. Could pin the active run.md |
 | Sidequest / storybloq | Local kanban or tickets that survive compaction. Overlaps with `docs/backlog`; watch for duplication |
 
@@ -88,7 +98,7 @@ It splits cost only into **main thread vs subagents**. It has **no per-agent bre
 | Session Detail turn table ($, tokens, cache hit %) | **token-ledger**: one row per turn with fresh input, output, cache reads and writes, hit ratio and cost; subagent turns get their own rows | Current session only |
 | Subagent split | **hivemind**, **cctop** (Agents view), **savvy-progress**, **Flightdeck**: cost or tokens *per subagent*, which claude-lens can't do | Live session only, no history |
 | Subscription windows, burn rate, budget | **hourglass** (burn rate, time to 100%, toasts), **quota-meter**, **claude-code-usage-quota**, **budget-guard** (cap and blocking) | — |
-| Cache Lab | token-ledger / cctop / session-meter (hit ratios), cache-keeper / cache-timer (time left before the cache goes cold) | No breakdown of why the cache missed |
+| Cache Lab | token-ledger / cctop / session-meter (hit ratios), cache-keeper / cache-timer (time left before the cache goes cold; **cache-keepalive**, which keeps the cache warm, is the one now integrated) | No breakdown of why the cache missed |
 | Context composition | **context-inspector**, **session-meter** | — |
 | Timeline / Gantt | **Flightdeck** (timeline and swimlanes), agent-profiler, time-blame | — |
 | A browser dashboard like claude-lens | **Observability** (HTML file), **syzygy** (`localhost:4317`, reads the same transcripts; prices updated by hand) | — |
@@ -97,7 +107,7 @@ It splits cost only into **main thread vs subagents**. It has **no per-agent bre
 **Suggested set:** Observability for history, token-ledger for per-turn cost and cache, hivemind or cctop for per-subagent cost, and hourglass for limits.
 
 **Caveats:**
-- **VS Code:** most of these draw only in the terminal or desktop app.
+- **VS Code:** most of these draw only in the terminal or desktop app. (Update 2026-10-22: the maintainer confirmed that the integrated auto-handoff and keep-alive modules work in the VS Code extension, status lines included. The band above the prompt is still not drawn there. The claims below are from the research and were not re-tested.)
   - Flightdeck panels don't update live in VS Code.
   - agent-profiler and context-inspector record data but draw nothing there.
   - session-hud and taxi-meter don't support VS Code.
@@ -182,9 +192,9 @@ How each scenario holds up if:
 | An upstream contribution to claude-lens gives reach without upkeep | The third-party mods we'd "buy" are young and may be abandoned |
 
 ### Where the two reviews agree, and the one difference
-- **They agree on:** build A′ first; B is the most valuable item but costs the most; buy C; keep claude-lens for D; don't put mod logic in the `ai-dlc` plugin itself.
+- **They agree on:** build A′ first; B is the most valuable item but costs the most; buy C; keep claude-lens for D; don't put mod logic in the `ai-dlc` plugin itself. (Note 2026-10-22: this predates the integration of the auto-handoff and keep-alive hooks modules into `ai-dlc`. It still applies to the lens logic.)
 - **They differ on timing of the thin mod:**
-  - The architect would ship it now, as a separate `ai-dlc-lens` plugin in the same marketplace. That keeps `ai-dlc` hook-free, out of reach of the kill switch and crash unloading, and lets CI pin the Claude Code version for it alone.
+  - The architect would ship it now, as a separate `ai-dlc-lens` plugin in the same marketplace. That keeps `ai-dlc` hook-free (as of 2026-10-20; see the note above), out of reach of the kill switch and crash unloading, and lets CI pin the Claude Code version for it alone.
   - The product owner would **defer** mod panes until the mod API leaves early access, or goes 3 or more releases without a breaking change.
   - **This is your call.**
 
@@ -204,7 +214,7 @@ When to revisit:
 
 Open technical questions (for research-assistant before any spec):
 1. Do subagent transcripts record the agent type? This decides whether B′ is possible.
-2. Does the VS Code extension show a `statusLine`, and which fields does it receive?
+2. Does the VS Code extension show a `statusLine`, and which fields does it receive? (Update 2026-10-22: the maintainer confirmed that the integrated auto-handoff and keep-alive modules work in VS Code, status lines included. Keep-alive's status lines come from the mods UI (`$.ui.status`, `plugins/claude/ai-dlc/hooks/keepalive/keepalive.ts:128`), which is not the `statusLine` setting, so the question about the fields a plain `statusLine` receives is still unanswered.)
 3. Is `agentId` set on every subagent turn, including agent-team members?
 
 ## Your decisions (2026-10-20)
@@ -244,7 +254,7 @@ product-manager will produce the binding breakdown and waves after approval.
 7. G4
 
 ### Constraints the spec must honour
-- The `ai-dlc` plugin itself stays hook-free. `tools/build-copilot.mjs` must ignore `ai-dlc-lens`; the build reads only the `.hooks` key, see `tools/build-copilot.mjs:315`.
+- ~~The `ai-dlc` plugin itself stays hook-free.~~ Superseded on 2026-10-22: the auto-handoff and keep-alive hooks modules were folded into `ai-dlc` (see *Integration status*). Lens logic (run-state view, per-agent cost) still goes in its own `ai-dlc-lens` plugin. `tools/build-copilot.mjs` must ignore `ai-dlc-lens`; for hooks the build projects only the `.hooks` key of `hooks/hooks.json` to Copilot (`tools/build-copilot.mjs:341-343`), and it validates the Claude-only `modules` list without ever projecting it (`tools/build-copilot.mjs:345-357`).
 - Design for pane plus status line. Never rely on the band above the prompt, which VS Code doesn't draw.
 - The parser must cope with run.md files that lack `current-stage`, `owner`, `session` or `commit`.
 - Mark dollar figures as estimates, and date the price table.

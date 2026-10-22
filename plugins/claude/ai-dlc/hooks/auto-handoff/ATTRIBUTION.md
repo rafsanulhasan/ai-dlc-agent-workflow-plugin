@@ -8,6 +8,11 @@ upstream, the `cache-keepalive` mod, and lives in its own folder,
 `hooks/keepalive/`, with its own [LICENSE](../keepalive/LICENSE) and
 [ATTRIBUTION.md](../keepalive/ATTRIBUTION.md).
 
+The entries below are a history, each true when it was written. Those before
+2026-10-23 (run AAW-20261022-cache-keepalive-init) describe `/config` rows
+(the manifest's `userConfig`) as a settings level; those rows and that level
+are gone, and the last entry says so.
+
 | Field | Value |
 | --- | --- |
 | Upstream | <https://github.com/alexknowshtml/claude-auto-handoff> |
@@ -378,3 +383,38 @@ Made by Rafsanul Hasan, 2026-10-23 (same run, review round 1):
   no test pins the `orLog` wrapper's call site in `register.tsx` (no fault can
   reach `showSeedCache` through the engine, and the test harness loads its own
   copy of the module, so a module-level seam a test sets never reaches it).
+
+Made by Rafsanul Hasan, 2026-10-23 (run AAW-20261022-cache-keepalive-init):
+
+- **Keep-alive.** `registerKeepalive` is called without the plugin options,
+  since keep-alive has no `/config` rows any more, and the comment names its
+  command `/ai-dlc:cache-keepalive`. See `../keepalive/ATTRIBUTION.md`, same
+  run.
+- **No `/config` rows** (human decision, 2026-10-23). The six rows
+  (`thresholdPercent`, `maxConsecutiveHandoffs`, `briefTemplate`,
+  `instructionsTemplate`, `ignoreFiles`, `viewer`) are gone from the plugin
+  manifest, which now declares no `userConfig`. `config.ts`: `Setting` lost
+  `userConfig`; `resolveConfig(levels)` takes no options; `parseUserConfig`
+  and `parseConfig`, with their clamping and their `/config` warnings, are
+  removed. `register.tsx` no longer reads the plugin options. Precedence:
+  the `env` of `.claude/settings.local.json`, the `env` of
+  `.claude/settings.json`, the process environment,
+  `.ai-dlc/auto-handoff.json`, the default. A key skipped in an untrusted
+  folder is pointed to `.claude/settings.local.json` only. `brief.ts`: the
+  `thresholdSource` comment no longer names `/config`.
+- **Commands.** The module registers no command of its own; it runs only
+  Claude Code's built-in `/rename` and `/clear`, which keep their names. Its
+  settings command stays `/ai-dlc:configure-auto-handoff`.
+- **Tests.** `tests/config.test.ts`: the `/config` warning tests are replaced
+  by one that no setting names a `userConfig` key; the precedence tests take
+  no options. `tests/auto-handoff.test.tsx`: the tests that set a value
+  through a plugin option set it through the process environment instead;
+  the `parseConfig` clamping test is removed; a former `/config` row is shown
+  not to be read (precedence, and the retired token threshold).
+
+Made by Rafsanul Hasan, 2026-10-23 (same run, review follow-up):
+
+- **Tests.** `tests/config.test.ts`: the "no setting has a userConfig key"
+  check moved to `../keepalive/tests/keepalive.test.ts`, which now checks both
+  settings tables, so `claude plugin test` holds one such check. No code in
+  this folder changed.

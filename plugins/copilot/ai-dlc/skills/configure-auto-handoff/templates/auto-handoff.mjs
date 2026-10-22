@@ -13,8 +13,8 @@
 //
 // Options: --root <dir> (default: git root, else the working directory).
 // Each key is read, highest first, from `env` in .claude/settings.local.json, `env` in
-// .claude/settings.json, the process environment, .ai-dlc/auto-handoff.json, the plugin's /config option
-// (keys that have one; not readable here, so `show` names it), then the default. Keys the schema marks
+// .claude/settings.json, the process environment, .ai-dlc/auto-handoff.json, then the default. The
+// automatic handoff has no /config rows. Keys the schema marks
 // x-trustGated apply from .ai-dlc/auto-handoff.json only when Claude Code trusts the folder, as in the
 // module; `show` reads the trust flag from ~/.claude.json and nothing else from it.
 
@@ -178,7 +178,7 @@ export function effective(root, keys, env = process.env, trust = trustOf(readMay
     const ignored = keys.filter((p) => p["x-trustGated"] && values[p.key] !== undefined && values[p.key] !== null).map((p) => p.key);
     if (ignored.length) {
       values = Object.fromEntries(Object.entries(values).filter(([k]) => !ignored.includes(k)));
-      warnings.push(`${ignored.join(", ")} in .ai-dlc/${FILE_NAME} ignored: Claude Code does not trust this folder (${trust.why}); set them in the env of .claude/settings.local.json or in /config instead`);
+      warnings.push(`${ignored.join(", ")} in .ai-dlc/${FILE_NAME} ignored: Claude Code does not trust this folder (${trust.why}); set them in the env of .claude/settings.local.json instead`);
     }
   }
   levels.push({ where: `.ai-dlc/${FILE_NAME}`, byEnv: false, values });
@@ -193,7 +193,7 @@ export function effective(root, keys, env = process.env, trust = trustOf(readMay
       if (r.error) { warnings.push(`${name}=${JSON.stringify(raw)} in ${level.where} ignored: ${r.error}; falling back to the next source`); continue; }
       return { key: p.key, value: r.value, source: `${name} in ${level.where}` };
     }
-    return { key: p.key, value: p.default, source: p["x-userConfig"] ? "default, unless set in /config" : "default" };
+    return { key: p.key, value: p.default, source: "default" };
   });
   return { rows, warnings };
 }

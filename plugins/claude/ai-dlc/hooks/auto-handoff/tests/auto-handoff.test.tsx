@@ -5,7 +5,7 @@ import { briefPrompt, extractFacts, factsBlock, hasUnansweredLastRequest, isVali
 import { renderTemplate } from '../templates.ts'
 import { parseBrief } from '../viewer.ts'
 import { orLog } from '../io.ts'
-import { DEFAULT_WINDOW, contextLine, creationSplit, hostFields, parseConfig, seedCacheFields, seedCacheLine, windowFields, windowInfo, windowOf } from '../config.ts'
+import { DEFAULT_WINDOW, contextLine, creationSplit, hostFields, seedCacheFields, seedCacheLine, windowFields, windowInfo, windowOf } from '../config.ts'
 
 // renamed: the names /rename was run with, in order; commandOrder: every slash command run, in order.
 type Calls = { compacts: number; steps: number; cleared: number; seeded: string[]; written: Record<string, string>; completes: number; tokens: number; prompts: string[]; toasts: string[]; ran: number; clearedAtWrite: Record<string, number>; renamed: string[]; commandOrder: string[]; branchQueries: number; usageArgs: unknown[] }
@@ -341,8 +341,8 @@ describe('auto-handoff', () => {
     expect(calls.seeded[0]).not.toContain('http://')
   })
 
-  test('a blank viewer setting means no server, and the link is the local file', { options: { viewer: '' } }, async ($, on) => {
-    const calls = engine(on, { tokens: 165_000 })
+  test('a blank viewer setting means no server, and the link is the local file', async ($, on) => {
+    const calls = engine(on, { tokens: 165_000, env: { AI_DLC_AUTO_HANDOFF_VIEWER: '' } })
     await $.turn.complete(TURN)
     await settle(() => calls.cleared > 0)
     await $.classic.SessionStart({ source: 'clear' })
@@ -361,32 +361,20 @@ describe('auto-handoff', () => {
     expect(calls.cleared).toBe(1)
   })
 
-  test('the thresholdPercent userConfig field sets the share of the window', { options: { thresholdPercent: 50 } }, async ($, on) => {
-    const calls = engine(on, { tokens: 120_000 })
+  test('thresholdPercent sets the share of the window', async ($, on) => {
+    const calls = engine(on, { tokens: 120_000, env: { AI_DLC_AUTO_HANDOFF_THRESHOLD_PERCENT: '50' } })
     await $.turn.complete(TURN)
     await settle(() => calls.cleared > 0)
     expect(calls.cleared).toBe(1)
     expect(calls.written['/home/test/.claude/state/auto-handoff/auto-handoff.log']).toContain('threshold=100000')
   })
 
-  test('the retired token threshold field is ignored, never read as a percent', { options: { threshold: 100_000 } }, async ($, on) => {
+  // The automatic handoff has no /config rows: neither the retired token threshold nor a former row is read.
+  test('plugin options are not read: the retired token threshold and the former thresholdPercent row change nothing', { options: { threshold: 100_000, thresholdPercent: 50 } }, async ($, on) => {
     const calls = engine(on, { tokens: 120_000 })
     await $.turn.complete(TURN)
     await settle(() => false)
     expect(calls.cleared).toBe(0) // 120k is under 80% of 200k
-  })
-
-  // The host refuses values outside min and max in plugin.json before the module loads; parseConfig
-  // still clamps, for a host that does not.
-  test('parseConfig clamps thresholdPercent to 1..100 and falls back to 80 on a bad value', () => {
-    const pct = (v: unknown) => parseConfig({ thresholdPercent: v }).thresholdPercent
-    expect(pct(150)).toBe(100)
-    expect(pct(0.5)).toBe(1)
-    expect(pct(0)).toBe(80)
-    expect(pct(-5)).toBe(80)
-    expect(pct('90')).toBe(80)
-    expect(pct(undefined)).toBe(80)
-    expect(pct(65)).toBe(65)
   })
 
   test('windowOf takes the window, else derives it from the percentage, else nothing', () => {
@@ -433,8 +421,8 @@ describe('auto-handoff', () => {
     expect(calls.cleared).toBe(1)
   })
 
-  test('the fallback log line follows thresholdPercent', { options: { thresholdPercent: 50 } }, async ($, on) => {
-    const calls = engine(on, { tokens: 1, window: null })
+  test('the fallback log line follows thresholdPercent', async ($, on) => {
+    const calls = engine(on, { tokens: 1, window: null, env: { AI_DLC_AUTO_HANDOFF_THRESHOLD_PERCENT: '50' } })
     await $.turn.complete(TURN)
     await settle(() => false)
     const log = calls.written['/home/test/.claude/state/auto-handoff/auto-handoff.log'] ?? ''
@@ -442,8 +430,8 @@ describe('auto-handoff', () => {
     expect(log).not.toContain('400000')
   })
 
-  test('AI_DLC_AUTO_HANDOFF_THRESHOLD_TOKENS overrides thresholdPercent with an absolute count', { options: { thresholdPercent: 50 } }, async ($, on) => {
-    const calls = engine(on, { tokens: 120_000, env: { AI_DLC_AUTO_HANDOFF_THRESHOLD_TOKENS: '150000' } })
+  test('AI_DLC_AUTO_HANDOFF_THRESHOLD_TOKENS overrides thresholdPercent with an absolute count', async ($, on) => {
+    const calls = engine(on, { tokens: 120_000, env: { AI_DLC_AUTO_HANDOFF_THRESHOLD_TOKENS: '150000', AI_DLC_AUTO_HANDOFF_THRESHOLD_PERCENT: '50' } })
     await $.turn.complete(TURN)
     await settle(() => false)
     expect(calls.cleared).toBe(0)
@@ -461,8 +449,8 @@ describe('auto-handoff', () => {
     expect(calls.cleared).toBe(1)
   })
 
-  test('thresholdPercent 100 puts the line at the whole window', { options: { thresholdPercent: 100 } }, async ($, on) => {
-    const calls = engine(on, { tokens: 199_999 })
+  test('thresholdPercent 100 puts the line at the whole window', async ($, on) => {
+    const calls = engine(on, { tokens: 199_999, env: { AI_DLC_AUTO_HANDOFF_THRESHOLD_PERCENT: '100' } })
     await $.turn.complete(TURN)
     await settle(() => false)
     expect(calls.cleared).toBe(0)
@@ -669,8 +657,8 @@ describe('auto-handoff', () => {
     expect(calls.seeded[0]).toContain('follow its Instructions section')
   })
 
-  test('each brief gets a viewer page, and the chain links forward once the next session hands off', { options: { viewer: 'tailscale:3846' } }, async ($, on) => {
-    const calls = engine(on, { tokens: 165_000 })
+  test('each brief gets a viewer page, and the chain links forward once the next session hands off', async ($, on) => {
+    const calls = engine(on, { tokens: 165_000, env: { AI_DLC_AUTO_HANDOFF_VIEWER: 'tailscale:3846' } })
     const dir = '/home/test/.claude/state/auto-handoff'
     await $.turn.complete(TURN)
     await settle(() => calls.cleared > 0)
@@ -745,8 +733,8 @@ describe('auto-handoff', () => {
     expect(calls.written['/home/test/.claude/state/auto-handoff/old-session.md']).toContain('## Mood\nGood.')
   })
 
-  test('the instructions template file replaces the instructions', { options: { instructionsTemplate: '/custom/i.md' } }, async ($, on) => {
-    const calls = engine(on, { tokens: 165_000, files: { '/custom/i.md': '## Rules\nJust keep going.' } })
+  test('the instructions template file replaces the instructions', async ($, on) => {
+    const calls = engine(on, { tokens: 165_000, env: { AI_DLC_AUTO_HANDOFF_INSTRUCTIONS_TEMPLATE: '/custom/i.md' }, files: { '/custom/i.md': '## Rules\nJust keep going.' } })
     await $.turn.complete(TURN)
     await settle(() => calls.cleared > 0)
     const brief = parseBrief(calls.written['/home/test/.claude/state/auto-handoff/old-session.md'] ?? '').body
@@ -876,8 +864,8 @@ describe('auto-handoff', () => {
     expect(calls.cleared).toBe(2)
   })
 
-  test('maxConsecutiveHandoffs sets the progress guard', { options: { maxConsecutiveHandoffs: 1 } }, async ($, on) => {
-    const calls = engine(on, { tokens: 31_000, env: { AI_DLC_AUTO_HANDOFF_THRESHOLD_TOKENS: '20000' } })
+  test('maxConsecutiveHandoffs sets the progress guard', async ($, on) => {
+    const calls = engine(on, { tokens: 31_000, env: { AI_DLC_AUTO_HANDOFF_THRESHOLD_TOKENS: '20000', AI_DLC_AUTO_HANDOFF_MAX_CONSECUTIVE: '1' } })
     await unattendedRounds($, calls, 3)
     await settle(() => false)
     expect(calls.cleared).toBe(1)
@@ -924,15 +912,15 @@ describe('auto-handoff', () => {
     expect(calls.cleared).toBe(2)
   })
 
-  test('the headroom warning names /config when thresholdPercent is the source', { options: { thresholdPercent: 30 } }, async ($, on) => {
-    const calls = engine(on, { tokens: 65_000 })
+  test('the headroom warning names the source of thresholdPercent', async ($, on) => {
+    const calls = engine(on, { tokens: 65_000, env: { AI_DLC_AUTO_HANDOFF_THRESHOLD_PERCENT: '30' } })
     await $.turn.complete(TURN)
     await settle(() => calls.cleared > 0)
     await $.classic.SessionStart({ source: 'clear' })
     await settle(() => calls.seeded.length > 0)
     calls.tokens = 45_000
     await $.turn.complete(TURN)
-    expect(await band($)).toContain('threshold 60k (30% of the 200k window, thresholdPercent in /config) leaves 15k')
+    expect(await band($)).toContain('threshold 60k (30% of the 200k window, AI_DLC_AUTO_HANDOFF_THRESHOLD_PERCENT in the environment) leaves 15k')
   })
 
   test('no headroom warning at the default threshold', async ($, on) => {
@@ -1045,8 +1033,8 @@ describe('auto-handoff', () => {
     expect(calls.completes).toBe(0)
   })
 
-  test('the panel above the prompt walks the handoff, then collapses', { options: { viewer: 'tailscale:3846' } }, async ($, on) => {
-    const calls = engine(on, { tokens: 165_000, stepUsage: true })
+  test('the panel above the prompt walks the handoff, then collapses', async ($, on) => {
+    const calls = engine(on, { tokens: 165_000, stepUsage: true, env: { AI_DLC_AUTO_HANDOFF_VIEWER: 'tailscale:3846' } })
     expect(await band($)).toBe('')
     await $.turn.complete(TURN)
     await settle(() => calls.cleared > 0)
@@ -1647,18 +1635,18 @@ describe('repository configuration', () => {
     })
   }
 
-  test('precedence: the repository file beats /config, which beats the default', { options: { thresholdPercent: 50 } }, async ($, on) => {
+  test('precedence: the repository file beats the default, and a former /config row is not read', { options: { thresholdPercent: 50 } }, async ($, on) => {
     const calls = engine(on, { tokens: 190_000, git: GIT, files: { [REPO]: JSON.stringify({ thresholdPercent: 60 }) } })
     await $.turn.complete(TURN)
     await settle(() => calls.cleared > 0)
-    expect(thresholdIn(calls)).toBe('120000') // 60% of 200k, not /config's 50%
+    expect(thresholdIn(calls)).toBe('120000') // 60% of 200k
   })
 
-  test('precedence: /config beats the default', { options: { thresholdPercent: 50 } }, async ($, on) => {
+  test('precedence: with no source set, the default applies, whatever a former /config row holds', { options: { thresholdPercent: 50 } }, async ($, on) => {
     const calls = engine(on, { tokens: 190_000, git: GIT })
     await $.turn.complete(TURN)
     await settle(() => calls.cleared > 0)
-    expect(thresholdIn(calls)).toBe('100000')
+    expect(thresholdIn(calls)).toBe('160000') // 80% of 200k
   })
 
   test('an invalid value is logged and falls through to the next source', async ($, on) => {
@@ -1678,8 +1666,8 @@ describe('repository configuration', () => {
     expect(calls.written[LOG_FILE]).toContain('config: .claude/settings.local.json is not valid JSON')
   })
 
-  test('null in the repository file means not set here', { options: { thresholdPercent: 50 } }, async ($, on) => {
-    const calls = engine(on, { tokens: 190_000, git: GIT, files: { [REPO]: JSON.stringify({ $schema: './auto-handoff.schema.json', thresholdPercent: null, thresholdTokens: null }) } })
+  test('null in the repository file means not set here', async ($, on) => {
+    const calls = engine(on, { tokens: 190_000, git: GIT, env: { AI_DLC_AUTO_HANDOFF_THRESHOLD_PERCENT: '50' }, files: { [REPO]: JSON.stringify({ $schema: './auto-handoff.schema.json', thresholdPercent: null, thresholdTokens: null }) } })
     await $.turn.complete(TURN)
     await settle(() => calls.cleared > 0)
     expect(thresholdIn(calls)).toBe('100000')
@@ -1845,7 +1833,7 @@ describe('workspace trust for the repository file', () => {
     await $.classic.SessionStart({ source: 'startup' })
     expect(calls.written['/repo/chosen.md']).toBeUndefined()
     expect(calls.written['/home/test/.claude/auto-handoff/brief.md']).toBeDefined()
-    expect(calls.written[LOG_FILE]).toContain(`${IGNORED} (~/.claude.json was not readable); set them in the env of .claude/settings.local.json or in /config instead`)
+    expect(calls.written[LOG_FILE]).toContain(`${IGNORED} (~/.claude.json was not readable); set them in the env of .claude/settings.local.json instead`)
     await $.turn.complete(TURN)
     await settle(() => calls.cleared > 0)
     expect(thresholdIn(calls)).toBe('60000')

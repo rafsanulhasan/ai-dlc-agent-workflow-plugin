@@ -91,7 +91,7 @@ paths:
 
 Omit `paths` for a rule that always applies.
 
-**Copilot instruction** - generate `.github/instructions/<name>.instructions.md` from the rule with `Skill("harness-sync", args: "sync --only rules --name <name> --prefer claude")`. It writes the same body with `applyTo: "src/**/*.ts"` (comma-separated for several globs; `"**"` when the rule has no `paths`) and keeps Copilot-only keys such as `excludeAgent`.
+**Copilot instruction** - generate `.github/instructions/<name>.instructions.md` from the rule with `node .claude/scripts/sync-harness.mjs --only rules --name <name> --prefer claude` (follow *For agents* in `../harness-sync/SKILL.md`). It writes the same body with `applyTo: "src/**/*.ts"` (comma-separated for several globs; `"**"` when the rule has no `paths`) and keeps Copilot-only keys such as `excludeAgent`.
 
 ### modify
 
@@ -108,7 +108,7 @@ Omit `paths` for a rule that always applies.
 
 ### sync
 
-Run `Skill("harness-sync", args: "sync --only rules --name <name>")`, adding `--prefer claude|copilot` when the user named the authoritative side; otherwise the side edited last wins. Done when its `--check` exits 0.
+Follow *For agents* in `../harness-sync/SKILL.md`. When you sync one item and both of its twins were edited, run `node .claude/scripts/sync-harness.mjs --check --only rules --name <name>` first, ask the human which side wins, then sync with `--prefer claude` or `--prefer copilot`; never let `newer` decide. Otherwise run `node .claude/scripts/sync-harness.mjs --only rules --name <name> --prefer claude|copilot`, naming the side the user named or the side you changed. Done when `node .claude/scripts/sync-harness.mjs --check --only rules --name <name>` exits 0.
 
 ---
 
