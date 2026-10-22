@@ -372,7 +372,8 @@ function renderCommands(platform, extra = []) {
   for (const r of rows) {
     const name = platform === "claude" ? `/${PLUGIN}:${r.name}` : `/${r.name}`;
     const note = r.claudeOnly ? (platform === "claude" ? " **Claude Code only.**" : " **Not available in GitHub Copilot** (Claude Code only).") : "";
-    lines.push(`| \`${name}\` | ${r.args ? `\`${cell(r.args)}\`` : "—"} | ${cell(r.purpose)}${note} |`);
+    // Outside code spans, `<` would start an HTML tag (`ai-dlc-<agent>` would lose `<agent>`), so it is escaped.
+    lines.push(`| \`${name}\` | ${r.args ? `\`${cell(r.args)}\`` : "—"} | ${cell(r.purpose).replace(/</g, "&lt;")}${note} |`);
   }
   lines.push("", COMMANDS_END);
   return lines.join("\n");

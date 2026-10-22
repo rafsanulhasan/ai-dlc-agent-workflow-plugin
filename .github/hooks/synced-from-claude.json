@@ -4,9 +4,9 @@
     "agentStop": [
       {
         "type": "command",
-        "bash": "node .claude/hooks/check-copilot-stale.mjs",
-        "powershell": "node .claude/hooks/check-copilot-stale.mjs",
-        "timeoutSec": 120
+        "bash": "node .claude/hooks/stop-sync-then-check.mjs",
+        "powershell": "node .claude/hooks/stop-sync-then-check.mjs",
+        "timeoutSec": 240
       }
     ]
   }

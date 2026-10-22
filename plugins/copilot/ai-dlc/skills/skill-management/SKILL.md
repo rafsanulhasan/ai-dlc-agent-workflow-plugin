@@ -90,7 +90,7 @@ description: <one-line description>
 
 Use when a skill exists on one platform only, or its files differ between `.claude/skills/<name>/` and `.github/skills/<name>/`, in either direction.
 
-1. Run `Skill("harness-sync", args: "sync --only skills --name <name>")`, adding `--prefer claude|copilot` when the caller named the authoritative side. Files are copied one by one; the side edited last wins otherwise.
+1. Follow *For agents* in `../harness-sync/SKILL.md`. When you sync one item and both of its twins were edited, run `node .claude/scripts/sync-harness.mjs --check --only skills --name <name>` first, ask the human which side wins, then sync with `--prefer claude` or `--prefer copilot`; never let `newer` decide. Otherwise run `node .claude/scripts/sync-harness.mjs --only skills --name <name> --prefer claude|copilot`, naming the side the caller named or the side you changed. Files are copied one by one.
 2. Done when `node .claude/scripts/sync-harness.mjs --check --only skills --name <name>` exits 0.
 
 ---

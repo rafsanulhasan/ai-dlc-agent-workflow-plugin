@@ -1,0 +1,6 @@
+handoff 1-orchestrator-to-agent-manager.handoff.md: passed — three items done; build, --check, tests and both validations pass.
+- init and harness-sync install: a Claude Stop hook and a Copilot agentStop hook (.github/hooks/ai-dlc-harness-sync.json), both running node .claude/hooks/sync-harness-on-stop.mjs (timeout 120); the script syncs, always exits 0, never blocks, is silent when nothing is pending, sends systemMessage on Claude and stderr elsewhere, AI_DLC_HARNESS_SYNC=false pauses it, and it skips when the sync script is missing. Risk documented: the newer save wins on a conflict.
+- New templates: harness-sync/templates/{sync-harness-on-stop.mjs,claude-hook.json,copilot-hook.json}. Docs: harness-sync, init, plugin-management (this repo's hook, the CI step, tools/validate.mjs).
+Follow-ups: (1) this repo's .claude/hooks/sync-harness-on-stop.mjs differs from the template; copy it over. (2) "sync runs before check-copilot-stale" may be false: Claude Code may run the hooks of one event in parallel (unverified).
+Note: plugin validate warned that the plugin README has no marketplace install line.
+Checks: --check ok; repository tests 445/445; both validate passed; sync-harness --check in sync; the smoke test passes in 8 cases.

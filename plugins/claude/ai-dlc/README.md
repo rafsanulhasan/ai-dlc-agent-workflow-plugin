@@ -2,6 +2,23 @@
 
 An agentic engineering team that runs the AI-DLC: 15 role-scoped agents, the full AI-DLC lifecycle (idea to release) plus eight named lifecycles, artifact handoffs and hard quality gates. Each project can customise the workflow in `.ai-dlc/workflow.json`. .NET and JS / TS are supported stacks; the lifecycle, agents and gates are language-agnostic.
 
+## Install
+
+Claude Code (2.1.275 or later):
+
+```text
+/plugin install ai-dlc --marketplace rafsanulhasan/ai-dlc-agent-workflow-plugin
+```
+
+or in two steps: `/plugin marketplace add rafsanulhasan/ai-dlc-agent-workflow-plugin`, then `/plugin install ai-dlc@ai-dlc-agent-workflow`.
+
+GitHub Copilot CLI:
+
+```text
+copilot plugin marketplace add rafsanulhasan/ai-dlc-agent-workflow-plugin
+copilot plugin install ai-dlc@ai-dlc-agent-workflow
+```
+
 ## Start
 
 1. Run `/ai-dlc:init` once in a repository. It scaffolds `AGENTS.md`, the per-platform instructions, the team's workflow and the `docs/` folders, and installs the rules and test gate of each stack it finds.
@@ -41,7 +58,7 @@ Every skill of the plugin is a command. In Claude Code, type `/ai-dlc:<name>`; i
 | `/ai-dlc:github-cd-automation` | — | Structured workflow for designing GitHub Actions continuous deployment for .NET and JavaScript/TypeScript projects. |
 | `/ai-dlc:github-ci-automation` | — | Structured workflow for designing and maintaining GitHub Actions continuous integration for .NET and JavaScript/TypeScript projects. |
 | `/ai-dlc:handoff` | — | Records and verifies every hand-off in an AI-DLC run and keeps its run state. |
-| `/ai-dlc:harness-sync` | — | Sync a repository's agent harness between Claude Code and GitHub Copilot: agents, skills, commands / prompts, rules / instructions and hooks that a developer created or edited on one platform only. |
+| `/ai-dlc:harness-sync` | `[--check] [--prefer claude\|copilot\|newer] [--only <kinds>] [--name <n>]` | Runs the two-way Claude Code ↔ GitHub Copilot harness sync, `node .claude/scripts/sync-harness.mjs`, so every agent, skill, command ↔ prompt, rule ↔ instruction and hook made or edited on one platform exists on the other. |
 | `/ai-dlc:hook-management` | — | Create, modify, and delete Claude Code hooks and GitHub Copilot hook integrations safely using a discovery-first, non-destructive workflow. |
 | `/ai-dlc:implement-feature` | — | Structured feature implementation workflow for software projects. |
 | `/ai-dlc:init` | — | Bootstraps a repository for the AI-DLC agent team: scaffolds AGENTS.md (the orchestrator persona with all its skills, plus the project's gates and workspace folders, free of stack-specific commands), CLAUDE.md (an @AGENTS.md import, the … |
@@ -49,7 +66,7 @@ Every skill of the plugin is a command. In Claude Code, type `/ai-dlc:<name>`; i
 | `/ai-dlc:k6-load-testing` | — | Invoke this skill when the task is to validate that the system sustains its SLOs at **realistic production throughput over time** — including endurance (soak) testing for memory leaks, connection pool exhaustion, and GC pressure. |
 | `/ai-dlc:k6-performance-testing` | — | Invoke this skill when the task is to validate that a system meets its SLOs under **normal operating conditions** — expected concurrency and throughput levels. |
 | `/ai-dlc:k6-stress-testing` | — | Invoke this skill when the task is to validate system behaviour **beyond normal capacity** — to observe how it degrades and whether it recovers. |
-| `/ai-dlc:manage-memory` | — | Manages persistent file-based memory for all agents in .claude/agent-memory/<folder>/ (ai-dlc-<agent> for plugin agents), committed with the repository. |
+| `/ai-dlc:manage-memory` | — | Manages persistent file-based memory for all agents in .claude/agent-memory/&lt;folder>/ (ai-dlc-&lt;agent> for plugin agents), committed with the repository. |
 | `/ai-dlc:node-rules` | — | Installs the AI-DLC JavaScript / TypeScript rules into the current repository: coding style (strict TypeScript, no any, ESM, naming), module and import boundaries, async and error handling, and the test / Stryker testing gates, as Claude … |
 | `/ai-dlc:node-test-gate` | — | Installs the AI-DLC JavaScript / TypeScript test gate into the current repository: a Claude Code Stop hook and a GitHub Copilot agentStop hook that block the agent from finishing while the repository's test command fails after runtime … |
 | `/ai-dlc:npm-package-deployment` | — | Structured workflow for publishing JavaScript/TypeScript packages to the npm registry. |

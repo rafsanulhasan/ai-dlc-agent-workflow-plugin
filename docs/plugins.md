@@ -214,7 +214,7 @@ The **lifecycle agents** own a stage and hand an artifact on: James Montemagno (
 | `write-documentation` | Role | Daniele Procida (`documentation-writer`); Linus Torvalds (`brutal-critique`) reads |
 | `presentation-authoring` | Role | Nancy Duarte (`presentation-manager`) |
 | `agent-management`, `command-management`, `hook-management`, `rules-management`, `plugin-management` | Role | Boris Cherny (`agent-manager`) |
-| `harness-sync` | Role | Boris Cherny (`agent-manager`); `init` installs its script; developers run `node .claude/scripts/sync-harness.mjs` themselves |
+| `harness-sync` | Role | Boris Cherny (`agent-manager`); in a consumer repository, `/ai-dlc:harness-sync [args]`, a plugin command only the user invokes, runs `node .claude/scripts/sync-harness.mjs`: a two-way sync of agents, skills, commands / prompts, rules / instructions and hooks (`--check` only reports). `init` installs no sync hook; only this plugin repository syncs automatically, on `Stop` |
 | `workflow` | Role | Boris Cherny (`agent-manager`) installs, edits, upgrades and resets `.ai-dlc/workflow.json`; Scott Hanselman (`orchestrator`) reads it with `show`; `init` installs its files; developers may run `/ai-dlc:workflow` themselves |
 | `skill-management` | Role | Boris Cherny (`agent-manager`); Linus Torvalds (`brutal-critique`) reads its writing guide for agent and skill files; every other agent asks Boris Cherny (`agent-manager`) for skill changes |
 | `init` | Init-only | The user (`/ai-dlc:init`); no agent |
@@ -256,7 +256,7 @@ Every skill of the plugin is a command. In Claude Code, type `/ai-dlc:<name>`; i
 | `/ai-dlc:github-cd-automation` | — | Structured workflow for designing GitHub Actions continuous deployment for .NET and JavaScript/TypeScript projects. |
 | `/ai-dlc:github-ci-automation` | — | Structured workflow for designing and maintaining GitHub Actions continuous integration for .NET and JavaScript/TypeScript projects. |
 | `/ai-dlc:handoff` | — | Records and verifies every hand-off in an AI-DLC run and keeps its run state. |
-| `/ai-dlc:harness-sync` | — | Sync a repository's agent harness between Claude Code and GitHub Copilot: agents, skills, commands / prompts, rules / instructions and hooks that a developer created or edited on one platform only. |
+| `/ai-dlc:harness-sync` | `[--check] [--prefer claude\|copilot\|newer] [--only <kinds>] [--name <n>]` | Runs the two-way Claude Code ↔ GitHub Copilot harness sync, `node .claude/scripts/sync-harness.mjs`, so every agent, skill, command ↔ prompt, rule ↔ instruction and hook made or edited on one platform exists on the other. |
 | `/ai-dlc:hook-management` | — | Create, modify, and delete Claude Code hooks and GitHub Copilot hook integrations safely using a discovery-first, non-destructive workflow. |
 | `/ai-dlc:implement-feature` | — | Structured feature implementation workflow for software projects. |
 | `/ai-dlc:init` | — | Bootstraps a repository for the AI-DLC agent team: scaffolds AGENTS.md (the orchestrator persona with all its skills, plus the project's gates and workspace folders, free of stack-specific commands), CLAUDE.md (an @AGENTS.md import, the … |
@@ -264,7 +264,7 @@ Every skill of the plugin is a command. In Claude Code, type `/ai-dlc:<name>`; i
 | `/ai-dlc:k6-load-testing` | — | Invoke this skill when the task is to validate that the system sustains its SLOs at **realistic production throughput over time** — including endurance (soak) testing for memory leaks, connection pool exhaustion, and GC pressure. |
 | `/ai-dlc:k6-performance-testing` | — | Invoke this skill when the task is to validate that a system meets its SLOs under **normal operating conditions** — expected concurrency and throughput levels. |
 | `/ai-dlc:k6-stress-testing` | — | Invoke this skill when the task is to validate system behaviour **beyond normal capacity** — to observe how it degrades and whether it recovers. |
-| `/ai-dlc:manage-memory` | — | Manages persistent file-based memory for all agents in .claude/agent-memory/<folder>/ (ai-dlc-<agent> for plugin agents), committed with the repository. |
+| `/ai-dlc:manage-memory` | — | Manages persistent file-based memory for all agents in .claude/agent-memory/&lt;folder>/ (ai-dlc-&lt;agent> for plugin agents), committed with the repository. |
 | `/ai-dlc:node-rules` | — | Installs the AI-DLC JavaScript / TypeScript rules into the current repository: coding style (strict TypeScript, no any, ESM, naming), module and import boundaries, async and error handling, and the test / Stryker testing gates, as Claude … |
 | `/ai-dlc:node-test-gate` | — | Installs the AI-DLC JavaScript / TypeScript test gate into the current repository: a Claude Code Stop hook and a GitHub Copilot agentStop hook that block the agent from finishing while the repository's test command fails after runtime … |
 | `/ai-dlc:npm-package-deployment` | — | Structured workflow for publishing JavaScript/TypeScript packages to the npm registry. |
@@ -302,7 +302,7 @@ Every skill of the plugin is a command. In Claude Code, type `/ai-dlc:<name>`; i
 
 ## Hooks and rules
 
-The plugin ships **no hooks and no rules**. A plugin hook would run in every project that enables the plugin, and stack-specific checks do not belong everywhere. Instead, `init` installs them only into repositories of the matching stack.
+The plugin ships **no rules and no settings hooks**; its only hooks are its Claude Code hooks module (the automatic handoff and keep-alive). A plugin settings hook would run in every project that enables the plugin, and stack-specific checks do not belong everywhere. Instead, `init` installs them only into repositories of the matching stack, and the workflow gate in every repository. `init` installs no sync hook: in a consumer repository, run `/ai-dlc:harness-sync [args]`, a plugin command only you invoke, which runs `node .claude/scripts/sync-harness.mjs`, a two-way sync of agents, skills, commands / prompts, rules / instructions and hooks between `.claude/` and `.github/` (`--check` only reports). Only this plugin repository syncs automatically, in its own `Stop` hook.
 
 - **`workspace-folders`** (every stack) installs `.claude/hooks/worktree-create.mjs` and `worktree-remove.mjs` with `WorktreeCreate` / `WorktreeRemove` entries in `.claude/settings.json`, so Claude Code creates its worktrees under the configured worktree root instead of `.claude/worktrees/`. Copilot has no worktree location setting; it follows the `AGENTS.md` instruction.
 

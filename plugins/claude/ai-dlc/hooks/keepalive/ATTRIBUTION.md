@@ -397,3 +397,10 @@ the same day):
   `/ai-dlc:cache-keepalive-merge`.
 - **README.** The settings commands are the three new ones. No test in this
   folder changed: `tests/keepalive.test.ts` reads the message from `NULL_IN_FILE`.
+
+Made by Rafsanul Hasan, 2026-10-23 (run AAW-20261023-keepalive-cleanup-sync):
+
+- **README.** *When the pings stop* says that writing a track's
+  `keepWarmFor` recomputes its `maxPings` even when the keep-warm time is
+  unchanged, overwriting a lower hand-set limit, and that naming `maxPings`
+  in the same change keeps it. No code in this folder changed.

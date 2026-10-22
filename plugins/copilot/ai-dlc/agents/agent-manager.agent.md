@@ -103,13 +103,18 @@ Trigger: any time a request involves creating, modifying, or deleting a `.claude
 
 ### `harness-sync` — two-way sync of a consumer repository's whole harness
 
+`/harness-sync` is user-invoked only: never call it with `Skill(...)`. Follow the *For agents* section of the `harness-sync` skill's `SKILL.md` and run the script directly:
+
 ```
-Skill("harness-sync", args: "check")
-Skill("harness-sync", args: "sync [--prefer claude|copilot|newer]")
-Skill("harness-sync", args: "install")
+node .claude/scripts/sync-harness.mjs --check [--only <kinds>] [--name <name>]                  # report only
+node .claude/scripts/sync-harness.mjs [--only <kinds>] [--name <name>] [--prefer claude|copilot|newer]   # sync
 ```
 
-Trigger: a developer created or edited agent artifacts by hand on one platform, asks whether both platforms match, or wants a command to sync them; and as the last step of any project-scope create / update, to confirm `--check` passes. The per-kind skills own the content of a change; this skill reconciles everything at once with the installed `.claude/scripts/sync-harness.mjs`.
+When you sync one item and both of its twins were edited, run `node .claude/scripts/sync-harness.mjs --check --only <kind> --name <name>` first, ask the human which side wins, then sync with `--prefer claude` or `--prefer copilot`; never let `newer` decide.
+
+Install or refresh: `/init` copies the skill's `templates/sync-harness.mjs` to `.claude/scripts/sync-harness.mjs`; to refresh it, copy the same template (*For agents*, "Install or refresh").
+
+Trigger: a developer created or edited agent artifacts by hand on one platform, asks whether both platforms match, or wants a command to sync them; and as the last step of any project-scope create / update, to confirm `--check` exits 0. The per-kind skills own the content of a change; the script reconciles everything at once.
 
 ### `workflow` — the repository's AI-DLC workflow file
 
@@ -218,4 +223,4 @@ Plugin agents and skills are namespaced `ai-dlc:<name>`. A project-scope agent n
 
 ### Project-scope twin files
 
-In project scope every artifact is a twin: `.claude/agents/<name>.md` ↔ `.github/agents/<name>.agent.md`, `.claude/skills/<name>/SKILL.md` ↔ `.github/skills/<name>/SKILL.md`, `.claude/rules/<name>.md` ↔ `.github/instructions/<name>.instructions.md`, and Claude hook entries in `.claude/settings.json` ↔ `.github/hooks/<name>.json`. Create, update and deprecate both sides together. Never delete — deprecate with `status: deprecated`. Twins a developer made or changed by hand on one side are reconciled with `harness-sync`, in either direction.
+In project scope every artifact is a twin: `.claude/agents/<name>.md` ↔ `.github/agents/<name>.agent.md`, `.claude/skills/<name>/SKILL.md` ↔ `.github/skills/<name>/SKILL.md`, `.claude/rules/<name>.md` ↔ `.github/instructions/<name>.instructions.md`, and Claude hook entries in `.claude/settings.json` ↔ `.github/hooks/<name>.json`. Create, update and deprecate both sides together. Never delete — deprecate with `status: deprecated`. Twins a developer made or changed by hand on one side are reconciled with the harness-sync script (*For agents*), in either direction.

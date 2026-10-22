@@ -1183,3 +1183,19 @@ describe("the personal env pair: AI_DLC_KEEPALIVE_*_KEEP_WARM_FOR with its match
     assert.match(change, /that track's `pingEvery` in force/);
   });
 });
+
+// Documented behaviour (cache-keepalive-configure SKILL.md, change step 4; keep-alive README): writing a
+// track's keepWarmFor recomputes its maxPings even when the keep-warm time is unchanged, overwriting a
+// lower hand-set value; naming maxPings in the same change keeps it.
+test("rewriting the same keepWarmFor recomputes maxPings over a lower hand-set value, and says so; naming maxPings keeps it", () => {
+  const root = repo({ ".ai-dlc/cache-keepalive.json": full({ "oneHour.maxPings": 5 }) });
+  const r = cli(root, ["set", "oneHour.keepWarmFor=8h"]);
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /^oneHour\.maxPings: 5 -> 9 \(follows oneHour\.keepWarmFor 8h at oneHour\.pingEvery 50m\)$/m);
+  assert.equal(fileOf(root).oneHour.maxPings, 9);
+  const kept = repo({ ".ai-dlc/cache-keepalive.json": full({ "oneHour.maxPings": 5 }) });
+  assert.equal(cli(kept, ["set", "oneHour.keepWarmFor=8h", "oneHour.maxPings=5"]).code, 0);
+  assert.equal(fileOf(kept).oneHour.maxPings, 5);
+  const skill = fs.readFileSync(path.join(SKILL, "SKILL.md"), "utf8");
+  assert.match(skill, /recomputes that track's `maxPings` even when the keep-warm time is the one already in the file/);
+});

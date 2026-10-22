@@ -169,7 +169,7 @@ Every skill of the plugin is a command. In Claude Code, type `/ai-dlc:<name>`; i
 | `/ai-dlc:github-cd-automation` | — | Structured workflow for designing GitHub Actions continuous deployment for .NET and JavaScript/TypeScript projects. |
 | `/ai-dlc:github-ci-automation` | — | Structured workflow for designing and maintaining GitHub Actions continuous integration for .NET and JavaScript/TypeScript projects. |
 | `/ai-dlc:handoff` | — | Records and verifies every hand-off in an AI-DLC run and keeps its run state. |
-| `/ai-dlc:harness-sync` | — | Sync a repository's agent harness between Claude Code and GitHub Copilot: agents, skills, commands / prompts, rules / instructions and hooks that a developer created or edited on one platform only. |
+| `/ai-dlc:harness-sync` | `[--check] [--prefer claude\|copilot\|newer] [--only <kinds>] [--name <n>]` | Runs the two-way Claude Code ↔ GitHub Copilot harness sync, `node .claude/scripts/sync-harness.mjs`, so every agent, skill, command ↔ prompt, rule ↔ instruction and hook made or edited on one platform exists on the other. |
 | `/ai-dlc:hook-management` | — | Create, modify, and delete Claude Code hooks and GitHub Copilot hook integrations safely using a discovery-first, non-destructive workflow. |
 | `/ai-dlc:implement-feature` | — | Structured feature implementation workflow for software projects. |
 | `/ai-dlc:init` | — | Bootstraps a repository for the AI-DLC agent team: scaffolds AGENTS.md (the orchestrator persona with all its skills, plus the project's gates and workspace folders, free of stack-specific commands), CLAUDE.md (an @AGENTS.md import, the … |
@@ -177,7 +177,7 @@ Every skill of the plugin is a command. In Claude Code, type `/ai-dlc:<name>`; i
 | `/ai-dlc:k6-load-testing` | — | Invoke this skill when the task is to validate that the system sustains its SLOs at **realistic production throughput over time** — including endurance (soak) testing for memory leaks, connection pool exhaustion, and GC pressure. |
 | `/ai-dlc:k6-performance-testing` | — | Invoke this skill when the task is to validate that a system meets its SLOs under **normal operating conditions** — expected concurrency and throughput levels. |
 | `/ai-dlc:k6-stress-testing` | — | Invoke this skill when the task is to validate system behaviour **beyond normal capacity** — to observe how it degrades and whether it recovers. |
-| `/ai-dlc:manage-memory` | — | Manages persistent file-based memory for all agents in .claude/agent-memory/<folder>/ (ai-dlc-<agent> for plugin agents), committed with the repository. |
+| `/ai-dlc:manage-memory` | — | Manages persistent file-based memory for all agents in .claude/agent-memory/&lt;folder>/ (ai-dlc-&lt;agent> for plugin agents), committed with the repository. |
 | `/ai-dlc:node-rules` | — | Installs the AI-DLC JavaScript / TypeScript rules into the current repository: coding style (strict TypeScript, no any, ESM, naming), module and import boundaries, async and error handling, and the test / Stryker testing gates, as Claude … |
 | `/ai-dlc:node-test-gate` | — | Installs the AI-DLC JavaScript / TypeScript test gate into the current repository: a Claude Code Stop hook and a GitHub Copilot agentStop hook that block the agent from finishing while the repository's test command fails after runtime … |
 | `/ai-dlc:npm-package-deployment` | — | Structured workflow for publishing JavaScript/TypeScript packages to the npm registry. |
@@ -215,7 +215,7 @@ Every skill of the plugin is a command. In Claude Code, type `/ai-dlc:<name>`; i
 
 ## The test gates
 
-The plugin ships no hooks. `init` installs the gate for each stack it detects; a repository with both stacks gets both. In every repository it also installs the **workflow gate** (`.claude/hooks/check-workflow.mjs`, a `Stop` hook and `.github/hooks/ai-dlc-workflow-gate.json`), which blocks finishing — once per stop cycle, like the test gates — while `.ai-dlc/` has uncommitted changes that fail `node .ai-dlc/workflow.mjs validate`; `AI_DLC_WORKFLOW_GATE=false` pauses it.
+The plugin adds no settings hooks of its own to a project: its only hooks are its Claude Code hooks module (the automatic handoff and keep-alive, above). `init` installs the gate for each stack it detects; a repository with both stacks gets both. In every repository it also installs the **workflow gate** (`.claude/hooks/check-workflow.mjs`, a `Stop` hook and `.github/hooks/ai-dlc-workflow-gate.json`), which blocks finishing — once per stop cycle, like the test gates — while `.ai-dlc/` has uncommitted changes that fail `node .ai-dlc/workflow.mjs validate`; `AI_DLC_WORKFLOW_GATE=false` pauses it. `init` installs no sync hook: in a consumer repository, run `/ai-dlc:harness-sync [args]`, a plugin command only you invoke, which runs `node .claude/scripts/sync-harness.mjs`, a two-way sync of agents, skills, commands / prompts, rules / instructions and hooks between `.claude/` and `.github/` (`--check` only reports). Only this plugin repository syncs automatically, in its own `Stop` hook.
 
 ### .NET
 
@@ -249,9 +249,9 @@ npx @anthropic-ai/claude-code plugin validate --strict ./plugins/claude/ai-dlc
 
 This whole setup is captured as the `plugin-management` skill (owned by `agent-manager`), with the build script shipped as its template, so the team can create and release other Claude Code + Copilot plugins the same way: `/ai-dlc:plugin-management create <name>`.
 
-CI (`.github/workflows/validate.yml`) fails if the Copilot tree is stale, a test in `tests/` fails, or either manifest stops validating. Never hand-edit `plugins/copilot/**`.
+CI (`.github/workflows/validate.yml`) fails if the Copilot tree is stale (`node tools/build-copilot.mjs --check`), a test in `tests/` fails, a harness twin is pending (`node .claude/scripts/sync-harness.mjs --check`), the Claude plugin or the marketplace stops validating (`plugin validate --strict`), or a test of the hooks module fails (`plugin test`). Never hand-edit `plugins/copilot/**`.
 
-The build projects each Claude agent to `agents/<name>.agent.md`, translates tools to Copilot aliases (`Read`→`read`, `Write`/`Edit`→`edit`, `Glob`/`Grep`→`search`, `Bash`→`execute`, `Agent`→`agent`, `WebFetch`/`WebSearch`→`web`, `TodoWrite`→`todo`), drops Claude-only tools, leaves out the Claude-only skills listed in `tools/claude-only-skills.json`, strips the `ai-dlc:` namespace, and converts plugin hooks (if any are added) to Copilot's `version: 1` format. In this repository a `Stop` hook (`.claude/hooks/check-copilot-stale.mjs`) blocks the agent from finishing while the Copilot tree is stale.
+The build projects each Claude agent to `agents/<name>.agent.md`, translates tools to Copilot aliases (`Read`→`read`, `Write`/`Edit`→`edit`, `Glob`/`Grep`→`search`, `Bash`→`execute`, `Agent`→`agent`, `WebFetch`/`WebSearch`→`web`, `TodoWrite`→`todo`), drops Claude-only tools, leaves out the Claude-only skills listed in `tools/claude-only-skills.json`, strips the `ai-dlc:` namespace, and converts plugin hooks (if any are added) to Copilot's `version: 1` format. In this repository a `Stop` hook (`.claude/hooks/stop-sync-then-check.mjs`) first syncs the `.claude/` ↔ `.github/` harness twins, then blocks the agent from finishing while the Copilot tree is stale (`check-copilot-stale.mjs`); the two run in one command because Claude Code runs the hooks of one event in parallel.
 
 ## What changed from the original `.claude/` setup
 

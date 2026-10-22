@@ -337,13 +337,13 @@ export function effective(root, keys, trust = trustOf(readMaybe(path.join(os.hom
   return { rows, warnings: [...warnings, ...r.warnings] };
 }
 
+// Values earlier versions wrote that this one rewrites to the default on merge (and set).
+const LEGACY = { "oneHour.maxPings": [0, "0"], "fiveMinute.maxPings": [0, "0"] };
+
 /** The file's text after a merge: every schema key in schema order. A value already set is kept; a
  * missing key, or a null one left by an earlier version or by hand, gets its default (the schema's,
  * which tests check against the module's SETTINGS); keys the schema no longer has are removed. The
  * defaults written are this plugin version's: a later default does not reach a key already set. */
-// Values earlier versions wrote that this one rewrites to the default on merge (and set).
-const LEGACY = { "oneHour.maxPings": [0, "0"], "fiveMinute.maxPings": [0, "0"] };
-
 export function merged(doc, keys) {
   const out = { $schema: `./${SCHEMA_NAME}` };
   const added = [], filled = [], removed = [];
@@ -409,11 +409,13 @@ export const NULL_IN_FILE = "null: every key holds a value (run /ai-dlc:cache-ke
  * force. Each finding is a warning, never an error, since keep-alive only skips a bad value: an unknown
  * name, a value that fails its kind, limits or a rule, a settings file that does not parse, and, in a
  * folder Claude Code does not trust, a gated variable in .claude/settings.json that differs from its
- * default. `applied(key)` names what applies instead. Returns { warnings }.
+ * default. `applied(key)` names what applies instead; `rows` are show's rows, read once. Returns { warnings }.
  */
-export function validateEnv(root, keys, trust = trustOf(readMaybe(path.join(os.homedir(), ".claude.json")), trustTarget(root)), applied = appliedFrom(effective(root, keys, trust).rows)) {
+export function validateEnv(root, keys, trust = trustOf(readMaybe(path.join(os.homedir(), ".claude.json")), trustTarget(root)), applied, rows = effective(root, keys, trust).rows) {
+  // The rows in force are read once (a caller that already has them, such as validate, passes them);
+  // `applied` and `inForce` are both derived from them.
+  applied ??= appliedFrom(rows);
   const warnings = [];
-  const rows = effective(root, keys, trust).rows;
   const inForce = (key) => { const v = rows.find((r) => r.key === key).value; return typeof v === "string" ? parseDuration(v) : v; };
   const minDuration = inForce("minDuration");
   for (const name of ["settings.local.json", "settings.json"]) {
@@ -623,7 +625,7 @@ function main(argv) {
         if (found.length) clean = false;
         else out(`.ai-dlc/${FILE_NAME} is valid`);
       }
-      const env = validateEnv(root, keys, undefined, applied);
+      const env = validateEnv(root, keys, undefined, applied, shownRows);
       for (const w of env.warnings) out(`warning: ${w}`);
       if (env.warnings.length) clean = false;
       else out("the AI_DLC_KEEPALIVE_* variables in the settings files are valid");

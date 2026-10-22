@@ -28,6 +28,7 @@ Agents are then `ai-dlc:<name>` and skills `/ai-dlc:<name>`, read straight from 
 - `node tools/build-copilot.mjs --check` : fail if the Copilot plugin is stale
 - `npx @anthropic-ai/claude-code plugin validate --strict ./plugins/claude/ai-dlc` : validate the Claude plugin
 - `npx @anthropic-ai/claude-code plugin validate --strict .` : validate the marketplace
+- `node tools/validate.mjs` : the local pre-validate run: syncs the `.claude/` ↔ `.github/` harness twins (`node .claude/scripts/sync-harness.mjs`), then runs both `plugin validate --strict` commands above, and exits 1 when any step fails; `--check` only checks the sync, as CI does
 - `node --test "tests/**/*.test.mjs"` : run the repository tests (`tests/workflow/`: the `workflow.mjs` CLI; `tests/build-copilot-*.test.mjs`: the Copilot build; `tests/auto-handoff/`: the configure-auto-handoff and cache-keepalive CLIs and their agreement with the hooks module); run it after changing a script that has tests in `tests/`. Quote the glob. Don't run `node --test` bare (it can also pick up the TypeScript tests of the hooks module, which need `claude plugin test`) or `node --test tests/` (fails on Node 24)
 - `npx @anthropic-ai/claude-code plugin test ./plugins/claude/ai-dlc` : run the tests of the plugin's hooks module (`hooks/auto-handoff/`: the automatic session handoff; `hooks/keepalive/`: keep-alive, which auto-handoff registers); run it after changing either folder or its tests
 
@@ -45,8 +46,9 @@ Agents are then `ai-dlc:<name>` and skills `/ai-dlc:<name>`, read straight from 
 
 ## Watch out for
 
-- After changing anything under `plugins/claude/ai-dlc/`, run `node tools/build-copilot.mjs`. A Stop hook (`.claude/hooks/check-copilot-stale.mjs`) blocks finishing while the Copilot plugin is stale.
-- CI (`.github/workflows/validate.yml`) runs the staleness check, the repository tests, both `plugin validate --strict` commands, and `plugin test` for `ai-dlc`'s hooks module.
+- After changing anything under `plugins/claude/ai-dlc/`, run `node tools/build-copilot.mjs`. A Stop hook (`.claude/hooks/check-copilot-stale.mjs`, run by `.claude/hooks/stop-sync-then-check.mjs`) blocks finishing while the Copilot plugin is stale.
+- CI (`.github/workflows/validate.yml`) runs the staleness check, the repository tests, the harness sync check (`node .claude/scripts/sync-harness.mjs --check`, before the validations), both `plugin validate --strict` commands, and `plugin test` for `ai-dlc`'s hooks module.
+- The harness sync is automatic locally: one Stop command, `.claude/hooks/stop-sync-then-check.mjs`, runs the harness sync (`sync-harness-on-stop.mjs`) and then the staleness check (`check-copilot-stale.mjs`), in that order, because Claude Code runs the hooks of one event in parallel and the check reads project mirrors (`.claude/skills/<name>/`) the sync can rewrite. The sync says what it wrote and never blocks. The workflow gate (`check-workflow.mjs`) stays a separate Stop hook; it reads only `.ai-dlc/`, which the sync never writes.
 - The hooks module and its tests stay under `plugins/claude/ai-dlc/hooks/`, never in `skills/`, `agents/` or `scripts/`, which the build copies to Copilot (it fails when one is there). Each of its two folders keeps its upstream `LICENSE` (`hooks/auto-handoff/LICENSE`, `hooks/keepalive/LICENSE`); record every change to a folder in that folder's `ATTRIBUTION.md`, and a new upstream in `THIRD_PARTY_NOTICES.md`.
 
 <!-- ai-dlc:begin workspace-folders -->
