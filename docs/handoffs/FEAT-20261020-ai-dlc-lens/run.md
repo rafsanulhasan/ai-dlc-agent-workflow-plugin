@@ -1,16 +1,16 @@
----
+done (passed)`4.5-research-assistant-to-orchestrator.handback.md` | 2026-10-22 21:55 |done (passed)`4.4-research-assistant-to-orchestrator.handback.md` | 2026-10-22 21:55 |done (passed)`4.1-product-manager-to-orchestrator.handback.md` | 2026-10-22 21:55 |---
 run: FEAT-20261020-ai-dlc-lens
 work-item: FEAT-20261020-ai-dlc-lens
 status: active
 lifecycle: AI-DLC
 mode: subagent
-current-stage: breakdown
+current-stage: G1
 owner: orchestrator
 session: 0c54340a-f320-49d8-9488-509c3a7cddca
 branch: feat/ai-dlc-lens
-commit: a802138
-last-record: 4.5-orchestrator-to-research-assistant.handoff.md
-updated: 2026-10-22 21:45
+commit: 11dd3db
+last-record: 11-orchestrator-to-human.handoff.md
+updated: 2026-10-23 00:30
 ---
 
 # Run: FEAT-20261020-ai-dlc-lens — run-state CLI, gate alert and the ai-dlc-lens mod plugin: one dashboard merging savvy-progress, cache-tax, context-view and agent-flow, with a flowchart view
@@ -40,12 +40,26 @@ Step numbering: steps 1–2 are the 2026-10-20 briefs `01-…` and `02-…` (old
 | 3.3 | research R3: repo state, overlap, branches | research-assistant | subagent | done (passed) | `3.3-orchestrator-to-research-assistant.handoff.md` | `3.3-research-assistant-to-orchestrator.handback.md` | 2026-10-22 21:40 |
 | 3.4 | research R4: context-view | research-assistant | subagent | done (passed) | `3.4-orchestrator-to-research-assistant.handoff.md` | `3.4-research-assistant-to-orchestrator.handback.md` | 2026-10-22 21:40 |
 | 3.5 | research R5: agent-flow | research-assistant | subagent | done (passed) | `3.5-orchestrator-to-research-assistant.handoff.md` | `3.5-research-assistant-to-orchestrator.handback.md` | 2026-10-22 21:40 |
-| 4.1 | breakdown (work items, waves) | product-manager | subagent | in-progress | `4.1-orchestrator-to-product-manager.handoff.md` | — | 2026-10-22 21:45 |
-| 4.2 | research: Svg, width, transcript cards | research-assistant | subagent | in-progress | `4.2-orchestrator-to-research-assistant.handoff.md` | — | 2026-10-22 21:45 |
-| 4.3 | research: events, shared state, transcripts | research-assistant | subagent | in-progress | `4.3-orchestrator-to-research-assistant.handoff.md` | — | 2026-10-22 21:45 |
-| 4.4 | research: cache-tax, context-view settings | research-assistant | subagent | in-progress | `4.4-orchestrator-to-research-assistant.handoff.md` | — | 2026-10-22 21:45 |
-| 4.5 | research: agent-flow, savvy-progress settings | research-assistant | subagent | in-progress | `4.5-orchestrator-to-research-assistant.handoff.md` | — | 2026-10-22 21:45 |
-| — | plan (brief, stories, ACs) → G1 | product-owner → requirement-analyst; documentation-writer ↔ brutal-critique | subagent | pending | — | — | — |
+| 4.1 | breakdown (work items, waves) | product-manager | subagent | done (passed) | `4.1-orchestrator-to-product-manager.handoff.md` | `4.1-product-manager-to-orchestrator.handback.md` | 2026-10-22 22:00 |
+| 4.2 | research: Svg, width, transcript cards | research-assistant | subagent | done (passed) | `4.2-orchestrator-to-research-assistant.handoff.md` | `4.2-research-assistant-to-orchestrator.handback.md` | 2026-10-22 22:05 |
+| 4.3 | research: events, shared state, transcripts | research-assistant | subagent | done (passed) | `4.3-orchestrator-to-research-assistant.handoff.md` | `4.3-research-assistant-to-orchestrator.handback.md` | 2026-10-22 22:00 |
+| 4.4 | research: cache-tax, context-view settings | research-assistant | subagent | done (passed) | `4.4-orchestrator-to-research-assistant.handoff.md` | `4.4-research-assistant-to-orchestrator.handback.md` | 2026-10-22 22:00 |
+| 4.5 | research: agent-flow, savvy-progress settings | research-assistant | subagent | done (passed) | `4.5-orchestrator-to-research-assistant.handoff.md` | `4.5-research-assistant-to-orchestrator.handback.md` | 2026-10-22 22:00 |
+| 5 | PDLC brief | product-owner | subagent | done (passed) | `5-orchestrator-to-product-owner.handoff.md` | `5-product-owner-to-orchestrator.handback.md` | 2026-10-22 22:20 |
+| 6 | PDLC brief: revise with C1–C3 answers (clarify round 1, via SendMessage to the same product-owner) | product-owner | subagent | done (passed) | `6-orchestrator-to-product-owner.handoff.md` | `6-product-owner-to-orchestrator.handback.md` | 2026-10-22 22:40 |
+| 7 | PDLC brief critique (gate-critique round 1 / 2) | brutal-critique | subagent | done (passed) · verdict REVISE: 1 Blocker, 9 Major, 8 Minor | `7-orchestrator-to-brutal-critique.handoff.md` | `7-brutal-critique-to-orchestrator.handback.md` | 2026-10-22 22:50 |
+| 5.l1 | PDLC brief: fix critique round 1 | product-owner | subagent | done (passed) · 18 fixed, 0 rejected | `5.l1-orchestrator-to-product-owner.handoff.md` | `5.l1-product-owner-to-orchestrator.handback.md` | 2026-10-22 23:00 |
+| 7.l1 | PDLC brief critique (gate-critique round 2 / 2) | brutal-critique | subagent | done (passed) · verdict PASS, 4 Minors carried to stories | `7.l1-orchestrator-to-brutal-critique.handoff.md` | `7.l1-brutal-critique-to-orchestrator.handback.md` | 2026-10-22 23:10 |
+| 8 | PDLC stories (US + numbered ACs) | requirement-analyst | subagent | done (passed) · 21 stories, 141 ACs, Q1–Q12 to the human | `8-orchestrator-to-requirement-analyst.handoff.md` | `8-requirement-analyst-to-orchestrator.handback.md` | 2026-10-22 23:25 |
+| 9.1 | PDLC stories critique (gate-critique round 1 / 2) | brutal-critique | subagent | done (passed) · verdict REVISE: 3 Blocker, 14 Major, 7 Minor | `9.1-orchestrator-to-brutal-critique.handoff.md` | `9.1-brutal-critique-to-orchestrator.handback.md` | 2026-10-22 23:40 |
+| 9.2 | PDLC backlog | product-manager | subagent | done (passed) · preview1; spikes 027/029 pre-G2, 028 conditional | `9.2-orchestrator-to-product-manager.handoff.md` | `9.2-product-manager-to-orchestrator.handback.md` | 2026-10-22 23:40 |
+| 8.l1 | PDLC stories: apply Q1–Q12 answers + fix critique round 1 | requirement-analyst | subagent | done (passed) · rev 2: 144 ACs, A12–A24 added | `8.l1-orchestrator-to-requirement-analyst.handoff.md` | `8.l1-requirement-analyst-to-orchestrator.handback.md` | 2026-10-22 23:55 |
+| 9.1.l1 | PDLC stories critique (gate-critique round 2 / 2) | brutal-critique | subagent | done (passed) · verdict PASS; 1 Major + 5 Minor new | `9.1.l1-orchestrator-to-brutal-critique.handoff.md` | `9.1.l1-brutal-critique-to-orchestrator.handback.md` | 2026-10-23 00:05 |
+| 8.l2 | PDLC stories: post-PASS fixes M1–M6 (loop arrow etc.) | requirement-analyst | subagent | done (passed) · M1–M6 fixed | `8.l2-orchestrator-to-requirement-analyst.handoff.md` | `8.l2-requirement-analyst-to-orchestrator.handback.md` | 2026-10-23 00:15 |
+| 10.1 | PDLC accept (stories + backlog) → G1 | product-owner | subagent | done (passed) · ACCEPT with 3 non-blocking conditions | `10.1-orchestrator-to-product-owner.handoff.md` | `10.1-product-owner-to-orchestrator.handback.md` | 2026-10-23 00:25 |
+| 10.2 | research: Stop hook + systemMessage (A14) | research-assistant | subagent | done (passed) · Stop/SubagentStop confirmed; systemMessage display in terminal/VS Code unverified → spike 027 | `10.2-orchestrator-to-research-assistant.handoff.md` | `10.2-research-assistant-to-orchestrator.handback.md` | 2026-10-23 00:30 |
+| 11 | G1 gate (stories + ACs) | human | subagent | in-progress (awaiting human) | `11-orchestrator-to-human.handoff.md` | — | 2026-10-23 00:30 |
+| — | PDLC stories → backlog → accept → G1 | requirement-analyst → product-manager → product-owner; brutal-critique on brief and stories | subagent | pending | — | — | — |
 | — | design (spec, ADRs, LLD) → G2 | software-architect + system-engineer; brutal-critique | subagent | pending | — | — | — |
 | — | task plan → G3 | product-manager | subagent | pending | — | — | — |
 | — | build waves (per the binding breakdown) | agent-manager → sqa-engineer → code-reviewer | subagent | pending | — | — | — |
@@ -58,10 +72,15 @@ Step numbering: steps 1–2 are the 2026-10-20 briefs `01-…` and `02-…` (old
 |---|---|---|---|---|
 | Plan (Routing Plan, S5) | human | approved | human | 2026-10-20 |
 | Plan (widened scope, `00b-approved-plan-2026-10-22.md`) | human | approved | human | 2026-10-22 |
-| G1, G2, G3, G4, release | human | pending | — | — |
+| G1 | human | presented (`11-orchestrator-to-human.handoff.md`) | — | 2026-10-23 |
+| G2, G3, G4, release | human | pending | — | — |
 | Every lifecycle loop (FDLC tests / architecture-review / review, AAW critique / test / code-review, PDLC accept) | limits 2 rounds / 1 failure (source `loop`, from `rounds --json`) | recorded at resume | orchestrator | 2026-10-22 |
 | clarify | 2 / 1 (source `loop`) | recorded at resume | orchestrator | 2026-10-22 |
 | gate-critique | 2 / 1 (source `default`) | recorded at resume | orchestrator | 2026-10-22 |
+| gate-critique (brief) | round 1 / 2 · failure 1 / 1 | REVISE; findings sent back as `5.l1` | orchestrator | 2026-10-22 |
+| gate-critique (brief) | round 2 / 2 | PASS (`7.l1`); 4 Minors carried into step 8 | orchestrator | 2026-10-22 |
+| gate-critique (stories) | round 1 / 2 · failure 1 / 1 | REVISE; findings + Q answers sent back as `8.l1` | orchestrator | 2026-10-22 |
+| gate-critique (stories) | round 2 / 2 | PASS (`9.1.l1`); 1 Major + 5 Minor fixed post-PASS as `8.l2` without another critique | orchestrator | 2026-10-23 |
 | Workflow validate | `node .ai-dlc/workflow.mjs validate` | valid (worktree) | orchestrator | 2026-10-22 |
 
 ## Open clarifications
@@ -70,8 +89,12 @@ Step numbering: steps 1–2 are the 2026-10-20 briefs `01-…` and `02-…` (old
 | 1 | orchestrator → human | Scope vs S5, avatars, gates | 1 | closed: add to S5; initials, configurable; all four gates |
 | 2 | orchestrator → human | Command names; cache-tax keepwarm/guard | 1 | closed: thin skills in ai-dlc; display + opt-in guard, no keepwarm |
 | 3 | orchestrator → human | Hide output: pane, transcript or both | 1 | closed: both, never hiding subagent/teammate responses |
+| 4 | product-owner → human | C1 release label and the delay rule (preview2 vs 1.0.0) | 1 | closed 2026-10-22: everything ships in 1.0.0-preview1 (unreleased); no cut, no 1.1.0 deferral |
+| 5 | product-owner → human | C2 context-view `awareness*` settings (they change what the model sees) | 1 | closed 2026-10-22: include them, awareness **on** by default |
+| 6 | product-owner → human | C3 avatar images vs initials-only in 1.0.0 | 1 | closed 2026-10-22: images too (path or data URI per agent), next to initials; file paths go through the trust check |
+| 7 | requirement-analyst → human | Q1–Q12 (alert latency/channels; constants as settings; guard off/warn/refuse default off; layout + blink; context per row; unknown price; task bar from run.md; language en; autoOpen; ledger per run; settings reload; Desktop automated only) — see `8-requirement-analyst-to-orchestrator.handback.md` | 1 | closed 2026-10-22: all 12 defaults accepted by the human |
 
 ## Next action
-When each step-4 agent returns, store its report verbatim as `4.<n>-<agent>-to-orchestrator.handback.md` first, then verify: 4.1 — `docs/backlog/backlog.md` in this worktree changed and lists the items; 4.2–4.5 — line 1 `passed` and cited sources. Then brief the product-owner for the Plan stage (brief, stories, ACs) with the breakdown and all research hand-backs (step 5); it ends at G1 (human).
-
-If a step-4 agent never returns: check `git -C .worktrees/ai-dlc-lens status` for backlog changes before spawning the product-manager again with the same record; re-spawn missing research with the same record.
+**Waiting for the human to approve G1** (`11-orchestrator-to-human.handoff.md`).
+- Approved: record the decision, then brief agent-manager for spikes ITEM-027 and ITEM-029 (ITEM-028 only if the fold merge has landed). Add the A14 live check to 027.
+- Changes: send them to requirement-analyst as `8.l3`.

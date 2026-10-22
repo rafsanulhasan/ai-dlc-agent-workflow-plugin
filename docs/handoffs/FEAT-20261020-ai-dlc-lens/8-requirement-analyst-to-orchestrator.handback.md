@@ -1,0 +1,50 @@
+---
+run: FEAT-20261020-ai-dlc-lens
+work-item: none
+lifecycle: AI-DLC
+step: 8
+from: requirement-analyst
+to: orchestrator
+mode: subagent
+loop: none
+received: 2026-10-22 16:03
+---
+
+handoff 8-orchestrator-to-requirement-analyst.handoff.md: passed — I read the record and every artifact it lists: brief.md, the 7.l1 critique, 00b, run.md C1–C3, the backlog's ITEM-003…026, and research 3.2 and 4.2–4.5. All of them exist and agree with the record.
+
+**File:** E:\Projects\personal\ai-dlc-agent-workflow-plugin\.worktrees\ai-dlc-lens\docs\product\ai-dlc-lens\stories.md (not committed; it is the only file I wrote)
+
+**Stories:** 21 (US-1 to US-21), covering F1–F14 and UC1–UC9, with the ITEM ids kept. F1 is split into a parser story and a `runs` story, F4 into resolver and writers, and F6 into context meter, cache with keep-alive, guard, and awareness. F7 is split into flowchart and avatars.
+
+**ACs:** 141. Each has exactly one test route:
+- `claude plugin test`: 92
+- `node --test`: 16
+- build/validate: 11
+- document check: 12
+- manual VS Code check: 10, each with exact steps
+
+The file also has a traceability table (story → ITEM → F → UC → ACs), a mapping of M1–M13 to ACs, a settings register, and G1 assumptions A1–A11. The register lists every upstream setting and constant from the 4.4 and 4.5 tables with its default; the keepwarm settings are dropped, as 00b says.
+
+**The 4 Minors:**
+1. Latency N: the alert ACs (AC-3.6 and AC-3.7) say "the first run-state check after the change", not a fixed time. For the hook, that is its first invocation after run.md is written, no later than the end of that turn. For the lens, it is the next poll, set by `runStatePollMs` (default 2,000 ms). The ACs are marked pending, and the question is Q1 below.
+2. Awareness: written as decided (C2) in US-11. A2 notes that brief §13:213 listing it under "Open" is a leftover.
+3. Spikes before G2: listed as G1 assumption A1, including the extra manual VS Code check by the human before G2.
+4. M6 avatar step: AC-13.8 uses the exact wording "an avatar image draws, or, where spike (c) found it cannot, the initials fallback shows".
+
+**Watch:** brief F5 puts type, model, context, est. $ and elapsed in the row. The binding 00b field set puts them in the expanded row, and the stories follow 00b (A11, AC-7.1, AC-14.1).
+
+clarify: (for the human, via the orchestrator; the ACs use the recommended defaults and are marked `(default — pending human)`)
+- Q1 Alert latency and channels (AC-3.6, 3.7, 3.8): the alert fires at the first run-state check, with no time limit beyond that; the lens polls every 2,000 ms; it shows a toast plus the attention row; without the lens, a visible line in the session. Recommended: yes.
+- Q2 Constants (register): every upstream constant becomes a setting (brief §13 default). This includes a `prices` override of the one dated table. `NO_COLOR` is replaced by a `monochrome` setting, because the process env is not read (AC-9.7). Recommended: yes.
+- Q3 Guard (AC-10.2, 10.3): modes `off`/`warn`/`refuse`, default `off`, threshold `guardMinTokens` 50,000. Recommended: yes.
+- Q4 Layout and blink (AC-12.1, 12.7): a `layout` setting `auto|compact|flowchart`, default `auto` (dock → flowchart). `blinkMs` 500 ms per phase. Recommended: yes.
+- Q5 Context per row (AC-14.3): the header shows the main thread. A subagent row shows its own context, from its latest request's input + cache read + cache write. Awareness counts the main thread only. Recommended: yes.
+- Q6 Unknown model price (AC-7.7): show `—` and mark the session total as partial, rather than guessing a price. Recommended: yes.
+- Q7 Task bar (AC-7.9): built from the run.md *Stages* table (done/total, phase = current stage). No progress tool for the model. Recommended: yes.
+- Q8 `language` (AC-14.10): only `auto` and `en` in preview1; upstream ru/he are not ported. Recommended: yes, en only, since the new lens text has no ru/he strings.
+- Q9 `autoOpen` (AC-14.9): values `ai-dlc|any|off`, default `ai-dlc`. Recommended: yes.
+- Q10 Ledger scope (AC-17.4): per run, persisted, so it survives a new session on the same machine. Recommended: yes.
+- Q11 Settings change mid-session (AC-5.5): applies at the next render after reload, and the README marks which settings need a reload. Recommended: yes.
+- Q12 Desktop (A5): automated `surface: 'desktop'` tests only, no manual Desktop check. Recommended: yes.
+
+Next hop: brutal-critique on the stories, then product-manager (backlog), then product-owner acceptance, then G1.

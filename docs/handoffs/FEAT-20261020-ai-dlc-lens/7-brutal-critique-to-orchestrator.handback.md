@@ -1,0 +1,35 @@
+---
+run: FEAT-20261020-ai-dlc-lens
+work-item: none
+lifecycle: AI-DLC
+step: 7
+from: brutal-critique
+to: orchestrator
+mode: subagent
+loop: none
+received: 2026-10-22 15:54
+---
+
+handoff 7-orchestrator-to-brutal-critique.handoff.md: passed — brief.md, 00b and run.md rows 4-6 (C1-C3) all exist and match what the record says; I did not open the research hand-backs 3.x/4.x or the backlog, so those claims are unchecked.
+REVISE
+Blocker · brief.md:144,145,193 · Spike timing contradicts itself. The risk table says spikes run "before design lock" (G2), but the PM instruction places them as build items "after 010, before 014/015/017", which is after G3. The spec would freeze on unproven VS Code, Svg `data:` and keep-alive behaviour. · Decide it. Either the spikes are pre-G2 research or spike items with results fed into the spec, or the spec carries explicit open questions that the spikes close. Make 144, 145 and 193 say the same thing.
+Major · brief.md:54,116 · Awareness appends model-visible text, but out-of-scope (116) says "Rewriting the transcript with `session.append`". The append mechanism is unnamed and 00b says "nothing is rewritten with session.append". The line reads as contradictory. · State which API the awareness line uses. Word 116 as "rewriting existing transcript entries", and say that appending is allowed.
+Major · brief.md:34,35,150 · P3 says "terminal or Desktop... compact list only (Svg does not draw in terminal)". 00b says Svg draws in VS Code AND Desktop, so a Desktop user can get the flowchart. Row 150 says users below the floor "get nothing", while its Handling column says terminal features degrade. · Split Desktop from terminal in P3. Say what each surface and version gets, and fix the "get nothing" wording.
+Major · brief.md:10-12,37-45,137 · Outcomes are mostly untestable. O1, O2 and O4 have no measure. O3 ("faster") has no baseline. The only outcome signal is an unnumbered, subjective "maintainer judges". M1-M7 are build checks, not outcomes. · Add an observable check per outcome, for example: O2 header shows warm/cold, cold price and headroom within one turn of the usage event; O3 alert raised within N s of the gate record. Number the outcome signal as M8.
+Major · brief.md:105,62 · UC6 and F2 ("An alert is raised") do not say what an alert is: a status line, a toast, a terminal bell, or a hook output. It is also unclear whether the init-installed hook reaches Copilot users (P4). It has no manual check in M6. · Name the alert channel(s), the surfaces, the trigger latency, and whether Copilot gets it. Add it to the manual list.
+Major · brief.md:135 · The M6 manual list is copied from 00b and omits what C2 and C3 added: avatar image drawn or falling back to initials, and awareness line on, appended and off. It also omits the gate alert. · Add these manual steps, or state why automated tests cover them.
+Major · brief.md:143-153 · Risks miss open items in 00b: no known subagent stop event ("completed" green and the ledger depend on it); subagent transcripts may not record agent type (F11 ledger history); ToolUse/Result replacement may differ between VS Code and Desktop, and cards must keep the native result text; cache-tax internals and the guard source were unknown (not installed, not read). · Add these rows with a handling for each. Tie F11 and F9 to them.
+Major · brief.md:147 · Schedule risk's handling ("G3 sequences all items") mitigates nothing. 24 items were planned at 10-14 days before the widening, there is no cut, and the Mods API breaks every few releases. · Add a real mitigation: a re-estimate at G3, a stated critical path (spikes -> 013 -> 014/015/017), a trigger to return to the human, or an explicit statement that the human accepted the delay.
+Major · brief.md:55,178 · C3 images: only file paths get the trust check, so data URIs are unguarded. No size limit, no behaviour for a non-image path, no terminal behaviour beyond a vague "surfaces that cannot draw Svg". · Add the data URI size and type limits and the behaviour per surface as stories or ACs, not only as spike scope.
+Major · brief.md:143,150 · Concrete version and break claims ("broke at 2.1.271, 2.1.283, 2.1.299-2.1.304", floors 2.1.287/290/299) are not in 00b or in the brief's own sources, and I did not open hand-backs 3.x/4.x. · Cite the hand-back id and line for each. Mark the 2.1.299 floor as an architect decision, not only "Assumption".
+Minor · brief.md:12,16-20,35-37 · Awareness is a model-facing feature but sits in F6 "Merged header" with no outcome. O1-O5 do not cover it. · Add an outcome, for example O6 "model knows its context size", or map it to O2/O5.
+Minor · brief.md:59-75 · Priorities P1/P2 are kept although C1 removed the cut, so they now only mean build order. · Say so in the table header, or drop the Pri column.
+Minor · brief.md:54 · "(`3.x` research risk)" is a vague pointer. · Cite the exact hand-back.
+Minor · brief.md:112 · "S5 plus widening" is jargon not defined here. · Spell out "approved plan option S5, widened on 2026-10-22".
+Minor · brief.md:120 · Cites "WI-1" in `00-approved-plan.md`, which I did not check. It is marked "Assumption", which is fine. · Verify the id exists, or drop it.
+Minor · brief.md:172-178 · "Elicit with the human" cannot be done by requirement-analyst directly. It must return a clarify request to the orchestrator. · Say so. Also list which defaults are already decided and which are open, so the analyst knows where to ask.
+Minor · brief.md:176 · The 50,000-token guard threshold has no source. · Cite cache-tax or mark it "unverified".
+Minor · brief.md:179-191 · The PM list does not say whether the price-table move (3) and the spikes (2) change item ids or dependency edges for 014/015/017/020. Spike (b) is blocked by the fold merge. · Require updated Depends-On and wave columns and a note on the blocker.
+Verified: the brief states C1, C2 and C3 as 00b/run.md rows 4-6 give them (preview1 with no cut; awareness on by default; images with trust check and initials fallback); F1-F14 trace to ITEM-003..026 (the backlog itself not opened); the licence list matches 00b.
+Good, keep: the decisions applied by section (166-168); the explicit out-of-scope list; the AC route taxonomy with exactly one route per AC; the "no AC may contradict 00b" rule.
+Next hop: REVISE goes back to the product-owner.

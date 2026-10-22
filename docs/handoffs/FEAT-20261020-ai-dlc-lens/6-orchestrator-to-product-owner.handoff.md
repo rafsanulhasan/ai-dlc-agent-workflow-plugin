@@ -1,0 +1,51 @@
+---
+run: FEAT-20261020-ai-dlc-lens
+work-item: ITEM-004
+lifecycle: AI-DLC
+step: 6
+from: orchestrator
+to: product-owner
+mode: subagent
+loop: none
+gate: none
+verification: passed
+date: 2026-10-22
+---
+
+# 6 orchestrator → product-owner: the human's answers to C1–C3; revise the brief
+
+## Goal
+Bring `docs/product/ai-dlc-lens/brief.md` in line with the human's answers to your three clarifications, before brutal-critique reviews it.
+
+## Artifacts
+Paths are relative to the worktree `E:\Projects\personal\ai-dlc-agent-workflow-plugin\.worktrees\ai-dlc-lens`.
+- `docs/product/ai-dlc-lens/brief.md` — your brief, 195 lines, sections 1–13 — verified: exists; F1–F14 traced to ITEM-003…026 in section 6
+- `docs/handoffs/FEAT-20261020-ai-dlc-lens/5-product-owner-to-orchestrator.handback.md` — your report with C1–C3 — verified: line 1 `passed`
+- `docs/handoffs/FEAT-20261020-ai-dlc-lens/run.md` — *Open clarifications* rows 4–6, now closed
+
+## Gate evidence
+- Gate: none
+
+## Clarifications carried forward
+| # | Asked → answered by | Refers to | Question | Answer | Artifact revised by owner |
+|---|---|---|---|---|---|
+| C1 | product-owner → human | brief §9 release cut | Release label and the delay rule | **Everything ships in 1.0.0-preview1** (not yet released). No cut line, and nothing moves to 1.1.0. The cut order you recommended is withdrawn. | brief.md (by you) |
+| C2 | product-owner → human | context-view `awareness*` | Include the model-facing awareness line? | **Include it, on by default.** All `awareness*` options are configurable (`awareness`, `awarenessFrom`, `awarenessWithin`, `awarenessStep`, `awarenessAt`; see `4.4-…handback.md`). | brief.md (by you) |
+| C3 | product-owner → human | avatars | Initials only, or images too? | **Images too.** A per-agent image (path or data URI) next to the configurable initials badge. File paths go through the trust check. Rendering in VS Code needs a spike first, with initials as the fallback when an image cannot be drawn. | brief.md (by you) |
+
+## Instructions for the receiver
+1. Revise the brief:
+   - §9 release cut: target 1.0.0-preview1, all items, no cut.
+   - §5 and §8: the awareness line is in scope and on by default. Note that it adds text the model reads, which is a risk for the cache prefix. context-view appends the line, never edits it, so the cache still matches; keep that rule.
+   - F7 and the settings: avatar images, with the initials fallback and the trust check.
+   - §11 risks: schedule risk, now that there is no cut; the image spike.
+   - §12: mark C1–C3 answered.
+   - §13 delegation list:
+     - requirement-analyst gets ACs for awareness on by default and for avatar images, including the fallback and trust check.
+     - product-manager: no cut order. Add the image-render spike next to the two spikes you already listed. Move the backlog milestone to 1.0.0-preview1.
+2. Edit only `brief.md`. Do not commit.
+
+Deliverable: a compressed reply.
+- Line 1 exactly: `handoff 6-orchestrator-to-product-owner.handoff.md: passed|failed — <why>`.
+- Then one line per changed section.
+- Next hop: brutal-critique (the brief).

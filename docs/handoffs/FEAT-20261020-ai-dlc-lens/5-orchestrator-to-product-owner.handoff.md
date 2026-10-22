@@ -1,0 +1,103 @@
+---
+run: FEAT-20261020-ai-dlc-lens
+work-item: ITEM-004
+lifecycle: AI-DLC
+step: 5
+from: orchestrator
+to: product-owner
+mode: subagent
+loop: none
+gate: none
+verification: passed
+date: 2026-10-22
+---
+
+# 5 orchestrator → product-owner: product brief for ai-dlc-lens (PDLC `brief`, first stage towards G1)
+
+## Goal
+Write the product brief for the widened ai-dlc-lens feature: outcomes, features, use cases, scope and priorities, plus the delegation list for requirement-analyst (stories and numbered ACs) and product-manager (backlog priorities). It anchors G1, where the human approves the stories and ACs, and every later stage.
+
+## Artifacts
+All paths are relative to the worktree `E:\Projects\personal\ai-dlc-agent-workflow-plugin\.worktrees\ai-dlc-lens` (branch `feat/ai-dlc-lens`). Work only there; never touch the main checkout.
+- `docs/handoffs/FEAT-20261020-ai-dlc-lens/00b-approved-plan-2026-10-22.md` — the plan the human approved on 2026-10-22. Its *Your decisions* and *Merged field set* sections are **binding human decisions**: do not re-decide them — verified: exists
+- `docs/handoffs/FEAT-20261020-ai-dlc-lens/00-approved-plan.md` — the 2026-10-20 plan (S5, cost-benefit, SWOT, your earlier verdicts) — verified: exists
+- `docs/backlog/backlog.md`, section *FEAT-20261020-ai-dlc-lens* — the product-manager's binding breakdown, ITEM-003…ITEM-026 (uncommitted, in the worktree) — verified: 46 new lines, items 003–026 present
+- `docs/handoffs/FEAT-20261020-ai-dlc-lens/4.1-product-manager-to-orchestrator.handback.md` — the breakdown report, with 5 questions addressed to you — verified: line 1 `passed`
+- Research, all line 1 `passed`:
+  - `3.1`–`3.5-research-assistant-to-orchestrator.handback.md`: the four upstream mods (what they show, licences); the mods API; repo state
+  - `4.2`: Svg, width, transcript cards
+  - `4.3`: events, shared state, transcripts
+  - `4.4`: cache-tax and context-view settings
+  - `4.5`: agent-flow and savvy-progress settings
+- `docs/handoffs/FEAT-20261020-ai-dlc-lens/run.md` — run state
+
+## Acceptance criteria covered
+| AC | Where it is satisfied / tested |
+|---|---|
+| none yet | The stories and ACs come from requirement-analyst after your brief |
+
+## Gate evidence
+- Build / tests / mutation / review: n/a (no code)
+- `node .ai-dlc/workflow.mjs validate`: valid
+- Gate: none at this stage. The PDLC `accept` stage ends at G1 (approver: human).
+
+## Decisions so far
+- The human's decisions of 2026-10-20 and 2026-10-22 (see the two plans). The most important ones:
+  - add to S5
+  - the three `/ai-dlc:lens*` commands, via thin skills in ai-dlc
+  - the settings precedence
+  - initials avatars
+  - the cache-tax display plus an opt-in guard, with no keepwarm
+  - the four mods merged, with no duplicated field
+  - never hide a subagent's or teammate's response
+  - all licences in `THIRD_PARTY_NOTICES.md`
+  - G1–G4 and the release are approved by the human
+- Memory, 2026-10-20: the human decided the mods ship in release 1.0.0.
+
+## Clarifications carried forward
+| # | Asked → answered by | Refers to | Question | Answer | Artifact revised by owner |
+|---|---|---|---|---|---|
+| 1 | orchestrator → human | scope | Relation to S5 | Add to S5 | 00b plan |
+| 2 | orchestrator → human | commands | Command names | Thin skills in ai-dlc give `/ai-dlc:lens`, `/ai-dlc:lens-init`, `/ai-dlc:lens-configure` | 00b plan |
+| 3 | orchestrator → human | cache-tax | Keepwarm and guard | Display plus an opt-in guard, no keepwarm | 00b plan |
+| 4 | orchestrator → human | hiding | Pane, transcript, or both | Both, never hiding subagent or teammate responses | 00b plan |
+
+## Open questions / risks for the receiver
+- **Questions from product-manager** (`4.1-…handback.md`, *Questions for the product-owner*):
+  1. cut candidates to 1.1.0 (017 transcript cards, 020 ledger, 018 text fallback, 009 gate alert)
+  2. preview2 or 1.0.0
+  3. plugin location (a G2 decision, together with the architect)
+  4. whether the coarse ACs are the starting point
+  5. P0 overrides
+
+  Decide what is yours: scope, priority, release cut. A question that changes a human decision above, or is intent the plans do not settle, goes to the human through the orchestrator: return it as a `clarify:` request with your recommended default, and do not decide it.
+- **Research risks** to reflect as scope or risk notes (the design itself is G2's):
+  - The VS Code behaviour of panel resize, Svg `isInteractive` animation and buttons in transcript rows is unproven, so spikes are needed. The fallbacks are a user toggle for compact/flowchart and a timer blink.
+  - No mods API reads another plugin's state. Reading keep-alive state needs a `$.tool.register` / `$.tool.call` spike or a documented file.
+  - The two upstream price tables differ, so the lens needs one dated table.
+  - The context window should come from the engine (`$.session.usage().context.window`), not be hard-coded.
+- **External blocker:** the build waits for run `AAW-20261022-fold-cache-keepalive` to merge to `main`.
+
+## Suggested skills
+- `product-planning` — product brief, scope, priorities, release cut
+- `ai-dlc` — the PDLC segment and the G1 gate
+
+## Instructions for the receiver
+1. Write `docs/product/ai-dlc-lens/brief.md` in the worktree:
+   - vision, user outcomes, personas (plugin maintainer; plugin user in VS Code; terminal user)
+   - the feature list, traced to ITEM-003…026
+   - use cases: watch a run in a narrow panel, watch it in a wide panel as a flowchart, read the cache and context state, configure settings and avatars, read the per-agent cost report, a gate alert
+   - in scope / out of scope
+   - the 1.0.0 vs 1.1.0 cut, if you decide one; the human has said 1.0.0 for the mods, so flag any cut as a recommendation for the human
+   - success measures
+   - risks
+2. End the brief with a **delegation list**:
+   - for requirement-analyst: which stories to elicit, and which ACs must be testable through `claude plugin test` vs. the manual VS Code check
+   - for product-manager: the priority changes to apply to the backlog
+3. This stage has critique: after you return, brutal-critique reviews the brief (PASS / REVISE, at most 2 rounds). Write it to survive an adversarial read: no vague outcomes, every feature traced to an item, and no contradiction with the binding decisions.
+4. Do not edit the backlog, the plans or any code. Do not commit.
+
+Deliverable: a compressed reply.
+- Line 1 exactly: `handoff 5-orchestrator-to-product-owner.handoff.md: passed|failed — <why>`.
+- Then: the brief's path; your answers to the PM's five questions (decided by you, or a `clarify:` block to the human with defaults); the delegation list summary; at most 40 lines.
+- Next hop: brutal-critique (the brief), then requirement-analyst (stories and ACs) → product-manager (backlog) → your acceptance → G1 (human).
