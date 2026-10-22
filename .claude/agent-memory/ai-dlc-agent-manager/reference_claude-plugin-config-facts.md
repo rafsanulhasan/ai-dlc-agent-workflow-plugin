@@ -1,6 +1,6 @@
 ---
 name: claude-plugin-config-facts
-description: Verified Claude Code 2.1.306 facts on userConfig min/max, mod command names, $.store scope and `claude plugin configure`
+description: Verified Claude Code 2.1.306 facts on userConfig min/max, mod command names, $.store scope and `claude plugin configure`; workspace trust in ~/.claude.json; $.command.run ordering
 metadata:
   type: reference
 ---
@@ -12,6 +12,8 @@ Checked 2026-10-21 against the bundled mods types (`plugin-authoring` skill, `ty
 - A mod's `$.command.register({ name })` command is run as `/<name>`, no plugin prefix; `argumentHint` is shown dim after it; `e.args` is everything after the name (`""` when bare).
 - `$.store` is the plugin's own JSON file under the user's config dir, shared by every session on the machine (4 MiB). Per-session values need a session-id key.
 - `claude plugin configure <plugin> [--json] [--values-stdin]` shows a plugin's options and which are unset, and can save values from stdin: a documented CLI write path for `pluginConfigs`. Not used by init yet (human chose /config guidance, AAW-20261021-mods-config).
+- No engine API exposes workspace trust (2026-10-22). It is `projects["<path>"].hasTrustDialogAccepted` in `~/.claude.json` (repo root; worktree → main checkout; outside a repo, the folder or an ancestor). Keys on this Windows machine: forward slashes, lowercase drive. VS Code / SDK sessions never show the dialog, so the flag stays false there. The auto-handoff module gates `viewer` and the two templates on it (`config.ts`, `TRUST_GATED`); read only the flag, never quote the file.
+- `$.command.run` queues a command and resolves once it has run (session idle); await it to order two commands.
 - In mod tests, `session.start` needs a stub that returns its input (it must carry `cwd`) and `command.register` a stub returning `{ value: { command } }`.
 
 **How to apply:** use these when changing hooks modules or vendored mods; re-check against the types file of the current build before relying on them.

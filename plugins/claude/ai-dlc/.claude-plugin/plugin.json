@@ -30,7 +30,7 @@
     "thresholdPercent": {
       "type": "number",
       "title": "Auto-handoff: handoff threshold (% of the context window)",
-      "description": "Share of the context window, 1 to 100, that triggers an automatic session handoff (Claude Code only; main or lead session only, never subagents or teammates). The window is the one Claude Code reports for the session, or 500000 tokens when it reports none. In that case, if the real window is smaller than the line (at the default 80%, a line of 400000 tokens), no handoff fires, so set AUTO_HANDOFF_TOKENS, an absolute token count that overrides this. A seeded session hands off no sooner than 40k past its starting size; the panel above the prompt says so when this leaves less than 40k above the new session's starting size.",
+      "description": "Share of the context window, 1 to 100, that triggers an automatic session handoff (Claude Code only; main or lead session only, never subagents or teammates). The window is the one Claude Code reports for the session, or 500000 tokens when it reports none (defaultContextWindow). In that case, if the real window is smaller than the line (at the default 80%, a line of 400000 tokens), no handoff fires, so set thresholdTokens, an absolute token count that replaces this. A value in the repository's .ai-dlc/auto-handoff.json, or its AI_DLC_AUTO_HANDOFF_THRESHOLD_PERCENT variable in the environment or a settings env, overrides this row; /ai-dlc:configure-auto-handoff shows which applies. A seeded session hands off no sooner than seedHeadroomTokens (default 40000) past its starting size; the panel above the prompt says so when this line leaves less room than that above the new session's starting size.",
       "default": 80,
       "min": 1,
       "max": 100
@@ -38,19 +38,19 @@
     "maxConsecutiveHandoffs": {
       "type": "number",
       "title": "Auto-handoff: handoffs in a row without a message",
-      "description": "Handoffs allowed before you type a prompt. Past this, auto-handoff pauses until you send one.",
+      "description": "Handoffs allowed before you type a prompt, when no AI-DLC run is active. Past this, auto-handoff pauses until you send one. While the run a chain of handoffs belongs to stays active, the chain goes on until the run is done, blocked or abandoned. Overridden by .ai-dlc/auto-handoff.json or AI_DLC_AUTO_HANDOFF_MAX_CONSECUTIVE.",
       "default": 2
     },
     "briefTemplate": {
       "type": "string",
       "title": "Auto-handoff: brief template file",
-      "description": "Markdown file that tells Haiku which sections to write. Created with the defaults on first run; edit it to change the brief.",
+      "description": "Markdown file that tells Haiku which sections to write when no AI-DLC run is active; with an active run, the handoff skill's session handoff template is used instead. Created with the defaults on first run; edit it to change the brief. A value in .ai-dlc/auto-handoff.json overrides this row only in a folder Claude Code trusts.",
       "default": "~/.claude/auto-handoff/brief.md"
     },
     "instructionsTemplate": {
       "type": "string",
       "title": "Auto-handoff: instructions template file",
-      "description": "Markdown file that tells the fresh session how to read the brief. Created with the defaults on first run.",
+      "description": "Markdown file that tells the fresh session how to read the brief. Created with the defaults on first run. A value in .ai-dlc/auto-handoff.json overrides this row only in a folder Claude Code trusts.",
       "default": "~/.claude/auto-handoff/instructions.md"
     },
     "ignoreFiles": {
@@ -62,7 +62,7 @@
     "viewer": {
       "type": "string",
       "title": "Auto-handoff: viewer address",
-      "description": "Where auto-handoff serves a readable page for each brief, as host:port. \"tailscale\" as the host means this machine's Tailscale IP, so only your tailnet can open it; without Tailscale it serves on 127.0.0.1. Leave blank for no server; the link is then the local file.",
+      "description": "Where auto-handoff serves a readable page for each brief, as host:port. \"tailscale\" as the host means this machine's Tailscale IP, so only your tailnet can open it; without Tailscale it serves on 127.0.0.1. Leave blank for no server; the link is then the local file. A value that is not host:port is ignored and logged. A value in .ai-dlc/auto-handoff.json overrides this row only in a folder Claude Code trusts.",
       "default": ""
     }
   }
