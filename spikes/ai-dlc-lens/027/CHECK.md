@@ -4,9 +4,35 @@ Throwaway mod plugin `ai-dlc-lens-spike-027`. It is not plugin source: it is del
 
 Round 1 (step 17, 2026-10-23) reworks the spike to the lens card the human described on 2026-10-23 (`docs/handoffs/FEAT-20261020-ai-dlc-lens/15-claude-lens-gap-analysis.md`, "Human decisions" 2), following the layout and fallbacks of step 16 (`16-research-assistant-to-orchestrator.handback.md`). `/spike027` now opens the lens card. The round-0 kit (resize, Svg blink, buttons, transcript cards, gate alert) is still there, as `/spike027-kit`, checks K1 to K5 below.
 
+Round 2 (step 17.l1, 2026-10-23) moves the card into the chat. In the round 1 check, two agents spawned in parallel showed only the round-0 card in the chat, because the flowchart lived in the `/spike027` pane. The human asked for it at the top of the card in the chat. Now the first `Agent` call of an assistant message draws, in its own transcript row, one flowchart for every `Agent` call of that message, with parallel spawns side by side. Under the chart are the avatar and arrow Buttons, the collapsible thinking and gathered context, and the native row last. **Check C1 first: spawn two agents in parallel and look at the chat card. No command is needed.** The `/spike027` pane still works as a second view (L1 to L6).
+
 `<REPO>` is the main checkout of this repository, the folder registered as the `ai-dlc-agent-workflow` marketplace (`CLAUDE.md`), switched to the `feat/ai-dlc-lens` branch. `<SPIKES>` = `<REPO>\spikes\ai-dlc-lens`; `<SPIKE>` = `<SPIKES>\027`, this plugin.
 
-## What was checked automatically (2026-10-23, Claude Code 2.1.309)
+## What was checked automatically, round 2 (2026-10-23, Claude Code 2.1.309)
+
+- Render site: `ToolUse`, the transcript row of each tool call. It is the only one of the 15 render sites (`RenderComponent`, `.tsc/claude-code.d.ts`:9835) drawn for an `Agent` call. `ToolGroup` folds only reads, searches and listings (:10492-10542). A row redraws when the `$.state` it read changes (:3491-3492, :4105-4106), so the chart updates live. `Svg` is limited by surface, not by site: VS Code, desktop and mobile have it, the terminal does not (:3946-3995, :10124-10135). The terminal therefore gets a text chart. The parallel calls are grouped by the `turn.step` tool chunks of one message, which carry each call's id and tool name (:14547-14563).
+- `claude plugin validate <SPIKE>`: passed, with the same icon warning. The hooks are the same as in round 1. The module now also reads and writes the state keys `batches` and `cardOpen`.
+- `npx -p typescript@5 tsc -p <SPIKE>\.tsc` (2.1.309 types): exit 0.
+- `claude plugin test <SPIKE>`: 21 passed, 0 failed. The new tests are C1 to C5 and the reworked K4. They check the chat card for one call and for two parallel calls, on VS Code and on the terminal:
+  - the chart comes first;
+  - each avatar has its five lines;
+  - parallel avatars sit side by side, one row under the orchestrator's;
+  - Button keys are unique;
+  - the second row of the message is compact;
+  - a call not yet spawned shows a placeholder;
+  - the blink stops when an agent finishes, with no explicit redraw;
+  - the chat Buttons open the separate panes even in drill-in mode;
+  - thinking and context collapse;
+  - the native row is the last element.
+- One headless run, `claude -p --setting-sources user --plugin-dir <SPIKE> --model haiku --input-format stream-json --output-format stream-json --verbose`, with `/spike027-probe on` and then a request for two Agent calls in one response. Both `tool_use` blocks came in one assistant message, both named `Agent`. The main loop's first step logged `counts.tool: 2` (E2), which is the batch the card groups. The debug log shows no hook error from the module. Headless runs draw no rows, so the card itself still needs C1 to C6 in VS Code.
+- "3 errors during load" after `/reload-plugins`: reproduced headless with `claude -p "/reload-plugins" --debug-file <file>`, which printed `3 errors during load. Run /plugin for details.` None of the three is from 027 or another spike. They come from this machine's setup:
+  - `superpowers@claude-plugins-official` is enabled in `.claude/settings.json` but not installed;
+  - `sonarqube@claude-plugins-official` is in the same state;
+  - two claude.ai-synced `figma` copies declare the same name, so one is not loaded.
+
+  The same log shows `ai-dlc-lens-spike-027` read from `<SPIKE>` and its module loaded with no error. `claude plugin validate` passes for 027, `028/spike028-ka`, `028/spike028-lens` and 029.
+
+## What was checked automatically, round 1 (2026-10-23, Claude Code 2.1.309)
 
 - `claude plugin validate <SPIKE>`: passed, one directory warning (no icon). The module hooks `session.start`, four `command.run`, `agent.spawn`, `turn.start`, `turn.step`, `tool.call`, `turn.complete`, `ui.render` for six panes (`lens-027`, `lens-027-edge`, `lens-027-agent`, the probe panes, `lens-spike-027`), `ToolUse` and `ToolResult`, `classic.SubagentStop` and `classic.Stop`.
 - `npx -p typescript@5 tsc -p <SPIKE>\.tsc` with the 2.1.309 `claude-code.d.ts`: no errors.
@@ -26,9 +52,9 @@ Main route: the repository's own marketplace, `ai-dlc-agent-workflow`, read from
 
 1. In a terminal at `<REPO>`: `claude plugin marketplace update ai-dlc-agent-workflow`, then `claude plugin install ai-dlc-lens-spike-027@ai-dlc-agent-workflow --scope local`.
 2. Run `/reload-plugins` in an open Claude Code session, or open a new one in VS Code.
-3. Type `/spike027`. The pane "AI-DLC lens (spike 027)" opens.
+3. For round 2 nothing needs typing: spawn agents and the card is in the chat (C1). `/spike027` opens the pane view "AI-DLC lens (spike 027)".
 
-The installed copy does not follow edits under `<SPIKE>`. If you installed round 0, uninstall and install it again (the version stays `0.1.0`), then `/reload-plugins`.
+Round 2 is version `0.1.1`. If an earlier round is installed, run `claude plugin marketplace update ai-dlc-agent-workflow` and then `claude plugin update ai-dlc-lens-spike-027@ai-dlc-agent-workflow --scope local`, or uninstall and install it again. Then run `/reload-plugins`, or start a new session. `/reload-plugins` reports "3 errors during load" on this machine; none is the spike's (see the round 2 automatic checks).
 
 Terminal: `claude --plugin-dir "<SPIKE>"` loads the folder for that session only, with nothing installed.
 
@@ -48,7 +74,22 @@ claude plugin uninstall ai-dlc-lens-spike-027@ai-dlc-agent-workflow --scope loca
 
 Keep the `ai-dlc-agent-workflow` marketplace; it also serves `ai-dlc`. If you used the alternative, remove the `CLAUDE_CODE_PLUGIN_DIRS` entry.
 
-## Setup for the round 1 checks
+## Round 2 manual checks: the card in the chat (no command needed)
+
+Setup: open a new session with the orchestrator in VS Code, then ask for two agents in parallel. For example: `In ONE response, make two Agent tool calls in parallel: an ai-dlc:software-engineer and an ai-dlc:sqa-engineer, each told to wait about 20 seconds (sleep 20 with Bash) and then reply OK. Run them in the background.` Look at the chat; do not open `/spike027`.
+
+| # | Design item | What you should see in the chat | Result |
+| --- | --- | --- | --- |
+| C1 | 2. The workflow at the top of the card | The first Agent row of that response sits in a rounded card. The card opens with `Workflow: Orchestrator spawned 2 agents in parallel`, then the flowchart: the orchestrator's avatar on top and the two agents' avatars side by side under it, an arrow to each. The terminal shows a text chart (`-> ● Software Engineer (...)`) in place of the drawing. | |
+| C2 | 3. Five lines under each avatar | Under each avatar: name (model), role, `ctx used/window`, `in X, out Y`, `cache r / w / uncached`. The figures grow while the agents run. The window rules are those of L3. | |
+| C3 | 6. Live status | While an agent runs, its avatar fades in and out about once a second. When it finishes, the avatar turns solid green with no click or scroll. Failed or killed agents are red. A call whose agent has not started yet shows `(?)` as its model until it starts. | |
+| C4 | 4, 5. Panel Buttons | Under the chart there are two rows of Buttons. "Avatars:" has one Button per agent, the orchestrator included. "Arrows:" has one Button per arrow, such as `17 Orchestrator -> Software Engineer` when the brief names a record. An arrow Button opens the `Hand-off: ...` pane (L4). An avatar Button opens the `Agent: ...` pane (L5). They open as separate panes even when the `/spike027` pane is in drill-in mode. | |
+| C5 | 1. Thinking and gathered context | Under the Buttons: `[+] Orchestrator thinking (N chars)` and `[+] Gathered context (N calls)`. Each opens and closes in the card. Thinking may be the `[no thinking text: ...]` line, as in L1. | |
+| C6 | Responses never hidden (US-15, AC-15.5) | The native Agent row is the last part of the card, unchanged, and the subagent's result row under it is unchanged too. The second Agent row of the same response shows one dim line, `lens: agent 2 of 2 spawned in parallel; the flowchart is on the first of them, above`, with its native row under it. Expanding (ctrl+o, or VS Code's own expand) still shows the full responses. | |
+
+Also record: whether the drawing fits the chat width, or is cut off or scrolls (each avatar takes 200 px); and whether a later response that spawns agents again gets its own card.
+
+## Setup for the round 1 checks (the `/spike027` pane, second view)
 
 The card shows what happens in the session after the plugin loaded. So:
 
@@ -70,7 +111,7 @@ Write the outcome of each check (works, does not work, or partly works) in its R
 | L4 | 4. Click an arrow: separate panel with that handoff and hand-back, and its input / output tokens | Press an arrow Button (`17 Orchestrator -> Agent Manager`). | A second pane opens as a tab, titled `Hand-off: ...`: the hand-off's tokens (`in`, `out`, cache r / w / uncached, from the callee's `turn.complete`), the step sums beside them, `Record matched: first line`, `body` or `fallback`, then the handoff record text and the hand-back text, each with its own `[+]`/`[-]`. An agent whose brief names no record shows `fallback` (the newest `*-to-<role>.handoff.md` from before the spawn: check it is the right one) or the red line "No handoff record". | |
 | L4b | 4, fallback | Press `drill-in` beside "Panels:", then an arrow Button. Press `< Back`. | The same content inside the lens pane, with `< Back` on top; Back returns to the flowchart. Use this if L4's second pane does not open or is hard to use. | |
 | L5 | 5. Click an avatar: separate panel with that agent's background tasks and tool calls | Press an avatar Button, while the agent runs and after it finished. Press `Refresh`. Press `View transcript`. Press `[+]` beside "Thinking". | A pane `Agent: <name>` opens as a tab: name (model), role, status, context; "Background tasks" (its running children from `$.agent.list()`, and stop-time `background_tasks`, each marked with its source); "Tool calls" with `...`/`ok`/`ERR`, tool and target, and `step out X / N calls (est.)` (a step's output split over its calls is an estimate, step 16 Q5); its thinking, collapsible. `View transcript` switches the main view to that agent's transcript (pressing it on the orchestrator returns to the main one). | |
-| L6 | 6. Responses never hidden; two-way arrow for a loop; running agents blink green, finished ones green without blinking | Watch the avatars while agents run and after. Make the orchestrator send a `SendMessage` to a running agent, or spawn the same agent type again from the same spawner. Expand an Agent row in the transcript. | Running avatars fade in and out about once a second; finished ones stay solid green; failed or killed ones red; waiting ones amber. The arrow to an agent messaged again or respawned gets an arrowhead at both ends and its Button reads `<->`. In the transcript each Agent row sits inside its `LENS CARD` with the native row and the subagent's full response unchanged (as in K4). | |
+| L6 | 6. Responses never hidden; two-way arrow for a loop; running agents blink green, finished ones green without blinking | Watch the avatars while agents run and after. Make the orchestrator send a `SendMessage` to a running agent, or spawn the same agent type again from the same spawner. Expand an Agent row in the transcript. | Running avatars fade in and out about once a second; finished ones stay solid green; failed or killed ones red; waiting ones amber. The arrow to an agent messaged again or respawned gets an arrowhead at both ends and its Button reads `<->`. In the transcript each Agent row sits inside the round 2 chat card (C1 to C6), with the native row and the subagent's full response unchanged. | |
 
 ## Round 1 experiments (E1 to E8, step 16)
 
@@ -129,9 +170,9 @@ What each outcome means:
 Steps:
 
 1. In section [3], click `[+]`. Click it again.
-2. Run K4 to get a card in the transcript, then click the card's `[+]`.
+2. Run K4 to get a card in the transcript, then click the card's `[+]` beside "Gathered context".
 
-Expected: the label switches between `[+]` and `[-]` and `presses=` goes up by one on every click. In the pane, "expanded content..." appears and disappears. On the card, "input keys: ..." appears and disappears.
+Expected: the label switches between `[+]` and `[-]` and `presses=` goes up by one on every click. In the pane, "expanded content..." appears and disappears. On the card, the list of gathered context appears and disappears.
 
 What each outcome means:
 
@@ -146,7 +187,7 @@ Steps:
 1. In the session, type: `Use the Explore agent to list the files in the hooks folder of this plugin, then reply DONE.`
 2. Optional, for teammates: run a prompt that makes Claude use `SendMessage`.
 
-Expected: the `Agent` call row is drawn inside a rounded card that starts `LENS CARD Agent -> <type> (running)` and changes to `(done)`. The native row is inside the card, below the header. The subagent's result row under it is unchanged. The full response is still visible after expanding with ctrl+o, or the native expand in VS Code. Section [4] of the kit pane counts the cards drawn and the ToolResult rows passed through.
+Expected: the `Agent` call row is drawn inside a rounded card that starts `Workflow: <spawner> spawned 1 agent` (round 2; the round-0 header `LENS CARD` is gone). The native row is inside the card, last. The subagent's result row under it is unchanged. The full response is still visible after expanding with ctrl+o, or the native expand in VS Code. Section [4] of the kit pane counts the cards drawn and the ToolResult rows passed through.
 
 What each outcome means:
 
@@ -178,8 +219,8 @@ What each outcome means:
 
 - `.claude-plugin/plugin.json`: the manifest. Its marketplace entry is in `<REPO>\.claude-plugin\marketplace.json`, with the other three spike plugins and `ai-dlc`.
 - `hooks/hooks.json`: the module and the command `Stop` hook.
-- `hooks/register.tsx`: the hooks module: the lens card (L1 to L6), the probes (E1 to E8) and the round-0 kit (K1 to K5).
-- `hooks/lens.ts`: pure helpers of the card: figure formatting, record matching, the flowchart Svg.
+- `hooks/register.tsx`: the hooks module: the chat card (C1 to C6), the lens pane (L1 to L6), the probes (E1 to E8) and the round-0 kit (K1 to K5).
+- `hooks/lens.ts`: pure helpers of the card: figure formatting, record matching, the flowchart Svg, the batching of parallel Agent calls and the terminal's text chart.
 - `scripts/gate-alert.mjs`: check K5, 5a.
 - `types/index.d.ts`: the `$.state` contract.
 - `tests/spike.test.tsx`: the headless tests.

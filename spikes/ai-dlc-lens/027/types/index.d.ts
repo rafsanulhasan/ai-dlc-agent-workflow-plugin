@@ -58,6 +58,15 @@ export type LensUi = {
   agentThinkingOpen: boolean
 }
 
+/** What `tool.call` saw of one Agent call before `agent.spawn` named its agent: the placeholder avatar. */
+export type LensPending = { type: string; description: string; name: string }
+
+/**
+ * The Agent calls one assistant message made (one `turn.step`), in the order the model made them.
+ * The first one's ToolUse row draws the flowchart for all of them; `parent` is the loop that made them.
+ */
+export type LensBatch = { parent: string; ids: string[]; pending: Record<string, LensPending> }
+
 export type LensDoc = { agent: string; handoff: string; handoffText: string; handback: string; handbackText: string; error: string }
 
 declare module 'claude-code' {
@@ -66,8 +75,6 @@ declare module 'claude-code' {
       tick: boolean
       paneExpanded: boolean
       panePresses: number
-      rowPresses: Record<string, number>
-      rowExpanded: Record<string, boolean>
       forceMode: string
       agents: Shaped<Record<string, LensAgent>>
       order: Shaped<string[]>
@@ -79,6 +86,8 @@ declare module 'claude-code' {
       doc: Shaped<LensDoc>
       probe: boolean
       probeLines: number
+      batches: Shaped<Record<string, LensBatch>>
+      cardOpen: Record<string, boolean>
     }
   }
 }

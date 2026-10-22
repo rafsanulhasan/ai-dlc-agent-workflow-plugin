@@ -6,26 +6,36 @@
 //   L4 arrow -> separate pane `lens-027-edge` (or drill-in): handoff record, hand-back, their tokens
 //   L5 avatar -> separate pane `lens-027-agent` (or drill-in): background tasks, tool calls, thinking
 //   L6 loops draw a two-way arrow; running avatars blink green, finished ones stay green
+// Round 2 (step 17.l1): the same flowchart sits at the top of the chat card. The ToolUse row of the
+// first Agent call of an assistant message draws it for every Agent call of that message (parallel
+// spawns side by side), with the avatar and arrow Buttons, collapsible thinking and gathered context,
+// and the native row last; the message's other Agent rows stay compact, native row kept.
 // Experiments E1-E8 (step 16) log to PROBE-LOG.jsonl while `/spike027-probe on`.
 // The round-0 kit (checks 1-5: resize, Svg blink, buttons, transcript cards, gate alert) is `/spike027-kit`.
 import { atom, read, update } from 'claude-code'
 import type { Register } from 'claude-code'
-import type { LensAgent, LensCall, LensDoc, LensTask, LensUi, Tokens } from '../types'
+import type { LensAgent, LensBatch, LensCall, LensDoc, LensTask, LensUi, Tokens } from '../types'
 import {
+  AGENT_TOOLS,
   CONTEXT_TOOLS,
   ZERO,
   addTokens,
+  addToBatch,
+  batchView,
   cardLines,
   displayName,
   flowchartSvg,
   fmtTokens,
   fromUsage,
+  leadOf,
   matchHandoff,
   mergeStopTasks,
+  notePending,
   parseRecord,
   pickHandback,
   roleOf,
   summarize,
+  textChart,
 } from './lens'
 
 const P = 'ai-dlc-lens-spike-027'
@@ -39,8 +49,6 @@ const PROBE_PANE = 'lens-027-p'
 const tick = atom({ plugin: 'ai-dlc-lens-spike-027', key: 'tick' } as const, false)
 const paneExpanded = atom({ plugin: 'ai-dlc-lens-spike-027', key: 'paneExpanded' } as const, false)
 const panePresses = atom({ plugin: 'ai-dlc-lens-spike-027', key: 'panePresses' } as const, 0)
-const rowPresses = atom({ plugin: 'ai-dlc-lens-spike-027', key: 'rowPresses' } as const, {})
-const rowExpanded = atom({ plugin: 'ai-dlc-lens-spike-027', key: 'rowExpanded' } as const, {})
 const forceMode = atom({ plugin: 'ai-dlc-lens-spike-027', key: 'forceMode' } as const, 'auto')
 
 // ---- round-1 lens state ----
@@ -66,8 +74,11 @@ const uiA = atom({ plugin: 'ai-dlc-lens-spike-027', key: 'ui' } as const, UI0, {
 const docA = atom({ plugin: 'ai-dlc-lens-spike-027', key: 'doc' } as const, DOC0, { shape: 'doc-1' })
 const probeA = atom({ plugin: 'ai-dlc-lens-spike-027', key: 'probe' } as const, false)
 const probeLinesA = atom({ plugin: 'ai-dlc-lens-spike-027', key: 'probeLines' } as const, 0)
+// ---- round-2 chat card state ----
+const batchesA = atom({ plugin: 'ai-dlc-lens-spike-027', key: 'batches' } as const, {}, { shape: 'batches-1' })
+const cardOpenA = atom({ plugin: 'ai-dlc-lens-spike-027', key: 'cardOpen' } as const, {})
 
-// Tools whose rows get a transcript card (kit check 4). `Task` kept for older builds.
+// Tools whose rows get a transcript card. `Task` is the Agent tool's name in headless runs.
 const CARD_TOOLS = new Set(['Agent', 'Task', 'SendMessage'])
 
 // Module-local (reset on reload).
@@ -252,21 +263,24 @@ async function loadDoc($: any, id: string) {
   await plog($, 'E8', { via: 'arrow press', path, ok: doc.handoffText !== '', handback: doc.handback, error: doc.error })
 }
 
-async function openEdge($: any, id: string, title: string) {
+/** `fromChat`: pressed in a chat card, which has no drill-in: always the separate pane. */
+async function openEdge($: any, id: string, title: string, fromChat: boolean) {
   const u = (await read($, uiA)) as LensUi
-  await update($, uiA, x => ({ ...x, edge: id, drill: u.panelMode === 'drill' ? 'edge' : null }))
+  const pane = fromChat || u.panelMode === 'pane'
+  await update($, uiA, x => ({ ...x, edge: id, drill: pane ? (fromChat ? x.drill : null) : 'edge' }))
   await loadDoc($, id)
-  if (u.panelMode === 'pane') {
+  if (pane) {
     const r = await $.ui.open({ id: EDGE, title: cap(`Hand-off: ${title}`, 60) })
     await plog($, 'E3', { open: EDGE, result: r })
   }
 }
 
-async function openAgent($: any, id: string, title: string) {
+async function openAgent($: any, id: string, title: string, fromChat: boolean) {
   const u = (await read($, uiA)) as LensUi
-  await update($, uiA, x => ({ ...x, agent: id, drill: u.panelMode === 'drill' ? 'agent' : null }))
+  const pane = fromChat || u.panelMode === 'pane'
+  await update($, uiA, x => ({ ...x, agent: id, drill: pane ? (fromChat ? x.drill : null) : 'agent' }))
   await refreshList($, 'avatar press')
-  if (u.panelMode === 'pane') {
+  if (pane) {
     const r = await $.ui.open({ id: AGENT, title: cap(`Agent: ${title}`, 60) })
     await plog($, 'E3', { open: AGENT, result: r })
   }
@@ -327,6 +341,11 @@ async function beforeCall($: any, e: any): Promise<CallCtx | null> {
       const agents = (await read($, agentsA)) as Record<string, LensAgent>
       const hit = Object.values(agents).find(a => a.id === to || a.name === to)
       if (hit) await patchAgent($, hit.id, a => ({ ...a, loop: true }))
+    }
+    if (AGENT_TOOLS.has(tool)) {
+      // The chat card's placeholder avatar until agent.spawn names the agent; a call no step reported is a batch of its own.
+      const p = { type: String(input.subagent_type ?? ''), description: String(input.description ?? ''), name: String(input.name ?? '') }
+      await update($, batchesA, m => notePending(m as Record<string, LensBatch>, key, id, p))
     }
     if (probeOn && (tool === 'Agent' || tool === 'Task'))
       await plog($, 'E1', { site: 'tool.call', tool, inputKeys: Object.keys(input), hasPrompt: typeof input.prompt === 'string', firstLine: String(input.prompt ?? '').split(/\r?\n/, 1)[0]?.slice(0, 300) })
@@ -402,16 +421,17 @@ async function backfillThinking($: any, key: string, streamedBlocks: number) {
 }
 
 // ---- drawing helpers (called by name with `$`) ----
-function agentButtons($: any, t: any, order: string[], agents: Record<string, LensAgent>) {
+/** `root`: the chat card's top avatar, whose own arrow (from its spawner) is not in that card. */
+function agentButtons($: any, t: any, order: string[], agents: Record<string, LensAgent>, fromChat: boolean, root: string | null) {
   const { Box, Text, Button } = t
   const ids = order.filter(id => agents[id])
-  const edges = ids.filter(id => agents[id]!.parent !== null)
+  const edges = ids.filter(id => id !== root && agents[id]!.parent !== null)
   return (
     <Box flexDirection="column">
       <Box flexDirection="row" flexWrap="wrap">
         <Text dimColor>Avatars: </Text>
         {ids.map(id => (
-          <Button key={`agent-${id}`} label={displayName(agents[id]!)} onPress={() => openAgent($, id, displayName(agents[id]!))} />
+          <Button key={`agent-${id}`} label={displayName(agents[id]!)} onPress={() => openAgent($, id, displayName(agents[id]!), fromChat)} />
         ))}
       </Box>
       <Box flexDirection="row" flexWrap="wrap">
@@ -422,7 +442,7 @@ function agentButtons($: any, t: any, order: string[], agents: Record<string, Le
           const from = agents[a.parent!]
           const code = a.handoff !== null ? (parseRecord(a.handoff)?.code ?? '') : ''
           const label = `${code !== '' ? code + ' ' : ''}${from ? displayName(from) : '?'} ${a.loop ? '<->' : '->'} ${displayName(a)}`
-          return <Button key={`edge-${id}`} label={label} onPress={() => openEdge($, id, label)} />
+          return <Button key={`edge-${id}`} label={label} onPress={() => openEdge($, id, label, fromChat)} />
         })}
       </Box>
     </Box>
@@ -672,6 +692,8 @@ export const register: Register = on => {
     const thinkingIdx = new Set<number>()
     let usage: Tokens | null = null
     let model = e.model
+    // The first Agent call of this message: its chat row draws the flowchart for all of them (round 2).
+    let lead: string | null = null
     for await (const c of next(e)) {
       const t0 = nowMs()
       counts[c.kind] = (counts[c.kind] ?? 0) + 1
@@ -679,7 +701,18 @@ export const register: Register = on => {
         thinkingChars += c.text.length
         thinkingIdx.add(c.index)
         thinkBuf[key] = (thinkBuf[key] ?? '') + c.text
-      } else if (c.kind === 'tool') ids.push(c.id)
+      } else if (c.kind === 'tool') {
+        ids.push(c.id)
+        if (AGENT_TOOLS.has(c.name)) {
+          lead ??= c.id
+          const l = lead
+          try {
+            await update($, batchesA, m => addToBatch(m as Record<string, LensBatch>, l, key, c.id))
+          } catch (err) {
+            lensFail('turn.step batch', err)
+          }
+        }
+      }
       else if (c.kind === 'stop' && c.usage) {
         usage = fromUsage(c.usage)
         model = c.usage.model
@@ -811,7 +844,7 @@ export const register: Register = on => {
             )
           })
         )}
-        {agentButtons($, t, order, agents)}
+        {agentButtons($, t, order, agents, false, null)}
         {ids.map(id => {
           const l = cardLines(agents[id]!, mainModel, mainWindow)
           return (
@@ -969,39 +1002,111 @@ export const register: Register = on => {
     )
   })
 
-  // ---- kit section 4: transcript card at ToolUse, native row nested; ToolResult left alone (US-15) ----
+  // ---- the chat card (round 2): the flowchart at the top of the first Agent row of a message ----
+  // The native row is always last and unchanged (US-15, AC-15.5): the card wraps it, never replaces it.
   on('ui.render', { component: 'ToolUse' }, async ($, e, next) => {
-    if (!CARD_TOOLS.has(String(e.props.tool))) return next(e)
+    const tool = String(e.props.tool)
+    if (!CARD_TOOLS.has(tool)) return next(e)
     const native = await next(e)
-    const { Box, Text, Button } = $.ui.resolve(e) as any
-    const id = e.props.tool_use_id
-    const counts = (await read($, rowPresses)) as Record<string, number>
-    const opens = (await read($, rowExpanded)) as Record<string, boolean>
-    const isOpen = opens[id] === true
-    const input = (e.props.input ?? {}) as Record<string, unknown>
-    const who = String(input.subagent_type ?? input.to ?? input.name ?? '?')
-    const what = String(input.description ?? input.summary ?? '').slice(0, 80)
     toolUseCards += 1
-
+    const t = $.ui.resolve(e) as any
+    const { Box, Text, Button, Svg } = t
+    const id = e.props.tool_use_id
+    const input = (e.props.input ?? {}) as Record<string, unknown>
+    if (tool === 'SendMessage') {
+      return (
+        <Box flexDirection="column">
+          <Text dimColor>lens: message to {String(input.to ?? '?')}; its arrow in the flowchart is two-way</Text>
+          {native}
+        </Box>
+      )
+    }
+    const batches = (await read($, batchesA)) as Record<string, LensBatch>
+    const agents = (await read($, agentsA)) as Record<string, LensAgent>
+    const lead = leadOf(batches, id)
+    const batch: LensBatch =
+      lead !== null
+        ? batches[lead]!
+        : {
+            parent: Object.values(agents).find(a => a.toolUseId === id)?.parent ?? 'main',
+            ids: [id],
+            pending: { [id]: { type: String(input.subagent_type ?? ''), description: String(input.description ?? ''), name: String(input.name ?? '') } },
+          }
+    if (lead !== null && lead !== id) {
+      return (
+        <Box flexDirection="column">
+          <Text dimColor>
+            lens: agent {batch.ids.indexOf(id) + 1} of {batch.ids.length} spawned in parallel; the flowchart is on the first of them, above
+          </Text>
+          {native}
+        </Box>
+      )
+    }
+    const order = (await read($, orderA)) as string[]
+    const thinking = (await read($, thinkingA)) as Record<string, string>
+    const calls = (await read($, callsA)) as Record<string, LensCall[]>
+    const mainContext = (await read($, contextA)) as LensCall[]
+    const mainWindow = (await read($, mainWindowA)) as number
+    const open = (await read($, cardOpenA)) as Record<string, boolean>
+    const mainModel = agents['main']?.model ?? ''
+    const hasSvg = e.surface !== 'terminal'
+    const on1 = hasSvg ? false : ((await read($, tick)) as boolean)
+    const view = batchView(batch, agents, order)
+    const root = view.agents[batch.parent]!
+    const chart = flowchartSvg(view.ids, view.agents, mainModel, mainWindow)
+    const n = batch.ids.length
+    const th = thinking[batch.parent] ?? ''
+    const ctx = batch.parent === 'main' ? mainContext : (calls[batch.parent] ?? []).filter(c => CONTEXT_TOOLS.has(c.tool))
+    const thOpen = open[`${id}:thinking`] === true
+    const ctxOpen = open[`${id}:context`] === true
+    const toggle = (k: string) =>
+      update($, cardOpenA, m => ({ ...(m as Record<string, boolean>), [`${id}:${k}`]: (m as Record<string, boolean>)[`${id}:${k}`] !== true }))
     return (
       <Box flexDirection="column" borderStyle="round">
+        <Text bold>
+          Workflow: {displayName(root)} spawned {n} agent{n > 1 ? 's in parallel' : ''}
+        </Text>
+        {hasSvg ? (
+          <Svg source={chart.source} alt={`Flowchart: ${displayName(root)} spawned ${n} agent(s)`} isInteractive={true} />
+        ) : (
+          textChart(view.ids, view.agents, mainModel, mainWindow).map(row => {
+            const a = view.agents[row.id]!
+            const running = a.status === 'running' || a.status === 'pending'
+            return (
+              <Box flexDirection="column">
+                <Text>
+                  {row.head}
+                  <Text color={running ? (on1 ? 'green' : 'gray') : a.status === 'failed' || a.status === 'killed' ? 'red' : 'green'}>{'●'}</Text> {row.lines[0]}
+                </Text>
+                {row.lines.slice(1).map(x => (
+                  <Text dimColor>{x}</Text>
+                ))}
+              </Box>
+            )
+          })
+        )}
+        {agentButtons($, t, view.ids, agents, true, batch.parent)}
         <Box flexDirection="row">
-          <Text bold>LENS CARD </Text>
+          <Button key="card-thinking" label={thOpen ? '[-]' : '[+]'} onPress={() => toggle('thinking')} />
           <Text>
-            {e.props.tool} -&gt; {who} {e.props.isRunning ? '(running)' : '(done)'}{' '}
+            {' '}
+            {displayName(root)} thinking ({th.length} chars)
           </Text>
-          <Button
-            key={`row-${id}`}
-            label={isOpen ? '[-]' : '[+]'}
-            onPress={async () => {
-              await update($, rowExpanded, m => ({ ...(m as Record<string, boolean>), [id]: !(m as Record<string, boolean>)[id] }))
-              await update($, rowPresses, m => ({ ...(m as Record<string, number>), [id]: ((m as Record<string, number>)[id] ?? 0) + 1 }))
-            }}
-          />
-          <Text> presses={counts[id] ?? 0}</Text>
         </Box>
-        {what !== '' && <Text dimColor>{what}</Text>}
-        {isOpen && <Text dimColor>input keys: {Object.keys(input).join(', ')}</Text>}
+        {thOpen && <Text dimColor>{th === '' ? '(no thinking chunks seen yet)' : th}</Text>}
+        <Box flexDirection="row">
+          <Button key="card-context" label={ctxOpen ? '[-]' : '[+]'} onPress={() => toggle('context')} />
+          <Text> Gathered context ({ctx.length} calls)</Text>
+        </Box>
+        {ctxOpen &&
+          ctx.map(c => (
+            <Text dimColor>
+              {c.status === 'running' ? '...' : c.status === 'error' ? 'ERR' : 'ok '} {c.tool} {c.summary}
+            </Text>
+          ))}
+        {lensErrors.map(x => (
+          <Text color="red">lens hook error: {x}</Text>
+        ))}
         {native}
       </Box>
     )

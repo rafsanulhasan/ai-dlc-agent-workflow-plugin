@@ -51,37 +51,31 @@ describe('kit', () => {
     }
   })
 
-  test('K4: Agent ToolUse card keeps the engine row inside it (US-15)', async ($, on) => {
+  test('K4: an Agent ToolUse card keeps the engine row inside it, last (US-15)', async ($, on) => {
     on('ui.render', ($, e) => {
       const { Text } = $.ui.resolve(e)
       return <Text>NATIVE ROW</Text>
     })
     for (const surface of SURFACES) {
-      const ui = await $.ui.mount({
-        plugin: PLUGIN,
-        surface,
-        component: 'ToolUse',
-        requestId: 'toolu_1',
-        props: {
-          tool_use_id: 'toolu_1',
-          tool: 'Agent',
-          input: { subagent_type: 'ai-dlc:software-architect', description: 'design', prompt: 'p' },
-          isRunning: false,
-          isErrored: false,
-          isInterrupted: false,
-        },
-      })
-      expect(await ui.find({ type: 'Text', text: /NATIVE ROW/ })).toBeDefined()
-      expect(await ui.find({ type: 'Text', text: /LENS CARD/ })).toBeDefined()
-      const before = await ui.find({ type: 'Text', text: /input keys/ })
-      await ui.press({ key: 'row-toolu_1' })
-      const after = await ui.find({ type: 'Text', text: /input keys/ })
-      expect(after !== undefined).toBe(before === undefined)
-      expect(await ui.find({ type: 'Text', text: /NATIVE ROW/ })).toBeDefined()
+      const ui = await $.ui.mount(toolRow('toolu_1', surface, { subagent_type: 'ai-dlc:software-architect', description: 'design', prompt: 'p' }))
+      expect(await ui.find({ type: 'Text', text: /^Workflow: Main spawned 1 agent$/ })).toBeDefined()
+      const all = await ui.findAll({})
+      expect(all.findIndex((x: any) => x.text === 'NATIVE ROW')).toBe(all.length - 1)
       await ui.unmount()
     }
   })
 })
+
+/** A transcript row of a tool call, as the engine mounts it. */
+function toolRow(id: string, surface: (typeof SURFACES)[number], input: Record<string, unknown>, tool = 'Agent') {
+  return {
+    plugin: PLUGIN,
+    surface,
+    component: 'ToolUse',
+    requestId: id,
+    props: { tool_use_id: id, tool, input, isRunning: false, isErrored: false, isInterrupted: false },
+  } as const
+}
 
 // ---------------- round-1 helpers ----------------
 describe('figures', () => {
@@ -117,8 +111,18 @@ describe('figures', () => {
 const RECORD = 'docs/handoffs/R/17-orchestrator-to-agent-manager.handoff.md'
 const HANDBACK = 'docs/handoffs/R/17-agent-manager-to-orchestrator.handback.md'
 
-async function seed($: any, on: any) {
+/**
+ * `parallel`: main's step asks for two Agent calls (toolu_1 -> a1 agent-manager, toolu_2 -> a2
+ * sqa-engineer) as one message; `spawnSecond: false` leaves toolu_2 unspawned; `complete: false`
+ * leaves a1 running.
+ */
+async function seed($: any, on: any, opts: { parallel?: boolean; spawnSecond?: boolean; complete?: boolean } = {}) {
+  const { parallel = false, spawnSecond = true, complete = true } = opts
   const opened: string[] = []
+  on('ui.render', ($s: any, e: any) => {
+    const { Text } = $s.ui.resolve(e)
+    return <Text>NATIVE ROW</Text>
+  })
   on('command.register', () => ({ value: { command: 'x' } }))
   on('session.start', (_: unknown, e: any) => ({ cwd: e.cwd }))
   on('session.usage', () => ({ value: { startedAt: 0, context: { window: 1_000_000, tokens: 10 }, rateLimits: [] } }))
@@ -131,9 +135,13 @@ async function seed($: any, on: any) {
     opened.push(e.id)
     return { value: { isPlaced: true } }
   })
-  on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: 'a1' }))
+  on('agent.spawn', (_: unknown, e: any) => ({ model: 'claude-opus-5-5', agentId: e.tool_use_id === 'toolu_2' ? 'a2' : 'a1' }))
   on('turn.step', async function* (_: unknown, e: any) {
     if (e.agentId === undefined) {
+      if (parallel) {
+        yield { kind: 'tool', index: 0, id: 'toolu_1', name: 'Agent' }
+        yield { kind: 'tool', index: 1, id: 'toolu_2', name: 'Agent' }
+      }
       yield { kind: 'stop', stopReason: 'end_turn', usage: { input_tokens: 5000, output_tokens: 1000, cache_read_input_tokens: 100_000, cache_creation_input_tokens: 2000, model: 'claude-opus-5-5' } }
       return { turnId: 'm', index: 0, answer: 'ok', toolUses: [], stopReason: 'end_turn', usage: null }
     }
@@ -150,6 +158,10 @@ async function seed($: any, on: any) {
   for await (const _ of $.turn.step({ turnId: 'm', index: 0, model: 'claude-opus-5-5', messageCount: 1 })) {
     // drain the main step
   }
+  if (parallel) {
+    await $.tool.call({ tool: 'Agent', subagent_type: 'ai-dlc:agent-manager', description: 'rework', prompt: 'p', tool_use_id: 'toolu_1' })
+    await $.tool.call({ tool: 'Agent', subagent_type: 'ai-dlc:sqa-engineer', description: 'tests', prompt: 'p', tool_use_id: 'toolu_2' })
+  }
   await $.agent.spawn({
     tool_use_id: 'toolu_1',
     prompt: `Your handoff record is ${RECORD} (root x).\nDo it.`,
@@ -165,6 +177,22 @@ async function seed($: any, on: any) {
     // drain
   }
   await $.tool.call({ tool: 'Read', file_path: 'x.md', tool_use_id: 'toolu_9', agentId: 'a1' })
+  if (parallel && spawnSecond)
+    await $.agent.spawn({
+      tool_use_id: 'toolu_2',
+      prompt: 'Your handoff record is docs/handoffs/R/17.2-orchestrator-to-sqa-engineer.handoff.md.\nTest it.',
+      description: 'tests',
+      subagentType: 'ai-dlc:sqa-engineer',
+      provider: { plugin: 'ai-dlc', tier: 'user' },
+      parentModel: 'claude-opus-5-5',
+      background: true,
+      fork: false,
+    })
+  if (complete) await completeA1($)
+  return opened
+}
+
+async function completeA1($: any) {
   await $.turn.complete({
     reason: 'answer',
     answer: 'done',
@@ -174,8 +202,112 @@ async function seed($: any, on: any) {
     agentId: 'a1',
     usage: { input_tokens: 1000, output_tokens: 200_000, cache_read_input_tokens: 90_000, cache_creation_input_tokens: 9_000, model: 'claude-opus-5-5' },
   })
-  return opened
 }
+
+const svgSource = async (ui: any): Promise<string> => {
+  const svg: any = await ui.find({ type: 'Svg' })
+  return String(svg?.props?.source ?? svg?.source ?? '')
+}
+
+// ---------------- round-2 chat card (the ToolUse row of an Agent call) ----------------
+describe('chat card', () => {
+  test('C1: one Agent call: the flowchart at the top, five lines per avatar, Buttons, native row last', async ($, on) => {
+    await seed($, on)
+    for (const surface of SURFACES) {
+      const ui = await $.ui.mount(toolRow('toolu_1', surface, { subagent_type: 'ai-dlc:agent-manager', description: 'rework', prompt: 'p' }))
+      const all = await ui.findAll({})
+      expect(all.findIndex((x: any) => x.type === 'Text' && /^Workflow: Orchestrator spawned 1 agent$/.test(String(x.text)))).toBeGreaterThan(-1)
+      expect(all.findIndex((x: any) => x.text === 'NATIVE ROW')).toBe(all.length - 1)
+      if (surface === 'vscode') {
+        const src = await svgSource(ui)
+        for (const line of ['Orchestrator (opus/opus-5.5)', 'orchestrator (main)', 'Agent Manager (opus/opus-5.5)', '>agent-manager<', 'ctx 300K/1M', 'in 100K, out 200K', 'cache r 90K / w 9K / uncached 1K'])
+          expect(src.includes(line)).toBe(true)
+        const svgAt = all.findIndex((x: any) => x.type === 'Svg')
+        expect(svgAt).toBeGreaterThan(-1)
+        expect(svgAt).toBeLessThan(all.findIndex((x: any) => x.type === 'Button'))
+      } else {
+        expect(await ui.find({ type: 'Svg' })).toBe(undefined)
+        expect(await ui.find({ type: 'Text', text: /-> .*Agent Manager \(opus\/opus-5\.5\)/ })).toBeDefined()
+        expect(await ui.find({ type: 'Text', text: /^\s+agent-manager$/ })).toBeDefined()
+        expect(await ui.find({ type: 'Text', text: /^\s+ctx 300K\/1M$/ })).toBeDefined()
+        expect(await ui.find({ type: 'Text', text: /^\s+in 100K, out 200K$/ })).toBeDefined()
+        expect(await ui.find({ type: 'Text', text: /^\s+cache r 90K \/ w 9K \/ uncached 1K$/ })).toBeDefined()
+      }
+      expect(await ui.find({ type: 'Button', key: 'agent-main' })).toBeDefined()
+      expect(await ui.find({ type: 'Button', key: 'agent-a1' })).toBeDefined()
+      expect((await ui.find({ type: 'Button', key: 'edge-a1' }))?.text).toMatch(/^17 Orchestrator -> Agent Manager$/)
+      expect(await ui.find({ type: 'Button', key: 'card-thinking' })).toBeDefined()
+      expect(await ui.find({ type: 'Button', key: 'card-context' })).toBeDefined()
+      await ui.unmount()
+    }
+  })
+
+  test('C2: two parallel Agent calls: one flowchart on the first row, both agents side by side; the second row compact', async ($, on) => {
+    await seed($, on, { parallel: true })
+    const first = await $.ui.mount(toolRow('toolu_1', 'vscode', { subagent_type: 'ai-dlc:agent-manager', description: 'rework', prompt: 'p' }))
+    expect(await first.find({ type: 'Text', text: /^Workflow: Orchestrator spawned 2 agents in parallel$/ })).toBeDefined()
+    const src = await svgSource(first)
+    expect(src.includes('Agent Manager (opus/opus-5.5)')).toBe(true)
+    expect(src.includes('Sqa Engineer (opus/opus-5.5)')).toBe(true)
+    // Side by side: both avatars on one row, under the orchestrator's.
+    const cys = [...src.matchAll(/<circle cx="(\d+)" cy="(\d+)"/g)].map(m => [Number(m[1]), Number(m[2])])
+    expect(cys.length).toBe(3)
+    expect(cys[1]![1]).toBe(cys[2]![1])
+    expect(cys[1]![0]).not.toBe(cys[2]![0])
+    expect(cys[0]![1]).toBeLessThan(cys[1]![1]!)
+    const keys = (await first.findAll({ type: 'Button' })).map((b: any) => b.key)
+    expect(new Set(keys).size).toBe(keys.length)
+    for (const k of ['agent-main', 'agent-a1', 'agent-a2', 'edge-a1', 'edge-a2']) expect(keys).toContain(k)
+    expect((await first.find({ type: 'Button', key: 'edge-a2' }))?.text).toMatch(/^17\.2 Orchestrator -> Sqa Engineer$/)
+    await first.unmount()
+    const second = await $.ui.mount(toolRow('toolu_2', 'vscode', { subagent_type: 'ai-dlc:sqa-engineer', description: 'tests', prompt: 'p' }))
+    expect(await second.find({ type: 'Svg' })).toBe(undefined)
+    expect(await second.find({ type: 'Text', text: /agent 2 of 2 spawned in parallel; the flowchart is on the first of them/ })).toBeDefined()
+    expect(await second.find({ type: 'Text', text: 'NATIVE ROW' })).toBeDefined()
+    await second.unmount()
+  })
+
+  test('C3: live: running avatars blink, finished ones stop; an unspawned call shows a placeholder', async ($, on) => {
+    await seed($, on, { parallel: true, spawnSecond: false, complete: false })
+    const ui = await $.ui.mount(toolRow('toolu_1', 'vscode', { subagent_type: 'ai-dlc:agent-manager', description: 'rework', prompt: 'p' }))
+    let src = await svgSource(ui)
+    expect(src.includes('Sqa Engineer (?)')).toBe(true)
+    expect((src.match(/<animate /g) ?? []).length).toBe(2)
+    await completeA1($)
+    src = await svgSource(ui)
+    expect((src.match(/<animate /g) ?? []).length).toBe(1)
+    await ui.unmount()
+  })
+
+  test('C4: chat Buttons open the separate panes even in drill-in mode; thinking and context collapse', async ($, on) => {
+    const opened = await seed($, on)
+    await $.tool.call({ tool: 'Grep', pattern: 'needle', tool_use_id: 'toolu_m1' })
+    const pane0 = await $.ui.mount({ ...pane('lens-027'), surface: 'vscode' })
+    await pane0.press({ key: 'mode-drill' })
+    await pane0.unmount()
+    const ui = await $.ui.mount(toolRow('toolu_1', 'vscode', { subagent_type: 'ai-dlc:agent-manager', description: 'rework', prompt: 'p' }))
+    await ui.press({ key: 'edge-a1' })
+    await ui.press({ key: 'agent-a1' })
+    expect(opened).toContain('lens-027-edge')
+    expect(opened).toContain('lens-027-agent')
+    expect(await ui.find({ type: 'Text', text: /Grep needle/ })).toBe(undefined)
+    await ui.press({ key: 'card-context' })
+    expect(await ui.find({ type: 'Text', text: /Grep needle/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /no thinking chunks seen yet/ })).toBe(undefined)
+    await ui.press({ key: 'card-thinking' })
+    expect(await ui.find({ type: 'Text', text: /no thinking chunks seen yet/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: 'NATIVE ROW' })).toBeDefined()
+    await ui.unmount()
+  })
+
+  test('C5: a SendMessage row keeps its native row under one lens line', async ($, on) => {
+    await seed($, on)
+    const ui = await $.ui.mount(toolRow('toolu_s', 'vscode', { to: 'a1', message: 'again' }, 'SendMessage'))
+    expect(await ui.find({ type: 'Text', text: /lens: message to a1/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: 'NATIVE ROW' })).toBeDefined()
+    await ui.unmount()
+  })
+})
 
 describe('lens card', () => {
   test('L2+L3: an avatar per agent with its five lines, a Button per avatar and per arrow', async ($, on) => {

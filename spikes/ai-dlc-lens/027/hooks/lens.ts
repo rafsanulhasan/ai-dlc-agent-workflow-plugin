@@ -1,5 +1,5 @@
-// ITEM-027 spike, round 1 (step 17): pure helpers of the lens card. No `$` here.
-import type { LensAgent, LensTask, Tokens } from '../types'
+// ITEM-027 spike, rounds 1-2 (steps 17, 17.l1): pure helpers of the lens card. No `$` here.
+import type { LensAgent, LensBatch, LensPending, LensTask, Tokens } from '../types'
 
 export const ZERO: Tokens = { in: 0, out: 0, cr: 0, cw: 0 }
 
@@ -198,7 +198,7 @@ export function flowchartSvg(order: readonly string[], agents: Record<string, Le
         `</circle>`,
       `<text x="${p.x}" y="${p.y + 5}" text-anchor="middle" font-size="14" font-weight="bold" fill="#fff">${esc(initials(displayName(a)))}</text>`,
     )
-    const lines = [l.title, l.role, l.ctx, l.io, l.cache]
+    const lines = [l.title, l.role, `ctx ${l.ctx}`, l.io, l.cache]
     lines.forEach((t, i) =>
       parts.push(`<text x="${p.x}" y="${p.y + R + 18 + i * 15}" text-anchor="middle" font-size="${i === 0 ? 12 : 10.5}"${i === 0 ? ' font-weight="bold"' : ''} fill="#90a4ae">${esc(t)}</text>`),
     )
@@ -230,3 +230,97 @@ export function summarize(tool: string, input: Record<string, unknown>): string 
 
 /** Tools whose results are gathered context for the main loop (design item 1). */
 export const CONTEXT_TOOLS = new Set(['Read', 'Grep', 'Glob', 'WebFetch', 'WebSearch', 'Bash', 'Skill', 'Agent', 'LSP', 'ToolSearch'])
+
+// ---- round 2 (step 17.l1): the chat card ----
+
+/** The tools that spawn an agent: `Agent`, and `Task` as headless runs name it. */
+export const AGENT_TOOLS = new Set(['Agent', 'Task'])
+
+/** The batch an Agent call belongs to: the id of the first Agent call of its message, or null when none was seen. */
+export function leadOf(batches: Record<string, LensBatch>, toolUseId: string): string | null {
+  if (batches[toolUseId]) return toolUseId
+  for (const [lead, b] of Object.entries(batches)) if (b.ids.includes(toolUseId)) return lead
+  return null
+}
+
+/** Adds an Agent call to the batch of its message (`lead` is that message's first Agent call). */
+export function addToBatch(batches: Record<string, LensBatch>, lead: string, parent: string, toolUseId: string): Record<string, LensBatch> {
+  const b = batches[lead] ?? { parent, ids: [], pending: {} }
+  if (b.ids.includes(toolUseId)) return batches
+  return { ...batches, [lead]: { ...b, ids: [...b.ids, toolUseId] } }
+}
+
+/** Notes what `tool.call` saw of an Agent call; a call no step reported becomes a batch of its own. */
+export function notePending(batches: Record<string, LensBatch>, parent: string, toolUseId: string, p: LensPending): Record<string, LensBatch> {
+  const lead = leadOf(batches, toolUseId)
+  const base = lead === null ? addToBatch(batches, toolUseId, parent, toolUseId) : batches
+  const key = lead ?? toolUseId
+  const b = base[key]!
+  return { ...base, [key]: { ...b, pending: { ...b.pending, [toolUseId]: p } } }
+}
+
+/** The avatar of an Agent call whose agent `agent.spawn` has not named yet. */
+export function pendingAgent(toolUseId: string, parent: string, p: LensPending | undefined): LensAgent {
+  return {
+    id: `call:${toolUseId}`,
+    parent,
+    type: p?.type ?? '',
+    name: p?.name ?? '',
+    description: p?.description ?? '',
+    model: '',
+    status: 'pending',
+    toolUseId,
+    steps: ZERO,
+    turns: ZERO,
+    last: null,
+    handoff: null,
+    handoffHow: 'none',
+    loop: false,
+    startedAt: 0,
+    endedAt: null,
+    bg: [],
+  }
+}
+
+/**
+ * What the chat card draws for one batch: the loop that made the calls on top, each call's agent
+ * (or its placeholder) under it, then what those agents spawned in turn.
+ */
+export function batchView(batch: LensBatch, agents: Record<string, LensAgent>, order: readonly string[]): { ids: string[]; agents: Record<string, LensAgent>; members: string[] } {
+  const out: Record<string, LensAgent> = {}
+  const ids: string[] = []
+  const root: LensAgent = agents[batch.parent] ?? { ...pendingAgent('', '', undefined), id: batch.parent, parent: null, status: 'running' }
+  out[root.id] = { ...root, parent: null }
+  ids.push(root.id)
+  const byCall = new Map<string, LensAgent>()
+  for (const a of Object.values(agents)) if (a.toolUseId !== '') byCall.set(a.toolUseId, a)
+  const members: string[] = []
+  for (const tu of batch.ids) {
+    const a = byCall.get(tu) ?? pendingAgent(tu, root.id, batch.pending[tu])
+    out[a.id] = { ...a, parent: root.id }
+    ids.push(a.id)
+    members.push(a.id)
+  }
+  for (let grew = true; grew; ) {
+    grew = false
+    for (const id of order) {
+      const a = agents[id]
+      if (!a || out[id] || a.parent === null || a.parent === root.id || !out[a.parent]) continue
+      out[id] = a
+      ids.push(id)
+      grew = true
+    }
+  }
+  return { ids, agents: out, members }
+}
+
+/** The terminal's flowchart: one line per avatar, indented by depth, its other four lines under it. */
+export function textChart(ids: readonly string[], agents: Record<string, LensAgent>, mainModel: string, mainWindow: number): { id: string; head: string; lines: string[] }[] {
+  const { placed } = layout(ids, agents)
+  return placed.map(p => {
+    const a = agents[p.id]!
+    const l = cardLines(a, mainModel, mainWindow)
+    const pad = '   '.repeat(p.depth)
+    return { id: p.id, head: `${pad}${a.parent !== null ? (a.loop ? '<-> ' : '-> ') : ''}`, lines: [l.title, l.role, `ctx ${l.ctx}`, l.io, l.cache].map((x, i) => (i === 0 ? x : `${pad}${a.parent !== null ? '    ' : ''}  ${x}`)) }
+  })
+}
