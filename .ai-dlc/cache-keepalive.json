@@ -1,0 +1,33 @@
+{
+  "$schema": "./cache-keepalive.schema.json",
+  "enabled": null,
+  "scope": "session",
+  "status": null,
+  "pingPrompt": null,
+  "hitThreshold": null,
+  "overagePercent": null,
+  "minDuration": null,
+  "sessionOverridesMax": null,
+  "oneHour": {
+    "enabled": null,
+    "ttl": null,
+    "pingEvery": null,
+    "keepWarmFor": "8h",
+    "maxPings": null
+  },
+  "fiveMinute": {
+    "enabled": null,
+    "ttl": null,
+    "pingEvery": null,
+    "keepWarmFor": null,
+    "maxPings": null
+  },
+  "budgetMultiplier": null,
+  "compactOnCap": null,
+  "compactInstructions": null,
+  "writeMult": null,
+  "outputMult": null,
+  "readPrice": null,
+  "compactCostGuess": null,
+  "summaryRatioGuess": null
+}

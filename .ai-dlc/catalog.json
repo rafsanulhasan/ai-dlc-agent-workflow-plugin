@@ -29,6 +29,8 @@
     "architecture-narrative",
     "architecture-review",
     "bunit-blazor-testing",
+    "cache-keepalive",
+    "cache-keepalive-config",
     "command-management",
     "configure-auto-handoff",
     "csharp-architecture-testing",
