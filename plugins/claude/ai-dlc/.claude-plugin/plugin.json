@@ -23,9 +23,6 @@
     "mutation-testing",
     "spec-driven-development"
   ],
-  "dependencies": [
-    "cache-keepalive"
-  ],
   "userConfig": {
     "thresholdPercent": {
       "type": "number",
@@ -64,6 +61,136 @@
       "title": "Auto-handoff: viewer address",
       "description": "Where auto-handoff serves a readable page for each brief, as host:port. \"tailscale\" as the host means this machine's Tailscale IP, so only your tailnet can open it; without Tailscale it serves on 127.0.0.1. Leave blank for no server; the link is then the local file. A value that is not host:port is ignored and logged. A value in .ai-dlc/auto-handoff.json overrides this row only in a folder Claude Code trusts.",
       "default": ""
+    },
+    "keepaliveEnabled": {
+      "type": "boolean",
+      "title": "Keep-alive: on",
+      "description": "Pings the prompt cache while background tasks run (Claude Code only). Off: no pings, no status lines. Unset: the built-in default, listed in the plugin's hooks/keepalive/README.md. Overridden by AI_DLC_KEEPALIVE_ENABLED in a settings env or by enabled in .ai-dlc/cache-keepalive.json. A value from the two committed files, the env of .claude/settings.json and .ai-dlc/cache-keepalive.json, overrides this row only in a folder Claude Code trusts (see the keep-alive README, hooks/keepalive/README.md, Workspace trust); one from the env of .claude/settings.local.json always does, and this row itself is never gated."
+    },
+    "keepaliveScope": {
+      "type": "string",
+      "title": "Keep-alive: scope of /ai-dlc:keepalive <duration>",
+      "description": "session (this session only) or machine (every session on this machine until /ai-dlc:keepalive clear --machine), unless --session or --machine is given. Unset: the built-in default, listed in the plugin's hooks/keepalive/README.md. Overridden by AI_DLC_KEEPALIVE_SCOPE in a settings env or by scope in .ai-dlc/cache-keepalive.json."
+    },
+    "keepaliveStatus": {
+      "type": "boolean",
+      "title": "Keep-alive: show the status lines",
+      "description": "Shows one status line per cache lifetime (1h and 5m) under the prompt. Unset: the built-in default, listed in the plugin's hooks/keepalive/README.md. Overridden by AI_DLC_KEEPALIVE_STATUS in a settings env or by status in .ai-dlc/cache-keepalive.json."
+    },
+    "keepalivePingPrompt": {
+      "type": "string",
+      "title": "Keep-alive: ping prompt",
+      "description": "The one-line prompt each ping sends as a fork of the conversation. Unset: the built-in default, listed in the plugin's hooks/keepalive/README.md. Overridden by AI_DLC_KEEPALIVE_PING_PROMPT in a settings env or by pingPrompt in .ai-dlc/cache-keepalive.json. A value from the two committed files, the env of .claude/settings.json and .ai-dlc/cache-keepalive.json, overrides this row only in a folder Claude Code trusts (see the keep-alive README, hooks/keepalive/README.md, Workspace trust); one from the env of .claude/settings.local.json always does, and this row itself is never gated."
+    },
+    "keepaliveHitThreshold": {
+      "type": "number",
+      "title": "Keep-alive: hit threshold",
+      "description": "A ping counts as a cache hit when more than this share of its input, 0 up to 1, is read from the cache; a miss stops that track. Unset: the built-in default, listed in the plugin's hooks/keepalive/README.md. Overridden by AI_DLC_KEEPALIVE_HIT_THRESHOLD in a settings env or by hitThreshold in .ai-dlc/cache-keepalive.json."
+    },
+    "keepaliveOveragePercent": {
+      "type": "number",
+      "title": "Keep-alive: overage percent",
+      "description": "No pings while any plan usage window is at or above this percent, 1 to 100. Unset: the built-in default, listed in the plugin's hooks/keepalive/README.md. Overridden by AI_DLC_KEEPALIVE_OVERAGE_PERCENT in a settings env or by overagePercent in .ai-dlc/cache-keepalive.json."
+    },
+    "keepaliveMinDuration": {
+      "type": "string",
+      "title": "Keep-alive: shortest duration",
+      "description": "The shortest keep-warm, lifetime or interval accepted from your settings, as <n>m, <n>h or <n>d (at least 1 second). Unset: the built-in default, listed in the plugin's hooks/keepalive/README.md. Overridden by AI_DLC_KEEPALIVE_MIN_DURATION in a settings env or by minDuration in .ai-dlc/cache-keepalive.json."
+    },
+    "keepaliveSessionOverridesMax": {
+      "type": "number",
+      "title": "Keep-alive: session overrides kept",
+      "description": "How many sessions' /ai-dlc:keepalive overrides the store keeps; older ones are dropped. Unset: the built-in default, listed in the plugin's hooks/keepalive/README.md. Overridden by AI_DLC_KEEPALIVE_SESSION_OVERRIDES_MAX in a settings env or by sessionOverridesMax in .ai-dlc/cache-keepalive.json."
+    },
+    "keepaliveOneHourEnabled": {
+      "type": "boolean",
+      "title": "Keep-alive: 1h track on",
+      "description": "Pings a cache written with the 1-hour lifetime. Unset: the built-in default, listed in the plugin's hooks/keepalive/README.md. Overridden by AI_DLC_KEEPALIVE_1H_ENABLED in a settings env or by oneHour.enabled in .ai-dlc/cache-keepalive.json. A value from the two committed files, the env of .claude/settings.json and .ai-dlc/cache-keepalive.json, overrides this row only in a folder Claude Code trusts (see the keep-alive README, hooks/keepalive/README.md, Workspace trust); one from the env of .claude/settings.local.json always does, and this row itself is never gated."
+    },
+    "keepaliveOneHourTtl": {
+      "type": "string",
+      "title": "Keep-alive: 1h track, cache lifetime",
+      "description": "The lifetime the 1h track assumes after each ping, as <n>m, <n>h or <n>d. Unset: the built-in default, listed in the plugin's hooks/keepalive/README.md. Overridden by AI_DLC_KEEPALIVE_1H_TTL in a settings env or by oneHour.ttl in .ai-dlc/cache-keepalive.json."
+    },
+    "keepaliveOneHourPingEvery": {
+      "type": "string",
+      "title": "Keep-alive: 1h track, ping every",
+      "description": "The 1h track's interval; must be shorter than its lifetime. Unset: the built-in default, listed in the plugin's hooks/keepalive/README.md. Overridden by AI_DLC_KEEPALIVE_1H_PING_EVERY in a settings env or by oneHour.pingEvery in .ai-dlc/cache-keepalive.json. A value from the two committed files, the env of .claude/settings.json and .ai-dlc/cache-keepalive.json, overrides this row only in a folder Claude Code trusts (see the keep-alive README, hooks/keepalive/README.md, Workspace trust); one from the env of .claude/settings.local.json always does, and this row itself is never gated."
+    },
+    "keepaliveOneHourKeepWarmFor": {
+      "type": "string",
+      "title": "Keep-alive: 1h track, keep warm for",
+      "description": "How long the 1h track keeps pinging after a turn ends with background tasks. /ai-dlc:keepalive <duration> overrides it. Unset: the built-in default, listed in the plugin's hooks/keepalive/README.md. Overridden by AI_DLC_KEEPALIVE_1H_KEEP_WARM_FOR in a settings env or by oneHour.keepWarmFor in .ai-dlc/cache-keepalive.json. A value from the two committed files, the env of .claude/settings.json and .ai-dlc/cache-keepalive.json, overrides this row only in a folder Claude Code trusts (see the keep-alive README, hooks/keepalive/README.md, Workspace trust); one from the env of .claude/settings.local.json always does, and this row itself is never gated."
+    },
+    "keepaliveOneHourMaxPings": {
+      "type": "number",
+      "title": "Keep-alive: 1h track, ping limit",
+      "description": "Most pings per wait on the 1h track; 0 means no limit. Unset: the built-in default, listed in the plugin's hooks/keepalive/README.md. Overridden by AI_DLC_KEEPALIVE_1H_MAX_PINGS in a settings env or by oneHour.maxPings in .ai-dlc/cache-keepalive.json. A value from the two committed files, the env of .claude/settings.json and .ai-dlc/cache-keepalive.json, overrides this row only in a folder Claude Code trusts (see the keep-alive README, hooks/keepalive/README.md, Workspace trust); one from the env of .claude/settings.local.json always does, and this row itself is never gated."
+    },
+    "keepaliveFiveMinuteEnabled": {
+      "type": "boolean",
+      "title": "Keep-alive: 5m track on",
+      "description": "Pings a cache written with the 5-minute lifetime. Unset: the built-in default, listed in the plugin's hooks/keepalive/README.md. Overridden by AI_DLC_KEEPALIVE_5M_ENABLED in a settings env or by fiveMinute.enabled in .ai-dlc/cache-keepalive.json. A value from the two committed files, the env of .claude/settings.json and .ai-dlc/cache-keepalive.json, overrides this row only in a folder Claude Code trusts (see the keep-alive README, hooks/keepalive/README.md, Workspace trust); one from the env of .claude/settings.local.json always does, and this row itself is never gated."
+    },
+    "keepaliveFiveMinuteTtl": {
+      "type": "string",
+      "title": "Keep-alive: 5m track, cache lifetime",
+      "description": "The lifetime the 5m track assumes after each ping, as <n>m, <n>h or <n>d. Unset: the built-in default, listed in the plugin's hooks/keepalive/README.md. Overridden by AI_DLC_KEEPALIVE_5M_TTL in a settings env or by fiveMinute.ttl in .ai-dlc/cache-keepalive.json."
+    },
+    "keepaliveFiveMinutePingEvery": {
+      "type": "string",
+      "title": "Keep-alive: 5m track, ping every",
+      "description": "The 5m track's interval; must be shorter than its lifetime. Unset: the built-in default, listed in the plugin's hooks/keepalive/README.md. Overridden by AI_DLC_KEEPALIVE_5M_PING_EVERY in a settings env or by fiveMinute.pingEvery in .ai-dlc/cache-keepalive.json. A value from the two committed files, the env of .claude/settings.json and .ai-dlc/cache-keepalive.json, overrides this row only in a folder Claude Code trusts (see the keep-alive README, hooks/keepalive/README.md, Workspace trust); one from the env of .claude/settings.local.json always does, and this row itself is never gated."
+    },
+    "keepaliveFiveMinuteKeepWarmFor": {
+      "type": "string",
+      "title": "Keep-alive: 5m track, keep warm for",
+      "description": "How long the 5m track keeps pinging after a turn ends with background tasks. /ai-dlc:keepalive <duration> overrides it. Unset: the built-in default, listed in the plugin's hooks/keepalive/README.md. Overridden by AI_DLC_KEEPALIVE_5M_KEEP_WARM_FOR in a settings env or by fiveMinute.keepWarmFor in .ai-dlc/cache-keepalive.json. A value from the two committed files, the env of .claude/settings.json and .ai-dlc/cache-keepalive.json, overrides this row only in a folder Claude Code trusts (see the keep-alive README, hooks/keepalive/README.md, Workspace trust); one from the env of .claude/settings.local.json always does, and this row itself is never gated."
+    },
+    "keepaliveFiveMinuteMaxPings": {
+      "type": "number",
+      "title": "Keep-alive: 5m track, ping limit",
+      "description": "Most pings per wait on the 5m track; 0 means no limit. Unset: the built-in default, listed in the plugin's hooks/keepalive/README.md. Overridden by AI_DLC_KEEPALIVE_5M_MAX_PINGS in a settings env or by fiveMinute.maxPings in .ai-dlc/cache-keepalive.json. A value from the two committed files, the env of .claude/settings.json and .ai-dlc/cache-keepalive.json, overrides this row only in a folder Claude Code trusts (see the keep-alive README, hooks/keepalive/README.md, Workspace trust); one from the env of .claude/settings.local.json always does, and this row itself is never gated."
+    },
+    "keepaliveBudgetMultiplier": {
+      "type": "number",
+      "title": "Keep-alive: spend limit (times the context)",
+      "description": "Pings stop once they have cost this many times the context's tokens, in input-token equivalents; 0 turns the spend limit off. Unset: the built-in default, listed in the plugin's hooks/keepalive/README.md. Overridden by AI_DLC_KEEPALIVE_BUDGET_MULTIPLIER in a settings env or by budgetMultiplier in .ai-dlc/cache-keepalive.json. A value from the two committed files, the env of .claude/settings.json and .ai-dlc/cache-keepalive.json, overrides this row only in a folder Claude Code trusts (see the keep-alive README, hooks/keepalive/README.md, Workspace trust); one from the env of .claude/settings.local.json always does, and this row itself is never gated."
+    },
+    "keepaliveCompactOnCap": {
+      "type": "boolean",
+      "title": "Keep-alive: compact at the spend limit",
+      "description": "Compacts the conversation while the cache is still warm when the spend limit is reached, if that costs less than re-caching it. Loses context detail. Unset: the built-in default, listed in the plugin's hooks/keepalive/README.md. Overridden by AI_DLC_KEEPALIVE_COMPACT_ON_CAP in a settings env or by compactOnCap in .ai-dlc/cache-keepalive.json. A value from the two committed files, the env of .claude/settings.json and .ai-dlc/cache-keepalive.json, overrides this row only in a folder Claude Code trusts (see the keep-alive README, hooks/keepalive/README.md, Workspace trust); one from the env of .claude/settings.local.json always does, and this row itself is never gated."
+    },
+    "keepaliveCompactInstructions": {
+      "type": "string",
+      "title": "Keep-alive: compaction instructions",
+      "description": "What the compaction at the spend limit is told to keep. Unset: the built-in default, listed in the plugin's hooks/keepalive/README.md. Overridden by AI_DLC_KEEPALIVE_COMPACT_INSTRUCTIONS in a settings env or by compactInstructions in .ai-dlc/cache-keepalive.json. A value from the two committed files, the env of .claude/settings.json and .ai-dlc/cache-keepalive.json, overrides this row only in a folder Claude Code trusts (see the keep-alive README, hooks/keepalive/README.md, Workspace trust); one from the env of .claude/settings.local.json always does, and this row itself is never gated."
+    },
+    "keepaliveWriteMult": {
+      "type": "number",
+      "title": "Keep-alive: cache write price",
+      "description": "A cache write's price over the base input price, for the spend limit. Unset: the built-in default, listed in the plugin's hooks/keepalive/README.md. Overridden by AI_DLC_KEEPALIVE_WRITE_MULT in a settings env or by writeMult in .ai-dlc/cache-keepalive.json. A value from the two committed files, the env of .claude/settings.json and .ai-dlc/cache-keepalive.json, overrides this row only in a folder Claude Code trusts (see the keep-alive README, hooks/keepalive/README.md, Workspace trust); one from the env of .claude/settings.local.json always does, and this row itself is never gated."
+    },
+    "keepaliveOutputMult": {
+      "type": "number",
+      "title": "Keep-alive: output price",
+      "description": "An output token's price over the base input price, for the spend limit. Unset: the built-in default, listed in the plugin's hooks/keepalive/README.md. Overridden by AI_DLC_KEEPALIVE_OUTPUT_MULT in a settings env or by outputMult in .ai-dlc/cache-keepalive.json. A value from the two committed files, the env of .claude/settings.json and .ai-dlc/cache-keepalive.json, overrides this row only in a folder Claude Code trusts (see the keep-alive README, hooks/keepalive/README.md, Workspace trust); one from the env of .claude/settings.local.json always does, and this row itself is never gated."
+    },
+    "keepaliveReadPrice": {
+      "type": "string",
+      "title": "Keep-alive: cache read price by model",
+      "description": "pattern=multiplier pairs, comma-separated, with one * for any other model; each pattern a case-insensitive regular expression on the model id. Unset: the built-in default, listed in the plugin's hooks/keepalive/README.md. Overridden by AI_DLC_KEEPALIVE_READ_PRICE in a settings env or by readPrice in .ai-dlc/cache-keepalive.json. A value from the two committed files, the env of .claude/settings.json and .ai-dlc/cache-keepalive.json, overrides this row only in a folder Claude Code trusts (see the keep-alive README, hooks/keepalive/README.md, Workspace trust); one from the env of .claude/settings.local.json always does, and this row itself is never gated."
+    },
+    "keepaliveCompactCostGuess": {
+      "type": "number",
+      "title": "Keep-alive: compaction cost guess",
+      "description": "A compaction's cost per context token, used until one has been measured. Unset: the built-in default, listed in the plugin's hooks/keepalive/README.md. Overridden by AI_DLC_KEEPALIVE_COMPACT_COST_GUESS in a settings env or by compactCostGuess in .ai-dlc/cache-keepalive.json."
+    },
+    "keepaliveSummaryRatioGuess": {
+      "type": "number",
+      "title": "Keep-alive: summary size guess",
+      "description": "A compaction summary's size over the context, between 0 and 1, used until one has been measured. Unset: the built-in default, listed in the plugin's hooks/keepalive/README.md. Overridden by AI_DLC_KEEPALIVE_SUMMARY_RATIO_GUESS in a settings env or by summaryRatioGuess in .ai-dlc/cache-keepalive.json."
     }
   }
 }

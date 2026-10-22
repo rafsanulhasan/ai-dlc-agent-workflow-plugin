@@ -1,5 +1,6 @@
 - [Team roster](project_team-roster.md) — agent ID → name for this repository
-- [Mods release scope](project_mods-release-scope.md) — 1.0.0 ships mods (Claude; hook mods also Copilot); one mods plugin from ai-dlc-lens
+- [Mods release scope](project_mods-release-scope.md) — 1.0.0 ships mods in ai-dlc core; keepalive folded into auto-handoff 2026-10-23
 - [VS Code plugin reload](project_vscode-plugin-reload.md) — missing skill in VS Code extension: ask for a restart before changing the plugin
-- [Auto-handoff decisions](project_auto-handoff-decisions.md) — chain by run state; local env wins; trust gate on 3 keys; fold cache-keepalive in
+- [Auto-handoff decisions](project_auto-handoff-decisions.md) — chain by run state; local env wins; trust gate; keepalive 1h/5m tracks, 26 settings
+- [Lens decisions](project_lens-decisions.md) — 2026-10-22: merge 4 mods, no dup fields; /ai-dlc:lens via thin skills; no keepwarm; never hide responses
 - [Review budget](feedback_review-budget.md) — few review rounds; per-loop maxRounds/maxFailures 2/1; take limits from rounds --json

@@ -3,7 +3,10 @@
 This hooks module is a modified copy of `auto-handoff` by Alex Hillman,
 incorporated into the `ai-dlc` plugin under the MIT License. It is no longer a
 separate plugin. The original copyright and permission notice is in
-[LICENSE](LICENSE).
+[LICENSE](LICENSE). The module registers keep-alive, which has another
+upstream, the `cache-keepalive` mod, and lives in its own folder,
+`hooks/keepalive/`, with its own [LICENSE](../keepalive/LICENSE) and
+[ATTRIBUTION.md](../keepalive/ATTRIBUTION.md).
 
 | Field | Value |
 | --- | --- |
@@ -266,3 +269,112 @@ Made by Rafsanul Hasan, 2026-10-22 (run `AAW-20261022-window-observability`):
   existing threshold-line tests take the two fields, and five tests cover a
   breakdown with both fields, with neither, a call that throws, a single
   `summary` request made only when the line is written, and `hostFields`.
+
+Made by Rafsanul Hasan, 2026-10-22 (run `AAW-20261022-fold-cache-keepalive`):
+
+- **Keep-alive folded in.** The `cache-keepalive` mod (its attribution now in
+  `../keepalive/ATTRIBUTION.md`) is now part of this module, in `keepalive/`
+  (since 2026-10-23 `hooks/keepalive/`, see below).
+  `register` calls `registerKeepalive` from `keepalive/keepalive.ts`, so
+  `hooks/hooks.json` still lists one module, and the mod is no longer a
+  separate plugin or a dependency of `ai-dlc`.
+- **Shared helpers in `io.ts`.** `homeDir`, `log`, `readText`, `readRaw`,
+  `repoRoot`, `git`, `trustTarget` and the new `folderTrust` moved out of
+  `register.tsx` into `io.ts`, as function declarations, so keep-alive calls
+  them directly: `claude plugin validate` follows `$` past an import only into
+  a function declaration, and never through a property. `trustGated` uses
+  `folderTrust`. Behaviour is unchanged.
+- **Keep-alive stops before the handoff.** `tryHandoff` stops every keep-alive
+  timer when a handoff starts, and `handoff` again just before it queues the
+  `/clear` (module timers survive `/clear`), each time logging
+  `keepalive timers stopped ...` when one was running. Keep-alive arms no
+  pings while a handoff is under way.
+- **The seed turn and the cache.** The `floor` log line of the seed turn's
+  first request now ends with `input_tokens=<n> cache_read_input_tokens=<n>
+  cache_creation_input_tokens=<n> cache_creation_1h=<n|none>
+  cache_creation_5m=<n|none> cache=<hit|miss>`, and the handed-off panel adds
+  a line `cache hit: <n> read, <n> written (1h <n>, 5m <n>)` or
+  `cache miss: nothing read, ...`. The 1h/5m split comes from the response's
+  usage when it carries `cache_creation`, else from the new session's
+  transcript. `config.ts` gained `creationSplit`, `SeedCache`,
+  `seedCacheFields` and `seedCacheLine`. Every main-conversation response's
+  usage is also handed to keep-alive (`noteUsage`), whose tracks follow the
+  split. The header comment of `register.tsx` records why the handoff keeps
+  the shared prefix stable (same model and effort; the brief and the seed as
+  messages only).
+- **Tests.** `tests/auto-handoff.test.tsx` adds: the keep-alive timers stopped
+  (and shown as `handed off, stopped`) before the `/clear`, with no ping after
+  it; no ping armed during a handoff; the seed turn's cache fields and panel
+  line; and unit tests of the new `config.ts` functions.
+
+Made by Rafsanul Hasan, 2026-10-22 (run `AAW-20261022-fold-cache-keepalive`,
+review round 1):
+
+- **One trust gate.** `register.tsx`'s own `trustGated` is gone: the
+  repository file goes through `trustGate` in `io.ts`, shared with keep-alive,
+  which reads `~/.claude.json` once per load and only when a gated key is set.
+  It takes the keys out through the new `config.ts` `withoutKeys`, which also
+  reads nested keys (`oneHour.keepWarmFor`) and never changes its input;
+  `withoutGated` is now `withoutKeys` over `TRUST_GATED`. The log line is
+  unchanged.
+- **One boolean parser.** `config.ts` gained `parseBool`, used by its own
+  `check` and by keep-alive's `settings.ts`; both accept the same words as
+  before. The number parsers stay apart: this module takes whole numbers
+  only, keep-alive takes fractions.
+- **The seed turn on the status line.** Beside the panel line and the log
+  line, the seed turn calls keep-alive's `showSeedCache`, which shows
+  `keepalive seed: cache hit, <n>k read` or `keepalive seed: cache miss` on
+  the status line until the next turn starts.
+- **Tests.** `tests/auto-handoff.test.tsx` adds: no ping armed by a Stop while
+  the brief is being written (the test engine can now hold the brief's model
+  call) or while the `/clear` waits for its seed, and one armed once the
+  handoff is over; the seed line on the status, under the track lines after a
+  Stop and gone after the next turn starts; a miss; and none with keep-alive's
+  status off. The engine's `stepUsage` can now report a read of its choosing
+  (`stepRead`).
+
+Made by Rafsanul Hasan, 2026-10-23 (run `AAW-20261023-keepalive-own-folder`):
+
+- **Keep-alive in its own folder.** Keep-alive moved out of this module's
+  folder to `hooks/keepalive/`, with its own `LICENSE` and `ATTRIBUTION.md`
+  (the *cache-keepalive* section that was here). `register.tsx` imports it from
+  `../keepalive/keepalive.ts` and still registers it, so `hooks/hooks.json`
+  still lists one module and its behaviour is unchanged.
+- **The seed line cannot break the seed turn.** `register.tsx` runs
+  keep-alive's `showSeedCache` through the new `io.ts` `orLog`, which logs a
+  throw (`keepalive seed line error ...`) instead of passing it on, so the
+  tight-threshold check after it still runs.
+- **Skipped values logged.** `io.ts` `trustGate` names each skipped setting
+  with its value, through the new `config.ts` `keysWithValues` and
+  `previewValue`: text in double quotes, white space folded, a value longer
+  than 40 characters (`PREVIEW_CHARS`) cut with `…` and its length after it.
+  Nothing is redacted, so a secret put in a gated setting shows its first 40
+  characters in `~/.claude/state/auto-handoff/auto-handoff.log` (and, for
+  keep-alive, in the transcript); documented in round 1, below. This also
+  applies to `viewer` and the templates here
+  (`briefTemplate="/repo/chosen.md", viewer="0.0.0.0:3846" in
+  .ai-dlc/auto-handoff.json ignored: ...`).
+- **Style.** `config.ts`: a space after `=` in `const whole = (v`.
+- **Tests.** `tests/auto-handoff.test.tsx`: `orLog` logs a throw and passes
+  nothing on; the trust warning checked with its values. `tests/config.test.ts`:
+  `previewValue` and `keysWithValues`.
+
+Made by Rafsanul Hasan, 2026-10-23 (same run, review round 1):
+
+- **`previewValue` cuts on code points.** `config.ts` cuts the folded text
+  with `Array.from`, so a character outside the Basic Multilingual Plane (an
+  emoji) at the 40th place is kept whole instead of leaving a lone surrogate.
+- **`(N chars)` is the folded length.** N is now the length, in characters
+  (code points), of the folded text that was cut, not the raw value's UTF-16
+  length; a value with runs of white space no longer shows a larger count.
+  The doc comment says so and that the values are logged unredacted.
+- **Docs.** The `configure-auto-handoff` skill's *Workspace trust* gives the
+  warning's `key=value` format, says the line is written unredacted to
+  `~/.claude/state/auto-handoff/auto-handoff.log` and not to put secrets in
+  these settings; **show** names the keys without values. Logging the values
+  is intended (asked for by the human on 2026-10-23).
+- **Tests.** `tests/config.test.ts`: an emoji at the cut is kept whole, and N
+  counts the folded text. `tests/auto-handoff.test.tsx`: a comment records why
+  no test pins the `orLog` wrapper's call site in `register.tsx` (no fault can
+  reach `showSeedCache` through the engine, and the test harness loads its own
+  copy of the module, so a module-level seam a test sets never reaches it).

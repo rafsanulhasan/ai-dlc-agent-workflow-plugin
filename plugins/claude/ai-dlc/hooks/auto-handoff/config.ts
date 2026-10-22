@@ -90,6 +90,19 @@ export type Resolved = { cfg: Config; sources: Record<string, string>; warnings:
 
 const WHOLE = /^\s*(0|[1-9][0-9]*)\s*$/
 const BOOLS: Record<string, boolean> = { true: true, false: false, '1': true, '0': false, yes: true, no: false, on: true, off: false }
+
+/** A boolean, or a word for one (true/false, 1/0, yes/no, on/off; any case, spaces around ignored).
+ * Undefined for anything else. Shared with ../keepalive/settings.ts, so both parse a boolean alike. */
+export function parseBool(raw: unknown): boolean | undefined {
+  if (typeof raw === 'boolean') return raw
+  if (typeof raw !== 'string') return undefined
+  // Own keys only: a plain lookup would let `constructor` or `__proto__` reach Object.prototype.
+  const word = raw.trim().toLowerCase()
+  return Object.hasOwn(BOOLS, word) ? BOOLS[word] : undefined
+}
+
+// Numbers are not shared with ../keepalive/settings.ts: this module takes whole numbers only, written
+// without leading zeros, and keep-alive takes fractions ("0.9", "1.5"); one parser would change one of them.
 const whole = (v: unknown): number | undefined => {
   const n = typeof v === 'number' ? v : typeof v === 'string' && WHOLE.test(v) ? Number(v) : NaN
   return Number.isSafeInteger(n) && n >= 0 ? n : undefined
@@ -104,14 +117,7 @@ export function check(kind: Kind, raw: unknown, byEnv: boolean): unknown {
   if (raw === undefined || raw === null) return null
   if (byEnv && typeof raw === 'string' && !raw.trim()) return null
   switch (kind) {
-    case 'boolean':
-      if (typeof raw === 'boolean') return raw
-      if (typeof raw !== 'string') return undefined
-      {
-        // Own keys only: a plain lookup would let `constructor` or `__proto__` reach Object.prototype.
-        const word = raw.trim().toLowerCase()
-        return Object.hasOwn(BOOLS, word) ? BOOLS[word] : undefined
-      }
+    case 'boolean': return parseBool(raw)
     case 'percent': {
       const n = whole(raw)
       return n !== undefined && n >= 1 && n <= 100 ? n : undefined
@@ -339,11 +345,57 @@ export function trustOf(claudeJson: string | undefined, target: TrustTarget): { 
 }
 
 /** The repository file's values without the trust-gated keys that are set, and the keys taken out. */
-export function withoutGated(values: Record<string, unknown>): { values: Record<string, unknown>; ignored: string[] } {
-  const ignored = TRUST_GATED.filter(key => values[key] !== undefined && values[key] !== null)
+export const withoutGated = (values: Record<string, unknown>) => withoutKeys(values, TRUST_GATED)
+
+/** The value at a key; a dot in the key is one level of nesting (`oneHour.keepWarmFor`). */
+function valueAt(values: Record<string, unknown>, key: string): unknown {
+  let cur: unknown = values
+  for (const part of key.split('.')) {
+    if (!cur || typeof cur !== 'object' || Array.isArray(cur) || !Object.hasOwn(cur, part)) return undefined
+    cur = (cur as Record<string, unknown>)[part]
+  }
+  return cur
+}
+
+/** The longest text, in characters (code points), a skipped setting's value is logged with before it is cut. */
+export const PREVIEW_CHARS = 40
+
+/**
+ * A value as the trust gate logs it: a text in double quotes, anything else as JSON. Runs of
+ * white space become one space, and a value longer than PREVIEW_CHARS is cut there, with `…` and
+ * `(N chars)` after it, so a long pingPrompt or compactInstructions stays one short line. Lengths
+ * count characters (code points, so an emoji is one and is never split in half) of the folded
+ * text, the text that was cut. Nothing is redacted (asked for, so a person can see what was
+ * skipped): the first PREVIEW_CHARS characters are logged as they are, which is why the README
+ * says never to put a secret in these settings.
+ */
+export function previewValue(v: unknown): string {
+  const text = typeof v === 'string' ? v : JSON.stringify(v) ?? String(v)
+  const chars = Array.from(text.replace(/\s+/g, ' '))
+  const cut = chars.length > PREVIEW_CHARS ? `${chars.slice(0, PREVIEW_CHARS).join('')}…` : chars.join('')
+  const shown = typeof v === 'string' ? `"${cut}"` : cut
+  return chars.length > PREVIEW_CHARS ? `${shown} (${chars.length} chars)` : shown
+}
+
+/** The given keys with the values they have in `values`, `key=value, …`, as the trust gate logs them. */
+export const keysWithValues = (values: Record<string, unknown>, keys: readonly string[]): string =>
+  keys.map(key => `${key}=${previewValue(valueAt(values, key))}`).join(', ')
+
+/**
+ * The values without those of the given keys that are set (not missing or null), and the keys taken
+ * out. A dot in a key is one level of nesting. The values passed in are never changed: what is taken
+ * out is taken out of copies. Shared by the automatic handoff's and keep-alive's trust gates.
+ */
+export function withoutKeys(values: Record<string, unknown>, keys: readonly string[]): { values: Record<string, unknown>; ignored: string[] } {
+  const ignored = keys.filter(key => { const v = valueAt(values, key); return v !== undefined && v !== null })
   if (!ignored.length) return { values, ignored }
   const kept = { ...values }
-  for (const key of ignored) delete kept[key]
+  for (const key of ignored) {
+    const parts = key.split('.')
+    let cur = kept
+    for (const part of parts.slice(0, -1)) cur = cur[part] = { ...(cur[part] as Record<string, unknown>) }
+    delete cur[parts.at(-1)!]
+  }
   return { values: kept, ignored }
 }
 
@@ -384,6 +436,31 @@ export function hostFields(b: HostWindow | undefined): string {
   const src = typeof b?.autocompactSource === 'string' && /^\S+$/.test(b.autocompactSource) ? b.autocompactSource : 'none'
   const at = typeof b?.autoCompactThreshold === 'number' && Number.isFinite(b.autoCompactThreshold) ? b.autoCompactThreshold : 'none'
   return `hostWindowSource=${src} autoCompactThreshold=${at}`
+}
+
+/** A response usage's `cache_creation` split, 1-hour and 5-minute tokens, when it carries one (zeros
+ * included). The mods API's usage type does not declare it; the engine may still pass it on. */
+export function creationSplit(usage: unknown): { '1h': number; '5m': number } | undefined {
+  const c = usage && typeof usage === 'object' ? (usage as Record<string, unknown>).cache_creation : undefined
+  if (!c || typeof c !== 'object') return undefined
+  const h = (c as Record<string, unknown>).ephemeral_1h_input_tokens
+  const m = (c as Record<string, unknown>).ephemeral_5m_input_tokens
+  return typeof h === 'number' && typeof m === 'number' ? { '1h': h, '5m': m } : undefined
+}
+
+/** What the seeded session's first request read from and wrote to the prompt cache. */
+export type SeedCache = { input: number; read: number; written: number; split?: { '1h': number; '5m': number } }
+
+/** The cache fields of the seed turn's `floor` log line. `cache=hit` when anything was read from the
+ * cache: only the shared prefix (tools, system prompt, project context) can be, never the old conversation. */
+export function seedCacheFields(c: SeedCache): string {
+  return `input_tokens=${c.input} cache_read_input_tokens=${c.read} cache_creation_input_tokens=${c.written} cache_creation_1h=${c.split?.['1h'] ?? 'none'} cache_creation_5m=${c.split?.['5m'] ?? 'none'} cache=${c.read > 0 ? 'hit' : 'miss'}`
+}
+
+/** The panel's line for the same: "cache hit: 30k read, 2k written (1h 2k, 5m 0)". */
+export function seedCacheLine(c: SeedCache): string {
+  const split = c.split ? `1h ${k(c.split['1h'])}, 5m ${k(c.split['5m'])}` : '1h/5m split not reported'
+  return `${c.read > 0 ? `cache hit: ${k(c.read)} read` : 'cache miss: nothing read'}, ${k(c.written)} written (${split})`
 }
 
 /** The handoff line in tokens: thresholdPercent of the window, rounded down. */
