@@ -242,7 +242,9 @@ updated: YYYY-MM-DD HH:MM
 | Gate or loop | Approver / round | Decision | By | Date |
 |---|---|---|---|---|
 | G2 | human | approved | <name> | YYYY-MM-DD |
-| review → build | round 1 / 3 | Blockers sent back as `3.l1` | orchestrator | YYYY-MM-DD |
+| review → build | limits 2 rounds / 1 failure (source `loop`, from `rounds --json`) | recorded at run start | orchestrator | YYYY-MM-DD |
+| review → build | round 1 / 2 · failure 1 / 1 | Blockers sent back as `3.l1` | orchestrator | YYYY-MM-DD |
+| review → build (stopped at `3.l1`) | limits used up, findings open | raised for this run only, for this step only, to `maxRounds` 3 / `maxFailures` 2 (the `workflow` skill's *Raising the limits for a run*); the workflow file is unchanged | human | YYYY-MM-DD |
 
 ## Open clarifications
 | # | Asker → upstream | Question | Round | Status |

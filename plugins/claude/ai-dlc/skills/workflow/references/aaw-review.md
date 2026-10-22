@@ -28,22 +28,40 @@ Apply per file; the first rule that matches decides.
 
 ## Rounds
 
-**A round is one `agent-manager` change set followed by every review path that change set needs.** The first change opens round 1, so a budget of N rounds allows at most N − 1 fix passes after it. A mixed set runs the docs path and the code path in parallel; within the code path `code-reviewer` starts after `sqa-engineer`, so it reviews the new tests and a failing test returns before a review is spent.
+**A round is one `agent-manager` change set followed by every review path that change set needs.** The first change opens round 1. A mixed set runs the docs path and the code path in parallel; within the code path `code-reviewer` starts after `sqa-engineer`, so it reviews the new tests and a failing test returns before a review is spent.
 
 **Re-runs.** In a later round, a path that passed re-runs when files of its kind changed since its pass. The docs path also re-runs when a changed code file is one the docs it passed describe (a skill and the script it documents).
 
-**Budget.** The `loop.maxRounds` values on the AAW review stages are one shared pool, not one budget per loop; `validate` requires the same value on all three (default 3). When the budget is spent with findings open, the run stops and the human decides.
+**Limits per step.** Each review step has its own `maxRounds` and `maxFailures`, resolved per reviewer from these levels, the first valid value winning:
+
+| # | Level | Use it for |
+|---|---|---|
+| 1 | `env` in `.claude/settings.local.json` | One developer |
+| 2 | `env` in `.claude/settings.json` | The team |
+| 3 | The process environment | One session or CI job; the only level on GitHub Copilot |
+| 4 | The loop's value in `workflow.json` | The project |
+| 5 | The default: 2 rounds, 1 failure | — |
+
+- **Variables:** `AI_DLC_CRITIQUE_*` (`brutal-critique`), `AI_DLC_TEST_*` (`sqa-engineer`) and `AI_DLC_CODE_REVIEW_*` (`code-reviewer`), each with `MAX_ROUNDS` and `MAX_FAILURES`.
+- **No shared budget:** each step counts its own passes and failures; the three steps' values need not match.
+- **Rounds:** a step with `maxRounds` N reviews at most N times, so at most N − 1 fix passes follow its first review.
+- **Failures:** `maxFailures` is how many failing verdicts its reviewer may return before the loop stops, even with rounds left. A failing verdict is what the step's loop `on` names; in the default `AAW`: REVISE or Majors on a PASS (`brutal-critique`), a test that fails because the code is wrong (`sqa-engineer`), a Blocker or Warning (`code-reviewer`).
+- **Rule:** `maxRounds` ≥ `maxFailures` + 1, so `maxFailures` 1 needs `maxRounds` 2 or more. Valid values and warnings: the `workflow` skill's *Loop limits*.
+- **Values in effect:** the orchestrator runs `node .ai-dlc/workflow.mjs rounds --json` at the start of a run and before each loop and uses what it prints, with the source of each value; it never works out the precedence from the file. The one exception is a raise the human made for a stopped step (the `workflow` skill's *Raising the limits for a run*).
+- **Gate critique:** the documents critique of `critique`-marked stages is not an `AAW` step and has no file value; its limits are the `gate-critique` row of `rounds --json` (the `workflow` skill's *Gate critique*).
+
+**The human decides on open findings.** When a step stops, its failures or its rounds used up, with findings still open that fail its verdict (not only Blockers), the orchestrator (or the main agent when there is none) asks the human once for that stopped step; when several steps stop in the same round, one question per stopped step, asked together. A fix round after the stop counts against the limits like any other: it uses up a round, and a failing verdict in it counts as a failure. Since the limits are exhausted, the human's options are to raise them for this run (the `workflow` skill's *Raising the limits for a run*) or to stop or accept the findings. Open findings never pass to real work without that decision. Minors and Suggestions need no decision.
 
 ## Findings
 
-Every REVISE, Blocker, Major (also on a PASS), `code-reviewer` Warning and test that fails because the code is wrong goes back to `agent-manager` in the next round, all findings of the round in one brief. A test that is itself wrong is `sqa-engineer`'s to fix in its own stage. Minors and Suggestions never start a round; they are listed in the closing report.
+Every REVISE, Blocker, Major (also on a PASS), `code-reviewer` Warning and test that fails because the code is wrong goes back to `agent-manager` in the next round, all findings of the round in one brief, unless the step that raised it has used up its limits (*Limits per step*). A test that is itself wrong is `sqa-engineer`'s to fix in its own stage. Minors and Suggestions never start a round; they are listed in the closing report.
 
 ## What `validate` enforces
 
 - The lifecycle `routing.byType["Agent Artifact"]` names starts with `agent-manager` and has a `brutal-critique`, a `sqa-engineer` and a `code-reviewer` stage, each looping back to the `agent-manager` stage.
-- Each of those loops has a `maxRounds`, and all three are equal (the shared budget).
+- On every loop, these included: `maxRounds` is a whole number ≥ 1, `maxFailures` a whole number ≥ 0, and `maxFailures` is below `maxRounds` (omitted values counted at their defaults).
 - The `code-reviewer` stage lists the `sqa-engineer` stage directly in its `after` (or follows it with `after` omitted); reaching it through another stage does not count.
 - A review stage's `when` is either omitted (the stage runs on every change) or exactly `the change set contains docs` for `brutal-critique` and `the change set contains code` for the other two, case and spacing ignored.
 - `brutal-critique`, `sqa-engineer` and `code-reviewer` cannot be disabled.
 
-It cannot check the classification itself, that a review really ran, or the round count at run time: those rest on this file and on the run's folder: its run state, handoff records and stored hand-backs.
+It cannot check the classification itself, that a review really ran, or the passes and failures counted at run time (`node .ai-dlc/workflow.mjs rounds` prints each loop's limits): those rest on this file and on the run's folder: its run state, handoff records and stored hand-backs.

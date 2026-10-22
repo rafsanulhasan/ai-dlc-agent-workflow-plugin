@@ -78,7 +78,9 @@
           "gate": "G1",
           "loop": {
             "to": "stories",
-            "on": "The product-owner sends the stories or the backlog back"
+            "on": "The product-owner sends the stories or the backlog back",
+            "maxRounds": 2,
+            "maxFailures": 1
           }
         }
       ]
@@ -200,7 +202,9 @@
           "after": ["build"],
           "loop": {
             "to": "build",
-            "on": "A test or the mutation run reveals a defect in production code (Quality Check & Refinement)"
+            "on": "A test or the mutation run reveals a defect in production code (Quality Check & Refinement)",
+            "maxRounds": 2,
+            "maxFailures": 1
           },
           "note": "Also the stack's unit, integration, UI and mutation-testing skills (csharp-* or ts-*). Unit, integration and UI suites may fan out to parallel sqa-engineer instances."
         },
@@ -220,7 +224,9 @@
           "after": ["ui-tests", "tests", "docs"],
           "loop": {
             "to": "build",
-            "on": "The change does not conform to the ADRs or the spec (Architecture Conformance)"
+            "on": "The change does not conform to the ADRs or the spec (Architecture Conformance)",
+            "maxRounds": 2,
+            "maxFailures": 1
           }
         },
         {
@@ -232,7 +238,9 @@
           "gate": "G4",
           "loop": {
             "to": "build",
-            "on": "Blockers in the review report; Blockers in test code go to the tests stage (Code Audit & Refinement)"
+            "on": "Blockers in the review report; Blockers in test code go to the tests stage (Code Audit & Refinement)",
+            "maxRounds": 2,
+            "maxFailures": 1
           },
           "note": "Fanned out to one code-reviewer per review axis."
         }
@@ -280,7 +288,9 @@
           "after": ["fix"],
           "loop": {
             "to": "fix",
-            "on": "Blockers in the review report"
+            "on": "Blockers in the review report",
+            "maxRounds": 2,
+            "maxFailures": 1
           }
         },
         {
@@ -328,7 +338,9 @@
           "produces": ["Mutation report not lower than the baseline"],
           "loop": {
             "to": "refactor",
-            "on": "The mutation score regressed below the baseline"
+            "on": "The mutation score regressed below the baseline",
+            "maxRounds": 2,
+            "maxFailures": 1
           }
         },
         {
@@ -338,7 +350,9 @@
           "produces": ["Findings report confirming no behaviour change"],
           "loop": {
             "to": "refactor",
-            "on": "Blockers, or a behaviour change"
+            "on": "Blockers, or a behaviour change",
+            "maxRounds": 2,
+            "maxFailures": 1
           }
         }
       ]
@@ -383,7 +397,9 @@
           "produces": ["Findings report on test quality"],
           "loop": {
             "to": "tests",
-            "on": "Blockers in the test code"
+            "on": "Blockers in the test code",
+            "maxRounds": 2,
+            "maxFailures": 1
           }
         }
       ]
@@ -408,7 +424,9 @@
           "when": "the review reports Blockers",
           "loop": {
             "to": "review",
-            "on": "Fixes go back to review until zero Blockers remain"
+            "on": "Fixes go back to review until zero Blockers remain",
+            "maxRounds": 2,
+            "maxFailures": 1
           },
           "note": "sqa-engineer addresses Blockers in test code; the product-owner resolves scope disputes. The orchestrator verifies and reports at zero Blockers."
         }
@@ -419,7 +437,7 @@
       "kind": "focused",
       "pickWhen": "The request changes agents, skills, hooks, rules / instructions, commands / prompts, agent memory or the workflow file (agent-artifact work)",
       "exitArtifact": "The changed agent artifacts, their platform checks green, a PASS from brutal-critique on the docs, and passing tests and a clean code review on the code",
-      "note": "No work breakdown and no gates. Like every lifecycle it writes a handoff record before each hand-off and stores every hand-back verbatim in the run's folder (artifacts.handoffs); the run state records each round and links them, and all of it is committed when the run closes. Change kinds (code or docs), what a round is and which findings start one: the workflow skill's references/aaw-review.md. The maxRounds of the three review loops are one shared budget, not one per loop: validate requires them equal. A change to agent-manager's own definition, or to a skill it owns, is made by a freshly spawned agent-manager, never by a running instance.",
+      "note": "No work breakdown and no gates. Like every lifecycle it writes a handoff record before each hand-off and stores every hand-back verbatim in the run's folder (artifacts.handoffs); the run state records each round and links them, and all of it is committed when the run closes. Change kinds (code or docs), what a round is and which findings start one: the workflow skill's references/aaw-review.md. Each review loop has its own maxRounds and maxFailures; the AI_DLC_*_MAX_ROUNDS and AI_DLC_*_MAX_FAILURES variables (Claude Code settings env, or the process environment) override them per reviewer, and `node .ai-dlc/workflow.mjs rounds` prints the values in effect. When a loop stops with Blockers open, the human decides whether to fix them or stop. A change to agent-manager's own definition, or to a skill it owns, is made by a freshly spawned agent-manager, never by a running instance.",
       "stages": [
         {
           "id": "change",
@@ -437,7 +455,8 @@
           "loop": {
             "to": "change",
             "on": "A REVISE verdict, or Majors on a PASS: the critique goes back to agent-manager with the same changed paths and intent",
-            "maxRounds": 3
+            "maxRounds": 2,
+            "maxFailures": 1
           },
           "note": "Reviews the docs paths against the intent, using the skill-management writing guide; read-only."
         },
@@ -450,7 +469,8 @@
           "loop": {
             "to": "change",
             "on": "A test that fails because the code is wrong: the failure goes back to agent-manager",
-            "maxRounds": 3
+            "maxRounds": 2,
+            "maxFailures": 1
           },
           "note": "Writes or updates tests for the code paths against the intent, in the repository's test folder outside the shipped plugin, with the repository's test runner (or the stack's built-in one), and runs them. The tests join the change set as code."
         },
@@ -463,7 +483,8 @@
           "loop": {
             "to": "change",
             "on": "A Blocker or Warning: the findings go back to agent-manager",
-            "maxRounds": 3
+            "maxRounds": 2,
+            "maxFailures": 1
           },
           "note": "Reviews the code paths and the new tests against the intent (standards axis); read-only."
         }
@@ -523,7 +544,8 @@
     "routeImmediately": ["Security Fix"]
   },
   "clarify": {
-    "maxRounds": 3,
+    "maxRounds": 2,
+    "maxFailures": 1,
     "matrix": {
       "product-owner": [
         { "agent": "product-manager", "about": "release-gate checklist status before go / no-go" },

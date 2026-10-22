@@ -5,15 +5,33 @@
 //
 //   node .ai-dlc/workflow.mjs validate [--file <path>]           structural and semantic checks
 //   node .ai-dlc/workflow.mjs show [<lifecycle>] [--mermaid]     stage tables and gates, or flowcharts
+//   node .ai-dlc/workflow.mjs rounds [--json]                    each loop's maxRounds and maxFailures, and their source
 //   node .ai-dlc/workflow.mjs diff --against <path> [--file <p>]  what differs from another workflow file
 //   node .ai-dlc/workflow.mjs catalog --plugin <dir> [--out <p>]  record the plugin's agents and skills
+//   node .ai-dlc/workflow.mjs merge --template <path> [--file <p>] [--dry-run]
+//                                        add what the workflow file lacks from the template; never overwrite
 //
 // Options:
 //   --file <path>     the workflow file to read (default: <root>/.ai-dlc/workflow.json)
 //   --root <dir>      repository root, where project agents and skills are found (default: git root, else cwd)
 //   --catalog <path>  the plugin catalog (default: <root>/.ai-dlc/catalog.json, written by `catalog`)
-//   --plugin <dir>    the plugin root (agents/, skills/); validate and show build the catalog from it in memory
+//   --plugin <dir>    the plugin root (agents/, skills/); validate, show, rounds and merge build the catalog from it in memory
 //   --out <path>      where `catalog` writes (default: <root>/.ai-dlc/catalog.json)
+//   --json            `rounds` prints JSON instead of a table
+//   --template <path> the template `merge` takes missing keys from
+//   --dry-run         `merge` lists what it would add and writes nothing
+//
+// Loop limits: each loop's maxRounds (default 2) and maxFailures (default 1, and always below maxRounds). For a
+// loop whose stage agent is a reviewer, a variable overrides the file value:
+//   brutal-critique  AI_DLC_CRITIQUE_MAX_ROUNDS     AI_DLC_CRITIQUE_MAX_FAILURES
+//   sqa-engineer     AI_DLC_TEST_MAX_ROUNDS         AI_DLC_TEST_MAX_FAILURES
+//   code-reviewer    AI_DLC_CODE_REVIEW_MAX_ROUNDS  AI_DLC_CODE_REVIEW_MAX_FAILURES
+// Each is read, highest first, from `env` in .claude/settings.local.json, `env` in .claude/settings.json,
+// then the process environment; then come the loop's value and the default. A value counts when it is a
+// whole number without sign or leading zeros (ROUNDS >= 1, FAILURES >= 0); any other value is ignored with
+// a warning on stderr and the next level is tried. Values that make maxFailures >= maxRounds are ignored too.
+// Gate critique (the critique of every `critique`-marked stage, row `gate-critique` in `rounds`) has no loop
+// object: only the AI_DLC_CRITIQUE_* pair or the default 2 / 1 apply to it.
 //
 // Exit codes: 0 ok (no errors; diff: no differences) · 1 problems (errors or no catalog; diff: differences)
 //             2 usage error or unreadable file.
@@ -27,15 +45,18 @@ import { execSync } from "node:child_process";
 // ---- options --------------------------------------------------------------------
 const argv = process.argv.slice(2);
 if (argv.length === 0 || argv.includes("--help") || argv.includes("-h")) {
-  console.log(fs.readFileSync(new URL(import.meta.url), "utf8").split("\n").slice(1, 21).map((l) => l.replace(/^\/\/ ?/, "")).join("\n"));
+  // The help text is the header comment: every `//` line after the shebang, up to the first other line.
+  const lines = fs.readFileSync(new URL(import.meta.url), "utf8").split(/\r?\n/).slice(1);
+  const end = lines.findIndex((l) => !l.startsWith("//"));
+  console.log(lines.slice(0, end === -1 ? lines.length : end).map((l) => l.replace(/^\/\/ ?/, "")).join("\n"));
   process.exit(argv.length === 0 ? 2 : 0);
 }
 const opt = (name) => { const i = argv.indexOf(name); return i > -1 ? argv[i + 1] : undefined; };
-const VALUE_OPTS = ["--file", "--root", "--against", "--catalog", "--plugin", "--out"];
+const VALUE_OPTS = ["--file", "--root", "--against", "--catalog", "--plugin", "--out", "--template"];
 const positional = argv.filter((a, i) => !a.startsWith("--") && !VALUE_OPTS.includes(argv[i - 1]));
 const COMMAND = positional[0];
-if (!["validate", "show", "diff", "catalog"].includes(COMMAND)) usage(`unknown command "${COMMAND ?? ""}" (use validate, show, diff or catalog)`);
-for (const a of argv) if (a.startsWith("--") && ![...VALUE_OPTS, "--mermaid"].includes(a)) usage(`unknown option ${a}`);
+if (!["validate", "show", "rounds", "diff", "catalog", "merge"].includes(COMMAND)) usage(`unknown command "${COMMAND ?? ""}" (use validate, show, rounds, diff, catalog or merge)`);
+for (const a of argv) if (a.startsWith("--") && ![...VALUE_OPTS, "--mermaid", "--json", "--dry-run"].includes(a)) usage(`unknown option ${a}`);
 for (const o of VALUE_OPTS) if (argv.includes(o) && (!opt(o) || opt(o).startsWith("--"))) usage(`${o} needs a value`);
 const ROOT = path.resolve(opt("--root") ?? gitRoot() ?? process.cwd());
 const FILE = path.resolve(opt("--file") ?? path.join(ROOT, ".ai-dlc", "workflow.json"));
@@ -150,6 +171,26 @@ function load(file) {
 const isObj = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
 const isStr = (v) => typeof v === "string" && v.trim().length > 0;
 const isStrArr = (v) => Array.isArray(v) && v.every((x) => typeof x === "string");
+const posInt = (n) => Number.isInteger(n) && n >= 1;
+const nonNegInt = (n) => Number.isInteger(n) && n >= 0;
+// A loop's own limits (stage `loop` or `clarify`), with the defaults for omitted keys: maxRounds 2,
+// maxFailures 1 — or maxRounds - 1 when that is lower, so a file that sets only `maxRounds: 1` stays valid.
+const LOOP_DEFAULTS = { maxRounds: 2, maxFailures: 1 };
+function fileLimits(loop) {
+  const maxRounds = posInt(loop?.maxRounds) ? loop.maxRounds : LOOP_DEFAULTS.maxRounds;
+  const maxFailures = nonNegInt(loop?.maxFailures) ? loop.maxFailures : Math.min(LOOP_DEFAULTS.maxFailures, maxRounds - 1);
+  return { maxRounds, maxFailures };
+}
+// maxRounds / maxFailures of a stage loop or of clarify: types, then maxFailures < maxRounds.
+function checkLimits(loop, p, err) {
+  let ok = true;
+  if ("maxRounds" in loop && !posInt(loop.maxRounds)) { err(`${p}.maxRounds`, "must be a whole number >= 1"); ok = false; }
+  if ("maxFailures" in loop && !nonNegInt(loop.maxFailures)) { err(`${p}.maxFailures`, "must be a whole number >= 0"); ok = false; }
+  if (!ok) return;
+  const { maxRounds, maxFailures } = fileLimits(loop);
+  if (maxFailures >= maxRounds)
+    err(p, `maxFailures (${maxFailures}) must be below maxRounds (${maxRounds})${"maxRounds" in loop ? "" : ` (maxRounds omitted: ${LOOP_DEFAULTS.maxRounds})`}`);
+}
 const dupes = (arr) => [...new Set(arr.filter((x, i) => arr.indexOf(x) !== i))];
 
 function validate(wf, catalog) {
@@ -263,12 +304,12 @@ function validate(wf, catalog) {
         usedGates.add(st.gate);
       }
       if ("loop" in st) {
-        if (!isObj(st.loop)) err(`${sp}.loop`, "must be an object { to, on, maxRounds? }");
+        if (!isObj(st.loop)) err(`${sp}.loop`, "must be an object { to, on, maxRounds?, maxFailures? }");
         else {
-          unknownKeys(st.loop, ["to", "on", "maxRounds"], `${sp}.loop`);
+          unknownKeys(st.loop, ["to", "on", "maxRounds", "maxFailures"], `${sp}.loop`);
           if (!isStr(st.loop.to)) err(`${sp}.loop`, "needs `to` (the stage work returns to)");
           if (!isStr(st.loop.on)) err(`${sp}.loop`, "needs `on` (what sends work back)");
-          if ("maxRounds" in st.loop && !(Number.isInteger(st.loop.maxRounds) && st.loop.maxRounds >= 1)) err(`${sp}.loop.maxRounds`, "must be a positive integer");
+          checkLimits(st.loop, `${sp}.loop`, err);
         }
       }
     });
@@ -336,20 +377,16 @@ function validate(wf, catalog) {
       for (const [agent, { why }] of Object.entries(AAW_REVIEWERS))
         if (!reviews.some((s) => s.agent === agent)) err(`lifecycles.${aaw}`, `needs a ${agent} stage that loops back to the agent-manager stage ${why} (fixed guardrail; run /ai-dlc:workflow upgrade to bring in the default AAW stages)`);
       const where = (s) => `lifecycles.${aaw}.stages[${st.indexOf(s)}] (${s.id})`;
-      const budgets = new Map();
       // Only stages that already loop back to agent-manager are checked here; a review stage with no valid
-      // loop is reported once, by the "needs a <agent> stage that loops back" error above.
+      // loop is reported once, by the "needs a <agent> stage that loops back" error above. Each review loop
+      // has its own maxRounds / maxFailures, checked by the generic loop check.
       for (const s of reviews) {
-        if (!Number.isInteger(s.loop.maxRounds) || s.loop.maxRounds < 1) err(`${where(s)}.loop.maxRounds`, "required on an AAW review loop: the review loops share one round budget (fixed guardrail)");
-        else budgets.set(s.id, s.loop.maxRounds);
         // `when` is an exact phrase (case and spacing ignored), so a reworded condition cannot switch a review off.
         // `\s+` also collapses NBSP and other Unicode spaces on purpose (pinned by tests): never narrow it to ASCII spaces.
         const expected = AAW_REVIEWERS[s.agent].when;
         if ("when" in s && (typeof s.when !== "string" || s.when.trim().replace(/\s+/g, " ").toLowerCase() !== expected))
           err(`${where(s)}.when`, `must be "${expected}" (case and spacing ignored), or be omitted so the stage runs on every change (fixed guardrail)`);
       }
-      if (new Set(budgets.values()).size > 1)
-        err(`lifecycles.${aaw}`, `the review loops share one round budget, so their maxRounds must be equal (${[...budgets].map(([id, n]) => `${id} ${n}`).join(", ")}) (fixed guardrail)`);
       // code-review must name the sqa-engineer stage in its own `after` (directly, not through another stage).
       const testIds = reviews.filter((s) => s.agent === "sqa-engineer").map((s) => s.id);
       for (const s of reviews.filter((x) => x.agent === "code-reviewer"))
@@ -363,8 +400,8 @@ function validate(wf, catalog) {
   // clarify
   const c = wf.clarify;
   if (isObj(c)) {
-    unknownKeys(c, ["maxRounds", "matrix"], "clarify");
-    if (!(Number.isInteger(c.maxRounds) && c.maxRounds >= 1)) err("clarify.maxRounds", "must be a positive integer");
+    unknownKeys(c, ["maxRounds", "maxFailures", "matrix"], "clarify");
+    checkLimits(c, "clarify", err);
     if (!isObj(c.matrix)) err("clarify.matrix", "must be an object { <asker>: [{ agent, about }] }");
     else for (const [asker, rows] of Object.entries(c.matrix)) {
       const p = `clarify.matrix.${asker}`;
@@ -453,7 +490,7 @@ function show(wf, only, mermaid) {
         after.length ? after.join(", ") : "(start)",
         st.when ?? "",
         st.gate ? `${st.gate} (${wf.gates[st.gate]?.approver ?? "?"})` : "",
-        st.loop ? `-> ${st.loop.to}${st.loop.maxRounds ? ` x${st.loop.maxRounds}` : ""}` : "",
+        st.loop ? (({ maxRounds, maxFailures }) => `-> ${st.loop.to} x${maxRounds.value} f${maxFailures.value}`)(loopLimits(st.agent, st.loop)) : "",
       ]);
     });
     out.push("", table(rows));
@@ -462,9 +499,12 @@ function show(wf, only, mermaid) {
   }
   if (!mermaid && !only) {
     out.push("## Gates", "", table([["gate", "name", "approver", "approves"], ...Object.entries(wf.gates).map(([g, d]) => [g, d.name, d.approver, d.approves])]), "");
+    const cl = fileLimits(wf.clarify);
+    const gc = gateCritiqueLimits();
     const dis = wf.agents.disabled.length ? wf.agents.disabled.join(", ") : "none";
     const cus = Object.keys(wf.agents.custom).length ? Object.keys(wf.agents.custom).join(", ") : "none";
-    out.push(`Disabled agents: ${dis} · Custom agents: ${cus} · Clarify: max ${wf.clarify.maxRounds} rounds · Review axes: ${wf.review.axes.join(", ")}`);
+    out.push(`Disabled agents: ${dis} · Custom agents: ${cus} · Clarify: x${cl.maxRounds} f${cl.maxFailures} · Gate critique: x${gc.maxRounds.value} f${gc.maxFailures.value} · Review axes: ${wf.review.axes.join(", ")}`);
+    out.push("Loops: x<N> is maxRounds, f<N> maxFailures (node .ai-dlc/workflow.mjs rounds shows where each comes from)");
   }
   console.log(out.join("\n").trimEnd());
 }
@@ -515,6 +555,149 @@ function flowchart(wf, code) {
   return out;
 }
 
+// ---- rounds ---------------------------------------------------------------------
+// Each loop's limits: maxRounds (most review passes) and maxFailures (failing verdicts the reviewer may
+// return before the loop stops, even with rounds left). Per property: a valid variable for the loop's stage
+// agent (settings.local.json -> settings.json -> process environment) -> the loop's own value -> the default
+// (fileLimits). Only the three reviewers have variables; other loops and clarify are file-only.
+const ENV_VARS = {
+  "brutal-critique": { maxRounds: "AI_DLC_CRITIQUE_MAX_ROUNDS", maxFailures: "AI_DLC_CRITIQUE_MAX_FAILURES" },
+  "sqa-engineer": { maxRounds: "AI_DLC_TEST_MAX_ROUNDS", maxFailures: "AI_DLC_TEST_MAX_FAILURES" },
+  "code-reviewer": { maxRounds: "AI_DLC_CODE_REVIEW_MAX_ROUNDS", maxFailures: "AI_DLC_CODE_REVIEW_MAX_FAILURES" },
+};
+// A whole number without sign, exponent or leading zeros (007, +2, 1e3, 0x2 do not count), within the
+// safe-integer range. Surrounding spaces are allowed. Unset or blank means not set, with no warning.
+const WHOLE = /^\s*(0|[1-9][0-9]*)\s*$/;
+const envWarnings = new Set();
+
+// The levels a variable is read from, highest first: `env` in .claude/settings.local.json, `env` in
+// .claude/settings.json, then the process environment. The settings files are read here, not taken from
+// the host, so a plain terminal, CI and Claude Code give the same answer. The project is the parent of
+// the .ai-dlc/ folder holding the workflow file, else --root (git root, else cwd).
+const PROJECT = path.basename(path.dirname(FILE)) === ".ai-dlc" ? path.dirname(path.dirname(FILE)) : ROOT;
+
+// Strip // and /* */ comments outside strings (settings files are JSONC).
+function stripComments(text) {
+  let out = "", i = 0, inStr = false;
+  while (i < text.length) {
+    const c = text[i], d = text[i + 1];
+    if (inStr) {
+      out += c;
+      if (c === "\\") { out += d ?? ""; i += 2; continue; }
+      if (c === "\"") inStr = false;
+      i++;
+    } else if (c === "\"") { inStr = true; out += c; i++; }
+    else if (c === "/" && d === "/") { while (i < text.length && text[i] !== "\n") i++; }
+    else if (c === "/" && d === "*") { const e = text.indexOf("*/", i + 2); i = e === -1 ? text.length : e + 2; }
+    else { out += c; i++; }
+  }
+  return out;
+}
+
+// A settings file's `env` object; null when the file or its `env` is missing (silent) or unreadable (warned).
+function settingsEnv(name) {
+  const file = path.join(PROJECT, ".claude", name);
+  let text;
+  try { text = fs.readFileSync(file, "utf8"); } catch { return null; }
+  if (text.charCodeAt(0) === 0xfeff) text = text.slice(1); // a leading UTF-8 BOM
+  const rel = path.relative(process.cwd(), file) || file;
+  let doc;
+  try { doc = JSON.parse(stripComments(text)); } catch {
+    envWarnings.add(`${rel} is not valid JSON (comments allowed); its env is skipped`);
+    return null;
+  }
+  if (!isObj(doc)) { envWarnings.add(`${rel}: top level is not an object; its env is skipped`); return null; }
+  if (!("env" in doc)) return null;
+  if (!isObj(doc.env)) { envWarnings.add(`${rel}: env is not an object; skipped`); return null; }
+  return doc.env;
+}
+const LEVELS = [
+  { source: "settings.local.json", where: ".claude/settings.local.json", env: settingsEnv("settings.local.json") },
+  { source: "settings.json", where: ".claude/settings.json", env: settingsEnv("settings.json") },
+  { source: "env", where: "environment", env: process.env },
+].filter((l) => l.env);
+
+// Each variable's value and source: the first level with a valid value. An invalid value is warned about
+// and resolution falls through to the next level. Settings files may hold a string or a JSON number.
+const ENV = {};
+for (const vars of Object.values(ENV_VARS)) for (const [prop, name] of Object.entries(vars)) {
+  ENV[name] = null;
+  const min = prop === "maxRounds" ? 1 : 0;
+  for (const level of LEVELS) {
+    if (!Object.hasOwn(level.env, name)) continue;
+    const raw = level.env[name];
+    if (raw === undefined || raw === null || (typeof raw === "string" && raw.trim() === "")) continue;
+    const m = typeof raw === "string" ? WHOLE.exec(raw) : null;
+    const n = typeof raw === "number" ? raw : m ? Number(m[1]) : NaN;
+    if (Number.isSafeInteger(n) && n >= min) { ENV[name] = { value: n, source: level.source }; break; }
+    envWarnings.add(`${name}=${typeof raw === "string" ? raw : JSON.stringify(raw)} in ${level.where} ignored: not a whole number >= ${min}; falling back to the next level`);
+  }
+}
+// Loops where the variables would make maxFailures >= maxRounds: "<vars>" -> [loop ids].
+const envConflicts = new Map();
+
+function loopLimits(agent, loop, id) {
+  const file = fileLimits(loop);
+  const src = {
+    maxRounds: posInt(loop?.maxRounds) ? "loop" : "default",
+    maxFailures: nonNegInt(loop?.maxFailures) ? "loop" : "default",
+  };
+  const fromFile = () => ({
+    maxRounds: { value: file.maxRounds, source: src.maxRounds },
+    maxFailures: { value: file.maxFailures, source: src.maxFailures },
+  });
+  const vars = ENV_VARS[agent];
+  if (!vars) return fromFile();
+  const applied = Object.entries(vars).filter(([, name]) => ENV[name] !== null);
+  if (!applied.length) return fromFile();
+  const out = fromFile();
+  for (const [prop, name] of applied) out[prop] = { ...ENV[name] };
+  if (out.maxFailures.value < out.maxRounds.value) return out;
+  // The combination breaks maxFailures < maxRounds: ignore the variables applied here, use the file values.
+  const key = applied.map(([, name]) => `${name}=${ENV[name].value} (${ENV[name].source})`).join(", ");
+  if (id) envConflicts.set(key, [...(envConflicts.get(key) ?? []), id]);
+  return fromFile();
+}
+
+// Gate critique: the documents.writer <-> documents.critic critique of every `critique`-marked stage. It has
+// no loop object, so it has no file value: the brutal-critique variables (same levels, valid-value rule and
+// combined check as a loop) or the default 2 / 1. Its sources are those of a loop, with `default` for `loop`.
+const GATE_CRITIQUE = "gate-critique";
+const gateCritiqueLimits = (id) => loopLimits("brutal-critique", null, id);
+
+// Every stage loop, as lifecycle/stage, then clarify, then gate-critique. Segment lifecycles have no stages.
+function rounds(wf) {
+  envConflicts.clear();
+  const list = [];
+  for (const [code, lc] of Object.entries(wf.lifecycles)) {
+    if (!isObj(lc) || !Array.isArray(lc.stages)) continue;
+    for (const st of lc.stages) if (isObj(st) && isObj(st.loop)) {
+      const id = `${code}/${st.id}`;
+      const { maxRounds, maxFailures } = loopLimits(st.agent, st.loop, id);
+      list.push({ id, lifecycle: code, stage: st.id, agent: st.agent, to: st.loop.to,
+        maxRounds: maxRounds.value, maxRoundsSource: maxRounds.source, maxFailures: maxFailures.value, maxFailuresSource: maxFailures.source });
+    }
+  }
+  if (isObj(wf.clarify)) {
+    const { maxRounds, maxFailures } = loopLimits(null, wf.clarify);
+    list.push({ id: "clarify", lifecycle: null, stage: null, agent: null, to: null,
+      maxRounds: maxRounds.value, maxRoundsSource: maxRounds.source, maxFailures: maxFailures.value, maxFailuresSource: maxFailures.source });
+  }
+  const g = gateCritiqueLimits(GATE_CRITIQUE);
+  list.push({ id: GATE_CRITIQUE, lifecycle: null, stage: null, agent: "brutal-critique", to: null,
+    maxRounds: g.maxRounds.value, maxRoundsSource: g.maxRounds.source, maxFailures: g.maxFailures.value, maxFailuresSource: g.maxFailures.source });
+  return list;
+}
+
+// One stderr line per ignored variable or combination. Never an error: exit codes do not change.
+// With a (valid) workflow, the combinations are checked on its loops first.
+function warnEnv(wf) {
+  if (wf) rounds(wf);
+  for (const w of envWarnings) console.error(`warning: ${w}`);
+  for (const [key, ids] of envConflicts)
+    console.error(`warning: ${key} ignored on ${ids.join(", ")}: maxFailures must stay below maxRounds; using workflow.json`);
+}
+
 // ---- diff -----------------------------------------------------------------------
 // Stages are compared by id and clarify rows by agent, not position, so a reordered or inserted
 // entry reads as one change.
@@ -547,6 +730,63 @@ function diff(a, b, p, out) {
 }
 const short = (v) => { const s = JSON.stringify(v); return s.length > 100 ? `${s.slice(0, 97)}...` : s; };
 
+// ---- merge ----------------------------------------------------------------------
+// Adds every key the project file lacks, taken from the template, and never overwrites or deletes a value.
+// Arrays are kept as they are, except `lifecycles.<code>.stages`, whose stages are matched by id: a missing
+// stage is added in template order, a project-only stage is kept. A `maxFailures` added next to an existing
+// `maxRounds` is min(1, maxRounds - 1), and a `maxRounds` added next to an existing `maxFailures` is
+// max(template value, maxFailures + 1), so the rule maxFailures < maxRounds still holds.
+const clone = (v) => JSON.parse(JSON.stringify(v));
+function merge(mine, tpl, p, added) {
+  for (const [k, tv] of Object.entries(tpl)) {
+    const q = p ? `${p}.${k}` : k;
+    if (!Object.hasOwn(mine, k)) {
+      let v = clone(tv);
+      const isLimits = /(^|\.)loop$/.test(p) || p === "clarify";
+      if (isLimits && k === "maxFailures" && posInt(mine.maxRounds)) v = Math.min(LOOP_DEFAULTS.maxFailures, mine.maxRounds - 1);
+      if (isLimits && k === "maxRounds" && nonNegInt(mine.maxFailures) && posInt(v)) v = Math.max(v, mine.maxFailures + 1);
+      mine[k] = v;
+      added.push(`+ ${q} = ${short(v)}`);
+    } else if (k === "stages" && /^lifecycles\.[^.]+$/.test(p) && Array.isArray(mine[k]) && Array.isArray(tv)) {
+      mergeStages(mine[k], tv, q, added);
+    } else if (isObj(mine[k]) && isObj(tv)) merge(mine[k], tv, q, added);
+  }
+}
+function mergeStages(mine, tpl, p, added) {
+  const idOf = (s) => (isObj(s) && typeof s.id === "string" ? s.id : null);
+  tpl.forEach((ts, i) => {
+    const id = idOf(ts);
+    if (id === null) return;
+    const found = mine.find((s) => idOf(s) === id);
+    if (found) { merge(found, ts, `${p}[${id}]`, added); return; }
+    // After the nearest earlier template stage the project has, else first.
+    let at = 0;
+    for (let j = i - 1; j >= 0; j--) {
+      const k = mine.findIndex((s) => idOf(s) === idOf(tpl[j]));
+      if (k > -1) { at = k + 1; break; }
+    }
+    mine.splice(at, 0, clone(ts));
+    added.push(`+ ${p}[${id}] = ${short(ts)}`);
+  });
+}
+
+// The template's layout: 2-space indent, arrays of plain values on one line, and plain-valued objects
+// inside arrays (clarify rows) on one line.
+function format(v, ind = "", inArray = false) {
+  const plain = (x) => x === null || typeof x !== "object";
+  if (plain(v)) return JSON.stringify(v);
+  const next = ind + "  ";
+  if (Array.isArray(v)) {
+    if (!v.length) return "[]";
+    if (v.every(plain)) return `[${v.map((x) => JSON.stringify(x)).join(", ")}]`;
+    return `[\n${v.map((x) => next + format(x, next, true)).join(",\n")}\n${ind}]`;
+  }
+  const entries = Object.entries(v);
+  if (!entries.length) return "{}";
+  if (inArray && entries.every(([, x]) => plain(x))) return `{ ${entries.map(([k, x]) => `${JSON.stringify(k)}: ${JSON.stringify(x)}`).join(", ")} }`;
+  return `{\n${entries.map(([k, x]) => `${next}${JSON.stringify(k)}: ${format(x, next)}`).join(",\n")}\n${ind}}`;
+}
+
 // ---- main -----------------------------------------------------------------------
 if (COMMAND === "catalog") {
   if (!opt("--plugin")) usage("catalog needs --plugin <plugin root> (the folder with agents/ and skills/)");
@@ -565,6 +805,7 @@ const catalog = loadCatalog();
 
 if (COMMAND === "validate") {
   const { errors, warnings } = validate(wf, catalog);
+  warnEnv(errors.length ? null : wf);
   if (opt("--plugin") && fs.existsSync(CATALOG_FILE)) {
     // A corrupt stored catalog is only a warning here: --plugin supplies the catalog for this run.
     let stored = null;
@@ -587,8 +828,46 @@ if (COMMAND === "show") {
     console.log(`${relFile} is invalid; fix it before showing it (node .ai-dlc/workflow.mjs validate).`);
     process.exit(1);
   }
+  warnEnv(wf);
   show(wf, positional[1], argv.includes("--mermaid"));
   process.exit(0);
+}
+
+if (COMMAND === "rounds") {
+  const { errors } = validate(wf, catalog);
+  if (errors.length) {
+    warnEnv(null);
+    for (const e of errors) console.log(`error: ${e}`);
+    console.log(`${relFile} is invalid; fix it before reading its round limits (node .ai-dlc/workflow.mjs validate).`);
+    process.exit(1);
+  }
+  const list = rounds(wf);
+  warnEnv();
+  if (argv.includes("--json")) console.log(JSON.stringify(list, null, 2));
+  else console.log(table([["loop", "agent", "to", "maxRounds", "source", "maxFailures", "source"],
+    ...list.map((l) => [l.id, l.agent ?? "", l.to ?? "", l.maxRounds, l.maxRoundsSource, l.maxFailures, l.maxFailuresSource])]));
+  process.exit(0);
+}
+
+if (COMMAND === "merge") {
+  const tplFile = opt("--template");
+  if (!tplFile) usage("merge needs --template <path> (the plugin's templates/workflow.json)");
+  const tpl = load(path.resolve(tplFile));
+  if (!isObj(wf) || !isObj(tpl)) usage("merge needs two workflow objects");
+  const added = [];
+  merge(wf, tpl, "", added);
+  const dry = argv.includes("--dry-run");
+  console.log(added.length ? added.join("\n") : "nothing to add");
+  if (!added.length) process.exit(0);
+  if (dry) { console.log(`${added.length} key(s) would be added to ${relFile} (dry run: nothing written)`); process.exit(0); }
+  fs.writeFileSync(FILE, format(wf) + "\n");
+  console.log(`${added.length} key(s) added to ${relFile}`);
+  if (!catalog) { console.log("validate skipped: no catalog yet (generate it, then run validate)"); process.exit(0); }
+  const { errors, warnings } = validate(wf, catalog);
+  for (const e of errors) console.log(`error: ${e}`);
+  for (const w of warnings) console.log(`warning: ${w}`);
+  console.log(errors.length ? `${relFile}: ${errors.length} error(s), ${warnings.length} warning(s)` : `${relFile}: valid${warnings.length ? `, ${warnings.length} warning(s)` : ""}`);
+  process.exit(errors.length ? 1 : 0);
 }
 
 if (COMMAND === "diff") {
