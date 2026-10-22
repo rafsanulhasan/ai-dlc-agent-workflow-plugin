@@ -18,7 +18,7 @@ The routing layer has four parts, used in this order:
 
 ## Project workflow
 
-Everything below is the **default** workflow. Its machine-readable form is `templates/workflow.json` of the `workflow` skill. A repository's `.ai-dlc/workflow.json` overrides it, and wherever the two differ the file wins: lifecycles and their stages, stage owners and who hands off to whom, parallel stages, loops, gates and their approvers (`human`, `orchestrator` or `none`), the clarify matrix and round limit, routing, disabled and custom agents, and artifact paths. `node .ai-dlc/workflow.mjs show` prints the effective workflow; changes go through `/ai-dlc:workflow edit` (**Boris Cherny** (`agent-manager`)). The guardrails in *Step 3 — Gates, verification and the human* below, and the `workflow` skill's *Fixed guardrails*, hold whatever the file says.
+Everything below is the **default** workflow. Its machine-readable form is `templates/workflow.json` of the `workflow` skill. A repository's `.ai-dlc/workflow.json` overrides it, and wherever the two differ the file wins: lifecycles and their stages, stage owners and who hands off to whom, parallel stages, loops, gates and their approvers (`human`, `orchestrator` or `none`), the clarify matrix, the round and failure limits of every loop, routing, disabled and custom agents, and artifact paths. `node .ai-dlc/workflow.mjs show` prints the effective workflow; changes go through `/ai-dlc:workflow edit` (**Boris Cherny** (`agent-manager`)). The guardrails in *Step 3 — Gates, verification and the human* below, and the `workflow` skill's *Fixed guardrails*, hold whatever the file says.
 
 ## Roles
 
@@ -90,7 +90,7 @@ The `orchestrator` picks exactly one primary lifecycle per work item and runs th
 
 Shortcuts:
 
-- Agent/skill/hook/rule/command and workflow-file changes are **not** an AI-DLC lifecycle. They run the agent-artifact lifecycle **AAW** (`routing.byType["Agent Artifact"]` in the workflow file): ARM makes the change and hands back the changed paths, each marked by kind, and the intent; BC critiques the docs, SQA tests the code and then CR reviews it, both paths in parallel for a mixed change; findings go back to ARM within one shared round budget, then to the human. Change kinds, rounds and findings: the `workflow` skill's `references/aaw-review.md`. No work breakdown and no gates; like every lifecycle it writes a handoff record before each hand-off and stores each hand-back (`handoff`), and the run state records the rounds. A change to ARM's own definition or a skill it owns goes to a freshly spawned ARM.
+- Agent/skill/hook/rule/command and workflow-file changes are **not** an AI-DLC lifecycle. They run the agent-artifact lifecycle **AAW** (`routing.byType["Agent Artifact"]` in the workflow file): ARM makes the change and hands back the changed paths, each marked by kind, and the intent; BC critiques the docs, SQA tests the code and then CR reviews it, both paths in parallel for a mixed change; findings go back to ARM while each reviewer's own round and failure limits allow (no shared budget), then to the human, who decides on the open ones. Change kinds, rounds and findings: the `workflow` skill's `references/aaw-review.md`. No work breakdown and no gates; like every lifecycle it writes a handoff record before each hand-off and stores each hand-back (`handoff`), and the run state records the rounds. A change to ARM's own definition or a skill it owns goes to a freshly spawned ARM.
 - P0 security issues: BFLC with `security-review` run by SA/CR before the fix lands; notify PO afterwards.
 - Pure questions, including "what does this repository do": delegate to `research-assistant` (the orchestrator does not explore code or docs to answer them); no lifecycle.
 - Releases: Release phase — `product-manager` runs its release-gate checklist, `product-owner` gives go / no-go, then `devops-engineer` runs CD.
@@ -122,7 +122,7 @@ Run the segment stages below in order, gate by gate: PDLC → G1 → ASDLC → G
 1. SWE → `Skill("ai-dlc:implement-feature")`: every behaviour traces to a numbered AC; anything outside the spec goes back to ASDLC.
 2. In parallel after SWE: SQA (`design-test-cases` → `write-tests` → the stack's mutation-testing skill: `csharp-mutation-testing` or `ts-mutation-testing`), DW (`write-documentation`), BC on the docs.
 3. SA → `Skill("ai-dlc:architecture-review")` — **Architecture Conformance** gate.
-4. CR → `Skill("ai-dlc:review")` — **Code Audit & Refinement** loop: Blockers return to SWE (or SQA for test code) until zero remain.
+4. CR → `Skill("ai-dlc:review")` — **Code Audit & Refinement** loop: Blockers return to SWE (or SQA for test code) until zero remain or the loop's limits are used up (*Loops are bounded* below).
 5. **Gate G4 — approve:** human signs off the review report, not the diff.
 
 ### BFLC
@@ -143,7 +143,7 @@ Run the segment stages below in order, gate by gate: PDLC → G1 → ASDLC → G
 
 ### CRLC
 1. CR → `Skill("ai-dlc:review")` on the PR/branch (plus SonarQube where configured).
-2. Blockers loop to SWE / SQA; PO resolves scope disputes.
+2. Blockers loop to SWE / SQA within the loop's limits (*Loops are bounded* below); PO resolves scope disputes.
 3. CR approves at **zero Blockers**; ORC verifies and reports.
 
 ## Step 3 — Gates, verification and the human
@@ -152,6 +152,7 @@ Run the segment stages below in order, gate by gate: PDLC → G1 → ASDLC → G
 - **Trust, but verify.** The orchestrator reads the artifact before the next agent starts. An agent's summary is a claim, not evidence. Verification is the only reading the orchestrator does itself; understanding code or docs is delegated to `research-assistant`.
 - **Durable runs.** The orchestrator keeps each work item's run state (`handoff`, *Run state*) current before every spawn and after every return or gate, stores every agent's hand-back verbatim next to it as soon as the agent returns (`handoff`, *Hand-back record*), and offers to resume unfinished runs at the start of every session.
 - **Hard gates beat confidence.** Build and tests must be green before Build ends (`init` installs the stack's Stop hook that enforces the test command: `dotnet-test-gate` in .NET repositories, `node-test-gate` in JS / TS repositories); mutation testing is the SQA's gate.
+- **Loops are bounded.** Every refinement loop, and the Clarify loop, has a `maxRounds` (most passes) and a `maxFailures` (failing verdicts before it stops early), default 2 / 1. The orchestrator takes them from `node .ai-dlc/workflow.mjs rounds --json`; for the reviewer loops they can be overridden per developer or team (the `workflow` skill's *Loop limits*). When a loop stops with findings open, the orchestrator asks the human once for that step: raise its limits for this run, or stop / accept the findings. Open findings never pass on without that decision.
 - **Ask upstream, then the human.** When an input is unclear, the stage agent consults the agents that produced it (*Clarify loop* below). Intent, scope or AC questions that no upstream agent can answer go to the human as one targeted question. Never let an agent guess.
 - **Re-anchor long runs** on the frozen spec at each stage boundary to stop drift.
 - **Skip gates only for artifact-only changes** (planning, agents, skills, hooks, prompts, rules): the test and mutation commands may be skipped when no runtime code, test code, runtime configuration or build logic changed — except the AAW test stage, which always runs for code in the change set.
@@ -195,7 +196,7 @@ The same agents **answer** questions about their own artifacts and **own any rev
 - **The owner revises.** An answer that changes an upstream artifact (spec, AC, ADR, design, test plan) is made by that artifact's owner, never by the asker; the orchestrator verifies the revision before resuming the asker.
 - **ACs change only through the product line.** An answer that changes an AC goes through `product-owner`, who directs `requirement-analyst` to update the spec with `spec-driven-development`; a frozen spec re-enters ASDLC step 3.
 - **Stay in role.** An answer never licenses the asker to do the upstream agent's job.
-- **Bounded: at most 3 rounds per stage.** A round is one batched request and its answers. If a question is still open after the third round, the stage is **blocked**: the orchestrator stops it and escalates to the human with the open questions, the answers so far and the recommended defaults.
+- **Bounded by `clarify.maxRounds` and `clarify.maxFailures`** (default 2 / 1, as `rounds` prints them). A round is one batched request and its answers; a round that ends with a question still open counts as a failure. When either limit is used up with a question still open, the stage is **blocked**: the orchestrator stops it and escalates to the human with the open questions, the answers so far and the recommended defaults.
 
 ## Output of this skill
 

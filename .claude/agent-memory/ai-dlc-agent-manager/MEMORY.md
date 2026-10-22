@@ -7,3 +7,4 @@
 - [Handoff gaps](project_handoff-gaps.md) — deferred: O5 session matching, stale run data, Copilot nesting, main-agent rule untested
 - [Bash heredoc backslashes](feedback_bash-heredoc-backslashes.md) — Bash heredocs mangle backslash escapes here; use Edit or a Written script
 - [Claude plugin config facts](reference_claude-plugin-config-facts.md) — userConfig min/max enforced, /<name> mod commands, $.store machine-wide, `plugin configure`
+- [.ai-dlc copy test](project_ai-dlc-copy-test.md) — handoff-naming test fails until repo .ai-dlc/ is resynced after a template change

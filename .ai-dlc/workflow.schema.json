@@ -68,7 +68,7 @@
         "byType": {
           "type": "object",
           "required": ["Agent Artifact"],
-          "description": "Request type (Feature, Bug Fix, Security Fix, TechDebt, Testing, Review, Release, Agent Artifact) -> lifecycle code it runs by default. Custom lifecycles are also picked by their `pickWhen`. `Agent Artifact` is required: its lifecycle (default `AAW`) must start with `agent-manager` and have stages that loop back to it: `brutal-critique` (docs, on REVISE), `sqa-engineer` (code, on failing tests) and `code-reviewer` (code, on Blockers or Warnings, after the `sqa-engineer` stage), with equal `loop.maxRounds` (one shared round budget). A review stage's `when` is omitted or exactly `the change set contains docs` (`brutal-critique`) / `the change set contains code` (`sqa-engineer`, `code-reviewer`), case and spacing ignored; `code-reviewer` lists the `sqa-engineer` stage directly in `after`. The rules: the workflow skill's references/aaw-review.md.",
+          "description": "Request type (Feature, Bug Fix, Security Fix, TechDebt, Testing, Review, Release, Agent Artifact) -> lifecycle code it runs by default. Custom lifecycles are also picked by their `pickWhen`. `Agent Artifact` is required: its lifecycle (default `AAW`) must start with `agent-manager` and have stages that loop back to it: `brutal-critique` (docs, on REVISE), `sqa-engineer` (code, on failing tests) and `code-reviewer` (code, on Blockers or Warnings, after the `sqa-engineer` stage), each with its own `loop.maxRounds` and `loop.maxFailures`. A review stage's `when` is omitted or exactly `the change set contains docs` (`brutal-critique`) / `the change set contains code` (`sqa-engineer`, `code-reviewer`), case and spacing ignored; `code-reviewer` lists the `sqa-engineer` stage directly in `after`. The rules: the workflow skill's references/aaw-review.md.",
           "additionalProperties": { "type": "string", "minLength": 1 }
         },
         "handOff": {
@@ -87,13 +87,18 @@
     "clarify": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["maxRounds", "matrix"],
-      "description": "The Clarify loop: whom a stage agent may ask when one of its inputs is unclear.",
+      "required": ["matrix"],
+      "description": "The Clarify loop: whom a stage agent may ask when one of its inputs is unclear. `maxFailures` must be below `maxRounds`. File-only: no environment variable overrides these.",
       "properties": {
         "maxRounds": {
           "type": "integer",
           "minimum": 1,
-          "description": "Rounds per stage (one batched request and its answers) before the stage is blocked and escalated to the human."
+          "description": "Rounds per stage (one batched request and its answers) before the stage is blocked and escalated to the human. Omitted: 2."
+        },
+        "maxFailures": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Rounds that end with the question still open the stage may have before it is blocked and escalated, even with rounds left. Must be below `maxRounds`. Omitted: 1, or `maxRounds` - 1 when that is lower."
         },
         "matrix": {
           "type": "object",
@@ -260,14 +265,19 @@
           "type": "object",
           "additionalProperties": false,
           "required": ["to", "on"],
-          "description": "A refinement loop: work goes back to an earlier stage until the condition is cleared.",
+          "description": "A refinement loop: work goes back to an earlier stage until the condition is cleared, or until the loop's `maxRounds` or `maxFailures` is used up; then the orchestrator stops, and with findings open the human decides whether to raise the limits for that run (further fix rounds count against them) or to stop or accept the findings. `maxFailures` must be below `maxRounds`. For a loop whose stage agent is `brutal-critique`, `sqa-engineer` or `code-reviewer`, the AI_DLC_CRITIQUE_*, AI_DLC_TEST_* and AI_DLC_CODE_REVIEW_* MAX_ROUNDS / MAX_FAILURES variables (`env` in `.claude/settings.local.json`, then `.claude/settings.json`, then the process environment) override these values (the workflow skill's *Loop limits*); `node .ai-dlc/workflow.mjs rounds` prints the values in effect.",
           "properties": {
             "to": { "type": "string", "description": "Stage id work returns to." },
             "on": { "type": "string", "minLength": 1, "description": "What sends work back, in plain words." },
             "maxRounds": {
               "type": "integer",
               "minimum": 1,
-              "description": "Rounds before the orchestrator stops and escalates to the human. Omitted: loop until the condition is cleared. On the review stages of the Agent Artifact lifecycle (`AAW`) it is required, the same on all three, and one shared budget for the whole run, not one per loop (the workflow skill's references/aaw-review.md)."
+              "description": "The most review passes this step may run. Omitted: 2."
+            },
+            "maxFailures": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "How many failing verdicts this step's reviewer may return before the loop stops and escalates, even with rounds left. A failing verdict is what the loop's `on` names (`brutal-critique`: REVISE or Majors on a PASS; `sqa-engineer`: a test that fails because the code is wrong; `code-reviewer`: what the loop's `on` names; Blocker or Warning in `AAW`). Must be below `maxRounds`. Omitted: 1, or `maxRounds` - 1 when that is lower."
             }
           }
         },
