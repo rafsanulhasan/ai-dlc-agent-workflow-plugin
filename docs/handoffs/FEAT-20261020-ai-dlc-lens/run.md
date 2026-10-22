@@ -4,13 +4,13 @@ work-item: FEAT-20261020-ai-dlc-lens
 status: active
 lifecycle: AI-DLC
 mode: subagent
-current-stage: G1
+current-stage: spikes
 owner: orchestrator
 session: 0c54340a-f320-49d8-9488-509c3a7cddca
 branch: feat/ai-dlc-lens
-commit: 11dd3db
+commit: 494039f
 last-record: 11-orchestrator-to-human.handoff.md
-updated: 2026-10-23 00:30
+updated: 2026-10-23 00:35
 ---
 
 # Run: FEAT-20261020-ai-dlc-lens — run-state CLI, gate alert and the ai-dlc-lens mod plugin: one dashboard merging savvy-progress, cache-tax, context-view and agent-flow, with a flowchart view
@@ -58,7 +58,7 @@ Step numbering: steps 1–2 are the 2026-10-20 briefs `01-…` and `02-…` (old
 | 8.l2 | PDLC stories: post-PASS fixes M1–M6 (loop arrow etc.) | requirement-analyst | subagent | done (passed) · M1–M6 fixed | `8.l2-orchestrator-to-requirement-analyst.handoff.md` | `8.l2-requirement-analyst-to-orchestrator.handback.md` | 2026-10-23 00:15 |
 | 10.1 | PDLC accept (stories + backlog) → G1 | product-owner | subagent | done (passed) · ACCEPT with 3 non-blocking conditions | `10.1-orchestrator-to-product-owner.handoff.md` | `10.1-product-owner-to-orchestrator.handback.md` | 2026-10-23 00:25 |
 | 10.2 | research: Stop hook + systemMessage (A14) | research-assistant | subagent | done (passed) · Stop/SubagentStop confirmed; systemMessage display in terminal/VS Code unverified → spike 027 | `10.2-orchestrator-to-research-assistant.handoff.md` | `10.2-research-assistant-to-orchestrator.handback.md` | 2026-10-23 00:30 |
-| 11 | G1 gate (stories + ACs) | human | subagent | in-progress (awaiting human) | `11-orchestrator-to-human.handoff.md` | — | 2026-10-23 00:30 |
+| 11 | G1 gate (stories + ACs) | human | subagent | done · approved by the human | `11-orchestrator-to-human.handoff.md` | — | 2026-10-23 00:35 |
 | — | PDLC stories → backlog → accept → G1 | requirement-analyst → product-manager → product-owner; brutal-critique on brief and stories | subagent | pending | — | — | — |
 | — | design (spec, ADRs, LLD) → G2 | software-architect + system-engineer; brutal-critique | subagent | pending | — | — | — |
 | — | task plan → G3 | product-manager | subagent | pending | — | — | — |
@@ -72,7 +72,7 @@ Step numbering: steps 1–2 are the 2026-10-20 briefs `01-…` and `02-…` (old
 |---|---|---|---|---|
 | Plan (Routing Plan, S5) | human | approved | human | 2026-10-20 |
 | Plan (widened scope, `00b-approved-plan-2026-10-22.md`) | human | approved | human | 2026-10-22 |
-| G1 | human | presented (`11-orchestrator-to-human.handoff.md`) | — | 2026-10-23 |
+| G1 | human | **approved** (`11-orchestrator-to-human.handoff.md`; stories.md, A1–A24 confirmed) | human | 2026-10-23 |
 | G2, G3, G4, release | human | pending | — | — |
 | Every lifecycle loop (FDLC tests / architecture-review / review, AAW critique / test / code-review, PDLC accept) | limits 2 rounds / 1 failure (source `loop`, from `rounds --json`) | recorded at resume | orchestrator | 2026-10-22 |
 | clarify | 2 / 1 (source `loop`) | recorded at resume | orchestrator | 2026-10-22 |
@@ -95,6 +95,4 @@ Step numbering: steps 1–2 are the 2026-10-20 briefs `01-…` and `02-…` (old
 | 7 | requirement-analyst → human | Q1–Q12 (alert latency/channels; constants as settings; guard off/warn/refuse default off; layout + blink; context per row; unknown price; task bar from run.md; language en; autoOpen; ledger per run; settings reload; Desktop automated only) — see `8-requirement-analyst-to-orchestrator.handback.md` | 1 | closed 2026-10-22: all 12 defaults accepted by the human |
 
 ## Next action
-**Waiting for the human to approve G1** (`11-orchestrator-to-human.handoff.md`).
-- Approved: record the decision, then brief agent-manager for spikes ITEM-027 and ITEM-029 (ITEM-028 only if the fold merge has landed). Add the A14 live check to 027.
-- Changes: send them to requirement-analyst as `8.l3`.
+G1 was approved by the human on 2026-10-23. Next: brief agent-manager (step 12) for spikes ITEM-027 (VS Code: resize, Svg animation, buttons, transcript cards, the `Stop` `systemMessage` display from A14) and ITEM-029 (avatar image render, Svg scrub). They are throwaway mod plugins under `.scratch/`, followed by the human manual VS Code check. ITEM-028 runs only if `AAW-20261022-fold-cache-keepalive` has merged to `main`; check that first. After the spikes: ASDLC (software-architect + system-engineer), then G2.
