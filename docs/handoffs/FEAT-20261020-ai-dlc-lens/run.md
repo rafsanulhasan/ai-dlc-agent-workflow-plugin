@@ -1,4 +1,4 @@
-done (passed)`4.5-research-assistant-to-orchestrator.handback.md` | 2026-10-22 21:55 |done (passed)`4.4-research-assistant-to-orchestrator.handback.md` | 2026-10-22 21:55 |done (passed)`4.1-product-manager-to-orchestrator.handback.md` | 2026-10-22 21:55 |---
+---
 run: FEAT-20261020-ai-dlc-lens
 work-item: FEAT-20261020-ai-dlc-lens
 status: active
@@ -6,11 +6,11 @@ lifecycle: AI-DLC
 mode: subagent
 current-stage: spikes
 owner: orchestrator
-session: 0c54340a-f320-49d8-9488-509c3a7cddca
+session: 734fd039-2bfd-4247-86ee-1d8d2cc510fa
 branch: feat/ai-dlc-lens
-commit: 494039f
-last-record: 11-orchestrator-to-human.handoff.md
-updated: 2026-10-23 00:35
+commit: 14c9e79
+last-record: 12.3-agent-manager-to-orchestrator.handback.md
+updated: 2026-10-23 10:20
 ---
 
 # Run: FEAT-20261020-ai-dlc-lens — run-state CLI, gate alert and the ai-dlc-lens mod plugin: one dashboard merging savvy-progress, cache-tax, context-view and agent-flow, with a flowchart view
@@ -59,6 +59,9 @@ Step numbering: steps 1–2 are the 2026-10-20 briefs `01-…` and `02-…` (old
 | 10.1 | PDLC accept (stories + backlog) → G1 | product-owner | subagent | done (passed) · ACCEPT with 3 non-blocking conditions | `10.1-orchestrator-to-product-owner.handoff.md` | `10.1-product-owner-to-orchestrator.handback.md` | 2026-10-23 00:25 |
 | 10.2 | research: Stop hook + systemMessage (A14) | research-assistant | subagent | done (passed) · Stop/SubagentStop confirmed; systemMessage display in terminal/VS Code unverified → spike 027 | `10.2-orchestrator-to-research-assistant.handoff.md` | `10.2-research-assistant-to-orchestrator.handback.md` | 2026-10-23 00:30 |
 | 11 | G1 gate (stories + ACs) | human | subagent | done · approved by the human | `11-orchestrator-to-human.handoff.md` | — | 2026-10-23 00:35 |
+| 12.1 | spike (a) ITEM-027: VS Code resize, Svg animation, buttons, transcript cards, Stop systemMessage | agent-manager | subagent | done (passed) · automated: validate/tsc/test 3/3/headless OK; checks 1–2 needs-human, 3–5 partly; awaits human VS Code check | `12.1-orchestrator-to-agent-manager.handoff.md` | `12.1-agent-manager-to-orchestrator.handback.md` | 2026-10-23 10:10 |
+| 12.2 | spike (c) ITEM-029: avatar images, Svg scrub | agent-manager | subagent | done (passed) · validate/tsc/test 4/4/headless OK; engine passes all Svg markup, 131,072-char cap refuses whole pane; 27 visual checks needs-human | `12.2-orchestrator-to-agent-manager.handoff.md` | `12.2-agent-manager-to-orchestrator.handback.md` | 2026-10-23 10:15 |
+| 12.3 | spike (b) ITEM-028: keep-alive state across plugins (EXT cleared: PR #23, #25 on main, merged here at 14c9e79) | agent-manager | subagent | done (passed) · recommend `$.state` (works across plugins, no dependency; omit line when absent); tool-call works with caveats; state file weaker; keep-alive change proposed for build waves | `12.3-orchestrator-to-agent-manager.handoff.md` | `12.3-agent-manager-to-orchestrator.handback.md` | 2026-10-23 10:20 |
 | — | PDLC stories → backlog → accept → G1 | requirement-analyst → product-manager → product-owner; brutal-critique on brief and stories | subagent | pending | — | — | — |
 | — | design (spec, ADRs, LLD) → G2 | software-architect + system-engineer; brutal-critique | subagent | pending | — | — | — |
 | — | task plan → G3 | product-manager | subagent | pending | — | — | — |
@@ -95,4 +98,4 @@ Step numbering: steps 1–2 are the 2026-10-20 briefs `01-…` and `02-…` (old
 | 7 | requirement-analyst → human | Q1–Q12 (alert latency/channels; constants as settings; guard off/warn/refuse default off; layout + blink; context per row; unknown price; task bar from run.md; language en; autoOpen; ledger per run; settings reload; Desktop automated only) — see `8-requirement-analyst-to-orchestrator.handback.md` | 1 | closed 2026-10-22: all 12 defaults accepted by the human |
 
 ## Next action
-G1 was approved by the human on 2026-10-23. Next: brief agent-manager (step 12) for spikes ITEM-027 (VS Code: resize, Svg animation, buttons, transcript cards, the `Stop` `systemMessage` display from A14) and ITEM-029 (avatar image render, Svg scrub). They are throwaway mod plugins under `.scratch/`, followed by the human manual VS Code check. ITEM-028 runs only if `AAW-20261022-fold-cache-keepalive` has merged to `main`; check that first. After the spikes: ASDLC (software-architect + system-engineer), then G2.
+Spikes 12.1–12.3 returned and verified (hand-backs stored). Waiting for the human manual checks: ITEM-027 (`.scratch/ai-dlc-lens/spikes/027/CHECK.md`, 5 checks) and ITEM-029 (`.scratch/ai-dlc-lens/spikes/029/CHECK.md`, 27 checks); ITEM-028 optional terminal redraw check (`spikes/028/CHECK.md` step 3). Record the human's results, then brief software-architect + system-engineer for ASDLC (ITEM-005) citing all three hand-backs and the manual results; then G2. Proposal from 12.3 (keep-alive publishes `$.state` + ai-dlc `types`) goes to the build waves, not done now.
