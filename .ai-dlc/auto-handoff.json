@@ -1,0 +1,16 @@
+{
+  "$schema": "./auto-handoff.schema.json",
+  "enabled": null,
+  "thresholdPercent": null,
+  "thresholdTokens": null,
+  "defaultContextWindow": null,
+  "seedHeadroomTokens": null,
+  "maxConsecutiveHandoffs": null,
+  "chainWhileRunActive": null,
+  "renameSessions": null,
+  "sessionNamePrefix": null,
+  "briefTemplate": null,
+  "instructionsTemplate": null,
+  "ignoreFiles": null,
+  "viewer": null
+}
