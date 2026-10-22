@@ -15,9 +15,9 @@ convention_docs:   .claude/rules/
 ## Project Documentation Index
 
 ### Agent guidance
-- [CLAUDE.md](CLAUDE.md) — root agent rules
+- [CLAUDE.md](CLAUDE.md) — root project rules
 - [AGENTS.md](AGENTS.md) — agent-agnostic rules
-- [.github/copilot-instructions.md](.github/copilot-instructions.md) — Copilot-specific rules
+- [.github/copilot-instructions.md](.github/copilot-instructions.md) — Copilot-specific project rules
 
 ### Project docs
 - [README.md](README.md) — project overview

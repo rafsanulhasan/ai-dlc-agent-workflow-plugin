@@ -121,7 +121,7 @@ The file cannot change these; `validate` rejects the attempts it can detect.
 
 1. Read the root `CLAUDE.md` and `AGENTS.md`.
 2. Invoke `Skill("manage-memory", args: "agent-manager")`.
-3. Check for `.ai-dlc/workflow.json`, `.ai-dlc/workflow.schema.json`, `.ai-dlc/workflow.mjs`, `.ai-dlc/catalog.json`, the workflow gate (`.claude/hooks/check-workflow.mjs`, its `Stop` entry in `.claude/settings.json`, `.github/hooks/ai-dlc-workflow-gate.json`) and `node` on PATH. Done when you know which files exist, whether the schema, CLI and gate script match `templates/`, and whether the catalog's `plugin.version` matches the installed plugin (`../../.claude-plugin/plugin.json`, or `plugin.json` on Copilot). With no `.ai-dlc/`, run **install** first (any mode except `show` of the default); with a missing or outdated catalog, run **upgrade**.
+3. Check for `.ai-dlc/workflow.json`, `.ai-dlc/workflow.schema.json`, `.ai-dlc/workflow.mjs`, `.ai-dlc/catalog.json`, the workflow gate (`.claude/hooks/check-workflow.mjs`, its `Stop` entry in `.claude/settings.json`, `.github/hooks/ai-dlc-workflow-gate.json`), on Claude Code `.ai-dlc/auto-handoff.json` (for **upgrade** step 6), and `node` on PATH. Done when you know which files exist, whether the schema, CLI and gate script match `templates/`, and whether the catalog's `plugin.version` matches the installed plugin (`../../.claude-plugin/plugin.json`, or `plugin.json` on Copilot). With no `.ai-dlc/`, run **install** first (any mode except `show` of the default); with a missing or outdated catalog, run **upgrade**.
 
 ## Mode: show
 
@@ -164,7 +164,7 @@ The file cannot change these; `validate` rejects the attempts it can detect.
 
 ## Mode: upgrade
 
-**Args:** `upgrade`. Run after a plugin update.
+**Args:** `upgrade`. Run after a plugin update. It brings every `.ai-dlc/` file up to date: the workflow files, the gate and the catalog (steps 1–5), and on Claude Code an existing `.ai-dlc/auto-handoff.json` (step 6).
 
 1. Refresh `workflow.schema.json` and `workflow.mjs` from the templates first (plugin-owned, replaced), so the new `merge` and `validate` are the ones that run.
 2. **Legacy key.** If the file has `review.maxRounds` (older plugins' shared review budget), offer to remove it and remove it only when the developer agrees. Do this before `merge`: `merge` runs `validate` after writing, `validate` rejects the key as unknown, and `merge` never deletes it. Its value is not carried over; set the per-reviewer pairs (*Loop limits*) if the developer wants it kept.
@@ -175,6 +175,11 @@ The file cannot change these; `validate` rejects the attempts it can detect.
    - `clarify.maxFailures`, and `clarify.maxRounds` when the file omits it: an omitted `clarify.maxRounds` used to mean 3 rounds and now means 2. Set `clarify.maxRounds` 3 (and `maxFailures` 2) to keep the old behaviour.
 4. Run `node .ai-dlc/workflow.mjs diff --against templates/workflow.json` for what `merge` does not do: upstream changes to values the project also has, and keys upstream removed. Propose each with its outcome; ask when a line is both customised and changed upstream.
 5. With the developer's consent, run `merge` without `--dry-run`, apply the agreed `diff` items, refresh the workflow gate (**install** step 3), regenerate the catalog (**install** step 2), and run `validate`. Done when it exits 0.
+6. **Automatic handoff settings** (Claude Code only). On GitHub Copilot, say that this step does not apply there (the automatic handoff is a Claude Code hooks module) and skip it. On Claude Code:
+   - **`.ai-dlc/auto-handoff.json` absent:** do not create it. Say that the automatic handoff then runs on its other sources and defaults, and that `/configure-auto-handoff install` creates the file.
+   - **Present:** read `../configure-auto-handoff/SKILL.md` and follow its **install** step 1 only, with `<skill dir>` = `../configure-auto-handoff`: run `merge --dry-run`, show its lines (`+` keys it adds as `null`, `-` keys this plugin version no longer has, which it removes; every value already set is kept; a refreshed `.ai-dlc/auto-handoff.schema.json`), and with the developer's consent run `merge` without `--dry-run`. Skip its steps 2 and 3: `upgrade` sets no values and does not run the rename check. Then run its `validate`. Done when it exits 0, or the developer declined the merge.
+
+   Check presence before running `merge`: `merge` creates the file when it is missing.
 
 ### Merging into an existing file
 
@@ -189,4 +194,4 @@ The file cannot change these; `validate` rejects the attempts it can detect.
 
 ## Report
 
-List each file written, the `validate` result, the catalog line (`<plugin> <version> · N agents · N skills`), the diagram of every changed lifecycle, and the commands developers run themselves: `node .ai-dlc/workflow.mjs show|validate|rounds`. End with the changed paths, each marked `code` or `docs`, and the intent of the change, one line each, so the right reviewers can be spawned (`AAW`).
+List each file written, the `validate` result, after **upgrade** on Claude Code the `.ai-dlc/auto-handoff.json` outcome (keys added and removed, declined, or no file), the catalog line (`<plugin> <version> · N agents · N skills`), the diagram of every changed lifecycle, and the commands developers run themselves: `node .ai-dlc/workflow.mjs show|validate|rounds`. End with the changed paths, each marked `code` or `docs`, and the intent of the change, one line each, so the right reviewers can be spawned (`AAW`).

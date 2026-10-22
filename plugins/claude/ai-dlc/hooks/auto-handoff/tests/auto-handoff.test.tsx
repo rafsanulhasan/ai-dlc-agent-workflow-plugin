@@ -1689,6 +1689,75 @@ describe('repository configuration', () => {
     expect(calls.written[LOG_FILE]).toContain('reason=enabled=false (enabled in .ai-dlc/auto-handoff.json)')
   })
 
+  // F17: a kill switch is checked at every attempt; turning it off lets the same session hand off.
+  test('enabled turned back on in the repository file lets the same session hand off at its next turn', async ($, on) => {
+    const calls = engine(on, { tokens: 190_000, git: GIT, files: { [REPO]: JSON.stringify({ enabled: false }) } })
+    await $.turn.complete(TURN)
+    await settle(() => false)
+    expect(calls.cleared).toBe(0)
+    calls.written[REPO] = JSON.stringify({ enabled: true })
+    await $.turn.complete(TURN) // no session start in between: the turn end re-reads the settings
+    await settle(() => calls.cleared > 0)
+    expect(calls.cleared).toBe(1)
+    expect(calls.completes).toBe(1)
+    expect(calls.written[LOG_FILE]).toContain('kill switch off session=old-session (was enabled=false (enabled in .ai-dlc/auto-handoff.json)); handoffs on again')
+  })
+
+  test('a kill switch that stays on is logged once, not every turn', async ($, on) => {
+    const calls = engine(on, { tokens: 190_000, git: GIT, files: { [REPO]: JSON.stringify({ enabled: false }) } })
+    for (let i = 0; i < 3; i++) await $.turn.complete(TURN)
+    await settle(() => false)
+    expect(calls.cleared).toBe(0)
+    const skips = (calls.written[LOG_FILE] ?? '').split(/\r?\n/).filter(l => l.includes('skip session=old-session'))
+    expect(skips.length).toBe(1)
+  })
+
+  test('a switch that changes source while it stays on is logged again', async ($, on) => {
+    const calls = engine(on, { tokens: 190_000, git: GIT, files: { [REPO]: JSON.stringify({ enabled: false }) } })
+    await $.turn.complete(TURN)
+    // Off in the repository file, then off in settings.json instead: still off, a new reason.
+    calls.written[SHARED] = JSON.stringify({ env: { AI_DLC_AUTO_HANDOFF_ENABLED: 'false' } })
+    calls.written[REPO] = JSON.stringify({ enabled: true })
+    await $.turn.complete(TURN)
+    await settle(() => false)
+    expect(calls.cleared).toBe(0)
+    const skips = (calls.written[LOG_FILE] ?? '').split(/\r?\n/).filter(l => l.includes('skip session=old-session'))
+    expect(skips.length).toBe(2)
+    expect(skips[1]).toContain('reason=enabled=false (AI_DLC_AUTO_HANDOFF_ENABLED in .claude/settings.json)')
+  })
+
+  test('DISABLE_AUTO_COMPACT is checked each turn and logged once', async ($, on) => {
+    const calls = engine(on, { tokens: 190_000, env: { DISABLE_AUTO_COMPACT: '1' } })
+    await $.turn.complete(TURN)
+    await $.turn.complete(TURN)
+    await settle(() => false)
+    expect(calls.cleared).toBe(0)
+    const skips = (calls.written[LOG_FILE] ?? '').split(/\r?\n/).filter(l => l.includes('skip session=old-session'))
+    expect(skips.length).toBe(1)
+    expect(skips[0]).toContain('reason=DISABLE_AUTO_COMPACT set; checked again each turn')
+  })
+
+  test('a session an earlier version marked skipped-pane can still hand off', async ($, on) => {
+    const calls = engine(on, { tokens: 190_000, git: GIT, store: { 'fired:old-session': 'skipped-pane' } })
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    expect(calls.cleared).toBe(1)
+  })
+
+  test('the tool gate stays open while a kill switch is on and closes once it is off', async ($, on) => {
+    const calls = engine(on, { tokens: 190_000, git: GIT, files: { [REPO]: JSON.stringify({ enabled: false }) } })
+    await $.turn.complete(TURN)
+    await $.tool.call({ tool: 'Read', file_path: '/a.txt' })
+    expect(calls.ran).toBe(1)
+    calls.written[REPO] = JSON.stringify({ enabled: true, thresholdTokens: 500_000 }) // on, but under the line
+    await $.turn.complete(TURN)
+    await settle(() => false)
+    expect(calls.cleared).toBe(0)
+    calls.tokens = 600_000
+    await $.tool.call({ tool: 'Read', file_path: '/b.txt' })
+    expect(calls.ran).toBe(1)
+  })
+
   test('the settings are reloaded at each session start, so a chain picks up an edit', async ($, on) => {
     const calls = engine(on, { tokens: 31_000, git: GIT, files: { [REPO]: JSON.stringify({ thresholdTokens: 20000 }) } })
     await $.turn.complete(TURN)

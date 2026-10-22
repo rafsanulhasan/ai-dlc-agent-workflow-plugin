@@ -54,7 +54,7 @@ Done when `node <skill dir>/templates/auto-handoff.mjs validate` exits 0 and **s
 
 ### install
 
-Creates the file, or brings an existing one up to date with this plugin version: `init` runs it, and so can a developer after a plugin update.
+Creates the file, or brings an existing one up to date with this plugin version: `init` runs it, and so can a developer after a plugin update. `/workflow upgrade` runs its step 1 on an existing file, and never creates one.
 
 1. Run `node <skill dir>/templates/auto-handoff.mjs merge --dry-run`. On a new file it says so; on an existing one, `+` lines are keys it adds (as `null`) and `-` lines keys this version no longer has, which it removes. Every value already set is kept. Show the lines and, with consent, run it again without `--dry-run`. It also writes `.ai-dlc/auto-handoff.schema.json`.
 2. Apply the values the caller passed (for `init`, the handoff percentage when it differs from 80) with `set`, as in **edit** step 3.

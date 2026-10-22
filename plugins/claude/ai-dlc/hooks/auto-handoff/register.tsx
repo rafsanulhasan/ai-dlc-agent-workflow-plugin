@@ -11,8 +11,9 @@ import { ENDED, assembleSessionHandoff, handoffsRoot, inRepo, openRecords, parse
 import type { RunState, RunTarget } from './run.ts'
 
 // At the handoff threshold (thresholdPercent of the context window), Haiku writes a handoff brief, the mod runs /clear, then seeds the
-// fresh session with a pointer to the brief. Interactive terminal sessions only: where a
-// wrapper pipes the session and owns the context limit (DISABLE_AUTO_COMPACT), the mod only logs.
+// fresh session with a pointer to the brief. Main or lead session only (events with an agentId are
+// skipped). Where a wrapper pipes the session and owns the context limit (DISABLE_AUTO_COMPACT), or
+// `enabled` is false, the mod only logs; both are checked at every attempt.
 // Part of the ai-dlc plugin: when the repository has an active AI-DLC run on the current branch,
 // the brief is the `handoff` skill's session handoff, written to the run's scratch folder, and the
 // run's run.md points at it before the /clear (run.ts). Without one, the brief is the mod's own.
@@ -71,6 +72,10 @@ let unmeasured = 0
 let gated: string | undefined
 // From the latest SessionStart; /clear starts a new transcript file.
 let transcriptPath: string | undefined
+// The session a kill switch (paneVar) last stopped, and which switch: the skip is logged once per
+// change, and while it lasts each turn end reloads the settings, so turning the switch off in a
+// settings file or the repository file takes effect at the next turn, not the next session.
+let switchedOff: { session: string; reason: string } | undefined
 
 // Windows sets USERPROFILE, not HOME. With HOME unset, every path built on it began with
 // "undefined/", which $.fs resolves under the session's working directory: briefs, templates
@@ -623,17 +628,25 @@ const pause = (sessionId: string): Guard => ({
 // Shared by turn.complete and turn.step: the fired, kill-switch and loop-guard checks, then
 // the handoff itself. Returns true when a handoff started.
 async function tryHandoff($: EngineInterface, sessionId: string, tokens: number, threshold: number, via: string): Promise<boolean> {
-  const fired = await $.store.get(`fired:${sessionId}`)
+  const fired = await firedMark($, sessionId)
   // Every caller checks inFlight first, so a 'briefing' marker seen here is an orphan: the
   // module reloaded mid-handoff and the brief never landed. Retry instead of going quiet.
   if (fired === 'briefing') await log($, `stale briefing marker session=${sessionId} (mod reloaded mid-handoff); retrying`)
   else if (fired) return false
 
+  // The kill switches are checked at every attempt and never mark the session fired, so turning
+  // them off lets this session hand off at its next check. Logged once per change, not every turn.
   const pane = await paneVar($)
   if (pane) {
-    await $.store.set(`fired:${sessionId}`, 'skipped-pane')
-    await log($, `skip session=${sessionId} tokens=${tokens} reason=${pane}`)
+    if (switchedOff?.session !== sessionId || switchedOff.reason !== pane) {
+      switchedOff = { session: sessionId, reason: pane }
+      await log($, `skip session=${sessionId} tokens=${tokens} reason=${pane}; checked again each turn`)
+    }
     return false
+  }
+  if (switchedOff?.session === sessionId) {
+    await log($, `kill switch off session=${sessionId} (was ${switchedOff.reason}); handoffs on again`)
+    switchedOff = undefined
   }
 
   // Not marked fired: once the user types, the next turn can hand off.
@@ -664,7 +677,8 @@ async function tryHandoff($: EngineInterface, sessionId: string, tokens: number,
 // Kill switches. `enabled` false (from any source: AI_DLC_AUTO_HANDOFF_ENABLED=false in a shell
 // turns it off for the sessions started there) turns the mod off. DISABLE_AUTO_COMPACT, Claude Code's
 // own variable, means something else owns the context limit (a wrapper that pipes the session, where
-// /clear would break the pipe), so the mod stays out of its way too.
+// /clear would break the pipe), so the mod stays out of its way too. Checked at every attempt
+// (tryHandoff, canHandOff): a switch turned off mid-session lets the session hand off again.
 async function paneVar($: EngineInterface): Promise<string | undefined> {
   if (!cfg.enabled) return `enabled=false (${cfgSources.enabled ?? 'default'})`
   // Literal name: the host lists the variables a module reads.
@@ -676,8 +690,15 @@ async function paneVar($: EngineInterface): Promise<string | undefined> {
 // so a session the mod will not hand off (pane, loop guard, chain ended, already fired) is never blocked.
 async function canHandOff($: EngineInterface, sessionId: string): Promise<boolean> {
   if (await paneVar($) || (await chainGuard(sessionId, () => cachedLookup($, sessionId))).stop) return false
-  const fired = await $.store.get(`fired:${sessionId}`)
+  const fired = await firedMark($, sessionId)
   return !fired || fired === 'briefing'
+}
+
+// The session's fired marker. 'skipped-pane' is what earlier versions stored when a kill switch was
+// on; it no longer stops a handoff, so a session skipped then is checked again like any other.
+async function firedMark($: EngineInterface, sessionId: string): Promise<unknown> {
+  const fired = await $.store.get(`fired:${sessionId}`)
+  return fired === 'skipped-pane' ? undefined : fired
 }
 
 // The panel above the prompt. A module variable rather than $.state: $.state does not survive
@@ -835,7 +856,9 @@ export const register: Register = (on, opts) => {
     try {
       if (!e.agentId) {
         lookupCache = undefined
-        await ensureConfig($)
+        // While a kill switch stops this session, re-read the settings each turn (switchedOff).
+        if (switchedOff && switchedOff.session === await $.session.id()) await reloadConfig($)
+        else await ensureConfig($)
         await recordCapabilities($)
         await keepServing($)
       }
