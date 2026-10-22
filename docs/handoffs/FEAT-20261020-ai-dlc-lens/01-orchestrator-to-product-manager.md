@@ -8,6 +8,9 @@ verification: passed
 date: 2026-10-20
 ---
 
+> **Superseded on 2026-10-22.** Never sent. The scope was widened (see `00b-approved-plan-2026-10-22.md`); this brief is replaced by `4.1-orchestrator-to-product-manager.handoff.md` and `4.2`–`4.5-orchestrator-to-research-assistant.handoff.md`. Kept unchanged below for the history of the run.
+
+
 # orchestrator → product-manager: binding work breakdown for the run-state CLI, gate alert and ai-dlc-lens
 
 ## Artifacts
