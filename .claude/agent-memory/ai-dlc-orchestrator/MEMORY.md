@@ -5,3 +5,4 @@
 - [Lens decisions](project_lens-decisions.md) — 2026-10-22: merge 4 mods, no dup fields; /ai-dlc:lens via thin skills; no keepwarm; never hide responses
 - [Review budget](feedback_review-budget.md) — few review rounds; per-loop maxRounds/maxFailures 2/1; take limits from rounds --json
 - [Plugin command naming](feedback_plugin-command-naming.md) — /ai-dlc:<feature>[-action]; no /config rows; settings via .ai-dlc/*.json + env
+- [Harness sync decisions](project_harness-sync-decisions.md) — consumers: user-only /ai-dlc:harness-sync, no hook; plugin repo syncs on Stop; agents ask on conflicts
