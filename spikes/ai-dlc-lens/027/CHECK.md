@@ -31,7 +31,33 @@ Round 4 (step 17.l3, 2026-10-23, version `0.1.3`) applies the human's round 3 fi
 
 Not possible with the 2.1.309 components: a real divider element (the divider is a dim `─` line), a scroll box inside a panel (long text is in a collapsed section; the pane body itself scrolls), and pinning in VS Code (see above).
 
+Round 5 (step 17.l4, 2026-10-23, version `0.1.4`) is the last round. It applies the human's requirements of 2026-10-23. **Check X1 first** (below). In short:
+
+- **Centring.** The workflow pane's body takes the rows VS Code gives it (`minHeight` = `scroll.bodyRows`, d.ts:12561-12576). Under the title, the chart area grows into those rows (`flexGrow`) and centres the chart both ways (`alignItems` and `justifyContent` `center`, d.ts:987-989). The chart's Svg sits in a Box of its own that centres it, because `Svg` has no alignment prop (SvgProps, d.ts:13088-13110). In the drawing, each avatar's initials sit on the circle's centre (`text-anchor="middle"`, `dominant-baseline="central"`), and the name, model and role lines are centred under it. The chat card's line and its "Open flowchart" Button are centred in the card's box, and so is the header of the avatar and arrow panels. What cannot be centred: the lines inside a wrapped text, since `Text` has no alignment prop (TextProps, d.ts:13378 on); the chat card vertically, since a transcript row gets no height to centre in; the native Agent row, which is Claude Code's own; and the label/value rows of the panels, which stay label left, value right on purpose.
+- **The task title at the top.** The top line of the workflow pane is the task the agents are working on, with the status indicator before it. For an agent whose brief names a handoff record, that is the name of its record's stage row in the run's `run.md` (for `17.l4-...handoff.md`, the row `17.l4`), or the run's stage in progress when the row is not there yet. The lens re-reads `run.md` when anyone writes it through Write or Edit, at every spawn, Agent call and turn end, and when "Open flowchart" is pressed, so the title moves with the run. When the agents work on different tasks, or one names no record, or all have finished, the top line is the parent task instead: the run's title when the workflow is in one run, else the human's request to the orchestrator (the main loop's prompt that made the calls; notifications such as `<task-notification>` are skipped). When the top line is a stage, a dim "Parent task: <run title>" line follows it. Never an Agent call's `description`. The chat card uses the same title.
+- **Several workflows.** The top of the pane is a list of panels, one per workflow, newest first: `[+]`, the status indicator, and the workflow's parent task. **All start collapsed** (round 4 opened the newest). Opened, a panel shows "Now: <task>" when the agents work on a stage, then the chart.
+- **Status indicator.** A dot and the status in words, on the single workflow's header and on each panel:
+
+  | Status | Colour (setting, default) | When (the first that holds) |
+  |---|---|---|
+  | halted | red (`statusHaltedColor`, `#c62828`) | an agent of the workflow failed or was killed, or a run it works in has `status: blocked` |
+  | in progress | green, blinking (`statusInProgressColor`, `#2e7d32`; `statusBlink`, `statusBlinkMs`) | an agent is running a turn |
+  | teammate waiting | orange (`statusWaitingColor`, `#ef6c00`) | an agent-team teammate is `idle` (it answered and waits for a message), or an agent is `waiting` (held on background work or an approval, `AgentStatus`, d.ts:556-566) |
+  | pending | light grey (`statusPendingColor`, `#cfd8dc`) | an Agent call is not started yet |
+  | completed | green, steady (`statusCompletedColor`, `#2e7d32`) | every agent has ended |
+
+  The spawner (the orchestrator) is left out. A teammate is known from `agent.spawn`'s `teammateId`, `$.agent.list()`'s `teammateId`, or the type `teammate`. A teammate that answered is `idle`; one whose turn ended in an error or was stopped is now `failed` or `killed` (round 4 kept every teammate `idle`). In VS Code the dot is a small Svg that blinks with SMIL; in the terminal it is a text dot that alternates on the clock. The colours and the blink are lens settings like the others (`AI_DLC_LENS_STATUS_*`, or `.ai-dlc/lens.json`).
+- **Long-context pricing.** The cost is now added up per request (each `turn.step` usage), as `.ai-dlc/model-metadata.json` prescribes. For a model whose `longContextPricing` is not null, the threshold is the lens setting `longContextThresholdTokens` (`AI_DLC_LENS_LONG_CONTEXT_THRESHOLD_TOKENS`) when it is above 0, else the file's `longContextThresholdTokensOverride`, else the model's `longContextPricing.thresholdTokens`. A request whose prompt (input, cache read and cache write tokens) is over the threshold pays the long-context prices for all its tokens; any other pays `pricing`. A model with long-context prices and no threshold anywhere shows `—`, as does a loop whose requests no hook saw (a total cannot say which requests were over). Usage shows "Long-context requests: n of m" for such a model. The file is only read.
+- **Null limits** stay hidden. "Max input" shows when the file has a number, which the Models API may now fill (`sources.modelsApi`).
+
 `<REPO>` is the main checkout of this repository, the folder registered as the `ai-dlc-agent-workflow` marketplace (`CLAUDE.md`), switched to the `feat/ai-dlc-lens` branch. `<SPIKES>` = `<REPO>\spikes\ai-dlc-lens`; `<SPIKE>` = `<SPIKES>\027`, this plugin.
+
+## What was checked automatically, round 5 (2026-10-23, Claude Code 2.1.309)
+
+- `claude plugin validate 027`: passed. `npx -p typescript@5 tsc -p 027/.tsc`: no errors. `claude plugin test 027`: 62 tests pass, 0 fail.
+- Tests added (14): the centring props (the body's `minHeight`, the growing centred chart area, at least four centred Boxes in the pane, the Svg's `preserveAspectRatio`, the initials on the circle's centre, the card's centred row with the native row still last, the panel header); the top title follows the stage row, then a `run.md` write, then the run title once all are done; two agents in two runs show the human's request, never a description; `workflowTask` and `parseRun`; two workflows as two collapsed panels with their parent tasks and statuses; each status's colour and blink, and `workflowStatus` for every case; the pane's indicator for in progress (blink, `statusBlinkMs`), completed, halted by a blocked run in the colour `lens.json` sets, teammate waiting, halted by a failed teammate, pending, and the terminal's text dot; long-context cost below, at and above the threshold, the file override, the lens override (also from a settings env), no threshold, a missing long price, totals only; a null limit hidden and a max input from the Models API shown.
+- Tests changed: the flowchart is found by its `alt` (the status dot is an Svg too); the round 4 "newest open" test now expects every panel collapsed; `lookupModel` returns `long`.
+- Not run this round: a headless `claude -p` session. What the headless tests cannot show: where VS Code places the pane and how tall its body is, and whether the SMIL blink of the small dot runs in VS Code's frame.
 
 ## What was checked automatically, round 4 (2026-10-23, Claude Code 2.1.309)
 
@@ -111,7 +137,7 @@ Main route: the repository's own marketplace, `ai-dlc-agent-workflow`, read from
 2. Run `/reload-plugins` in an open Claude Code session, or open a new one in VS Code.
 3. For round 2 nothing needs typing: spawn agents and the card is in the chat (C1). `/spike027` opens the pane view "AI-DLC lens (spike 027)".
 
-Round 4 is version `0.1.3` (round 3 was `0.1.2`, round 2 `0.1.1`). If an earlier round is installed, run `claude plugin marketplace update ai-dlc-agent-workflow` and then `claude plugin update ai-dlc-lens-spike-027@ai-dlc-agent-workflow --scope local`, or uninstall and install it again. Then run `/reload-plugins`, or start a new session. `/reload-plugins` reports "3 errors during load" on this machine; none is the spike's (see the round 2 automatic checks).
+Round 5 is version `0.1.4` (round 4 was `0.1.3`, round 3 `0.1.2`, round 2 `0.1.1`). If an earlier round is installed, run `claude plugin marketplace update ai-dlc-agent-workflow` and then `claude plugin update ai-dlc-lens-spike-027@ai-dlc-agent-workflow --scope local`, or uninstall and install it again. Then run `/reload-plugins`, or start a new session. `/reload-plugins` reports "3 errors during load" on this machine; none is the spike's (see the round 2 automatic checks).
 
 Terminal: `claude --plugin-dir "<SPIKE>"` loads the folder for that session only, with nothing installed.
 
@@ -130,6 +156,18 @@ claude plugin uninstall ai-dlc-lens-spike-027@ai-dlc-agent-workflow --scope loca
 ```
 
 Keep the `ai-dlc-agent-workflow` marketplace; it also serves `ai-dlc`. If you used the alternative, remove the `CLAUDE_CODE_PLUGIN_DIRS` entry.
+
+## Round 5 manual checks (X1 to X7)
+
+| # | What to do | Expected | Result |
+|---|---|---|---|
+| X1 | Spawn one agent whose brief names a handoff record of a run with a `run.md` (or ask the orchestrator for any staged work). Open the **AI-DLC workflow** pane. | The top line is the record's stage name with a blinking green dot and "in progress"; a dim "Parent task: <run title>" under it. The chart is centred across the pane and in the height left under the title. | |
+| X2 | While it runs, have the orchestrator move the run to its next stage (it writes `run.md`). | The top line changes to the new stage without pressing anything. When every agent has finished: the run's title, a steady green dot, "completed". | |
+| X3 | Spawn two agents in parallel on two different tasks (two runs, or one with a record and one without). | The top line is the parent task: the run's title, or your request to the orchestrator. Never "Agent: ...". | |
+| X4 | Start a second workflow after the first finished (or ask for two separate tasks). | The top is a list of panels, newest first, each `[+]`, a status dot and its parent task; all collapsed. `[+]` opens one: "Now: <task>" when there is one, then its chart, centred. | |
+| X5 | Watch the dots through a workflow: an agent not started, running, a teammate waiting for a message (agent team), an agent stopped or failed, all done. | Light grey "pending"; blinking green "in progress"; orange "teammate waiting"; red "halted"; steady green "completed". Set `statusHaltedColor` (for example `/spike027-lens-configure statusHaltedColor #ff00ff`) and `statusBlink false`: the next draw uses them. | |
+| X6 | Open an avatar's Usage for an agent on a model that has long-context prices (`longContextPricing` not null in `.ai-dlc/model-metadata.json`). Then set `/spike027-lens-configure longContextThresholdTokens 1000`. | Cost and "Long-context requests: n of m". With the low threshold, more (usually all) requests count as long-context and the cost rises. `--unset` it afterwards. A model priced flat shows no such row. | |
+| X7 | Look at the chat card and an avatar panel's header in a wide and a narrow pane. | The card's line and its Button centred in the card; the panel header centred. Wrapped text inside a line stays left-aligned (not possible to centre). | |
 
 ## Round 4 manual checks (W1 to W7)
 

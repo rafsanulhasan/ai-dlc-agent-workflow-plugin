@@ -8,9 +8,9 @@ current-stage: spikes
 owner: orchestrator
 session: 734fd039-2bfd-4247-86ee-1d8d2cc510fa
 branch: feat/ai-dlc-lens
-commit: 11f36b0
-last-record: 17.l3-agent-manager-to-orchestrator.handback.md
-updated: 2026-10-23 19:15
+commit: 06af622
+last-record: 17.l4-agent-manager-to-orchestrator.handback.md
+updated: 2026-10-23 21:10
 ---
 
 # Run: FEAT-20261020-ai-dlc-lens — run-state CLI, gate alert and the ai-dlc-lens mod plugin: one dashboard merging savvy-progress, cache-tax, context-view and agent-flow, with a flowchart view
@@ -71,6 +71,7 @@ Step numbering: steps 1–2 are the 2026-10-20 briefs `01-…` and `02-…` (old
 | 17.l1 | spike 027 rework round 2 / 2: flowchart at the top of the chat card | agent-manager | subagent | done (passed) · chart in the `ToolUse` row of the first Agent call, one per message; 0.1.1; validate ✔, tsc 0, test 21/21; load errors not 027 (superpowers, sonarqube not installed; duplicate figma); awaits human check | `17.l1-orchestrator-to-agent-manager.handoff.md` | `17.l1-agent-manager-to-orchestrator.handback.md` | 2026-10-23 13:35 |
 | 17.l2 | spike 027 round 3 / 4: the human's findings 1–6 (smaller responsive chart, names/models/roles, metadata to side panel, prompt fallback, blink fix) | agent-manager | subagent | done (passed) · root cause of 1c/1d/6: spawn race (turn.start before agent.spawn) + read-then-write overwrite, fixed; chart 120 px/avatar, persona/model/role; toolbar button not possible → in-card Open flowchart button; settings resolver + lens-init/configure stand-ins; 0.1.2; validate ✔, tsc 0, test 39/39 | `17.l2-orchestrator-to-agent-manager.handoff.md` | `17.l2-agent-manager-to-orchestrator.handback.md` | 2026-10-23 16:35 |
 | 17.l3 | spike 027 round 4 / 4: label removal + addenda (source labels, collapsible tasks, pinned panel → auto-opened pane + compact card, UI panels, late-spawn fix, null limits) | agent-manager | subagent | done (passed) · pinning impossible in VS Code (cited) → auto-opened pane; 0.1.3; validate ✔, tsc 0, test 48/48 | `17.l3-orchestrator-to-agent-manager.handoff.md` | `17.l3-agent-manager-to-orchestrator.handback.md` | 2026-10-23 19:15 |
+| 17.l4 | spike 027 round 5 / 5: centring, task title at top (auto-updating, parent task), workflows list collapsed with status colours, long-context cost | agent-manager | subagent | done (passed) · centring (with cited limits), auto-updating task title / parent task, collapsed workflow panels with status dots, per-request long-context cost; 0.1.4; validate ✔, tsc 0, test 62/62 | `17.l4-orchestrator-to-agent-manager.handoff.md` | `17.l4-agent-manager-to-orchestrator.handback.md` | 2026-10-23 21:10 |
 | — | scope pass: brief (+ claude-lens gaps, options C/D, 027 findings) → critique → stories → critique + backlog → accept → G1 again | product-owner, research-assistant, brutal-critique, requirement-analyst, product-manager | subagent | pending | — | — | — |
 | — | PDLC stories → backlog → accept → G1 | requirement-analyst → product-manager → product-owner; brutal-critique on brief and stories | subagent | pending | — | — | — |
 | — | design (spec, ADRs, LLD) → G2 | software-architect + system-engineer; brutal-critique | subagent | pending | — | — | — |
@@ -127,3 +128,11 @@ Partial: the card prints "Agent:Wait test agent one" (the Agent call's descripti
 
 ## After round 4 (2026-10-23)
 The spike loop's raised limit (4 rounds) is used up. Open for the human: the round 4 check (W1–W7); whether a subagent's background task shows the persona name instead of its description (agent-manager's choice, conflicts with the addendum wording); if the native Agent row still shows "Agent:<description>", it is Claude Code's own row (removing it would hide the response, AC-15.5); long-context pricing in the lens (waits for AAW 1.l2) — another round or carry into the stories.
+
+## Human decisions after round 4 (2026-10-23)
+- Spike loop limit raised again for this run: **5 rounds** (one-off).
+- Centre the chart and the content in each box, vertically and horizontally.
+- Top of the pane: the task title the agents work on, auto-updating; with several tasks, the parent task the human gave the orchestrator; several workflows → a list of parent tasks as collapsible panels, all collapsed by default, each with a status indicator: in progress blinking green, pending light grey, halted red, teammate waiting orange, completed steady green.
+
+## After round 5 (2026-10-23)
+Spike loop limit (5) used up. Open for the human: the round 5 check (X1–X7); status order (in progress before teammate waiting?); does "waiting" cover only teammates?; the parent-task heuristic for prompts. AAW-20261023-model-costing-hook reviews (critique 4, code review 2) were held until this round completed — now resumed.

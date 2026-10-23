@@ -20,7 +20,7 @@
 // The round-0 kit (checks 1-5: resize, Svg blink, buttons, transcript cards, gate alert) is `/spike027-kit`.
 import { atom, read, update } from 'claude-code'
 import type { Register } from 'claude-code'
-import type { LensAgent, LensBatch, LensCall, LensConfig, LensCosting, LensDef, LensDoc, LensTask, LensUi, LensWorkflows, Tokens } from '../types'
+import type { LensAgent, LensBatch, LensCall, LensConfig, LensCosting, LensDef, LensDoc, LensRun, LensTask, LensUi, LensWorkflows, Tokens } from '../types'
 import {
   AGENT_TOOLS,
   CONTEXT_TOOLS,
@@ -30,7 +30,7 @@ import {
   addToBatch,
   batchView,
   contextUsed,
-  costOf,
+  costOfAgent,
   ensureIn,
   flowchartSvg,
   firstLine,
@@ -40,6 +40,7 @@ import {
   humanRole,
   initials,
   isAgentTask,
+  isHumanRequest,
   isRespawn,
   isRunning,
   leadOf,
@@ -50,24 +51,31 @@ import {
   parseDefinition,
   parseRecord,
   parseRoster,
+  parseRun,
   personaOf,
   pickHandback,
   joinWorkflow,
   limitRows,
+  lookupModel,
+  parseCosting,
   pluginOf,
   roleOf,
-  runTitle,
+  runDirOf,
   stampTasks,
   statusBadge,
+  statusDotSvg,
+  statusStyle,
   summarize,
   taskLine,
   textChart,
   usageBar,
   windowOf,
   workflowBatch,
+  workflowStatus,
+  workflowTask,
   WF0,
 } from './lens'
-import type { ChartLabel, ChartSize } from './lens'
+import type { ChartLabel, ChartSize, FlowStatus } from './lens'
 import { DEFAULTS, KEYS, envLevel, envName, fileLevel, initialFile, resolve, schema, setKey } from './settings'
 import type { Key, LensSettings } from './settings'
 
@@ -91,7 +99,7 @@ const forceMode = atom({ plugin: 'ai-dlc-lens-spike-027', key: 'forceMode' } as 
 // ---- round-1 lens state ----
 const UI0: LensUi = { panelMode: 'pane', edge: null, agent: null, drill: null, edgeSnap: null, agentSnap: null }
 const DOC0: LensDoc = { agent: '', handoff: '', handoffText: '', handback: '', handbackText: '', error: '', prompt: '', hint: '' }
-const agentsA = atom({ plugin: 'ai-dlc-lens-spike-027', key: 'agents' } as const, {}, { shape: 'agents-2' })
+const agentsA = atom({ plugin: 'ai-dlc-lens-spike-027', key: 'agents' } as const, {}, { shape: 'agents-3' })
 const orderA = atom({ plugin: 'ai-dlc-lens-spike-027', key: 'order' } as const, [], { shape: 'order-1' })
 const callsA = atom({ plugin: 'ai-dlc-lens-spike-027', key: 'calls' } as const, {}, { shape: 'calls-1' })
 const thinkingA = atom({ plugin: 'ai-dlc-lens-spike-027', key: 'thinking' } as const, {})
@@ -122,7 +130,10 @@ const workflowsA = atom({ plugin: 'ai-dlc-lens-spike-027', key: 'workflows' } as
 /** The workflow pane opens by itself once a session, on the first spawn. */
 let workflowOpened = false
 const LENS0: LensConfig = { settings: { ...DEFAULTS }, sources: Object.fromEntries(KEYS.map(k => [k, 'default'])), ignored: [] }
-const lensA = atom({ plugin: 'ai-dlc-lens-spike-027', key: 'lens' } as const, LENS0, { shape: 'lens-1' })
+const lensA = atom({ plugin: 'ai-dlc-lens-spike-027', key: 'lens' } as const, LENS0, { shape: 'lens-2' })
+// ---- round-5 state ----
+/** Each run folder a brief named -> its `run.md` as parsed: the titles and the status follow it (requirement 2). */
+const runsA = atom({ plugin: 'ai-dlc-lens-spike-027', key: 'runs' } as const, {}, { shape: 'runs-1' })
 
 // Tools whose rows get a transcript card. `Task` is the Agent tool's name in headless runs.
 const CARD_TOOLS = new Set(['Agent', 'Task', 'SendMessage'])
@@ -172,6 +183,7 @@ const blankAgent = (id: string, parent: string | null, type: string): LensAgent 
   startedAt: nowMs(),
   endedAt: null,
   bg: [],
+  reqs: [],
 })
 
 const svgDot = (fill: string, animated: boolean) =>
@@ -228,6 +240,32 @@ async function loadCosting($: any) {
 async function loadRoster($: any) {
   const text = await readText($, cfg.rosterPath)
   await update($, rosterA, () => (text === null ? {} : parseRoster(text)))
+}
+
+/**
+ * Re-reads the `run.md` of every run a brief named (round 5): the pane's titles and status follow the
+ * run as it moves. Written only when something changed, so a pane redraws only then.
+ */
+async function refreshRuns($: any) {
+  const agents = (await read($, agentsA)) as Record<string, LensAgent>
+  const batches = (await read($, batchesA)) as Record<string, LensBatch>
+  const dirs = new Set<string>()
+  for (const a of Object.values(agents)) {
+    const d = runDirOf(a)
+    if (d !== null) dirs.add(d)
+  }
+  for (const b of Object.values(batches))
+    for (const p of Object.values(b.pending)) {
+      const d = runDirOf({ handoff: null, prompt: p.prompt })
+      if (d !== null) dirs.add(d)
+    }
+  const next: Record<string, LensRun> = {}
+  for (const d of dirs) {
+    const r = parseRun(await readText($, `${d}/run.md`))
+    if (r !== null) next[d] = r
+  }
+  const prev = (await read($, runsA)) as Record<string, LensRun>
+  if (JSON.stringify(prev) !== JSON.stringify(next)) await update($, runsA, () => next)
 }
 
 /** A plugin's installed copies: `<plugins cache>/<marketplace>/<plugin>/<version>/`, the newest release first. */
@@ -348,6 +386,7 @@ async function refreshList($: any, reason: string) {
       const cur = out[a.id]
       // A list that still says `running` never undoes a `turn.complete` (finding 6).
       if (cur && cur.status !== a.status && a.status !== 'completed' && !ENDED.has(cur.status)) out[a.id] = { ...cur, status: String(a.status) }
+      if (out[a.id] && typeof a.teammateId === 'string' && out[a.id]!.teammate !== true) out[a.id] = { ...out[a.id]!, teammate: true }
     }
     return out
   })
@@ -431,6 +470,7 @@ async function openAgent($: any, snap: LensAgent, title: string, fromChat: boole
 /** Opens the workflow pane with that workflow's section expanded. */
 async function openChart($: any, w: string) {
   await update($, chartLeadA, () => w)
+  await refreshRuns($)
   await update($, cardOpenA, m => ({ ...(m as Record<string, boolean>), [`wf:${w}`]: true }))
   await $.ui.open({ id: CHART, title: 'AI-DLC workflow' })
 }
@@ -534,6 +574,9 @@ async function afterCall($: any, ctx: CallCtx, r: any) {
     if (AGENT_TOOLS.has(tool) && typeof agentId === 'string') await update($, callAgentA, m => ({ ...(m as Record<string, string>), [id]: agentId }))
     await pushCall($, key, { ...call, status })
     if (key === 'main' && CONTEXT_TOOLS.has(tool)) await update($, contextA, l => l.map(c => (c.id === id ? { ...c, status } : c)))
+    // Round 5: a write to a run's run.md, or a new Agent call, moves the titles (requirement 2).
+    const target = String(input.file_path ?? input.path ?? input.notebook_path ?? '').replace(/\\/g, '/')
+    if (AGENT_TOOLS.has(tool) || (/^(Write|Edit|MultiEdit)$/.test(tool) && /(^|\/)run\.md$/.test(target))) await refreshRuns($)
     if (probeOn && tool === 'Bash' && input.run_in_background === true) {
       const list = (await $.agent.list()) as any[]
       await plog($, 'E7', { site: 'after background Bash', result: r?.result ?? null, agentList: list.map(a => ({ id: a.id, type: a.type, status: a.status })) })
@@ -596,15 +639,15 @@ function agentButtons($: any, t: any, order: string[], agents: Record<string, Le
   const ids = order.filter(id => agents[id])
   const edges = ids.filter(id => id !== root && agents[id]!.parent !== null)
   return (
-    <Box flexDirection="column">
-      <Box flexDirection="row" flexWrap="wrap">
+    <Box flexDirection="column" alignItems="center">
+      <Box flexDirection="row" flexWrap="wrap" alignItems="center" justifyContent="center">
         <Text dimColor>Avatars: </Text>
         {ids.map(id => {
           const name = label(agents[id]!).name
           return <Button key={`${prefix}agent-${id}`} label={name} onPress={() => openAgent($, agents[id]!, name, fromChat)} />
         })}
       </Box>
-      <Box flexDirection="row" flexWrap="wrap">
+      <Box flexDirection="row" flexWrap="wrap" alignItems="center" justifyContent="center">
         <Text dimColor>Arrows: </Text>
         {edges.length === 0 && <Text dimColor>(none yet)</Text>}
         {edges.map(id => {
@@ -671,9 +714,10 @@ function kv(t: any, label: string, value: string) {
 function panelHeader(t: any, badge: string, title: string, sub: string, status: string) {
   const { Box, Text } = t
   const b = statusBadge(status)
+  // Round 5: the header block centred both ways in its box.
   return (
-    <Box flexDirection="column">
-      <Box flexDirection="row" flexWrap="wrap" columnGap={1}>
+    <Box flexDirection="column" alignItems="center" justifyContent="center">
+      <Box flexDirection="row" flexWrap="wrap" columnGap={1} alignItems="center" justifyContent="center">
         <Text inverse bold>
           {' '}
           {badge}{' '}
@@ -707,20 +751,43 @@ function callRow(t: any, c: LensCall) {
 }
 
 /**
- * A workflow's title (round 4): its run's title from `run.md` when a brief names a handoff record,
- * else the request or brief that made its calls; '' when neither. Never an Agent call's `description`.
+ * A workflow's agents (the spawner left out), its titles and its status (round 5). The request is the
+ * prompt or brief that made the workflow's calls; `fallback` names the workflow when there is none.
+ * Never an Agent call's `description`.
  */
-async function workflowTitle($: any, view: { members: string[]; agents: Record<string, LensAgent> }, ids: readonly string[], callTask: Record<string, string>): Promise<string> {
-  for (const m of view.members) {
-    const a = view.agents[m]!
-    const rec = a.handoff ?? matchHandoff(a.prompt)?.path ?? null
-    if (rec === null) continue
-    const dir = parseRecord(rec)?.dir ?? rec.replace(/\/[^/]*$/, '')
-    const title = runTitle(await readText($, `${dir}/run.md`))
-    if (title !== '') return title
-  }
-  for (const id of ids) if (callTask[id]) return callTask[id]!
-  return ''
+function workflowInfo(
+  view: { ids: string[]; agents: Record<string, LensAgent> },
+  batch: LensBatch,
+  callTask: Record<string, string>,
+  runs: Record<string, LensRun>,
+  fallback: string,
+): { members: LensAgent[]; parent: string; current: string; status: FlowStatus } {
+  const members = view.ids.filter(id => id !== batch.parent).map(id => view.agents[id]!)
+  const request = batch.ids.map(id => callTask[id] ?? '').find(x => x !== '') ?? ''
+  const { parent, current } = workflowTask(members, runs, request || fallback)
+  const dirs = [...new Set(members.map(a => runDirOf(a)).filter((d): d is string => d !== null))]
+  return { members, parent, current, status: workflowStatus(members, dirs.map(d => runs[d]?.status ?? '')) }
+}
+
+/**
+ * The status indicator (round 5, requirement 4): a dot in the status colour, blinking only while in
+ * progress (an Svg with SMIL where the surface draws Svg; the terminal's text dot alternates on the
+ * clock), and the status in words beside it.
+ */
+function statusIndicator(t: any, hasSvg: boolean, on1: boolean, st: FlowStatus, s: LensSettings) {
+  const { Box, Text, Svg } = t
+  const look = statusStyle(st, s)
+  const dot = hasSvg ? (
+    <Svg source={statusDotSvg(look.color, look.blink, s.statusBlinkMs)} alt={`status: ${look.label}`} width={14} height={14} isInteractive={look.blink} />
+  ) : (
+    <Text color={look.blink && !on1 ? s.statusPendingColor : look.color}>{'●'}</Text>
+  )
+  return (
+    <Box flexDirection="row" alignItems="center" justifyContent="center" columnGap={1}>
+      {dot}
+      <Text dimColor>{look.label}</Text>
+    </Box>
+  )
 }
 
 /** The arrow panel: who handed off to whom, the hand-off's usage, then the record and hand-back, or the prompt. */
@@ -797,7 +864,12 @@ function agentBody(
   const used = contextUsed(a.last)
   // Live: the step sums; a loop whose steps no hook saw falls back to its turn sums.
   const sum = a.steps.in + a.steps.out + a.steps.cr + a.steps.cw > 0 ? a.steps : a.turns
-  const cost = costOf(costing, a.model, sum, s.cacheWriteRate)
+  // Round 5: per request, long-context prices over the threshold (lens setting > file override > model).
+  const cost = costOfAgent(costing, a.model, a.reqs ?? [], sum, s.cacheWriteRate, s.longContextThresholdTokens > 0 ? s.longContextThresholdTokens : null)
+  const facts = (() => {
+    const json = parseCosting(costing)
+    return json === null ? null : lookupModel(json, a.model)
+  })()
   const list = calls[id] ?? []
   const th = thinking[id] ?? ''
   const notStarted = a.status === 'pending'
@@ -818,6 +890,7 @@ function agentBody(
           kv(t, 'Cache write', fmtTokens(sum.cw)),
           kv(t, 'Uncached', fmtTokens(sum.in)),
           s.showCost ? kv(t, 'Cost', cost.text) : null,
+          s.showCost && facts?.long && cost.text !== '—' ? kv(t, 'Long-context requests', `${cost.long} of ${(a.reqs ?? []).length}`) : null,
           kv(t, 'Ran on', a.model === '' ? '—' : a.model),
           ...limitRows(costing, a.model).map(([k, v]) => kv(t, k, v)),
         ])
@@ -872,10 +945,15 @@ function chartNode(t: any, hasSvg: boolean, on1: boolean, ids: string[], agents:
   const { Box, Text, Svg } = t
   if (hasSvg) {
     const chart = flowchartSvg(ids, agents, label, chartSize(s))
-    return <Svg source={chart.source} alt={alt} width={chart.width} height={chart.height} isInteractive={true} />
+    // Round 5: Svg has no alignment of its own (SvgProps): its Box centres it both ways.
+    return (
+      <Box flexDirection="row" alignItems="center" justifyContent="center">
+        <Svg source={chart.source} alt={alt} width={chart.width} height={chart.height} isInteractive={true} />
+      </Box>
+    )
   }
   return (
-    <Box flexDirection="column">
+    <Box flexDirection="column" alignItems="center" justifyContent="center">
       {textChart(ids, agents, label).map(row => {
         const a = agents[row.id]!
         const blinking = s.blink && isRunning(a.status)
@@ -1146,12 +1224,14 @@ export const register: Register = on => {
             handoffHow: match?.how ?? cur.handoffHow,
             loop: cur.loop || again,
             endedAt: null,
+            teammate: cur.teammate === true || typeof r?.teammateId === 'string',
           },
         }
       })
       await update($, orderA, o => (o.includes(id) ? o : [...o, id]))
       await update($, callAgentA, m => ({ ...(m as Record<string, string>), [e.tool_use_id]: id }))
       await loadDef($, e.subagentType)
+      await refreshRuns($)
       if (!workflowOpened) {
         // Round 4 "pinned": VS Code has no band that stays at the top (AbovePrompt is terminal and
         // desktop only); the workflow pane, outside the transcript, is the closest. Unasked, a surface may leave it undrawn.
@@ -1177,7 +1257,8 @@ export const register: Register = on => {
       await ensureAgent($, key, key === 'main' ? null : 'main', '')
       await patchAgent($, key, a => ({ ...a, status: 'running' }))
       const text = typeof (e as any).text === 'string' ? ((e as any).text as string) : ''
-      if (key === 'main' && firstLine(text) !== '') await update($, mainPromptA, () => firstLine(text))
+      // Round 5: only the human's request names the task, never a notification fed to the main loop.
+      if (key === 'main' && isHumanRequest(text)) await update($, mainPromptA, () => firstLine(text))
     } catch (err) {
       lensFail('turn.start', err)
     }
@@ -1241,6 +1322,7 @@ export const register: Register = on => {
         ...a,
         model: model !== '' ? model : a.model,
         steps: usage ? addTokens(a.steps, usage) : a.steps,
+        reqs: usage ? [...(a.reqs ?? []), usage] : (a.reqs ?? []),
         last: usage ?? a.last,
       }))
       if (probeOn) await plog($, 'E2', { agent: key, index: e.index, counts, agentCalls, thinkingChars, observeMs: spent, afterMs: nowMs() - t1, usage })
@@ -1263,8 +1345,9 @@ export const register: Register = on => {
       await ensureAgent($, key, key === 'main' ? null : 'main', '')
       const usage = e.usage ? fromUsage(e.usage) : null
       const agents = (await read($, agentsA)) as Record<string, LensAgent>
-      const teammate = (agents[key]?.type ?? '') === 'teammate'
-      const status = key === 'main' || teammate ? 'idle' : e.reason === 'answer' ? 'completed' : e.reason === 'aborted' ? 'killed' : 'failed'
+      const teammate = (agents[key]?.type ?? '') === 'teammate' || agents[key]?.teammate === true
+      // Round 5: a teammate that answered waits for its next message (idle); one that errored or was stopped has halted.
+      const status = key === 'main' ? 'idle' : e.reason === 'answer' ? (teammate ? 'idle' : 'completed') : e.reason === 'aborted' ? 'killed' : 'failed'
       await patchAgent($, key, a => ({
         ...a,
         status,
@@ -1283,6 +1366,7 @@ export const register: Register = on => {
         await loadSettings($)
         await loadCosting($)
       }
+      await refreshRuns($)
       const stored = await backfillThinking($, key, thinkBlocks[key] ?? 0)
       if (probeOn && stored !== null) await plog($, 'E2', { site: 'turn.complete stored thinking', agent: key, streamedBlocks: thinkBlocks[key] ?? 0, stored: { blocks: stored.blocks, chars: stored.chars, redacted: stored.redacted, error: stored.error ?? null } })
       if (probeOn) {
@@ -1398,7 +1482,9 @@ export const register: Register = on => {
 
   // Round 4: the workflow pane. VS Code has no band pinned at the top of the chat (AbovePrompt is
   // terminal and desktop only); this pane sits outside the transcript, opens on the first spawn and
-  // updates live. One workflow: drawn as it is; several: one collapsible section each, newest first and open.
+  // updates live. Round 5: the task title and a status indicator at the top; one workflow: its chart
+  // centred both ways under it; several: one collapsible panel per workflow, headed by its parent task,
+  // all collapsed by default.
   on('ui.render', { component: 'Pane', requestId: CHART }, async ($, e) => {
     const t = $.ui.resolve(e) as any
     const { Box, Text, Button } = t
@@ -1408,74 +1494,108 @@ export const register: Register = on => {
     const order = (await read($, orderA)) as string[]
     const callAgent = (await read($, callAgentA)) as Record<string, string>
     const callTask = (await read($, callTaskA)) as Record<string, string>
+    const runs = (await read($, runsA)) as Record<string, LensRun>
     const open = (await read($, cardOpenA)) as Record<string, boolean>
     const thinking = (await read($, thinkingA)) as Record<string, string>
     const calls = (await read($, callsA)) as Record<string, LensCall[]>
     const mainContext = (await read($, contextA)) as LensCall[]
     const hasSvg = e.surface !== 'terminal'
     const on1 = hasSvg ? false : ((await read($, tick)) as boolean)
+    // Round 5: the body's rows, so the chart area can be centred vertically in what is left.
+    const bodyRows = Number((e.props as any)?.scroll?.bodyRows ?? 0)
     const ws = [...wf.order].reverse()
-    if (ws.length === 0) return <Text dimColor>No workflow yet: it shows here when an agent is spawned.</Text>
+    if (ws.length === 0)
+      return (
+        <Box flexDirection="column" alignItems="center" justifyContent="center" width="100%" minHeight={bodyRows > 0 ? bodyRows : undefined}>
+          <Text dimColor wrap="wrap">
+            No workflow yet: it shows here when an agent is spawned.
+          </Text>
+        </Box>
+      )
     const many = ws.length > 1
-    const parts: any[] = []
-    for (const [i, w] of ws.entries()) {
+    const errors = lensErrors.map(x => <Text color="red">lens hook error: {x}</Text>)
+    const flows = ws.map(w => {
       const batch = workflowBatch(wf, w, batches)
       const view = batchView(batch, agents, order, callAgent)
       const root = view.agents[batch.parent]!
       const n = batch.ids.length
       const rootName = label(root).name
-      const title = (await workflowTitle($, view, batch.ids, callTask)) || `${rootName} spawned ${n} agent${n > 1 ? 's' : ''}`
+      const info = workflowInfo(view, batch, callTask, runs, `${rootName} spawned ${n} agent${n > 1 ? 's' : ''}`)
       const th = thinking[batch.parent] ?? ''
       const ctx = (batch.parent === 'main' ? mainContext : (calls[batch.parent] ?? []).filter(c => CONTEXT_TOOLS.has(c.tool))).slice(-s.contextLimit)
       const prefix = many ? `${w}:` : ''
       const body = (
-        <Box flexDirection="column">
+        <Box flexDirection="column" alignItems="center" justifyContent="center" width="100%">
           <Text dimColor wrap="wrap">
             {rootName} spawned {n} agent{n > 1 ? 's' : ''}
           </Text>
           {chartNode(t, hasSvg, on1, view.ids, view.agents, label, s, `Flowchart: ${rootName} spawned ${n} agent(s)`)}
           {agentButtons($, t, view.ids, view.agents, label, true, batch.parent, prefix)}
-          {section($, t, open, s, `${w}:thinking`, `${prefix}wf-thinking`, `${rootName} thinking (${th.length} chars)`, () => (
-            <Text dimColor wrap="wrap">
-              {th === '' ? '(no thinking chunks seen yet)' : th}
-            </Text>
-          ))}
-          {section($, t, open, s, `${w}:context`, `${prefix}wf-context`, `Gathered context (${ctx.length} calls)`, () => ctx.map(c => callRow(t, c)))}
+          <Box flexDirection="column" width="100%">
+            {section($, t, open, s, `${w}:thinking`, `${prefix}wf-thinking`, `${rootName} thinking (${th.length} chars)`, () => (
+              <Text dimColor wrap="wrap">
+                {th === '' ? '(no thinking chunks seen yet)' : th}
+              </Text>
+            ))}
+            {section($, t, open, s, `${w}:context`, `${prefix}wf-context`, `Gathered context (${ctx.length} calls)`, () => ctx.map(c => callRow(t, c)))}
+          </Box>
         </Box>
       )
-      if (!many) {
-        parts.push(
-          <Box flexDirection="column">
-            <Text bold wrap="wrap">
-              {title}
-            </Text>
-            {body}
-          </Box>,
-        )
-        continue
-      }
-      const key = `wf:${w}`
-      const first = i === 0
-      const o = open[key] ?? first
-      parts.push(
-        <Box flexDirection="column" marginTop={first ? 0 : 1}>
-          <Box flexDirection="row" flexWrap="wrap">
-            <Button key={`wf-${w}`} label={o ? '[-]' : '[+]'} onPress={() => update($, cardOpenA, m => ({ ...(m as Record<string, boolean>), [key]: !((m as Record<string, boolean>)[key] ?? first) }))} />
-            <Text bold wrap="wrap">
-              {' '}
-              {title}
-            </Text>
+      return { w, info, body }
+    })
+
+    if (!many) {
+      const { info, body } = flows[0]!
+      return (
+        <Box flexDirection="column" width="100%" minHeight={bodyRows > 0 ? bodyRows : undefined}>
+          <Box flexDirection="column" alignItems="center" justifyContent="center">
+            <Box flexDirection="row" flexWrap="wrap" alignItems="center" justifyContent="center" columnGap={1}>
+              {statusIndicator(t, hasSvg, on1, info.status, s)}
+              <Text bold wrap="wrap">
+                {info.current}
+              </Text>
+            </Box>
+            {info.parent !== info.current && (
+              <Text dimColor wrap="wrap">
+                Parent task: {info.parent}
+              </Text>
+            )}
           </Box>
-          {o && body}
-        </Box>,
+          <Box flexDirection="column" flexGrow={1} alignItems="center" justifyContent="center">
+            {body}
+          </Box>
+          {errors}
+        </Box>
       )
     }
     return (
-      <Box flexDirection="column">
-        {parts}
-        {lensErrors.map(x => (
-          <Text color="red">lens hook error: {x}</Text>
-        ))}
+      <Box flexDirection="column" width="100%">
+        {flows.map(({ w, info, body }, i) => {
+          const key = `wf:${w}`
+          const o = isOpen(open, key, s)
+          return (
+            <Box flexDirection="column" marginTop={i === 0 ? 0 : 1}>
+              <Box flexDirection="row" flexWrap="wrap" alignItems="center" columnGap={1}>
+                <Button key={`wf-${w}`} label={o ? '[-]' : '[+]'} onPress={() => toggleOpen($, key, s)} />
+                {statusIndicator(t, hasSvg, on1, info.status, s)}
+                <Text bold wrap="wrap">
+                  {info.parent}
+                </Text>
+              </Box>
+              {o && (
+                <Box flexDirection="column" alignItems="center" justifyContent="center" paddingLeft={2}>
+                  {info.current !== info.parent && (
+                    <Text dimColor wrap="wrap">
+                      Now: {info.current}
+                    </Text>
+                  )}
+                  {body}
+                </Box>
+              )}
+            </Box>
+          )
+        })}
+        {errors}
       </Box>
     )
   })
@@ -1642,21 +1762,23 @@ export const register: Register = on => {
     const order = (await read($, orderA)) as string[]
     const callAgent = (await read($, callAgentA)) as Record<string, string>
     const callTask = (await read($, callTaskA)) as Record<string, string>
+    const runs = (await read($, runsA)) as Record<string, LensRun>
     const view = batchView(batch, agents, order, callAgent)
     const root = view.agents[batch.parent]!
     const n = batch.ids.length
-    const title = (await workflowTitle($, view, batch.ids, callTask)) || `${label(root).name} spawned ${n} agent${n > 1 ? 's' : ''}`
+    const info = workflowInfo(view, batch, callTask, runs, `${label(root).name} spawned ${n} agent${n > 1 ? 's' : ''}`)
     const chip = view.members
       .map(m => {
         const a = view.agents[m]!
         return `${initials(label(a).name)} ${a.status === 'pending' ? 'waiting' : a.status}`
       })
       .join(', ')
+    // Round 5: the card's line and its Button centred both ways in the card's box; the native row stays last.
     return (
       <Box flexDirection="column" borderStyle="round">
-        <Box flexDirection="row" flexWrap="wrap">
+        <Box flexDirection="row" flexWrap="wrap" alignItems="center" justifyContent="center" columnGap={1}>
           <Text wrap="wrap">
-            Workflow: {title} - {chip}{' '}
+            Workflow: {info.current} - {chip}{' '}
           </Text>
           <Button key="card-open-chart" label="Open flowchart" onPress={() => openChart($, w ?? id)} />
         </Box>

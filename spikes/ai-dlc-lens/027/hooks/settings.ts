@@ -8,6 +8,7 @@ export type Spec =
   | { kind: 'bool'; def: boolean; doc: string }
   | { kind: 'enum'; values: readonly string[]; def: string; doc: string }
   | { kind: 'path'; def: string; doc: string }
+  | { kind: 'color'; def: string; doc: string }
 
 export const SPEC = {
   chartMode: { kind: 'enum', values: ['auto', 'chart', 'button'], def: 'auto', doc: 'auto: the chart when the row is wide enough, else a chip with an "Open flowchart" Button; chart or button: always that one' },
@@ -30,6 +31,21 @@ export const SPEC = {
   callsShown: { kind: 'int', min: 1, max: 1000, def: 40, doc: 'Tool calls listed in the avatar panel' },
   recordChars: { kind: 'int', min: 200, max: 200000, def: 6000, doc: 'Characters shown of a handoff record or hand-back' },
   thinkingChars: { kind: 'int', min: 200, max: 200000, def: 4000, doc: 'Characters of thinking kept per agent' },
+  // Round 5 (step 17.l4): long-context pricing and the workflow status indicator.
+  longContextThresholdTokens: {
+    kind: 'int',
+    min: 0,
+    max: 100000000,
+    def: 0,
+    doc: "Overrides every model's long-context threshold for the cost (prompt tokens: input + cache read + cache write of one request); 0: the metadata file decides (its longContextThresholdTokensOverride, else the model's longContextPricing.thresholdTokens)",
+  },
+  statusBlink: { kind: 'bool', def: true, doc: 'The in-progress status indicator of a workflow blinks' },
+  statusBlinkMs: { kind: 'int', min: 200, max: 10000, def: 1000, doc: 'One blink cycle of the status indicator, ms' },
+  statusInProgressColor: { kind: 'color', def: '#2e7d32', doc: 'Status indicator: in progress (blinks)' },
+  statusPendingColor: { kind: 'color', def: '#cfd8dc', doc: 'Status indicator: pending (spawned, not started)' },
+  statusHaltedColor: { kind: 'color', def: '#c62828', doc: 'Status indicator: halted (an agent failed or was killed, or the run is blocked)' },
+  statusWaitingColor: { kind: 'color', def: '#ef6c00', doc: 'Status indicator: an agent teammate waiting' },
+  statusCompletedColor: { kind: 'color', def: '#2e7d32', doc: 'Status indicator: completed (steady)' },
 } as const satisfies Record<string, Spec>
 
 export type Key = keyof typeof SPEC
@@ -58,6 +74,7 @@ export function coerce(k: Key, v: unknown, fromEnv: boolean): number | boolean |
   if (typeof v !== 'string') return undefined
   const t = v.trim()
   if (s.kind === 'enum') return s.values.includes(t) ? t : undefined
+  if (s.kind === 'color') return /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(t) ? t : undefined
   return t !== '' && !t.includes('\0') ? t : undefined
 }
 
@@ -129,7 +146,9 @@ export function schema(): Record<string, unknown> {
           ? { ...base, type: 'boolean' }
           : s.kind === 'enum'
             ? { ...base, type: 'string', enum: [...s.values] }
-            : { ...base, type: 'string', minLength: 1 }
+            : s.kind === 'color'
+              ? { ...base, type: 'string', pattern: '^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$' }
+              : { ...base, type: 'string', minLength: 1 }
   }
   return {
     $schema: 'http://json-schema.org/draft-07/schema#',
@@ -162,7 +181,7 @@ export function setKey(text: string | null, k: string, raw: string): { text: str
   const v = coerce(key, raw, true)
   if (v === undefined) {
     const s: Spec = SPEC[key]
-    const want = s.kind === 'int' ? `an integer ${s.min}..${s.max}` : s.kind === 'bool' ? 'true or false' : s.kind === 'enum' ? s.values.join(' | ') : 'a non-empty path'
+    const want = s.kind === 'int' ? `an integer ${s.min}..${s.max}` : s.kind === 'bool' ? 'true or false' : s.kind === 'enum' ? s.values.join(' | ') : s.kind === 'color' ? 'a hex colour such as #2e7d32' : 'a non-empty path'
     return { text: '', error: `${raw} is not valid for ${key}: ${want}` }
   }
   json[key] = v

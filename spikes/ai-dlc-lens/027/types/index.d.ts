@@ -39,6 +39,10 @@ export type LensAgent = {
   bg: LensTask[]
   /** `classic.SubagentStop` `last_assistant_message`: the result its background task shows. */
   output?: string
+  /** Each `turn.step` usage of this loop, one per request (round 5: long-context pricing is per request). */
+  reqs: Tokens[]
+  /** An agent-team teammate (`agent.spawn` `teammateId`, `$.agent.list()` `teammateId`, type `teammate`). */
+  teammate?: boolean
 }
 
 export type LensTask = {
@@ -105,6 +109,12 @@ export type LensDoc = { agent: string; handoff: string; handoffText: string; han
  */
 export type LensWorkflows = { of: Record<string, string>; by: Record<string, string>; parent: Record<string, string>; order: string[] }
 
+/**
+ * A run's `run.md` as the lens reads it (round 5): its title, `status:`, the stage in progress, and
+ * each stage row's name by its step code, so an agent's task follows its handoff record.
+ */
+export type LensRun = { title: string; status: string; stage: string; stages: Record<string, string> }
+
 declare module 'claude-code' {
   interface PluginState {
     'ai-dlc-lens-spike-027': {
@@ -113,6 +123,7 @@ declare module 'claude-code' {
       panePresses: number
       forceMode: string
       agents: Shaped<Record<string, LensAgent>>
+      runs: Shaped<Record<string, LensRun>>
       order: Shaped<string[]>
       calls: Shaped<Record<string, LensCall[]>>
       thinking: Record<string, string>

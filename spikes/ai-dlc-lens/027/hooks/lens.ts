@@ -1,5 +1,5 @@
 // ITEM-027 spike, rounds 1-3 (steps 17, 17.l1, 17.l2): pure helpers of the lens card. No `$` here.
-import type { LensAgent, LensBatch, LensDef, LensPending, LensTask, LensWorkflows, Tokens } from '../types'
+import type { LensAgent, LensBatch, LensDef, LensPending, LensRun, LensTask, LensWorkflows, Tokens } from '../types'
 
 export const ZERO: Tokens = { in: 0, out: 0, cr: 0, cw: 0 }
 
@@ -156,10 +156,18 @@ export type ModelFacts = {
   cacheWrite1h: number | null
   window: number | null
   longWindow: number | null
-  /** Null unless the metadata was fetched with an API key (round 4: a null limit is not drawn). */
+  /** Null unless a docs page or the Models API (`sources.modelsApi`) gives it (round 4: a null limit is not drawn). */
   maxInput: number | null
   maxOutput: number | null
+  /** Round 5: the prices of a request whose prompt is over the threshold; null for a model priced flat. */
+  long: LongPricing | null
 }
+
+/** The prices of one request, $ per million tokens; null where the file has no figure. */
+export type Prices = { input: number | null; output: number | null; cacheRead: number | null; cacheWrite5m: number | null; cacheWrite1h: number | null }
+
+/** `longContextPricing`: its prices and its `thresholdTokens` (null when the page names none). */
+export type LongPricing = Prices & { threshold: number | null }
 
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '')
 
@@ -176,21 +184,49 @@ const first = (ls: [string, number][], ok: (k: string) => boolean): number | nul
  * One entry's facts. The file's schema is being written in parallel (AAW-20261023-model-costing-hook),
  * so the keys are matched by name, not position: prices are $ per million tokens.
  */
+const isTokens = (k: string) => /token|window|max|context|threshold/.test(k)
+
+/** The five prices among an entry's leaves; `long` false leaves the long-context ones out. */
+function pricesOf(ls: [string, number][], long: boolean): Prices {
+  const flat = (k: string) => long || !/long/.test(k)
+  return {
+    cacheRead: first(ls, k => /cache.*(read|hit)|(read|hit).*cache/.test(k) && !isTokens(k) && flat(k)),
+    cacheWrite5m: first(ls, k => /(cache.*(write|creation)|write.*cache).*5m|5m.*(write|creation)/.test(k) && !isTokens(k) && flat(k)),
+    cacheWrite1h: first(ls, k => /(cache.*(write|creation)|write.*cache).*1h|1h.*(write|creation)/.test(k) && !isTokens(k) && flat(k)),
+    input: first(ls, k => /input/.test(k) && !/cache|batch/.test(k) && !isTokens(k) && flat(k)),
+    output: first(ls, k => /output/.test(k) && !/batch/.test(k) && !isTokens(k) && flat(k)),
+  }
+}
+
+/** The entry's `longContextPricing` object (any key naming long-context prices); null when absent or null. */
+function longPricingOf(entry: unknown): LongPricing | null {
+  if (entry === null || typeof entry !== 'object') return null
+  const hit = Object.entries(entry as Record<string, unknown>).find(([k]) => /long.*pric|pric.*long/i.test(k))
+  const v = hit?.[1]
+  if (v === null || v === undefined || typeof v !== 'object' || Array.isArray(v)) return null
+  const ls = leaves(v)
+  return { ...pricesOf(ls, true), threshold: first(ls, k => /threshold/.test(k)) }
+}
+
 export function factsOf(id: string, entry: unknown): ModelFacts {
   const ls = leaves(entry)
-  const isTokens = (k: string) => /token|window|max|context/.test(k)
   return {
     id,
-    cacheRead: first(ls, k => /cache.*(read|hit)|(read|hit).*cache/.test(k) && !isTokens(k)),
-    cacheWrite5m: first(ls, k => /(cache.*(write|creation)|write.*cache).*5m|5m.*(write|creation)/.test(k) && !isTokens(k)),
-    cacheWrite1h: first(ls, k => /(cache.*(write|creation)|write.*cache).*1h|1h.*(write|creation)/.test(k) && !isTokens(k)),
-    input: first(ls, k => /input/.test(k) && !/cache|long|batch/.test(k) && !isTokens(k)),
-    output: first(ls, k => /output/.test(k) && !/long|batch/.test(k) && !isTokens(k)),
+    ...pricesOf(ls, false),
     window: first(ls, k => /window/.test(k) && !/long|1m|extended/.test(k)),
     longWindow: first(ls, k => /window/.test(k) && /long|1m|extended/.test(k)),
     maxInput: first(ls, k => /max.*input|input.*max/.test(k)),
     maxOutput: first(ls, k => /max.*output|output.*max/.test(k)),
+    long: longPricingOf(entry),
   }
+}
+
+/** The file's `longContextThresholdTokensOverride`: a positive number, else null (read only, round 5). */
+export function thresholdOverrideOf(json: unknown): number | null {
+  if (json === null || typeof json !== 'object' || Array.isArray(json)) return null
+  for (const [k, v] of Object.entries(json as Record<string, unknown>))
+    if (/threshold/i.test(k) && /override/i.test(k) && typeof v === 'number' && Number.isFinite(v) && v > 0) return v
+  return null
 }
 
 /** The entries of the file: `models` as an array (`id`, `aliases`) or an object keyed by id; else the root. */
@@ -253,6 +289,72 @@ export function costOf(c: Costing, model: string, t: Tokens, rate: string = '5m'
   if (missing.length > 0) return { text: '—', source: `${c.path} has no ${missing.join(', ')} price for ${f.id}` }
   const usd = need.reduce((s, [p, n]) => s + (p ?? 0) * n, 0) / 1_000_000
   return { text: `$${usd.toFixed(usd < 1 ? 4 : 2)}`, source: `${c.path} (${f.id}; cache writes at the ${rate === '1h' ? '1-hour' : '5-minute'} rate: the usage does not say the TTL)` }
+}
+
+/** A request's prompt as the long-context rule counts it: all input tokens, cache reads and writes included. */
+export const promptTokens = (t: Tokens): number => t.in + t.cr + t.cw
+
+/**
+ * Round 5: cost per request (each `turn.step` usage), with long-context pricing. For a model whose
+ * `longContextPricing` is not null the threshold is the lens setting (`longContextThresholdTokens`,
+ * when given), else the file's `longContextThresholdTokensOverride`, else the model's
+ * `longContextPricing.thresholdTokens`. A request whose prompt is over it pays the long-context prices
+ * for all its tokens; any other the flat ones. No threshold at all: `—`, never a guess.
+ */
+export function costOfRequests(
+  c: Costing,
+  model: string,
+  reqs: readonly Tokens[],
+  rate: string = '5m',
+  lensThreshold: number | null = null,
+): { text: string; source: string; long: number } {
+  const none = (source: string) => ({ text: '—', source, long: 0 })
+  if (c.text === '') return none(c.error !== '' ? c.error : `${c.path} not found`)
+  const json = parseCosting(c)
+  if (json === null) return none(`${c.path} is not valid JSON`)
+  const f = lookupModel(json, model)
+  if (f === null) return none(`${model || 'the model'} is not in ${c.path}`)
+  let threshold: number | null = null
+  let from = ''
+  if (f.long !== null) {
+    const fileOverride = thresholdOverrideOf(json)
+    if (lensThreshold !== null && lensThreshold > 0) [threshold, from] = [lensThreshold, 'the lens setting longContextThresholdTokens']
+    else if (fileOverride !== null) [threshold, from] = [fileOverride, `${c.path} longContextThresholdTokensOverride`]
+    else if (f.long.threshold !== null) [threshold, from] = [f.long.threshold, `${f.id} longContextPricing.thresholdTokens`]
+    else return none(`${f.id} has long-context prices but ${c.path} gives no threshold`)
+  }
+  const w = rate === '1h' ? '1h' : '5m'
+  let usd = 0
+  let long = 0
+  for (const t of reqs) {
+    const over = threshold !== null && promptTokens(t) > threshold
+    const p: Prices = over ? f.long! : f
+    const need: [number | null, number, string][] = [
+      [p.input, t.in, 'input'],
+      [p.output, t.out, 'output'],
+      [p.cacheRead, t.cr, 'cache read'],
+      [w === '1h' ? p.cacheWrite1h : p.cacheWrite5m, t.cw, `cache write ${w}`],
+    ]
+    const missing = need.filter(([x, n]) => x === null && n > 0).map(([, , k]) => k)
+    if (missing.length > 0) return none(`${c.path} has no ${over ? 'long-context ' : ''}${missing.join(', ')} price for ${f.id}`)
+    if (over) long += 1
+    usd += need.reduce((s, [x, n]) => s + (x ?? 0) * n, 0) / 1_000_000
+  }
+  const rule = threshold === null ? 'flat prices' : `long-context over ${threshold} prompt tokens (${from}): ${long} of ${reqs.length} requests`
+  return { text: `$${usd.toFixed(usd < 1 ? 4 : 2)}`, source: `${c.path} (${f.id}; ${rule}; cache writes at the ${w === '1h' ? '1-hour' : '5-minute'} rate)`, long }
+}
+
+/**
+ * An agent's cost: per request when the steps were seen; from the totals only for a model priced
+ * flat, since a total cannot say which requests were over the threshold (`—` then).
+ */
+export function costOfAgent(c: Costing, model: string, reqs: readonly Tokens[], totals: Tokens, rate: string = '5m', lensThreshold: number | null = null): { text: string; source: string; long: number } {
+  if (reqs.length > 0) return costOfRequests(c, model, reqs, rate, lensThreshold)
+  const json = parseCosting(c)
+  const f = json === null ? null : lookupModel(json, model)
+  if (f !== null && f.long !== null && totals.in + totals.out + totals.cr + totals.cw > 0)
+    return { text: '—', source: `${f.id} is priced by prompt length and no request of this loop was seen`, long: 0 }
+  return { ...costOf(c, model, totals, rate), long: 0 }
 }
 
 /**
@@ -360,7 +462,7 @@ export function flowchartSvg(order: readonly string[], agents: Record<string, Le
   const R = size.r
   const parts: string[] = []
   parts.push(
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" font-family="sans-serif">`,
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet" font-family="sans-serif">`,
     `<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#78909c"/></marker></defs>`,
   )
   for (const p of placed) {
@@ -382,10 +484,11 @@ export function flowchartSvg(order: readonly string[], agents: Record<string, Le
       `<circle cx="${p.x}" cy="${p.y}" r="${R}" fill="${fill}"><title>${esc(l.name)}: ${esc(a.status)}</title>` +
         (size.blink && isRunning(a.status) ? `<animate attributeName="opacity" values="1;0.25;1" dur="${size.blinkMs / 1000}s" repeatCount="indefinite"/>` : '') +
         `</circle>`,
-      `<text x="${p.x}" y="${p.y + 4}" text-anchor="middle" font-size="11" font-weight="bold" fill="#fff">${esc(initials(l.name))}</text>`,
+      // Round 5: the initials centred in the avatar both ways (middle anchor, central baseline at the circle's centre).
+      `<text x="${p.x}" y="${p.y}" text-anchor="middle" dominant-baseline="central" font-size="11" font-weight="bold" fill="#fff">${esc(initials(l.name))}</text>`,
     )
     ;[l.name, l.model, l.role].forEach((t, i) =>
-      parts.push(`<text x="${p.x}" y="${p.y + R + 13 + i * 12}" text-anchor="middle" font-size="${i === 0 ? 10.5 : 9.5}"${i === 0 ? ' font-weight="bold"' : ''} fill="#90a4ae">${esc(clip(t, 22))}</text>`),
+      parts.push(`<text x="${p.x}" y="${p.y + R + 13 + i * 12}" text-anchor="middle" dominant-baseline="central" font-size="${i === 0 ? 10.5 : 9.5}"${i === 0 ? ' font-weight="bold"' : ''} fill="#90a4ae">${esc(clip(t, 22))}</text>`),
     )
   }
   parts.push('</svg>')
@@ -550,6 +653,7 @@ export function pendingAgent(toolUseId: string, parent: string, p: LensPending |
     startedAt: 0,
     endedAt: null,
     bg: [],
+    reqs: [],
   }
 }
 
@@ -701,4 +805,131 @@ export function limitRows(c: Costing, model: string): [string, string][] {
     ['Max output', f.maxOutput],
   ]
   return rows.filter((r): r is [string, number] => r[1] !== null).map(([k, v]) => [k, fmtTokens(v)])
+}
+
+// ---- round 5 (step 17.l4): task titles, run state, workflow status ----
+
+const STEP_CODE = /^\d+(?:\.(?:\d+|l\d+))*$/
+
+/**
+ * A run's `run.md`: its title (`runTitle`), its `status:`, the stage in progress (the last stage row
+ * whose status starts with `in-progress`, else `current-stage:`), and every stage row's name by its
+ * step code. Null when there is no file.
+ */
+export function parseRun(text: string | null): LensRun | null {
+  if (text === null) return null
+  const fm = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text)?.[1] ?? ''
+  const field = (k: string) => new RegExp(`^${k}:\\s*(.+?)\\s*$`, 'm').exec(fm)?.[1] ?? ''
+  const stages: Record<string, string> = {}
+  let inProgress = ''
+  for (const line of text.split(/\r?\n/)) {
+    if (!line.startsWith('|')) continue
+    const cells = line
+      .split('|')
+      .slice(1, -1)
+      .map(x => x.trim().replace(/^`|`$/g, ''))
+    const code = cells[0] ?? ''
+    if (!STEP_CODE.test(code) || cells.length < 2) continue
+    const name = cells[1]!
+    stages[code] = name
+    if (cells.slice(2).some(x => /^in-progress\b/i.test(x))) inProgress = name
+  }
+  return { title: runTitle(text), status: field('status'), stage: inProgress || field('current-stage'), stages }
+}
+
+/** The run folder of an agent's handoff record (named by its brief), or null. */
+export function runDirOf(a: Pick<LensAgent, 'handoff' | 'prompt'>): string | null {
+  const rec = a.handoff ?? matchHandoff(a.prompt)?.path ?? null
+  if (rec === null) return null
+  return parseRecord(rec)?.dir ?? (rec.includes('/') ? rec.replace(/\/[^/]*$/, '') : null)
+}
+
+export const isTeammate = (a: Pick<LensAgent, 'type' | 'teammate'>): boolean => a.teammate === true || a.type === 'teammate'
+
+/** Agents still at work: not started, running, held, or a teammate idle between messages. */
+const atWork = (a: Pick<LensAgent, 'status' | 'type' | 'teammate'>): boolean =>
+  a.status === 'pending' || a.status === 'running' || a.status === 'waiting' || (isTeammate(a) && a.status === 'idle')
+
+/**
+ * A workflow's titles (round 5, requirements 2 and 3). `parent`: the task the human gave the
+ * orchestrator: the run's title when every agent of the workflow that names a record is in one run,
+ * else the request or brief that made the workflow's calls. `current`: the task the agents are working
+ * on: the stage row of each working agent's record (its run's stage in progress when the row is
+ * missing); when they work on different tasks, or one names no record, the parent task. Never an
+ * Agent call's `description`.
+ */
+export function workflowTask(members: readonly LensAgent[], runs: Record<string, LensRun>, request: string): { parent: string; current: string } {
+  const runOf = (a: LensAgent) => {
+    const d = runDirOf(a)
+    return d === null ? undefined : runs[d]
+  }
+  const titles = [...new Set(members.map(a => runOf(a)?.title ?? '').filter(t => t !== ''))]
+  const parent = titles.length === 1 ? titles[0]! : request
+  const tasks = new Set(
+    members.filter(atWork).map(a => {
+      const r = runOf(a)
+      if (r === undefined) return ''
+      const code = parseRecord(a.handoff ?? matchHandoff(a.prompt)?.path ?? '')?.code ?? ''
+      return r.stages[code] ?? (r.stage || r.title)
+    }),
+  )
+  const current = tasks.size === 1 && !tasks.has('') ? [...tasks][0]! : parent
+  return { parent, current }
+}
+
+/** The five states of a workflow's status indicator. */
+export type FlowStatus = 'in-progress' | 'pending' | 'halted' | 'waiting' | 'completed'
+
+/**
+ * A workflow's status from its agents (the spawner left out) and its runs' `status:` (round 5,
+ * requirement 4); the first match wins:
+ * halted: an agent failed or was killed, or a run is `blocked`;
+ * in-progress: an agent is running a turn;
+ * waiting: an agent is `waiting` (held), or an agent-team teammate is `idle`, waiting on a message;
+ * pending: an Agent call not started yet (or no agent yet);
+ * completed: every agent has ended (`completed`, or a subagent `idle` after its answer).
+ */
+export function workflowStatus(members: readonly Pick<LensAgent, 'status' | 'type' | 'teammate'>[], runStatuses: readonly string[] = []): FlowStatus {
+  if (members.some(a => a.status === 'failed' || a.status === 'killed') || runStatuses.some(x => x.trim().toLowerCase() === 'blocked')) return 'halted'
+  if (members.some(a => a.status === 'running')) return 'in-progress'
+  if (members.some(a => a.status === 'waiting' || (isTeammate(a) && a.status === 'idle'))) return 'waiting'
+  if (members.length === 0 || members.some(a => a.status === 'pending')) return 'pending'
+  return 'completed'
+}
+
+/** The colours and blink of the indicator (lens settings). */
+export type StatusLook = {
+  statusBlink: boolean
+  statusInProgressColor: string
+  statusPendingColor: string
+  statusHaltedColor: string
+  statusWaitingColor: string
+  statusCompletedColor: string
+}
+
+/** What the indicator draws for a status: its words, its colour, and whether it blinks (only in progress). */
+export function statusStyle(st: FlowStatus, s: StatusLook): { label: string; color: string; blink: boolean } {
+  if (st === 'in-progress') return { label: 'in progress', color: s.statusInProgressColor, blink: s.statusBlink }
+  if (st === 'pending') return { label: 'pending', color: s.statusPendingColor, blink: false }
+  if (st === 'halted') return { label: 'halted', color: s.statusHaltedColor, blink: false }
+  if (st === 'waiting') return { label: 'teammate waiting', color: s.statusWaitingColor, blink: false }
+  return { label: 'completed', color: s.statusCompletedColor, blink: false }
+}
+
+/** The indicator as an SVG dot centred in its box; a SMIL blink when `blink`. */
+export function statusDotSvg(color: string, blink: boolean, ms: number, size = 14): string {
+  const r = Math.round(size * 0.36)
+  const c = size / 2
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" preserveAspectRatio="xMidYMid meet">` +
+    `<circle cx="${c}" cy="${c}" r="${r}" fill="${esc(color)}">` +
+    (blink ? `<animate attributeName="opacity" values="1;0.2;1" dur="${ms / 1000}s" repeatCount="indefinite"/>` : '') +
+    `</circle></svg>`
+  )
+}
+
+/** A main-loop prompt that is the human's request, not a notification the engine fed the loop. */
+export const isHumanRequest = (text: string): boolean => {
+  const t = text.trim()
+  return t !== '' && !t.startsWith('<') && !t.startsWith('[auto-handoff]')
 }

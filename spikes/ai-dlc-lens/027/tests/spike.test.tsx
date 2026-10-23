@@ -30,6 +30,13 @@ import {
   runTitle,
   windowOf,
   workflowActive,
+  costOfRequests,
+  costOfAgent,
+  parseRun,
+  statusStyle,
+  workflowStatus,
+  workflowTask,
+  isHumanRequest,
 } from '../hooks/lens'
 import { DEFAULTS, envLevel, envName, fileLevel, resolve, schema, setKey } from '../hooks/settings'
 
@@ -192,7 +199,7 @@ describe('model costing (read only)', () => {
         },
       ],
     }
-    expect(lookupModel(real, 'claude-haiku-5-5')).toEqual({ id: 'claude-haiku-5-5', cacheRead: 0.01, cacheWrite5m: 0.125, cacheWrite1h: 0.2, input: 0.1, output: 0.5, window: 1000000, longWindow: null, maxInput: null, maxOutput: 128000 })
+    expect(lookupModel(real, 'claude-haiku-5-5')).toEqual({ id: 'claude-haiku-5-5', cacheRead: 0.01, cacheWrite5m: 0.125, cacheWrite1h: 0.2, input: 0.1, output: 0.5, window: 1000000, longWindow: null, maxInput: null, maxOutput: 128000, long: null })
     expect(costOf({ ...c, text: JSON.stringify(real) }, 'claude-haiku-5-5', { in: 1e6, out: 1e6, cr: 1e6, cw: 1e6 }).text).toBe('$0.7350')
     expect(lookupModel(JSON.parse(COSTING_ARRAY), 'sonnet')?.id).toBe('claude-sonnet-5-5')
     expect(lookupModel(JSON.parse(COSTING_ARRAY), 'claude-sonnet-5-5-20260101')?.maxOutput).toBe(64000)
@@ -260,7 +267,20 @@ const BASE_FILES: Record<string, string> = {
   [HANDBACK]: 'HANDBACK BODY',
 }
 
-type SeedOpts = { parallel?: boolean; spawnSecond?: boolean; complete?: boolean; files?: Record<string, string | null>; turnStartFirst?: boolean; desc?: [string, string] }
+type SeedOpts = {
+  parallel?: boolean
+  spawnSecond?: boolean
+  complete?: boolean
+  files?: Record<string, string | null>
+  turnStartFirst?: boolean
+  desc?: [string, string]
+  /** Round 5: the human's request, the main loop's turn.start text before the calls. */
+  request?: string
+  /** Round 5: the second call's brief (default: no handoff record). */
+  prompt2?: string
+  /** Round 5: a1 is an agent-team teammate (agent.spawn answers a teammateId). */
+  teammate?: boolean
+}
 
 /**
  * `parallel`: main's step asks for two Agent calls (toolu_1 -> a1 software-engineer, toolu_2 -> a2
@@ -269,7 +289,7 @@ type SeedOpts = { parallel?: boolean; spawnSecond?: boolean; complete?: boolean;
  * resumes, the order the headless run showed (E9). `files`: path -> text, or null for missing.
  */
 async function seed($: any, on: any, opts: SeedOpts = {}) {
-  const { parallel = false, spawnSecond = true, complete = true, turnStartFirst = false, desc = ['build', 'tests'] } = opts
+  const { parallel = false, spawnSecond = true, complete = true, turnStartFirst = false, desc = ['build', 'tests'], prompt2 = 'SQA PROMPT: test the change.', teammate = false } = opts
   const files: Record<string, string | null> = { ...BASE_FILES, ...(opts.files ?? {}) }
   const opened: string[] = []
   const nativeInputs: unknown[] = []
@@ -306,7 +326,11 @@ async function seed($: any, on: any, opts: SeedOpts = {}) {
     return { value: { isPlaced: true } }
   })
   on('ui.view', () => ({ value: undefined }))
-  on('agent.spawn', (_: unknown, e: any) => ({ model: 'claude-sonnet-5-5', agentId: e.tool_use_id === 'toolu_2' ? 'a2' : 'a1' }))
+  on('agent.spawn', (_: unknown, e: any) => ({
+    model: 'claude-sonnet-5-5',
+    agentId: e.tool_use_id === 'toolu_2' ? 'a2' : 'a1',
+    ...(teammate && e.tool_use_id === 'toolu_1' ? { teammateId: 'a1@team' } : {}),
+  }))
   on('turn.start', (_: unknown, e: any) => ({ turnId: e.turnId }))
   on('turn.step', async function* (_: unknown, e: any) {
     if (e.agentId === undefined) {
@@ -327,12 +351,13 @@ async function seed($: any, on: any, opts: SeedOpts = {}) {
   on('classic.SubagentStop', () => ({}))
 
   await $.session.start({ cwd: '/', surface: 'vscode', isInteractive: true })
+  if (opts.request !== undefined) await $.turn.start({ text: opts.request, turnId: 'm0' })
   for await (const _ of $.turn.step({ turnId: 'm', index: 0, model: 'claude-opus-5-5', messageCount: 1 })) {
     // drain the main step
   }
   if (parallel) {
     await $.tool.call({ tool: 'Agent', subagent_type: 'ai-dlc:software-engineer', description: desc[0], prompt: `Your handoff record is ${RECORD} (root x).\nDo it.`, tool_use_id: 'toolu_1' })
-    await $.tool.call({ tool: 'Agent', subagent_type: 'ai-dlc:sqa-engineer', description: desc[1], prompt: 'SQA PROMPT: test the change.', tool_use_id: 'toolu_2' })
+    await $.tool.call({ tool: 'Agent', subagent_type: 'ai-dlc:sqa-engineer', description: desc[1], prompt: prompt2, tool_use_id: 'toolu_2' })
   }
   // The subagent's own turn.start lands before agent.spawn's hook resumes (headless run, E9).
   if (turnStartFirst) await $.turn.start({ text: 'p', turnId: 't', agentId: 'a1' })
@@ -355,7 +380,7 @@ async function seed($: any, on: any, opts: SeedOpts = {}) {
   if (parallel && spawnSecond)
     await $.agent.spawn({
       tool_use_id: 'toolu_2',
-      prompt: 'SQA PROMPT: test the change.',
+      prompt: prompt2,
       description: desc[1],
       subagentType: 'ai-dlc:sqa-engineer',
       provider: { plugin: 'ai-dlc', tier: 'user' },
@@ -379,8 +404,13 @@ async function completeAgent($: any, agentId: string) {
   })
 }
 
+/** The flowchart's Svg (round 5: the status indicator is an Svg too, so the chart is found by its alt). */
+const chartSvg = async (ui: any): Promise<any> => {
+  const all: any[] = await ui.findAll({ type: 'Svg' })
+  return all.find((x: any) => /^Flowchart/.test(String(x?.props?.alt ?? x?.alt ?? '')))
+}
 const svgSource = async (ui: any): Promise<string> => {
-  const svg: any = await ui.find({ type: 'Svg' })
+  const svg: any = await chartSvg(ui)
   return String(svg?.props?.source ?? svg?.source ?? '')
 }
 const SE_INPUT = { subagent_type: 'ai-dlc:software-engineer', description: 'build', prompt: 'p' }
@@ -408,10 +438,10 @@ describe('chat card', () => {
         const src = await svgSource(wp)
         for (const line of ['>Scott Hanselman<', '>opus<', '>Orchestrator<', '>David Fowler<', '>sonnet<', '>Software Engineer<', '>DF<', '>SH<']) expect(src.includes(line)).toBe(true)
         for (const gone of ['ctx', 'cache', 'in 1', 'out 2', 'software-engineer<']) expect(src.includes(gone)).toBe(false)
-        const svg: any = await wp.find({ type: 'Svg' })
+        const svg: any = await chartSvg(wp)
         expect(Number(svg?.props?.width ?? svg?.width)).toBe(120)
       } else {
-        expect(await wp.find({ type: 'Svg' })).toBe(undefined)
+        expect(await chartSvg(wp)).toBe(undefined)
         expect(await wp.find({ type: 'Text', text: /-> .*David Fowler/ })).toBeDefined()
         expect(await wp.find({ type: 'Text', text: /^\s+sonnet, Software Engineer$/ })).toBeDefined()
       }
@@ -799,7 +829,7 @@ describe('settings (addendum 3)', () => {
     const bad: any = await ($.command.run as any)({ command: 'spike027-lens-configure', args: 'cellPx 2' })
     expect(String(bad?.text)).toMatch(/^Not changed: 2 is not valid for cellPx/)
     const wp = await chartPane($)
-    const svg: any = await wp.find({ type: 'Svg' })
+    const svg: any = await chartSvg(wp)
     expect(Number(svg?.props?.width ?? svg?.width)).toBe(200)
     await wp.unmount()
   })
@@ -1015,24 +1045,26 @@ describe('round 4: workflows', () => {
     await card.unmount()
   })
 
-  test('a spawn after every agent finished starts a new workflow: one section each, titled, newest open', async ($, on) => {
+  test('a spawn after every agent finished starts a new workflow: one panel each, titled by its parent task, all collapsed (round 5)', async ($, on) => {
     await seed($, on, { files: { 'docs/handoffs/R/run.md': '---\nrun: R\n---\n\n# Run: R — the lens spike\n' } })
     await $.turn.start({ text: 'Test the change please\nmore lines', turnId: 'm2' })
     await later($)
     const wp = await chartPane($)
-    expect((await wp.find({ type: 'Button', key: 'wf-toolu_2' }))?.text).toBe('[-]')
+    expect((await wp.find({ type: 'Button', key: 'wf-toolu_2' }))?.text).toBe('[+]')
     expect((await wp.find({ type: 'Button', key: 'wf-toolu_1' }))?.text).toBe('[+]')
     // Titles: the run's title from run.md (the brief names its record), else the request; never "Agent: <description>".
     expect(await wp.find({ type: 'Text', text: /^\s*Test the change please$/ })).toBeDefined()
     expect(await wp.find({ type: 'Text', text: /^\s*R — the lens spike$/ })).toBeDefined()
     expect(await wp.find({ type: 'Text', text: /Agent: / })).toBe(undefined)
-    // Newest first and open; the older one collapsed until pressed.
+    // Newest first; both collapsed until pressed.
     const keys = (await wp.findAll({ type: 'Button' })).map((b: any) => String(b.key))
     expect(keys.indexOf('wf-toolu_2')).toBeLessThan(keys.indexOf('wf-toolu_1'))
-    expect(await wp.find({ type: 'Button', key: 'toolu_2:agent-a2' })).toBeDefined()
+    expect(await wp.find({ type: 'Button', key: 'toolu_2:agent-a2' })).toBe(undefined)
     expect(await wp.find({ type: 'Button', key: 'toolu_1:agent-a1' })).toBe(undefined)
     await wp.press({ key: 'wf-toolu_1' })
+    await wp.press({ key: 'wf-toolu_2' })
     expect(await wp.find({ type: 'Button', key: 'toolu_1:agent-a1' })).toBeDefined()
+    expect(await wp.find({ type: 'Button', key: 'toolu_2:agent-a2' })).toBeDefined()
     const all = (await wp.findAll({ type: 'Button' })).map((b: any) => b.key)
     expect(new Set(all).size).toBe(all.length)
     await wp.unmount()
@@ -1090,5 +1122,289 @@ describe('round 4: null model limits', () => {
     expect(await main.find({ type: 'Text', text: /^Max / })).toBe(undefined)
     await main.unmount()
     expect(limitRows({ path: 'x', text: meta, error: '' }, 'claude-sonnet-5-5')).toEqual([['Max output', '64K']])
+  })
+})
+
+// ---------------- round 5 (step 17.l4) ----------------
+const RUN_R = (stage: string, status = 'in-progress', runStatus = 'active') =>
+  `---\nrun: R\nstatus: ${runStatus}\ncurrent-stage: build\n---\n\n# Run: R — the lens spike\n\n## Stages\n| Step | Stage | Agent | Status | Record |\n|---|---|---|---|---|\n| 16 | research | research-assistant | done (passed) | x |\n| 17 | ${stage} | software-engineer | ${status} | \`17-orchestrator-to-software-engineer.handoff.md\` |\n`
+const RUN_S = '---\nrun: S\nstatus: active\n---\n\n# Run: S — the second task\n\n| Step | Stage | Agent | Status |\n|---|---|---|---|\n| 18 | write the tests | sqa-engineer | in-progress |\n'
+const S_BRIEF = 'Your handoff record is docs/handoffs/S/18-orchestrator-to-sqa-engineer.handoff.md (root x).\nTest it.'
+
+/** Every Box of a drawing with its alignment props, wherever the harness keeps them. */
+async function boxes(ui: any): Promise<{ alignItems?: string; justifyContent?: string; flexGrow?: number; minHeight?: number }[]> {
+  const all: any[] = await ui.findAll({ type: 'Box' })
+  return all.map((x: any) => ({ ...(x ?? {}), ...(x?.props ?? {}) }))
+}
+const centred = (b: { alignItems?: string; justifyContent?: string }) => b.alignItems === 'center' && b.justifyContent === 'center'
+const statusSvgs = async (ui: any): Promise<string[]> =>
+  ((await ui.findAll({ type: 'Svg' })) as any[]).map((x: any) => String(x?.props?.alt ?? x?.alt ?? '')).filter(a => a.startsWith('status: '))
+const statusSource = async (ui: any): Promise<string> => {
+  const all: any[] = await ui.findAll({ type: 'Svg' })
+  const hit = all.find((x: any) => String(x?.props?.alt ?? x?.alt ?? '').startsWith('status: '))
+  return String(hit?.props?.source ?? hit?.source ?? '')
+}
+
+describe('round 5: centring (requirement 1)', () => {
+  test('the chart area, the chart, the avatars and the card are centred both ways; the chart area fills the body', async ($, on) => {
+    await seed($, on)
+    const wp = await chartPane($)
+    const bs = await boxes(wp)
+    // The pane body takes the rows the surface gives it; the chart area grows into them and centres its content.
+    expect(bs.some(b => b.minHeight === 80)).toBe(true)
+    expect(bs.some(b => centred(b) && b.flexGrow === 1)).toBe(true)
+    // The Svg's own Box, the header, the Buttons rows: centred.
+    expect(bs.filter(centred).length).toBeGreaterThanOrEqual(4)
+    const src = await svgSource(wp)
+    expect(src).toMatch(/preserveAspectRatio="xMidYMid meet"/)
+    // The initials sit on the circle's centre: middle anchor, central baseline, the circle's own y.
+    const circle = /<circle cx="(\d+)" cy="(\d+)"/.exec(src)!
+    expect(src.includes(`<text x="${circle[1]}" y="${circle[2]}" text-anchor="middle" dominant-baseline="central"`)).toBe(true)
+    await wp.unmount()
+    const card = await $.ui.mount(toolRow('toolu_1', 'vscode', SE_INPUT))
+    expect((await boxes(card)).some(centred)).toBe(true)
+    const all = await card.findAll({})
+    expect(all.findIndex((x: any) => x.text === 'NATIVE ROW')).toBe(all.length - 1)
+    await card.unmount()
+    // The avatar panel's header block.
+    const lens = await $.ui.mount({ ...pane('lens-027'), surface: 'vscode' })
+    await lens.press({ key: 'agent-a1' })
+    await lens.unmount()
+    const ag = await $.ui.mount({ ...pane('lens-027-agent'), surface: 'vscode' })
+    expect((await boxes(ag)).filter(centred).length).toBeGreaterThanOrEqual(2)
+    await ag.unmount()
+  })
+})
+
+describe('round 5: the task title at the top (requirement 2)', () => {
+  test('the top shows the running stage of the run, follows a run.md write, then the run title when all are done', async ($, on) => {
+    const { files } = await seed($, on, { complete: false, files: { 'docs/handoffs/R/run.md': RUN_R('build the lens') } })
+    const wp = await chartPane($)
+    const all: any[] = await wp.findAll({})
+    const ti = all.findIndex((x: any) => x.type === 'Text' && x.text === 'build the lens')
+    expect(ti).toBeGreaterThan(-1)
+    // At the top: before the chart and its Buttons.
+    expect(ti).toBeLessThan(all.findIndex((x: any) => x.type === 'Button'))
+    expect(await wp.find({ type: 'Text', text: /^Parent task: R — the lens spike$/ })).toBeDefined()
+    // The orchestrator writes run.md (the next fix round): the title follows, with no other event.
+    files['docs/handoffs/R/run.md'] = RUN_R('build the lens: fix round 1')
+    await $.tool.call({ tool: 'Write', file_path: 'docs/handoffs/R/run.md', content: 'x', tool_use_id: 'toolu_w' })
+    expect(await wp.find({ type: 'Text', text: 'build the lens: fix round 1' })).toBeDefined()
+    expect(await wp.find({ type: 'Text', text: /^build the lens$/ })).toBe(undefined)
+    // Every agent done: the parent task, the run's title.
+    await completeAgent($, 'a1')
+    expect(await wp.find({ type: 'Text', text: 'R — the lens spike' })).toBeDefined()
+    expect(await wp.find({ type: 'Text', text: /^Parent task:/ })).toBe(undefined)
+    await wp.unmount()
+  })
+
+  test('two agents on two tasks (two runs): the top shows the parent task, the human request; never a description', async ($, on) => {
+    await seed($, on, { parallel: true, complete: false, request: 'Ship the lens\nwith the panels', prompt2: S_BRIEF, desc: ['Wait one', 'Wait two'], files: { 'docs/handoffs/R/run.md': RUN_R('build the lens'), 'docs/handoffs/S/run.md': RUN_S } })
+    const wp = await chartPane($)
+    expect(await wp.find({ type: 'Text', text: 'Ship the lens' })).toBeDefined()
+    expect(await wp.find({ type: 'Text', text: /^build the lens$/ })).toBe(undefined)
+    expect(await wp.find({ type: 'Text', text: 'write the tests' })).toBe(undefined)
+    expect((await drawn(wp)).filter(t => /Wait one|Wait two|Agent: /.test(t))).toEqual([])
+    await wp.unmount()
+    const card = await $.ui.mount(toolRow('toolu_1', 'vscode', SE_INPUT))
+    expect(await card.find({ type: 'Text', text: /^Workflow: Ship the lens - DF running, KB running\s*$/ })).toBeDefined()
+    await card.unmount()
+  })
+
+  test('workflowTask and parseRun: one run, one stage; one run, two stages; no run; isHumanRequest', () => {
+    const r = parseRun(RUN_R('build'))!
+    expect(r).toEqual({ title: 'R — the lens spike', status: 'active', stage: 'build', stages: { '16': 'research', '17': 'build' } })
+    expect(parseRun('---\nrun: Q\nstatus: blocked\ncurrent-stage: spikes\n---\n# Run: Q\n')).toEqual({ title: 'Q', status: 'blocked', stage: 'spikes', stages: {} })
+    expect(parseRun(null)).toBe(null)
+    const runs = { 'docs/handoffs/R': r }
+    const ag = (handoff: string | null, status: string, prompt = '') => ({ handoff, status, prompt, type: 't' }) as any
+    const rec = (code: string) => `docs/handoffs/R/${code}-orchestrator-to-x.handoff.md`
+    expect(workflowTask([ag(rec('17'), 'running')], runs, 'REQ')).toEqual({ parent: 'R — the lens spike', current: 'build' })
+    // Same run, different stages: the parent task.
+    expect(workflowTask([ag(rec('17'), 'running'), ag(rec('16'), 'running')], runs, 'REQ')).toEqual({ parent: 'R — the lens spike', current: 'R — the lens spike' })
+    // A row the run does not list yet: the run's stage in progress.
+    expect(workflowTask([ag(rec('18'), 'running')], runs, 'REQ').current).toBe('build')
+    // No record: the request that made the calls.
+    expect(workflowTask([ag(null, 'running', 'just do it')], runs, 'REQ')).toEqual({ parent: 'REQ', current: 'REQ' })
+    expect(isHumanRequest('Ship it')).toBe(true)
+    expect(isHumanRequest('<task-notification>done</task-notification>')).toBe(false)
+    expect(isHumanRequest('  ')).toBe(false)
+  })
+})
+
+describe('round 5: several workflows (requirement 3) and the status indicator (requirement 4)', () => {
+  test('two workflows: a panel each, headed by its parent task and its status, all collapsed', async ($, on) => {
+    await seed($, on, { files: { 'docs/handoffs/R/run.md': RUN_R('build the lens', 'done (passed)') } })
+    await $.turn.start({ text: 'Test the change please', turnId: 'm2' })
+    await $.tool.call({ tool: 'Agent', subagent_type: 'ai-dlc:sqa-engineer', description: 'later', prompt: 'SQA PROMPT: test the change.', tool_use_id: 'toolu_2' })
+    await $.agent.spawn({ tool_use_id: 'toolu_2', prompt: 'SQA PROMPT: test the change.', description: 'later', subagentType: 'ai-dlc:sqa-engineer', provider: { plugin: 'ai-dlc', tier: 'user' }, parentModel: 'claude-opus-5-5', background: true, fork: false })
+    const wp = await chartPane($)
+    for (const k of ['wf-toolu_1', 'wf-toolu_2']) expect((await wp.find({ type: 'Button', key: k }))?.text).toBe('[+]')
+    expect(await chartSvg(wp)).toBe(undefined)
+    // Newest first: its status is in progress (blinking), the older completed (steady).
+    expect(await statusSvgs(wp)).toEqual(['status: in progress', 'status: completed'])
+    expect(await wp.find({ type: 'Text', text: /^\s*Test the change please$/ })).toBeDefined()
+    expect(await wp.find({ type: 'Text', text: /^\s*R — the lens spike$/ })).toBeDefined()
+    await wp.press({ key: 'wf-toolu_2' })
+    expect(await wp.find({ type: 'Button', key: 'toolu_2:agent-a2' })).toBeDefined()
+    expect(await wp.find({ type: 'Button', key: 'toolu_1:agent-a1' })).toBe(undefined)
+    await wp.unmount()
+  })
+
+  test('each colour: in progress blinks green, pending light grey, halted red, teammate waiting orange, completed steady green', async ($, on) => {
+    const look = { ...DEFAULTS }
+    expect(statusStyle('in-progress', look)).toEqual({ label: 'in progress', color: '#2e7d32', blink: true })
+    expect(statusStyle('pending', look)).toEqual({ label: 'pending', color: '#cfd8dc', blink: false })
+    expect(statusStyle('halted', look)).toEqual({ label: 'halted', color: '#c62828', blink: false })
+    expect(statusStyle('waiting', look)).toEqual({ label: 'teammate waiting', color: '#ef6c00', blink: false })
+    expect(statusStyle('completed', look)).toEqual({ label: 'completed', color: '#2e7d32', blink: false })
+    expect(statusStyle('in-progress', { ...look, statusBlink: false }).blink).toBe(false)
+    const a = (status: string, extra: object = {}) => ({ status, type: 'ai-dlc:x', ...extra }) as any
+    expect(workflowStatus([a('running'), a('completed')])).toBe('in-progress')
+    expect(workflowStatus([a('pending'), a('completed')])).toBe('pending')
+    expect(workflowStatus([])).toBe('pending')
+    expect(workflowStatus([a('running'), a('failed')])).toBe('halted')
+    expect(workflowStatus([a('killed')])).toBe('halted')
+    expect(workflowStatus([a('completed')], ['blocked'])).toBe('halted')
+    expect(workflowStatus([a('idle', { teammate: true }), a('completed')])).toBe('waiting')
+    expect(workflowStatus([a('idle', { type: 'teammate' })])).toBe('waiting')
+    expect(workflowStatus([a('waiting')])).toBe('waiting')
+    // A teammate waits while another agent runs: the work is in progress.
+    expect(workflowStatus([a('idle', { teammate: true }), a('running')])).toBe('in-progress')
+    expect(workflowStatus([a('completed'), a('idle')])).toBe('completed')
+  })
+
+  test('the indicator in the pane: in progress blinks; completed steady; halted in the colour lens.json sets; pending; teammate waiting', async ($, on) => {
+    const { files } = await seed($, on, { complete: false, files: { '.ai-dlc/lens.json': JSON.stringify({ statusHaltedColor: '#ff0000', statusBlinkMs: 600 }) } })
+    const wp = await chartPane($)
+    expect(await statusSvgs(wp)).toEqual(['status: in progress'])
+    let src = await statusSource(wp)
+    expect(src).toMatch(/fill="#2e7d32"/)
+    expect(src).toMatch(/<animate [^>]*dur="0\.6s"/)
+    await completeAgent($, 'a1')
+    expect(await statusSvgs(wp)).toEqual(['status: completed'])
+    expect(await statusSource(wp)).not.toMatch(/<animate/)
+    // The run is blocked: halted, red as lens.json says.
+    files['docs/handoffs/R/run.md'] = RUN_R('build', 'blocked', 'blocked')
+    await $.tool.call({ tool: 'Write', file_path: 'docs/handoffs/R/run.md', content: 'x', tool_use_id: 'toolu_w' })
+    expect(await statusSvgs(wp)).toEqual(['status: halted'])
+    src = await statusSource(wp)
+    expect(src).toMatch(/fill="#ff0000"/)
+    await wp.unmount()
+  })
+
+  test('the indicator: an agent that failed halts; a call not started is pending; a teammate idle waits', async ($, on) => {
+    await seed($, on, { parallel: true, spawnSecond: false, teammate: true })
+    const wp = await chartPane($)
+    // a1 (a teammate) answered and is idle, toolu_2 not started: the teammate waiting wins over pending.
+    expect(await statusSvgs(wp)).toEqual(['status: teammate waiting'])
+    expect(await statusSource(wp)).toMatch(/fill="#ef6c00"/)
+    await $.turn.complete({ reason: 'error', answer: '', durationMs: 1, isAborted: false, turnId: 't', agentId: 'a1' } as any)
+    expect(await statusSvgs(wp)).toEqual(['status: halted'])
+    await wp.unmount()
+  })
+
+  test('pending: every spawned call not started yet; on the terminal the dot is text', async ($, on) => {
+    await seed($, on, { parallel: true, spawnSecond: false })
+    const wp = await chartPane($)
+    // a1 completed, toolu_2 not started.
+    expect(await statusSvgs(wp)).toEqual(['status: pending'])
+    expect(await statusSource(wp)).toMatch(/fill="#cfd8dc"/)
+    await wp.unmount()
+    const term = await chartPane($, 'terminal')
+    expect(await term.find({ type: 'Text', text: 'pending' })).toBeDefined()
+    expect(await term.find({ type: 'Text', text: '●' })).toBeDefined()
+    await term.unmount()
+  })
+})
+
+describe('round 5: long-context pricing (requirement 6) and limits (requirement 7)', () => {
+  const META = (long: object | null, override: number | null = null, extra: object = {}) =>
+    JSON.stringify({
+      longContextThresholdTokensOverride: override,
+      models: [
+        {
+          id: 'claude-sonnet-5-5',
+          aliases: [],
+          contextWindow: 200000,
+          longContextWindow: null,
+          maxInputTokens: null,
+          maxOutputTokens: 64000,
+          pricing: { input: 3, output: 15, cacheRead: 0.3, cacheWrite5m: 3.75, cacheWrite1h: 6, batchInput: 1.5, batchOutput: 7.5 },
+          longContextPricing: long,
+          sources: { modelsApi: [] },
+          ...extra,
+        },
+      ],
+    })
+  const LONG = { thresholdTokens: 100000, input: 6, output: 20, cacheRead: 0.6, cacheWrite5m: 7, cacheWrite1h: 12, batchInput: 3, batchOutput: 10 }
+  const c = (text: string) => ({ path: '.ai-dlc/model-metadata.json', text, error: '' })
+  // 50K prompt (below), 150K prompt (above).
+  const below = { in: 50_000, out: 10_000, cr: 0, cw: 0 }
+  const above = { in: 50_000, out: 10_000, cr: 100_000, cw: 0 }
+
+  test('per request: below the threshold flat prices, above it long-context prices for all its tokens', () => {
+    // below: 0.15 + 0.15 = 0.30; above: 0.3 + 0.2 + 0.06 = 0.56
+    const r = costOfRequests(c(META(LONG)), 'claude-sonnet-5-5', [below, above])
+    expect([r.text, r.long]).toEqual(['$0.8600', 1])
+    // The same tokens as one total would be one request over the threshold: not what is charged.
+    expect(costOfRequests(c(META(LONG)), 'claude-sonnet-5-5', [{ in: 100_000, out: 20_000, cr: 100_000, cw: 0 }]).text).toBe('$1.06')
+    // Exactly at the threshold is not over it.
+    expect(costOfRequests(c(META(LONG)), 'claude-sonnet-5-5', [{ in: 100_000, out: 0, cr: 0, cw: 0 }]).long).toBe(0)
+  })
+
+  test('the file override, then the lens setting, move the threshold; no threshold at all is unknown', () => {
+    // File override 200K: both below.
+    expect(costOfRequests(c(META(LONG, 200_000)), 'claude-sonnet-5-5', [below, above]).text).toBe('$0.6300')
+    // The lens setting wins over the file: 40K, both above: 0.3+0.2 + 0.56 = 1.06.
+    const r = costOfRequests(c(META(LONG, 200_000)), 'claude-sonnet-5-5', [below, above], '5m', 40_000)
+    expect([r.text, r.long]).toEqual(['$1.06', 2])
+    // Long-context prices but neither a threshold nor an override: —.
+    expect(costOfRequests(c(META({ ...LONG, thresholdTokens: null })), 'claude-sonnet-5-5', [below]).text).toBe('—')
+    // ... unless an override names one.
+    expect(costOfRequests(c(META({ ...LONG, thresholdTokens: null }, 50_000)), 'claude-sonnet-5-5', [below]).text).toBe('$0.3000')
+    // A model priced flat ignores every threshold.
+    expect(costOfRequests(c(META(null, 10)), 'claude-sonnet-5-5', [above], '5m', 10).long).toBe(0)
+    // A long-context price the file lacks, for a request over the threshold: —.
+    expect(costOfRequests(c(META({ ...LONG, cacheRead: null })), 'claude-sonnet-5-5', [above]).text).toBe('—')
+    // Totals only (no step seen): a model priced by prompt length cannot be costed from them.
+    expect(costOfAgent(c(META(LONG)), 'claude-sonnet-5-5', [], below).text).toBe('—')
+    expect(costOfAgent(c(META(null)), 'claude-sonnet-5-5', [], below).text).toBe('$0.3000')
+  })
+
+  test('the avatar panel: per-request cost, and the AI_DLC_LENS_LONG_CONTEXT_THRESHOLD_TOKENS override', async ($, on) => {
+    // a1's one request: prompt 1000 + 90000 + 9000 = 100000, exactly the threshold: flat, $3.06.
+    await seed($, on, { files: { '.ai-dlc/model-metadata.json': META(LONG) } })
+    const ui = await $.ui.mount({ ...pane('lens-027'), surface: 'vscode' })
+    await ui.press({ key: 'agent-a1' })
+    await ui.unmount()
+    const ag = await $.ui.mount({ ...pane('lens-027-agent'), surface: 'vscode' })
+    await ag.press({ key: 'agent-usage' })
+    expect(await ag.find({ type: 'Box', text: 'Cost$3.06' })).toBeDefined()
+    expect(await ag.find({ type: 'Box', text: 'Long-context requests0 of 1' })).toBeDefined()
+    await ag.unmount()
+  })
+
+  test('the lens setting from a settings env puts the request over the threshold', async ($, on) => {
+    await seed($, on, { files: { '.ai-dlc/model-metadata.json': META(LONG), '.claude/settings.json': JSON.stringify({ env: { AI_DLC_LENS_LONG_CONTEXT_THRESHOLD_TOKENS: '99999' } }) } })
+    const ui = await $.ui.mount({ ...pane('lens-027'), surface: 'vscode' })
+    await ui.press({ key: 'agent-a1' })
+    await ui.unmount()
+    const ag = await $.ui.mount({ ...pane('lens-027-agent'), surface: 'vscode' })
+    await ag.press({ key: 'agent-usage' })
+    // 1000*6 + 200000*20 + 90000*0.6 + 9000*7 = 4,123,000 / 1M
+    expect(await ag.find({ type: 'Box', text: 'Cost$4.12' })).toBeDefined()
+    expect(await ag.find({ type: 'Box', text: 'Long-context requests1 of 1' })).toBeDefined()
+    await ag.unmount()
+  })
+
+  test('null limits stay hidden; a max input the Models API filled is shown', () => {
+    expect(limitRows(c(META(LONG)), 'claude-sonnet-5-5')).toEqual([['Max output', '64K']])
+    const api = META(LONG, null, { maxInputTokens: 180000, sources: { modelsApi: ['maxInputTokens'] } })
+    expect(limitRows(c(api), 'claude-sonnet-5-5')).toEqual([
+      ['Max input', '180K'],
+      ['Max output', '64K'],
+    ])
+    expect(lookupModel(JSON.parse(META(LONG)), 'claude-sonnet-5-5')?.long).toEqual({ threshold: 100000, input: 6, output: 20, cacheRead: 0.6, cacheWrite5m: 7, cacheWrite1h: 12 })
   })
 })
