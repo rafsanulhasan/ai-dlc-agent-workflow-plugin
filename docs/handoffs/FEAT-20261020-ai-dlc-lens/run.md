@@ -9,8 +9,8 @@ owner: orchestrator
 session: 734fd039-2bfd-4247-86ee-1d8d2cc510fa
 branch: feat/ai-dlc-lens
 commit: 11f36b0
-last-record: 17.l2-agent-manager-to-orchestrator.handback.md
-updated: 2026-10-23 16:35
+last-record: 17.l3-agent-manager-to-orchestrator.handback.md
+updated: 2026-10-23 19:15
 ---
 
 # Run: FEAT-20261020-ai-dlc-lens — run-state CLI, gate alert and the ai-dlc-lens mod plugin: one dashboard merging savvy-progress, cache-tax, context-view and agent-flow, with a flowchart view
@@ -70,6 +70,7 @@ Step numbering: steps 1–2 are the 2026-10-20 briefs `01-…` and `02-…` (old
 | 17 | spike 027 rework to the human's card design (round 1 / 2) | agent-manager | subagent | done (passed) · `/spike027` card, `/spike027-kit`, `/spike027-probe` E1–E8; validate ✔, tsc 0, test 16/16; fallbacks: Buttons under Svg, thinking in pane (0 chars headless), subagent window table; awaits human VS Code check | `17-orchestrator-to-agent-manager.handoff.md` | `17-agent-manager-to-orchestrator.handback.md` | 2026-10-23 12:50 |
 | 17.l1 | spike 027 rework round 2 / 2: flowchart at the top of the chat card | agent-manager | subagent | done (passed) · chart in the `ToolUse` row of the first Agent call, one per message; 0.1.1; validate ✔, tsc 0, test 21/21; load errors not 027 (superpowers, sonarqube not installed; duplicate figma); awaits human check | `17.l1-orchestrator-to-agent-manager.handoff.md` | `17.l1-agent-manager-to-orchestrator.handback.md` | 2026-10-23 13:35 |
 | 17.l2 | spike 027 round 3 / 4: the human's findings 1–6 (smaller responsive chart, names/models/roles, metadata to side panel, prompt fallback, blink fix) | agent-manager | subagent | done (passed) · root cause of 1c/1d/6: spawn race (turn.start before agent.spawn) + read-then-write overwrite, fixed; chart 120 px/avatar, persona/model/role; toolbar button not possible → in-card Open flowchart button; settings resolver + lens-init/configure stand-ins; 0.1.2; validate ✔, tsc 0, test 39/39 | `17.l2-orchestrator-to-agent-manager.handoff.md` | `17.l2-agent-manager-to-orchestrator.handback.md` | 2026-10-23 16:35 |
+| 17.l3 | spike 027 round 4 / 4: label removal + addenda (source labels, collapsible tasks, pinned panel → auto-opened pane + compact card, UI panels, late-spawn fix, null limits) | agent-manager | subagent | done (passed) · pinning impossible in VS Code (cited) → auto-opened pane; 0.1.3; validate ✔, tsc 0, test 48/48 | `17.l3-orchestrator-to-agent-manager.handoff.md` | `17.l3-agent-manager-to-orchestrator.handback.md` | 2026-10-23 19:15 |
 | — | scope pass: brief (+ claude-lens gaps, options C/D, 027 findings) → critique → stories → critique + backlog → accept → G1 again | product-owner, research-assistant, brutal-critique, requirement-analyst, product-manager | subagent | pending | — | — | — |
 | — | PDLC stories → backlog → accept → G1 | requirement-analyst → product-manager → product-owner; brutal-critique on brief and stories | subagent | pending | — | — | — |
 | — | design (spec, ADRs, LLD) → G2 | software-architect + system-engineer; brutal-critique | subagent | pending | — | — | — |
@@ -116,3 +117,13 @@ Step numbering: steps 1–2 are the 2026-10-20 briefs `01-…` and `02-…` (old
 
 ## Next action
 Human: `/reload-plugins` (or a new session), then the orchestrator spawns two different test agents in parallel and the human checks the chat card (`spikes/ai-dlc-lens/027/CHECK.md`, R1–R8 and the settings checks). Record the result. Rounds left: 4 / 4 (limit raised by the human). Open questions from 17.l2 for the human: toolbar button impossible (keep in-card button?), long-context pricing in cost. In parallel: run `AAW-20261023-model-costing-hook` (fix round 1.l1, rename to model-metadata). Still open: `tests/build-copilot-hooks-module.test.mjs:167`; `.claude/settings.json` superpowers/sonarqube not installed.
+
+## Human answers to 17.l2 open questions (2026-10-23)
+1. The in-card "Open flowchart" button is enough. A prompt-toolbar button that expands the chart into a side panel would be useful later → future request for the scope pass / backlog.
+2. Long-context pricing: apply it (e.g. Haiku). The threshold is stored as its own field in `.ai-dlc/model-metadata.json` (AAW 1.l1 addendum) and is overridable by env vars; the lens applies the higher rates above it, with a lens setting too → spike round 4 (17.l3) and the stories.
+
+## Round 3 human check (2026-10-23)
+Partial: the card prints "Agent:Wait test agent one" (the Agent call's description) — remove immediately → 17.l3 (round 4 / 4, the last). Long-context pricing in the lens waits for the AAW 1.l1 field; after round 4 the limit is used up, so it needs the human's decision (raise again, or carry it into the stories).
+
+## After round 4 (2026-10-23)
+The spike loop's raised limit (4 rounds) is used up. Open for the human: the round 4 check (W1–W7); whether a subagent's background task shows the persona name instead of its description (agent-manager's choice, conflicts with the addendum wording); if the native Agent row still shows "Agent:<description>", it is Claude Code's own row (removing it would hide the response, AC-15.5); long-context pricing in the lens (waits for AAW 1.l2) — another round or carry into the stories.

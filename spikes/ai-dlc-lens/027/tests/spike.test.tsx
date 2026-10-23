@@ -3,10 +3,14 @@ import {
   addToBatch,
   costOf,
   ensureIn,
+  fmtClock,
   fmtModel,
+  joinWorkflow,
+  limitRows,
   fmtTokens,
   humanRole,
   initials,
+  isAgentTask,
   isRespawn,
   leadOf,
   lookupModel,
@@ -19,7 +23,13 @@ import {
   parseRoster,
   pickHandback,
   showChart,
+  stampTasks,
+  summarize,
+  taskLine,
+  WF0,
+  runTitle,
   windowOf,
+  workflowActive,
 } from '../hooks/lens'
 import { DEFAULTS, envLevel, envName, fileLevel, resolve, schema, setKey } from '../hooks/settings'
 
@@ -80,7 +90,7 @@ describe('kit', () => {
     })
     for (const surface of SURFACES) {
       const ui = await $.ui.mount(toolRow('toolu_1', surface, { subagent_type: 'ai-dlc:software-architect', description: 'design', prompt: 'p' }))
-      expect(await ui.find({ type: 'Text', text: /^Workflow: Main spawned 1 agent$/ })).toBeDefined()
+      expect(await ui.find({ type: 'Text', text: /^Workflow: Main spawned 1 agent - SA waiting\s*$/ })).toBeDefined()
       const all = await ui.findAll({})
       expect(all.findIndex((x: any) => x.text === 'NATIVE ROW')).toBe(all.length - 1)
       await ui.unmount()
@@ -182,7 +192,7 @@ describe('model costing (read only)', () => {
         },
       ],
     }
-    expect(lookupModel(real, 'claude-haiku-5-5')).toEqual({ id: 'claude-haiku-5-5', cacheRead: 0.01, cacheWrite5m: 0.125, cacheWrite1h: 0.2, input: 0.1, output: 0.5, window: 1000000, longWindow: null, maxOutput: 128000 })
+    expect(lookupModel(real, 'claude-haiku-5-5')).toEqual({ id: 'claude-haiku-5-5', cacheRead: 0.01, cacheWrite5m: 0.125, cacheWrite1h: 0.2, input: 0.1, output: 0.5, window: 1000000, longWindow: null, maxInput: null, maxOutput: 128000 })
     expect(costOf({ ...c, text: JSON.stringify(real) }, 'claude-haiku-5-5', { in: 1e6, out: 1e6, cr: 1e6, cw: 1e6 }).text).toBe('$0.7350')
     expect(lookupModel(JSON.parse(COSTING_ARRAY), 'sonnet')?.id).toBe('claude-sonnet-5-5')
     expect(lookupModel(JSON.parse(COSTING_ARRAY), 'claude-sonnet-5-5-20260101')?.maxOutput).toBe(64000)
@@ -250,7 +260,7 @@ const BASE_FILES: Record<string, string> = {
   [HANDBACK]: 'HANDBACK BODY',
 }
 
-type SeedOpts = { parallel?: boolean; spawnSecond?: boolean; complete?: boolean; files?: Record<string, string | null>; turnStartFirst?: boolean }
+type SeedOpts = { parallel?: boolean; spawnSecond?: boolean; complete?: boolean; files?: Record<string, string | null>; turnStartFirst?: boolean; desc?: [string, string] }
 
 /**
  * `parallel`: main's step asks for two Agent calls (toolu_1 -> a1 software-engineer, toolu_2 -> a2
@@ -259,7 +269,7 @@ type SeedOpts = { parallel?: boolean; spawnSecond?: boolean; complete?: boolean;
  * resumes, the order the headless run showed (E9). `files`: path -> text, or null for missing.
  */
 async function seed($: any, on: any, opts: SeedOpts = {}) {
-  const { parallel = false, spawnSecond = true, complete = true, turnStartFirst = false } = opts
+  const { parallel = false, spawnSecond = true, complete = true, turnStartFirst = false, desc = ['build', 'tests'] } = opts
   const files: Record<string, string | null> = { ...BASE_FILES, ...(opts.files ?? {}) }
   const opened: string[] = []
   const nativeInputs: unknown[] = []
@@ -290,7 +300,7 @@ async function seed($: any, on: any, opts: SeedOpts = {}) {
     return { value: undefined }
   })
   on('fs.list', () => ({ value: [{ name: '17-orchestrator-to-agent-manager.handoff.md', kind: 'file', size: 1, mtimeMs: 1 }, { name: '17-agent-manager-to-orchestrator.handback.md', kind: 'file', size: 1, mtimeMs: 1 }] }))
-  on('agent.list', () => ({ value: [{ id: 'a1', description: 'build', type: 'ai-dlc:software-engineer', status: 'running' }] }))
+  on('agent.list', () => ({ value: [{ id: 'a1', description: desc[0], type: 'ai-dlc:software-engineer', status: 'running' }] }))
   on('ui.open', (_: unknown, e: any) => {
     opened.push(e.id)
     return { value: { isPlaced: true } }
@@ -321,15 +331,15 @@ async function seed($: any, on: any, opts: SeedOpts = {}) {
     // drain the main step
   }
   if (parallel) {
-    await $.tool.call({ tool: 'Agent', subagent_type: 'ai-dlc:software-engineer', description: 'build', prompt: `Your handoff record is ${RECORD} (root x).\nDo it.`, tool_use_id: 'toolu_1' })
-    await $.tool.call({ tool: 'Agent', subagent_type: 'ai-dlc:sqa-engineer', description: 'tests', prompt: 'SQA PROMPT: test the change.', tool_use_id: 'toolu_2' })
+    await $.tool.call({ tool: 'Agent', subagent_type: 'ai-dlc:software-engineer', description: desc[0], prompt: `Your handoff record is ${RECORD} (root x).\nDo it.`, tool_use_id: 'toolu_1' })
+    await $.tool.call({ tool: 'Agent', subagent_type: 'ai-dlc:sqa-engineer', description: desc[1], prompt: 'SQA PROMPT: test the change.', tool_use_id: 'toolu_2' })
   }
   // The subagent's own turn.start lands before agent.spawn's hook resumes (headless run, E9).
   if (turnStartFirst) await $.turn.start({ text: 'p', turnId: 't', agentId: 'a1' })
   await $.agent.spawn({
     tool_use_id: 'toolu_1',
     prompt: `Your handoff record is ${RECORD} (root x).\nDo it.`,
-    description: 'build',
+    description: desc[0],
     subagentType: 'ai-dlc:software-engineer',
     provider: { plugin: 'ai-dlc', tier: 'user' },
     parentModel: 'claude-opus-5-5',
@@ -346,7 +356,7 @@ async function seed($: any, on: any, opts: SeedOpts = {}) {
     await $.agent.spawn({
       tool_use_id: 'toolu_2',
       prompt: 'SQA PROMPT: test the change.',
-      description: 'tests',
+      description: desc[1],
       subagentType: 'ai-dlc:sqa-engineer',
       provider: { plugin: 'ai-dlc', tier: 'user' },
       parentModel: 'claude-opus-5-5',
@@ -376,103 +386,112 @@ const svgSource = async (ui: any): Promise<string> => {
 const SE_INPUT = { subagent_type: 'ai-dlc:software-engineer', description: 'build', prompt: 'p' }
 
 // ---------------- the chat card ----------------
+const CHART_PANE = 'lens-027-chart'
+const chartPane = ($: any, surface: (typeof SURFACES)[number] = 'vscode') => $.ui.mount({ ...pane(CHART_PANE), surface })
+
 describe('chat card', () => {
-  test('C1 (1a, 1d): the chart shows persona, model from the definition and role; no ctx, tokens or cache', async ($, on) => {
-    await seed($, on)
+  test('C1 (round 4): the card is one line and an "Open flowchart" Button; the pane draws persona, model and role', async ($, on) => {
+    const { opened } = await seed($, on)
+    // The workflow pane opened by itself on the first spawn.
+    expect(opened).toContain(CHART_PANE)
     for (const surface of SURFACES) {
       const ui = await $.ui.mount(toolRow('toolu_1', surface, SE_INPUT))
       const all = await ui.findAll({})
-      expect(all.findIndex((x: any) => x.type === 'Text' && /^Workflow: Scott Hanselman spawned 1 agent$/.test(String(x.text)))).toBeGreaterThan(-1)
+      expect(all.findIndex((x: any) => x.type === 'Text' && /^Workflow: Scott Hanselman spawned 1 agent - DF completed\s*$/.test(String(x.text)))).toBeGreaterThan(-1)
       expect(all.findIndex((x: any) => x.text === 'NATIVE ROW')).toBe(all.length - 1)
+      expect(await ui.find({ type: 'Svg' })).toBe(undefined)
+      expect(await ui.find({ type: 'Button', key: 'card-open-chart' })).toBeDefined()
+      expect(await ui.find({ type: 'Button', key: 'agent-a1' })).toBe(undefined)
+      await ui.unmount()
+      const wp = await chartPane($, surface)
       if (surface === 'vscode') {
-        const src = await svgSource(ui)
+        const src = await svgSource(wp)
         for (const line of ['>Scott Hanselman<', '>opus<', '>Orchestrator<', '>David Fowler<', '>sonnet<', '>Software Engineer<', '>DF<', '>SH<']) expect(src.includes(line)).toBe(true)
         for (const gone of ['ctx', 'cache', 'in 1', 'out 2', 'software-engineer<']) expect(src.includes(gone)).toBe(false)
-        const svg: any = await ui.find({ type: 'Svg' })
+        const svg: any = await wp.find({ type: 'Svg' })
         expect(Number(svg?.props?.width ?? svg?.width)).toBe(120)
       } else {
-        expect(await ui.find({ type: 'Svg' })).toBe(undefined)
-        expect(await ui.find({ type: 'Text', text: /-> .*David Fowler/ })).toBeDefined()
-        expect(await ui.find({ type: 'Text', text: /^\s+sonnet, Software Engineer$/ })).toBeDefined()
+        expect(await wp.find({ type: 'Svg' })).toBe(undefined)
+        expect(await wp.find({ type: 'Text', text: /-> .*David Fowler/ })).toBeDefined()
+        expect(await wp.find({ type: 'Text', text: /^\s+sonnet, Software Engineer$/ })).toBeDefined()
       }
-      expect((await ui.find({ type: 'Button', key: 'agent-a1' }))?.text).toBe('David Fowler')
-      expect((await ui.find({ type: 'Button', key: 'edge-a1' }))?.text).toMatch(/^17 Scott Hanselman -> David Fowler$/)
-      await ui.unmount()
+      expect((await wp.find({ type: 'Button', key: 'agent-a1' }))?.text).toBe('David Fowler')
+      expect((await wp.find({ type: 'Button', key: 'edge-a1' }))?.text).toMatch(/^17 Scott Hanselman -> David Fowler$/)
+      await wp.unmount()
     }
   })
 
-  test('C2 (1c, 1d): two parallel calls: both avatars, both arrows, Kent Beck as KB, SQA Engineer; second row compact', async ($, on) => {
+  test('C2 (1c, 1d): two parallel calls: both avatars, both arrows, Kent Beck as KB, SQA Engineer; second row one line', async ($, on) => {
     await seed($, on, { parallel: true })
-    const first = await $.ui.mount(toolRow('toolu_1', 'vscode', SE_INPUT))
-    expect(await first.find({ type: 'Text', text: /^Workflow: Scott Hanselman spawned 2 agents in parallel$/ })).toBeDefined()
-    const src = await svgSource(first)
+    const wp = await chartPane($)
+    expect(await wp.find({ type: 'Text', text: /^Scott Hanselman spawned 2 agents$/ })).toBeDefined()
+    const src = await svgSource(wp)
     for (const s of ['>Kent Beck<', '>KB<', '>SQA Engineer<', '>David Fowler<']) expect(src.includes(s)).toBe(true)
     const cys = [...src.matchAll(/<circle cx="(\d+)" cy="(\d+)"/g)].map(m => [Number(m[1]), Number(m[2])])
     expect(cys.length).toBe(3)
     expect(cys[1]![1]).toBe(cys[2]![1])
-    const keys = (await first.findAll({ type: 'Button' })).map((b: any) => b.key)
+    const keys = (await wp.findAll({ type: 'Button' })).map((b: any) => b.key)
     expect(new Set(keys).size).toBe(keys.length)
     for (const k of ['agent-main', 'agent-a1', 'agent-a2', 'edge-a1', 'edge-a2']) expect(keys).toContain(k)
-    expect((await first.find({ type: 'Button', key: 'edge-a2' }))?.text).toBe('Scott Hanselman -> Kent Beck')
-    await first.unmount()
+    expect((await wp.find({ type: 'Button', key: 'edge-a2' }))?.text).toBe('Scott Hanselman -> Kent Beck')
+    await wp.unmount()
     const second = await $.ui.mount(toolRow('toolu_2', 'vscode', { subagent_type: 'ai-dlc:sqa-engineer', description: 'tests', prompt: 'p' }))
-    expect(await second.find({ type: 'Svg' })).toBe(undefined)
-    expect(await second.find({ type: 'Text', text: /agent 2 of 2 spawned in parallel/ })).toBeDefined()
+    expect(await second.find({ type: 'Button', key: 'card-open-chart' })).toBe(undefined)
+    expect(await second.find({ type: 'Text', text: /agent 2 of 2 in the workflow of an earlier call/ })).toBeDefined()
     await second.unmount()
   })
 
   test('C2b (root cause): turn.start before agent.spawn resumes: no false two-way arrow, both calls mapped', async ($, on) => {
     await seed($, on, { parallel: true, turnStartFirst: true })
-    const ui = await $.ui.mount(toolRow('toolu_1', 'vscode', SE_INPUT))
-    const src = await svgSource(ui)
+    const wp = await chartPane($)
+    const src = await svgSource(wp)
     expect(src.includes('marker-start')).toBe(false)
-    expect((await ui.find({ type: 'Button', key: 'edge-a1' }))?.text).toMatch(/ -> David Fowler$/)
-    expect((await ui.find({ type: 'Button', key: 'edge-a2' }))?.text).toBe('Scott Hanselman -> Kent Beck')
-    expect(await ui.find({ type: 'Button', key: 'agent-call:toolu_2' })).toBe(undefined)
-    await ui.unmount()
+    expect((await wp.find({ type: 'Button', key: 'edge-a1' }))?.text).toMatch(/ -> David Fowler$/)
+    expect((await wp.find({ type: 'Button', key: 'edge-a2' }))?.text).toBe('Scott Hanselman -> Kent Beck')
+    expect(await wp.find({ type: 'Button', key: 'agent-call:toolu_2' })).toBe(undefined)
+    await wp.unmount()
   })
 
   test('C3 (6): only running avatars blink: a call not started is steady, a finished agent stops', async ($, on) => {
     await seed($, on, { parallel: true, spawnSecond: false, complete: false })
-    const ui = await $.ui.mount(toolRow('toolu_1', 'vscode', SE_INPUT))
-    let src = await svgSource(ui)
+    const wp = await chartPane($)
+    let src = await svgSource(wp)
     // main is idle, a1 runs, the toolu_2 placeholder has not started: one blink.
     expect((src.match(/<animate /g) ?? []).length).toBe(1)
     expect(src.includes('>Kent Beck<')).toBe(true)
     // The placeholder still has its Buttons (1c): its avatar and its arrow.
-    expect(await ui.find({ type: 'Button', key: 'agent-call:toolu_2' })).toBeDefined()
-    expect(await ui.find({ type: 'Button', key: 'edge-call:toolu_2' })).toBeDefined()
+    expect(await wp.find({ type: 'Button', key: 'agent-call:toolu_2' })).toBeDefined()
+    expect(await wp.find({ type: 'Button', key: 'edge-call:toolu_2' })).toBeDefined()
     await completeAgent($, 'a1')
-    src = await svgSource(ui)
+    src = await svgSource(wp)
     expect((src.match(/<animate /g) ?? []).length).toBe(0)
-    await ui.unmount()
+    await wp.unmount()
   })
 
   test('C3b (6): a list that still says running does not undo turn.complete', async ($, on) => {
     const { opened } = await seed($, on)
-    const ui = await $.ui.mount(toolRow('toolu_1', 'vscode', SE_INPUT))
-    await ui.press({ key: 'agent-a1' })
+    const wp = await chartPane($)
+    await wp.press({ key: 'agent-a1' })
     expect(opened).toContain('lens-027-agent')
-    expect((((await svgSource(ui)).match(/<animate /g)) ?? []).length).toBe(0)
-    await ui.unmount()
+    expect((((await svgSource(wp)).match(/<animate /g)) ?? []).length).toBe(0)
+    await wp.unmount()
   })
 
-  test('C4 (1b): a narrow row shows a chip and an "Open flowchart" Button that opens the chart pane', async ($, on) => {
+  test('C4 (1b): any width: the card shows the chip and an "Open flowchart" Button that opens the workflow pane', async ($, on) => {
     const { opened } = await seed($, on, { parallel: true })
-    const narrow = await $.ui.mount(toolRow('toolu_1', 'vscode', SE_INPUT, 'Agent', 20))
-    expect(await narrow.find({ type: 'Svg' })).toBe(undefined)
-    expect(await narrow.find({ type: 'Text', text: /DF completed, KB running/ })).toBeDefined()
-    await narrow.press({ key: 'card-open-chart' })
-    expect(opened).toContain('lens-027-chart')
-    await narrow.unmount()
-    const chart = await $.ui.mount({ ...pane('lens-027-chart'), surface: 'vscode' })
-    expect((await svgSource(chart)).includes('>Kent Beck<')).toBe(true)
-    expect(await chart.find({ type: 'Button', key: 'edge-a2' })).toBeDefined()
-    await chart.unmount()
-    const wide = await $.ui.mount(toolRow('toolu_1', 'vscode', SE_INPUT, 'Agent', 200))
-    expect(await wide.find({ type: 'Svg' })).toBeDefined()
-    expect(await wide.find({ type: 'Button', key: 'card-open-chart' })).toBe(undefined)
-    await wide.unmount()
+    for (const cols of [20, 200]) {
+      const card = await $.ui.mount(toolRow('toolu_1', 'vscode', SE_INPUT, 'Agent', cols))
+      expect(await card.find({ type: 'Svg' })).toBe(undefined)
+      expect(await card.find({ type: 'Text', text: /DF completed, KB running/ })).toBeDefined()
+      opened.length = 0
+      await card.press({ key: 'card-open-chart' })
+      expect(opened).toContain(CHART_PANE)
+      await card.unmount()
+    }
+    const wp = await chartPane($)
+    expect((await svgSource(wp)).includes('>Kent Beck<')).toBe(true)
+    expect(await wp.find({ type: 'Button', key: 'edge-a2' })).toBeDefined()
+    await wp.unmount()
   })
 
   test('C5 (5): the native Agent row gets no prompt; expanded, it gets the whole input; native still last', async ($, on) => {
@@ -495,50 +514,53 @@ describe('chat card', () => {
     await ui.unmount()
   })
 
-  test('C7: chat Buttons open the separate panes even in drill-in mode', async ($, on) => {
+  test('C7: workflow pane Buttons open the separate panes even in drill-in mode', async ($, on) => {
     const { opened } = await seed($, on)
     const pane0 = await $.ui.mount({ ...pane('lens-027'), surface: 'vscode' })
     await pane0.press({ key: 'mode-drill' })
     await pane0.unmount()
-    const ui = await $.ui.mount(toolRow('toolu_1', 'vscode', SE_INPUT))
-    await ui.press({ key: 'edge-a1' })
-    await ui.press({ key: 'agent-a1' })
+    const wp = await chartPane($)
+    await wp.press({ key: 'edge-a1' })
+    await wp.press({ key: 'agent-a1' })
     expect(opened).toContain('lens-027-edge')
     expect(opened).toContain('lens-027-agent')
-    await ui.unmount()
+    await wp.unmount()
   })
 })
 
 describe('panels', () => {
-  test('2: no handoff record: the arrow panel shows the orchestrator prompt in full', async ($, on) => {
+  test('2: no handoff record: the arrow panel has the prompt, collapsed, whole when opened', async ($, on) => {
     await seed($, on, { parallel: true })
-    const ui = await $.ui.mount(toolRow('toolu_1', 'vscode', SE_INPUT))
-    await ui.press({ key: 'edge-a2' })
-    await ui.unmount()
+    const wp = await chartPane($)
+    await wp.press({ key: 'edge-a2' })
+    await wp.unmount()
     const edge = await $.ui.mount({ ...pane('lens-027-edge'), surface: 'vscode' })
-    expect(await edge.find({ type: 'Text', text: 'Prompt from orchestrator (no handoff record)' })).toBeDefined()
+    expect(await edge.find({ type: 'Text', text: /^\s*Prompt \(28 chars\)$/ })).toBeDefined()
+    expect(await edge.find({ type: 'Text', text: 'SQA PROMPT: test the change.' })).toBe(undefined)
+    await edge.press({ key: 'edge-prompt' })
     expect(await edge.find({ type: 'Text', text: 'SQA PROMPT: test the change.' })).toBeDefined()
     await edge.unmount()
   })
 
   test('2: a call not spawned yet: its arrow still shows the prompt from the call', async ($, on) => {
     await seed($, on, { parallel: true, spawnSecond: false })
-    const ui = await $.ui.mount(toolRow('toolu_1', 'vscode', SE_INPUT))
-    await ui.press({ key: 'edge-call:toolu_2' })
-    await ui.unmount()
+    const wp = await chartPane($)
+    await wp.press({ key: 'edge-call:toolu_2' })
+    await wp.unmount()
     const edge = await $.ui.mount({ ...pane('lens-027-edge'), surface: 'vscode' })
+    await edge.press({ key: 'edge-prompt' })
     expect(await edge.find({ type: 'Text', text: 'SQA PROMPT: test the change.' })).toBeDefined()
     await edge.unmount()
   })
 
-  test('L4: a matched record: record and hand-back, collapsed until opened', async ($, on) => {
+  test('L4: a matched record: record and hand-back, collapsed until opened; no match label', async ($, on) => {
     await seed($, on)
     const ui = await $.ui.mount({ ...pane('lens-027'), surface: 'vscode' })
     await ui.press({ key: 'edge-a1' })
     await ui.unmount()
     const edge = await $.ui.mount({ ...pane('lens-027-edge'), surface: 'vscode' })
-    expect(await edge.find({ type: 'Text', text: /Record matched: first line/ })).toBeDefined()
-    expect(await edge.find({ type: 'Text', text: HANDBACK })).toBeDefined()
+    expect(await edge.find({ type: 'Text', text: /Record matched/ })).toBe(undefined)
+    expect(await edge.find({ type: 'Text', text: new RegExp(`Hand-back \\(${HANDBACK.replace(/[./]/g, '\\$&')}\\)$`) })).toBeDefined()
     expect(await edge.find({ type: 'Text', text: 'HANDOFF BODY' })).toBe(undefined)
     await edge.press({ key: 'edge-doc' })
     await edge.press({ key: 'edge-back' })
@@ -547,34 +569,41 @@ describe('panels', () => {
     await edge.unmount()
   })
 
-  test('3, 4: the avatar panel has the figures, the model source, the window and the cost from the file', async ($, on) => {
+  test('3, 4: the avatar panel: header, then Usage with the figures, the window and the cost, with no source', async ($, on) => {
     await seed($, on, { files: { '.ai-dlc/model-costing.json': COSTING_ARRAY } })
     const ui = await $.ui.mount({ ...pane('lens-027'), surface: 'vscode' })
     await ui.press({ key: 'agent-a1' })
     await ui.unmount()
     const ag = await $.ui.mount({ ...pane('lens-027-agent'), surface: 'vscode' })
-    expect(await ag.find({ type: 'Text', text: /^David Fowler \(DF\)$/ })).toBeDefined()
-    expect(await ag.find({ type: 'Text', text: /^Role: Software Engineer/ })).toBeDefined()
-    expect(await ag.find({ type: 'Text', text: /^Model: sonnet from agent definition \(plugins\/claude\/ai-dlc\/agents\/software-engineer\.md\)$/ })).toBeDefined()
-    expect(await ag.find({ type: 'Text', text: /^Context: 300K \/ 200K window from \.ai-dlc\/model-costing\.json \(claude-sonnet-5-5\)$/ })).toBeDefined()
-    expect(await ag.find({ type: 'Text', text: 'Tokens: in 100K, out 200K' })).toBeDefined()
-    expect(await ag.find({ type: 'Text', text: 'Cache: read 90K / write 9K / uncached 1K' })).toBeDefined()
+    expect(await ag.find({ type: 'Text', text: 'David Fowler' })).toBeDefined()
+    expect(await ag.find({ type: 'Text', text: /^\s*DF\s*$/ })).toBeDefined()
+    expect(await ag.find({ type: 'Text', text: /^\s*done\s*$/ })).toBeDefined()
+    expect(await ag.find({ type: 'Text', text: 'sonnet · Software Engineer' })).toBeDefined()
+    expect(await ag.find({ type: 'Text', text: /^\s*Usage \(300K \/ 200K\)$/ })).toBeDefined()
+    await ag.press({ key: 'agent-usage' })
+    expect(await ag.find({ type: 'Text', text: '300K / 200K' })).toBeDefined()
+    expect(await ag.find({ type: 'Text', text: '████████████' })).toBeDefined()
+    for (const [k, v] of [['Input', '100K'], ['Output', '200K'], ['Cache read', '90K'], ['Cache write', '9K'], ['Uncached', '1K'], ['Ran on', 'claude-sonnet-5-5']])
+      expect(await ag.find({ type: 'Text', text: v })).toBeDefined()
     // 0.003 + 3 + 0.027 + 0.03375
-    expect(await ag.find({ type: 'Text', text: /^Cost: \$3\.06 from \.ai-dlc\/model-costing\.json/ })).toBeDefined()
-    expect(await ag.find({ type: 'Text', text: /Read x\.md/ })).toBeDefined()
+    expect(await ag.find({ type: 'Text', text: '$3.06' })).toBeDefined()
+    expect(await ag.find({ type: 'Text', text: /^\s*Tool calls \(1\)$/ })).toBeDefined()
+    await ag.press({ key: 'agent-calls' })
+    expect(await ag.find({ type: 'Text', text: /^✓ Read x\.md ~200K est\.$/ })).toBeDefined()
     await ag.unmount()
   })
 
-  test('rename: model-metadata.json is read before model-costing.json, and the panel names the file used', async ($, on) => {
+  test('rename: model-metadata.json is read before model-costing.json; the panel does not name the file', async ($, on) => {
     const other = COSTING_ARRAY.replace('"outputPerMTok":15', '"outputPerMTok":16')
     await seed($, on, { files: { '.ai-dlc/model-metadata.json': other, '.ai-dlc/model-costing.json': COSTING_ARRAY } })
     const ui = await $.ui.mount({ ...pane('lens-027'), surface: 'vscode' })
     await ui.press({ key: 'agent-a1' })
     await ui.unmount()
     const ag = await $.ui.mount({ ...pane('lens-027-agent'), surface: 'vscode' })
+    await ag.press({ key: 'agent-usage' })
     // 0.003 + 3.2 + 0.027 + 0.03375: the metadata file's output price, not the older file's
-    expect(await ag.find({ type: 'Text', text: /^Cost: \$3\.26 from \.ai-dlc\/model-metadata\.json/ })).toBeDefined()
-    expect(await ag.find({ type: 'Text', text: /window from \.ai-dlc\/model-metadata\.json/ })).toBeDefined()
+    expect(await ag.find({ type: 'Text', text: '$3.26' })).toBeDefined()
+    expect(await ag.find({ type: 'Text', text: /model-(metadata|costing)\.json/ })).toBe(undefined)
     await ag.unmount()
   })
 
@@ -584,13 +613,16 @@ describe('panels', () => {
     await ui.press({ key: 'agent-a1' })
     await ui.unmount()
     const ag = await $.ui.mount({ ...pane('lens-027-agent'), surface: 'vscode' })
-    expect(await ag.find({ type: 'Text', text: /^Cost: — \(\.ai-dlc\/model-metadata\.json and \.ai-dlc\/model-costing\.json not found\)$/ })).toBeDefined()
-    expect(await ag.find({ type: 'Text', text: /^Context: 300K \/ — window from/ })).toBeDefined()
+    await ag.press({ key: 'agent-usage' })
+    expect(await ag.find({ type: 'Text', text: '300K / —' })).toBeDefined()
+    const costRow: any = (await ag.findAll({})).find((x: any) => x.type === 'Box' && String(x.text) === 'Cost—')
+    expect(costRow).toBeDefined()
     await ag.unmount()
   })
 
   test('L4 fallback: drill-in shows the panel inside the lens pane with a Back button', async ($, on) => {
     const { opened } = await seed($, on)
+    opened.length = 0
     const ui = await $.ui.mount({ ...pane('lens-027'), surface: 'vscode' })
     await ui.press({ key: 'mode-drill' })
     await ui.press({ key: 'edge-a1' })
@@ -623,7 +655,9 @@ describe('panels', () => {
     await ui.press({ key: 'agent-a1' })
     await ui.unmount()
     const sub = await $.ui.mount({ ...pane('lens-027-agent'), surface: 'vscode' })
-    expect(await sub.find({ type: 'Text', text: /running shell npm run watch/ })).toBeDefined()
+    expect(await sub.find({ type: 'Text', text: /^\s*Background tasks \(1\)$/ })).toBeDefined()
+    await sub.press({ key: 'agent-tasks' })
+    expect(await sub.find({ type: 'Text', text: /^\s*npm run watch - running$/ })).toBeDefined()
     await sub.unmount()
   })
 
@@ -634,7 +668,8 @@ describe('panels', () => {
     await ui.press({ key: 'agent-main' })
     await ui.unmount()
     const main = await $.ui.mount({ ...pane('lens-027-agent'), surface: 'vscode' })
-    expect(await main.find({ type: 'Text', text: 'running shell sleep 15 [tool.call]' })).toBeDefined()
+    await main.press({ key: 'agent-tasks' })
+    expect(await main.find({ type: 'Text', text: /^\s*sleep 15 - running$/ })).toBeDefined()
     await main.unmount()
   })
 
@@ -651,36 +686,52 @@ describe('panels', () => {
     expect(log).toMatch(/"exp":"E1"/)
     expect(log).toMatch(/"exp":"E9"/)
   })
+
+  test('round 4 UI: a narrow avatar panel: four divided sections, each with a heading, a count and its own Button; no raw JSON', async ($, on) => {
+    await seed($, on, { files: { '.ai-dlc/lens.json': JSON.stringify({ collapsedByDefault: false }) } })
+    const ui = await $.ui.mount({ ...pane('lens-027'), surface: 'vscode' })
+    await ui.press({ key: 'agent-a1' })
+    await ui.unmount()
+    const ag = await $.ui.mount({ ...pane('lens-027-agent', 'inline', 24), surface: 'vscode' })
+    const all: any[] = await ag.findAll({})
+    const headings = all.filter((x: any) => x.type === 'Text' && /^\s*(Usage|Tool calls|Background tasks|Thinking) \(/.test(String(x.text))).map((x: any) => String(x.text).trim().replace(/ \(.*$/, ''))
+    expect(headings).toEqual(['Usage', 'Tool calls', 'Background tasks', 'Thinking'])
+    expect(all.filter((x: any) => x.type === 'Text' && /^─+$/.test(String(x.text))).length).toBe(4)
+    for (const k of ['agent-usage', 'agent-calls', 'agent-tasks', 'agent-thinking']) expect(await ag.find({ type: 'Button', key: k })).toBeDefined()
+    // No raw JSON in the panel.
+    expect(all.some((x: any) => x.type === 'Text' && /^\s*[[{]"/.test(String(x.text)))).toBe(false)
+    await ag.unmount()
+  })
 })
 
 describe('collapsed by default (addendum 2)', () => {
-  test('every [+]/[-] section starts collapsed: chat card, /spike027 pane, arrow and avatar panels', async ($, on) => {
+  test('every [+]/[-] section starts collapsed: workflow pane, /spike027 pane, arrow and avatar panels', async ($, on) => {
     await seed($, on)
     await $.tool.call({ tool: 'Grep', pattern: 'needle', tool_use_id: 'toolu_m1' })
-    const card = await $.ui.mount(toolRow('toolu_1', 'vscode', SE_INPUT))
-    for (const k of ['card-thinking', 'card-context']) expect((await card.find({ type: 'Button', key: k }))?.text).toBe('[+]')
-    expect(await card.find({ type: 'Text', text: /Grep needle/ })).toBe(undefined)
-    await card.press({ key: 'card-context' })
-    expect(await card.find({ type: 'Text', text: /Grep needle/ })).toBeDefined()
-    await card.unmount()
+    const wp = await chartPane($)
+    for (const k of ['wf-thinking', 'wf-context']) expect((await wp.find({ type: 'Button', key: k }))?.text).toBe('[+]')
+    expect(await wp.find({ type: 'Text', text: /Grep needle/ })).toBe(undefined)
+    await wp.press({ key: 'wf-context' })
+    expect(await wp.find({ type: 'Text', text: /Grep needle/ })).toBeDefined()
+    await wp.unmount()
     const lens = await $.ui.mount({ ...pane('lens-027'), surface: 'vscode' })
     for (const k of ['lens-thinking', 'lens-context', 'lens-settings']) expect((await lens.find({ type: 'Button', key: k }))?.text).toBe('[+]')
     await lens.press({ key: 'edge-a1' })
     await lens.press({ key: 'agent-a1' })
     await lens.unmount()
     const edge = await $.ui.mount({ ...pane('lens-027-edge'), surface: 'vscode' })
-    for (const k of ['edge-doc', 'edge-back']) expect((await edge.find({ type: 'Button', key: k }))?.text).toBe('[+]')
+    for (const k of ['edge-usage', 'edge-doc', 'edge-back']) expect((await edge.find({ type: 'Button', key: k }))?.text).toBe('[+]')
     await edge.unmount()
     const ag = await $.ui.mount({ ...pane('lens-027-agent'), surface: 'vscode' })
-    expect((await ag.find({ type: 'Button', key: 'agent-thinking' }))?.text).toBe('[+]')
+    for (const k of ['agent-usage', 'agent-calls', 'agent-tasks', 'agent-thinking']) expect((await ag.find({ type: 'Button', key: k }))?.text).toBe('[+]')
     await ag.unmount()
   })
 
   test('collapsedByDefault false in lens.json opens them', async ($, on) => {
     await seed($, on, { files: { '.ai-dlc/lens.json': JSON.stringify({ collapsedByDefault: false }) } })
-    const card = await $.ui.mount(toolRow('toolu_1', 'vscode', SE_INPUT))
-    expect((await card.find({ type: 'Button', key: 'card-thinking' }))?.text).toBe('[-]')
-    await card.unmount()
+    const wp = await chartPane($)
+    expect((await wp.find({ type: 'Button', key: 'wf-thinking' }))?.text).toBe('[-]')
+    await wp.unmount()
   })
 })
 
@@ -707,7 +758,7 @@ describe('settings (addendum 3)', () => {
     expect(JSON.parse(setKey(null, 'cellPx', '12').text).cellPx).toBe(12)
   })
 
-  test('the module reads the three files, never the process env; the pane shows each value and its level', async ($, on) => {
+  test('the module reads the three files, never the process env; the pane shows each value, not its level', async ($, on) => {
     await seed($, on, {
       files: {
         '.claude/settings.local.json': local({ AI_DLC_LENS_CHART_MODE: 'button' }),
@@ -722,11 +773,12 @@ describe('settings (addendum 3)', () => {
     await card.unmount()
     const lens = await $.ui.mount({ ...pane('lens-027'), surface: 'vscode' })
     await lens.press({ key: 'lens-settings' })
-    expect(await lens.find({ type: 'Text', text: 'chartMode = "button" [.claude/settings.local.json env]' })).toBeDefined()
-    expect(await lens.find({ type: 'Text', text: 'showCost = false [.claude/settings.json env]' })).toBeDefined()
-    expect(await lens.find({ type: 'Text', text: 'callsShown = 5 [.ai-dlc/lens.json]' })).toBeDefined()
-    expect(await lens.find({ type: 'Text', text: 'blinkMs = 1000 [default]' })).toBeDefined()
-    expect(await lens.find({ type: 'Text', text: /blinkMs = "fast" is invalid, ignored/ })).toBeDefined()
+    // Round 4: the pane shows the values only; /spike027-lens-configure names the levels.
+    expect(await lens.find({ type: 'Text', text: 'chartMode = "button"' })).toBeDefined()
+    expect(await lens.find({ type: 'Text', text: 'showCost = false' })).toBeDefined()
+    expect(await lens.find({ type: 'Text', text: 'callsShown = 5' })).toBeDefined()
+    expect(await lens.find({ type: 'Text', text: 'blinkMs = 1000' })).toBeDefined()
+    expect(await lens.find({ type: 'Text', text: /^blinkMs = "fast" is invalid, ignored$/ })).toBeDefined()
     await lens.press({ key: 'agent-a1' })
     await lens.unmount()
     const ag = await $.ui.mount({ ...pane('lens-027-agent'), surface: 'vscode' })
@@ -746,10 +798,10 @@ describe('settings (addendum 3)', () => {
     expect(String(blocked?.text)).toMatch(/A higher level wins: \.claude\/settings\.json env/)
     const bad: any = await ($.command.run as any)({ command: 'spike027-lens-configure', args: 'cellPx 2' })
     expect(String(bad?.text)).toMatch(/^Not changed: 2 is not valid for cellPx/)
-    const card = await $.ui.mount(toolRow('toolu_1', 'vscode', SE_INPUT))
-    const svg: any = await card.find({ type: 'Svg' })
+    const wp = await chartPane($)
+    const svg: any = await wp.find({ type: 'Svg' })
     expect(Number(svg?.props?.width ?? svg?.width)).toBe(200)
-    await card.unmount()
+    await wp.unmount()
   })
 })
 
@@ -778,5 +830,265 @@ describe('fallbacks', () => {
     await ui.press({ key: 'lens-thinking' })
     expect(await ui.find({ type: 'Text', text: /no thinking text: 0 block.*transcript holds 1 thinking block.*0 chars/ })).toBeDefined()
     await ui.unmount()
+  })
+})
+
+// ---------------- round 4 (step 17.l3) ----------------
+/** Every text a mounted drawing shows: Text and Button labels, and the Svg markup. */
+async function drawn(ui: any): Promise<string[]> {
+  const all: any[] = await ui.findAll({})
+  return all.flatMap((x: any) => [x.text, x.label, x.props?.label, x.props?.source, x.source, x.props?.alt].filter((v: unknown) => typeof v === 'string' && v !== '')) as string[]
+}
+
+/** Mounts the chat cards, the /spike027 pane, and every avatar and arrow panel; returns all their text. */
+async function everything($: any, extraCard?: string): Promise<string[]> {
+  const out: string[] = []
+  for (const id of ['toolu_1', ...(extraCard ? [extraCard] : [])]) {
+    const card = await $.ui.mount(toolRow(id, 'vscode', SE_INPUT))
+    out.push(...(await drawn(card)))
+    await card.unmount()
+  }
+  const lens = await $.ui.mount({ ...pane('lens-027'), surface: 'vscode' })
+  out.push(...(await drawn(lens)))
+  for (const target of ['agent-main', 'agent-a1', 'agent-a2', 'edge-a1', 'edge-a2']) {
+    if ((await lens.find({ type: 'Button', key: target })) === undefined) continue
+    await lens.press({ key: target })
+    const id = target.startsWith('agent-') ? 'lens-027-agent' : 'lens-027-edge'
+    const p = await $.ui.mount({ ...pane(id), surface: 'vscode' })
+    out.push(...(await drawn(p)))
+    await p.unmount()
+  }
+  await lens.unmount()
+  return out
+}
+
+describe('round 4: no Agent description, no sources, collapsible background tasks', () => {
+  test("no rendered text contains an Agent call's description: card, context, chip, panels, /spike027 pane", async ($, on) => {
+    on('classic.Stop', () => ({}))
+    await seed($, on, { parallel: true, desc: ['Wait test agent one', 'Wait test agent two'], files: { '.ai-dlc/lens.json': JSON.stringify({ collapsedByDefault: false }) } })
+    // A main-loop Agent call lands in the gathered context; a subagent's in its tool calls.
+    await $.tool.call({ tool: 'Agent', subagent_type: 'ai-dlc:code-reviewer', description: 'Wait test agent three', prompt: 'x', tool_use_id: 'toolu_3' })
+    await $.tool.call({ tool: 'Task', subagent_type: 'ai-dlc:code-reviewer', description: 'Wait test agent four', prompt: 'x', tool_use_id: 'toolu_4', agentId: 'a1' } as any)
+    await $.classic.SubagentStop({
+      stop_hook_active: false,
+      agent_id: 'a1',
+      agent_transcript_path: '',
+      agent_type: 'ai-dlc:software-engineer',
+      background_tasks: [{ id: 's9', type: 'subagent', status: 'running', description: 'Wait test agent five', agent_type: 'ai-dlc:sqa-engineer' }],
+    })
+    await $.classic.Stop({ stop_hook_active: false, background_tasks: [{ id: 's8', type: 'subagent', status: 'running', description: 'Wait test agent six', agent_type: 'ai-dlc:sqa-engineer' }] })
+    const narrow = await $.ui.mount(toolRow('toolu_1', 'vscode', SE_INPUT, 'Agent', 20))
+    const first = await drawn(narrow)
+    await narrow.unmount()
+    const texts = [...first, ...(await everything($, 'toolu_2'))]
+    expect(texts.length).toBeGreaterThan(20)
+    // The calls are still named, by their agent type.
+    expect(texts.some(t => /ai-dlc:code-reviewer/.test(t))).toBe(true)
+    expect(texts.filter(t => /Wait test agent/.test(t))).toEqual([])
+  })
+
+  test('no rendered text contains a source label: model, window, metadata file, setting levels', async ($, on) => {
+    await seed($, on, {
+      parallel: true,
+      files: {
+        '.ai-dlc/model-metadata.json': COSTING_ARRAY,
+        '.ai-dlc/lens.json': JSON.stringify({ collapsedByDefault: false, blinkMs: 'fast' }),
+        '.claude/settings.json': JSON.stringify({ env: { AI_DLC_LENS_CALLS_SHOWN: '5', AI_DLC_LENS_BLINK: 'maybe' } }),
+        '.claude/settings.local.json': JSON.stringify({ env: { AI_DLC_LENS_CELL_PX: '9' } }),
+      },
+    })
+    await $.tool.call({ tool: 'Bash', command: 'sleep 15', run_in_background: true, tool_use_id: 'toolu_b' })
+    const texts = await everything($)
+    expect(texts.some(t => t === 'sonnet · Software Engineer')).toBe(true)
+    expect(texts.some(t => /^Cost\$\d/.test(t))).toBe(true)
+    expect(texts.some(t => /is invalid, ignored$/.test(t))).toBe(true)
+    const SOURCE = [
+      /\bfrom (agent definition|the orchestrator|the session|\.ai-dlc)/,
+      /window from/,
+      /agent definition|Agent call \(|session's model|session's context window|main session's window/,
+      /model-(metadata|costing)\.json/,
+      /settings(\.local)?\.json|lens\.json/,
+      /\[(default|agent\.list|tool\.call|Stop|SubagentStop)\]/,
+      /Record matched/,
+      /not main's model|not found\)/,
+    ]
+    // Setting values that are paths are values, not sources: left out of the check.
+    const values = texts.map(t => t.replace(/(costingPath|costingFallbackPath|rosterPath) = "[^"]*"/g, ''))
+    expect(values.filter(t => SOURCE.some(re => re.test(t)))).toEqual([])
+  })
+
+  test('each background task is one collapsed line (description - status); expanded, its details', async ($, on) => {
+    on('classic.Stop', () => ({}))
+    await seed($, on)
+    await $.tool.call({ tool: 'Bash', command: 'sleep 15', run_in_background: true, tool_use_id: 'toolu_b' })
+    await $.classic.SubagentStop({
+      stop_hook_active: false,
+      agent_id: 'a1',
+      agent_transcript_path: '',
+      agent_type: 'ai-dlc:software-engineer',
+      last_assistant_message: 'A1 RESULT',
+      background_tasks: [
+        { id: 'b1', type: 'shell', status: 'running', description: 'npm run watch', command: 'npm run watch' },
+        { id: 's1', type: 'subagent', status: 'running', description: 'tests', agent_type: 'ai-dlc:sqa-engineer' },
+      ],
+    })
+    // The shell main started is no longer listed at stop time: it has ended.
+    await $.classic.Stop({ stop_hook_active: false, background_tasks: [] })
+    const lens = await $.ui.mount({ ...pane('lens-027'), surface: 'vscode' })
+    await lens.press({ key: 'agent-a1' })
+    const sub = await $.ui.mount({ ...pane('lens-027-agent'), surface: 'vscode' })
+    expect(await sub.find({ type: 'Button', key: 'task-b1' })).toBe(undefined)
+    await sub.press({ key: 'agent-tasks' })
+    for (const k of ['task-b1', 'task-s1']) expect((await sub.find({ type: 'Button', key: k }))?.text).toBe('[+]')
+    expect(await sub.find({ type: 'Text', text: /^\s*npm run watch - running$/ })).toBeDefined()
+    expect(await sub.find({ type: 'Text', text: /^\s*SQA Engineer - running$/ })).toBeDefined()
+    expect(await sub.find({ type: 'Box', text: /^Type/ })).toBe(undefined)
+    await sub.press({ key: 'task-b1' })
+    expect(await sub.find({ type: 'Box', text: 'Typeshell' })).toBeDefined()
+    expect(await sub.find({ type: 'Box', text: 'Idb1' })).toBeDefined()
+    expect(await sub.find({ type: 'Box', text: /^Started\d\d:\d\d:\d\d$/ })).toBeDefined()
+    expect(await sub.find({ type: 'Box', text: 'Ended—' })).toBeDefined()
+    expect(await sub.find({ type: 'Box', text: 'Output—' })).toBeDefined()
+    expect(await sub.find({ type: 'Box', text: /^Agent type/ })).toBe(undefined)
+    await sub.press({ key: 'task-s1' })
+    expect(await sub.find({ type: 'Box', text: 'Agent typeai-dlc:sqa-engineer' })).toBeDefined()
+    await sub.unmount()
+    // Main's panel: a1 (an agent.list child) by persona, its last message as output; the ended shell has an end time.
+    await lens.press({ key: 'agent-main' })
+    const main = await $.ui.mount({ ...pane('lens-027-agent'), surface: 'vscode' })
+    await main.press({ key: 'agent-tasks' })
+    expect(await main.find({ type: 'Text', text: /^\s*David Fowler - running$/ })).toBeDefined()
+    expect(await main.find({ type: 'Text', text: /^\s*sleep 15 - ended$/ })).toBeDefined()
+    await main.press({ key: 'task-a1' })
+    expect(await main.find({ type: 'Box', text: 'OutputA1 RESULT' })).toBeDefined()
+    expect(await main.find({ type: 'Box', text: 'Agent typeai-dlc:software-engineer' })).toBeDefined()
+    await main.press({ key: 'task-b9' })
+    expect(await main.find({ type: 'Box', text: /^Ended\d\d:\d\d:\d\d$/ })).toBeDefined()
+    await main.unmount()
+    await lens.unmount()
+  })
+
+  test('stampTasks keeps the first-seen time and stamps the end once; an agent task is never named by its description', () => {
+    const t0 = { id: 'b1', type: 'shell', status: 'running', description: 'sleep 15', source: 'tool.call' }
+    const [a] = stampTasks([], [t0], 1000)
+    expect([a!.startedAt, a!.endedAt]).toEqual([1000, null])
+    const [b] = stampTasks([a!], [{ ...t0, status: 'ended' }], 2000)
+    expect([b!.startedAt, b!.endedAt]).toEqual([1000, 2000])
+    const [c] = stampTasks([b!], [{ ...t0, status: 'ended' }], 3000)
+    expect(c!.endedAt).toBe(2000)
+    const agentTask = { id: 'k1', type: 'subagent', status: 'running', description: 'Wait test agent one', source: 'agent.list', agentType: 'ai-dlc:sqa-engineer' }
+    expect(isAgentTask(agentTask)).toBe(true)
+    expect(taskLine(agentTask, 'Kent Beck')).toBe('Kent Beck - running')
+    expect(taskLine(agentTask, '')).toBe('SQA Engineer - running')
+    expect(taskLine(t0, '')).toBe('sleep 15 - running')
+    expect(summarize('Agent', { description: 'Wait test agent one', subagent_type: 'ai-dlc:sqa-engineer' })).toBe('ai-dlc:sqa-engineer')
+    expect(summarize('Task', { description: 'Wait test agent one' })).toBe('Task')
+    expect(fmtClock(null)).toBe('—')
+  })
+})
+
+// ---------------- round 4 bug: one workflow across messages and turns ----------------
+describe('round 4: workflows', () => {
+  const later = async ($: any) => {
+    await $.tool.call({ tool: 'Agent', subagent_type: 'ai-dlc:sqa-engineer', description: 'later', prompt: 'SQA PROMPT: test the change.', tool_use_id: 'toolu_2' })
+    await $.agent.spawn({ tool_use_id: 'toolu_2', prompt: 'SQA PROMPT: test the change.', description: 'later', subagentType: 'ai-dlc:sqa-engineer', provider: { plugin: 'ai-dlc', tier: 'user' }, parentModel: 'claude-opus-5-5', background: true, fork: false })
+  }
+
+  test('regression: B spawned in a later message while A still runs joins the same chart, running, with its own arrow', async ($, on) => {
+    // A (a1) is spawned and keeps running; B (a2) comes from a later main-loop message.
+    await seed($, on, { complete: false })
+    await $.turn.start({ text: 'and now test it', turnId: 'm2' })
+    await later($)
+    const wp = await chartPane($)
+    // One workflow: no section Buttons; both avatars and both arrows in one chart.
+    expect((await wp.findAll({ type: 'Button' })).some((b: any) => String(b.key).startsWith('wf-toolu'))).toBe(false)
+    for (const k of ['agent-a1', 'agent-a2', 'edge-a1', 'edge-a2']) expect(await wp.find({ type: 'Button', key: k })).toBeDefined()
+    expect((await wp.find({ type: 'Button', key: 'edge-a2' }))?.text).toBe('Scott Hanselman -> Kent Beck')
+    const src = await svgSource(wp)
+    for (const n of ['>David Fowler<', '>Kent Beck<']) expect(src.includes(n)).toBe(true)
+    // A and B both run, and so does main's new turn: three blink.
+    expect((src.match(/<animate /g) ?? []).length).toBe(3)
+    expect(await wp.find({ type: 'Text', text: /^Scott Hanselman spawned 2 agents$/ })).toBeDefined()
+    await wp.unmount()
+    const card = await $.ui.mount(toolRow('toolu_2', 'vscode', { subagent_type: 'ai-dlc:sqa-engineer', description: 'later', prompt: 'p' }))
+    expect(await card.find({ type: 'Text', text: /agent 2 of 2 in the workflow of an earlier call/ })).toBeDefined()
+    await card.unmount()
+  })
+
+  test('a spawn after every agent finished starts a new workflow: one section each, titled, newest open', async ($, on) => {
+    await seed($, on, { files: { 'docs/handoffs/R/run.md': '---\nrun: R\n---\n\n# Run: R — the lens spike\n' } })
+    await $.turn.start({ text: 'Test the change please\nmore lines', turnId: 'm2' })
+    await later($)
+    const wp = await chartPane($)
+    expect((await wp.find({ type: 'Button', key: 'wf-toolu_2' }))?.text).toBe('[-]')
+    expect((await wp.find({ type: 'Button', key: 'wf-toolu_1' }))?.text).toBe('[+]')
+    // Titles: the run's title from run.md (the brief names its record), else the request; never "Agent: <description>".
+    expect(await wp.find({ type: 'Text', text: /^\s*Test the change please$/ })).toBeDefined()
+    expect(await wp.find({ type: 'Text', text: /^\s*R — the lens spike$/ })).toBeDefined()
+    expect(await wp.find({ type: 'Text', text: /Agent: / })).toBe(undefined)
+    // Newest first and open; the older one collapsed until pressed.
+    const keys = (await wp.findAll({ type: 'Button' })).map((b: any) => String(b.key))
+    expect(keys.indexOf('wf-toolu_2')).toBeLessThan(keys.indexOf('wf-toolu_1'))
+    expect(await wp.find({ type: 'Button', key: 'toolu_2:agent-a2' })).toBeDefined()
+    expect(await wp.find({ type: 'Button', key: 'toolu_1:agent-a1' })).toBe(undefined)
+    await wp.press({ key: 'wf-toolu_1' })
+    expect(await wp.find({ type: 'Button', key: 'toolu_1:agent-a1' })).toBeDefined()
+    const all = (await wp.findAll({ type: 'Button' })).map((b: any) => b.key)
+    expect(new Set(all).size).toBe(all.length)
+    await wp.unmount()
+    const card = await $.ui.mount(toolRow('toolu_1', 'vscode', SE_INPUT))
+    expect(await card.find({ type: 'Text', text: /^Workflow: R — the lens spike - DF completed\s*$/ })).toBeDefined()
+    await card.unmount()
+  })
+
+  test('joinWorkflow: an agent of a workflow spawning joins it; the main loop joins while one works; else a new workflow', () => {
+    const agent = (id: string, toolUseId: string, status: string) => ({ id, toolUseId, status }) as any
+    let wf = joinWorkflow(WF0, 'main', 'c1', {}, {})
+    expect(wf.order).toEqual(['c1'])
+    // c1 not spawned yet: pending, so active; c2 from the next message joins.
+    wf = joinWorkflow(wf, 'main', 'c2', {}, {})
+    expect(wf.of['c2']).toBe('c1')
+    const running = { a1: agent('a1', 'c1', 'running'), a2: agent('a2', 'c2', 'completed') }
+    // a1 spawns: its child joins c1's workflow, as a descendant.
+    wf = joinWorkflow(wf, 'a1', 'c3', running, { c1: 'a1', c2: 'a2' })
+    expect([wf.of['c3'], wf.by['c3']]).toEqual(['c1', 'a1'])
+    const done = { a1: agent('a1', 'c1', 'completed'), a2: agent('a2', 'c2', 'completed'), a3: agent('a3', 'c3', 'completed') }
+    expect(workflowActive(wf, 'c1', done, { c1: 'a1', c2: 'a2', c3: 'a3' })).toBe(false)
+    wf = joinWorkflow(wf, 'main', 'c4', done, { c1: 'a1', c2: 'a2', c3: 'a3' })
+    expect(wf.order).toEqual(['c1', 'c4'])
+    expect(runTitle('---\nrun: X\n---\n\n# Run state: X\n')).toBe('X')
+    expect(runTitle('---\nrun: Y\n---\nno heading\n')).toBe('Y')
+    expect(runTitle(null)).toBe('')
+  })
+})
+
+describe('round 4: null model limits', () => {
+  test('a null limit in the metadata file has no row; a known one has its value; cost keeps — when unknown', async ($, on) => {
+    const meta = JSON.stringify({
+      models: [
+        { id: 'claude-sonnet-5-5', aliases: [], contextWindow: 200000, longContextWindow: null, maxInputTokens: null, maxOutputTokens: 64000, pricing: { input: 3, output: 15, cacheRead: 0.3, cacheWrite5m: 3.75, cacheWrite1h: 6 } },
+      ],
+    })
+    await seed($, on, { files: { '.ai-dlc/model-metadata.json': meta } })
+    const ui = await $.ui.mount({ ...pane('lens-027'), surface: 'vscode' })
+    await ui.press({ key: 'agent-a1' })
+    await ui.unmount()
+    const ag = await $.ui.mount({ ...pane('lens-027-agent'), surface: 'vscode' })
+    await ag.press({ key: 'agent-usage' })
+    expect(await ag.find({ type: 'Box', text: 'Max output64K' })).toBeDefined()
+    expect(await ag.find({ type: 'Text', text: 'Max input' })).toBe(undefined)
+    expect(await ag.find({ type: 'Text', text: 'Long-context window' })).toBe(undefined)
+    expect(await ag.find({ type: 'Box', text: /^Cost\$/ })).toBeDefined()
+    await ag.unmount()
+    // main runs on claude-opus-5-5, not in the file: no limit rows at all, and its cost is —.
+    const lens = await $.ui.mount({ ...pane('lens-027'), surface: 'vscode' })
+    await lens.press({ key: 'agent-main' })
+    await lens.unmount()
+    const main = await $.ui.mount({ ...pane('lens-027-agent'), surface: 'vscode' })
+    await main.press({ key: 'agent-usage' })
+    expect(await main.find({ type: 'Box', text: 'Cost—' })).toBeDefined()
+    expect(await main.find({ type: 'Text', text: /^Max / })).toBe(undefined)
+    await main.unmount()
+    expect(limitRows({ path: 'x', text: meta, error: '' }, 'claude-sonnet-5-5')).toEqual([['Max output', '64K']])
   })
 })

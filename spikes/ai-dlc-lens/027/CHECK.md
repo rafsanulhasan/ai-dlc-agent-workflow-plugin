@@ -18,7 +18,27 @@ Round 3 (step 17.l2, 2026-10-23) applies the human's findings 1 to 6 on the roun
 - Every `[+]`/`[-]` section starts collapsed.
 - Every lens setting can be changed (S1 to S4).
 
+Round 4 (step 17.l3, 2026-10-23, version `0.1.3`) applies the human's round 3 findings and five addenda. **Check W1 first** (below). In short:
+
+- **"Agent:Wait test agent one".** The spike drew the Agent call's `description` in two places: the gathered-context and tool-call rows (`summarize` picked `description` for an Agent call, so the row read `Agent Wait test agent one`) and the background-task rows (a subagent's task carries that `description`). Both now name the agent by its type or its persona name, never by the `description`. The native Agent row is Claude Code's own and is not changed: it still gets the call's input without the prompt, as in round 3. If W1 still shows the label after this round, the native row draws it (see W1).
+- **No sources.** The panels and the `/spike027` pane no longer say where a figure came from: no model source, no window source, no metadata file name, no setting level, no "Record matched". The values stay, and a missing value still shows `—`. The sources stay in state and in `PROBE-LOG.jsonl`. `/spike027-lens-configure` still names the level of a setting.
+- **Background tasks.** Each task is its own `[+]`/`[-]` entry. Collapsed, it is one line: the description and the status (a subagent's task shows its agent's persona name instead of the `description`). Opened: type, id, start and end time (when the lens first saw it and saw it end), the agent type for a subagent, and its output when one is known (a subagent's last message).
+- **The workflow pane.** Claude Code 2.1.309 has no band pinned at the top of the chat in VS Code: `AbovePrompt` is "raised on the terminal and desktop surfaces only" (d.ts:10817), and a `Pane` is "placed by the surface (docked in fullscreen, else above the prompt)" and "raised on every attached surface" (d.ts:10870-10874). So the flowchart moved out of the chat into the **AI-DLC workflow** pane, which the lens opens on the first spawn of a session and which updates live. An open that no person asked for may be left undrawn (d.ts:15062-15068, `UiOpenResult` `isPlaced: false`). The chat card is now one line, `Workflow: <title> - DF completed, KB running`, and an "Open flowchart" Button, which always opens the pane.
+- **Several workflows.** The pane shows one workflow as it is. With several, each is a collapsible section headed by its title: the run's title from its `run.md` when a brief names a handoff record, else the request (the main loop's prompt) or the brief that made the calls. Never the `description`. The newest is first and open; older ones are collapsed.
+- **A later spawn joins the chart (bug).** A workflow is no longer one message's batch. A spawn joins the workflow of its spawner while any agent of that workflow (a descendant included) is still running or not started, across messages and turns; an agent spawned by an agent of a workflow always joins it. A spawn starts a new workflow when every agent of the spawner's last workflow has finished, or when a new spawner (one with no workflow yet) spawns. A headless run proved it (below).
+- **Side panels.** The avatar and arrow panels have a header (initials badge, the name in bold, a coloured status badge: running, waiting, done or failed; model and role dim under it) and sections with a divider, a heading and a count: Usage (a bar and label/value rows), Tool calls, Background tasks, Thinking; on the arrow panel Usage, then Handoff and Hand-back, or Prompt. Every section starts collapsed and remembers its state per agent.
+- **Null limits.** The Usage section lists the model's limits from the metadata file (long-context window, max input, max output) only when the file gives a number: a null limit has no row. `—` stays for a figure the panel must have: the window in "Context", and the cost.
+
+Not possible with the 2.1.309 components: a real divider element (the divider is a dim `─` line), a scroll box inside a panel (long text is in a collapsed section; the pane body itself scrolls), and pinning in VS Code (see above).
+
 `<REPO>` is the main checkout of this repository, the folder registered as the `ai-dlc-agent-workflow` marketplace (`CLAUDE.md`), switched to the `feat/ai-dlc-lens` branch. `<SPIKES>` = `<REPO>\spikes\ai-dlc-lens`; `<SPIKE>` = `<SPIKES>\027`, this plugin.
+
+## What was checked automatically, round 4 (2026-10-23, Claude Code 2.1.309)
+
+- `claude plugin validate 027`: passed. `npx -p typescript@5 tsc -p 027/.tsc`: no errors. `claude plugin test 027`: 48 tests pass, 0 fail.
+- Tests added: no rendered text contains an Agent call's `description` (cards, context, chip, panels, `/spike027` pane, background tasks); no rendered text contains a source label; each background task collapsed and expanded; a later spawn joins a running workflow (the replayed event order); a new workflow after all finished, with titles and sections; `joinWorkflow` rules; the panel's divided and counted sections; a null limit has no row.
+- Headless run (`claude -p --setting-sources user --plugin-dir <SPIKE> --model haiku --input-format stream-json --output-format stream-json --verbose`, probes on): agent A spawned in the background with a 60 s timer; agent B spawned from the next message while A ran. At the next `Stop` the E9 line had A `running`, B `running`, and one workflow with both as members; at the last `Stop` both `completed`, still one workflow. The auto-open of the workflow pane returned `isPlaced: false` ("no-surface"), as expected headless.
+- What the headless tests cannot show: what the native Agent row draws (the test harness stubs it), and where VS Code places the workflow pane.
 
 ## What was checked automatically, round 3 (2026-10-23, Claude Code 2.1.309)
 
@@ -91,7 +111,7 @@ Main route: the repository's own marketplace, `ai-dlc-agent-workflow`, read from
 2. Run `/reload-plugins` in an open Claude Code session, or open a new one in VS Code.
 3. For round 2 nothing needs typing: spawn agents and the card is in the chat (C1). `/spike027` opens the pane view "AI-DLC lens (spike 027)".
 
-Round 3 is version `0.1.2` (round 2 was `0.1.1`). If an earlier round is installed, run `claude plugin marketplace update ai-dlc-agent-workflow` and then `claude plugin update ai-dlc-lens-spike-027@ai-dlc-agent-workflow --scope local`, or uninstall and install it again. Then run `/reload-plugins`, or start a new session. `/reload-plugins` reports "3 errors during load" on this machine; none is the spike's (see the round 2 automatic checks).
+Round 4 is version `0.1.3` (round 3 was `0.1.2`, round 2 `0.1.1`). If an earlier round is installed, run `claude plugin marketplace update ai-dlc-agent-workflow` and then `claude plugin update ai-dlc-lens-spike-027@ai-dlc-agent-workflow --scope local`, or uninstall and install it again. Then run `/reload-plugins`, or start a new session. `/reload-plugins` reports "3 errors during load" on this machine; none is the spike's (see the round 2 automatic checks).
 
 Terminal: `claude --plugin-dir "<SPIKE>"` loads the folder for that session only, with nothing installed.
 
@@ -110,6 +130,18 @@ claude plugin uninstall ai-dlc-lens-spike-027@ai-dlc-agent-workflow --scope loca
 ```
 
 Keep the `ai-dlc-agent-workflow` marketplace; it also serves `ai-dlc`. If you used the alternative, remove the `CLAUDE_CODE_PLUGIN_DIRS` entry.
+
+## Round 4 manual checks (W1 to W7)
+
+| # | What to do | Expected | Result |
+|---|---|---|---|
+| W1 | Ask for one agent in the chat (`description: "Wait test agent one"`). Look at the chat card and at every line around it. | The card reads `Workflow: <title> - <initials> <status>` and an "Open flowchart" Button. No line drawn by the lens contains "Wait test agent one". If "Agent:Wait test agent one" (or similar) is still there, it is Claude Code's native Agent row: note exactly where it is. The spike does not hide the native row (US-15, AC-15.5). | |
+| W2 | After the first spawn of a session, look for the **AI-DLC workflow** pane. Scroll the chat. | The pane opened by itself, or after "Open flowchart". It stays where VS Code put it while the chat scrolls, and updates live. Record where VS Code shows it. | |
+| W3 | Spawn agent A in the background, then, in a later message while A runs, agent B. | One chart in the pane with both avatars and both arrows from the spawner; both blink while they run. | |
+| W4 | After every agent has finished, spawn another. | The pane shows two sections, the newest first and open, the older collapsed. Each header is the run's title or the request, never "Agent: ...". | |
+| W5 | Press an avatar. | Header: initials badge, bold name, coloured status badge, model and role dim under it. Sections Usage, Tool calls (n), Background tasks (n), Thinking (n chars), each collapsed; Usage shows a bar and right-aligned values; no "from ..." anywhere. Narrow the panel: it wraps. | |
+| W6 | Open Background tasks for an agent with a background task. | One line per task, `description - status` (a subagent: its persona name). `[+]` shows type, id, started, ended, agent type, output. | |
+| W7 | With `.ai-dlc/model-metadata.json` present, open Usage of an agent on a model in the file. | Max output (and a long-context window or max input only when the file has a number); no `—` rows for null limits. Cost shows a value, or `—` for a model not in the file. | |
 
 ## Round 3 manual checks: the human's findings (no command needed for R1 to R9)
 

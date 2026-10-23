@@ -1,5 +1,5 @@
 // ITEM-027 spike, rounds 1-3 (steps 17, 17.l1, 17.l2): pure helpers of the lens card. No `$` here.
-import type { LensAgent, LensBatch, LensDef, LensPending, LensTask, Tokens } from '../types'
+import type { LensAgent, LensBatch, LensDef, LensPending, LensTask, LensWorkflows, Tokens } from '../types'
 
 export const ZERO: Tokens = { in: 0, out: 0, cr: 0, cw: 0 }
 
@@ -156,6 +156,8 @@ export type ModelFacts = {
   cacheWrite1h: number | null
   window: number | null
   longWindow: number | null
+  /** Null unless the metadata was fetched with an API key (round 4: a null limit is not drawn). */
+  maxInput: number | null
   maxOutput: number | null
 }
 
@@ -186,6 +188,7 @@ export function factsOf(id: string, entry: unknown): ModelFacts {
     output: first(ls, k => /output/.test(k) && !/long|batch/.test(k) && !isTokens(k)),
     window: first(ls, k => /window/.test(k) && !/long|1m|extended/.test(k)),
     longWindow: first(ls, k => /window/.test(k) && /long|1m|extended/.test(k)),
+    maxInput: first(ls, k => /max.*input|input.*max/.test(k)),
     maxOutput: first(ls, k => /max.*output|output.*max/.test(k)),
   }
 }
@@ -416,12 +419,52 @@ export function mergeStopTasks(bg: readonly LensTask[], stop: readonly LensTask[
   return [...kept, ...started, ...stop]
 }
 
-/** One line for a tool call's input. */
+/**
+ * One line for a tool call's input. An Agent call is named by its agent type, never by its
+ * `description` (round 4: the human saw "Agent Wait test agent one" and wants it gone).
+ */
 export function summarize(tool: string, input: Record<string, unknown>): string {
   const pick = (k: string) => (typeof input[k] === 'string' ? (input[k] as string) : '')
+  if (AGENT_TOOLS.has(tool)) return (pick('subagent_type') || tool).replace(/\s+/g, ' ').slice(0, 90)
   const s =
     pick('file_path') || pick('path') || pick('pattern') || pick('command') || pick('url') || pick('query') || pick('description') || pick('skill') || pick('to') || pick('subagent_type')
   return (s === '' ? tool : s).replace(/\s+/g, ' ').slice(0, 90)
+}
+
+// ---- background tasks (round 4): one collapsible entry each ----
+
+/** Statuses after which a background task has ended. */
+export const TASK_ENDED = new Set(['completed', 'failed', 'killed', 'ended', 'stopped'])
+
+/** A task that is an agent's loop: its description is that Agent call's `description`, never drawn. */
+export const isAgentTask = (t: LensTask): boolean => t.source === 'agent.list' || t.type === 'subagent' || (t.agentType ?? '') !== ''
+
+/**
+ * Keeps each task's first-seen time across updates and stamps the end the first time it is seen
+ * ended: no event names the times (`AgentInfo`, `BackgroundTaskSummary`).
+ */
+export function stampTasks(prev: readonly LensTask[], next: readonly LensTask[], now: number): LensTask[] {
+  return next.map(t => {
+    const p = prev.find(x => x.id === t.id)
+    const startedAt = p?.startedAt ?? t.startedAt ?? now
+    const endedAt = TASK_ENDED.has(t.status) ? (p?.endedAt ?? t.endedAt ?? now) : null
+    const output = t.output || p?.output
+    return output ? { ...t, startedAt, endedAt, output } : { ...t, startedAt, endedAt }
+  })
+}
+
+/** A task's collapsed line: description and status; an agent task by its agent's name instead. */
+export function taskLine(t: LensTask, agentName: string): string {
+  const what = isAgentTask(t) ? agentName || humanRole(t.agentType ?? '') || 'Subagent' : t.description || t.type
+  return `${what} - ${t.status}`
+}
+
+/** A clock time for a task's details: `14:03:07`, or `—` when not known. */
+export function fmtClock(ms: number | null | undefined): string {
+  if (ms === null || ms === undefined || !Number.isFinite(ms) || ms <= 0) return '—'
+  const d = new Date(ms)
+  const two = (n: number) => String(n).padStart(2, '0')
+  return `${two(d.getHours())}:${two(d.getMinutes())}:${two(d.getSeconds())}`
 }
 
 /** Tools whose results are gathered context for the main loop (design item 1). */
@@ -562,4 +605,100 @@ export function textChart(ids: readonly string[], agents: Record<string, LensAge
     const sub = `${pad}${a.parent !== null ? '    ' : ''}  `
     return { id: p.id, head: `${pad}${a.parent !== null ? (a.loop ? '<-> ' : '-> ') : ''}`, lines: [l.name, `${sub}${l.model}, ${l.role}`] }
   })
+}
+
+// ---- round 4: the workflow pane and the panels ----
+
+/** A run's title from its `run.md`: the first heading without `Run:` / `Run state:`, else the `run:` field; '' when none. */
+export function runTitle(text: string | null): string {
+  if (text === null) return ''
+  const body = text.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, '')
+  const h = /^#\s+(.+?)\s*$/m.exec(body)
+  if (h) return h[1]!.replace(/^(Run state|Run):\s*/i, '').trim()
+  const f = /^run:\s*(.+?)\s*$/m.exec(text)
+  return f ? f[1]!.trim() : ''
+}
+
+/** The first line of a request or brief, as a workflow's title; '' when empty. */
+export const firstLine = (text: string, max = 100): string => (text.split(/\r?\n/).find(l => l.trim() !== '') ?? '').trim().slice(0, max)
+
+/** The workflows of the session, newest first: every batch that holds an Agent call. */
+export function workflowLeads(batches: Record<string, LensBatch>): string[] {
+  return Object.keys(batches)
+    .filter(k => batches[k]!.ids.length > 0)
+    .reverse()
+}
+
+/** The status badge: running, waiting, done or failed, and its colour. */
+export function statusBadge(status: string): { text: string; color: string } {
+  if (status === 'running') return { text: 'running', color: 'yellow' }
+  if (status === 'pending') return { text: 'waiting', color: 'gray' }
+  if (status === 'failed' || status === 'killed') return { text: 'failed', color: 'red' }
+  if (status === 'completed' || status === 'idle' || status === 'done' || status === 'ended') return { text: 'done', color: 'green' }
+  return { text: status || '—', color: 'gray' }
+}
+
+/** Context used against the window as a bar of `cells` cells; '' when the window is not known. */
+export function usageBar(used: number, window: number | null, cells = 12): string {
+  if (window === null || !(window > 0)) return ''
+  const k = Math.max(0, Math.min(cells, Math.round((used / window) * cells)))
+  return '█'.repeat(k) + '░'.repeat(cells - k)
+}
+
+// ---- round 4 bug: one workflow across messages and turns ----
+
+export const WF0: LensWorkflows = { of: {}, by: {}, parent: {}, order: [] }
+
+/** Whether a workflow still has an agent at work: a call not spawned yet, or an agent running. */
+export function workflowActive(wf: LensWorkflows, w: string, agents: Record<string, LensAgent>, callAgent: Record<string, string>): boolean {
+  const byCall = new Map<string, LensAgent>()
+  for (const a of Object.values(agents)) if (a.toolUseId !== '') byCall.set(a.toolUseId, a)
+  for (const [call, ww] of Object.entries(wf.of)) {
+    if (ww !== w) continue
+    const a = (callAgent[call] !== undefined ? agents[callAgent[call]!] : undefined) ?? byCall.get(call)
+    if (!a || a.status === 'pending' || a.status === 'running') return true
+  }
+  return false
+}
+
+/**
+ * The workflow an Agent call joins. An agent of a workflow spawning: that workflow. Otherwise the
+ * spawner's latest workflow, while any agent in it (a descendant included) is still at work. Otherwise
+ * a new workflow, named by this call: every agent of the last one has finished, or the spawner is new.
+ */
+export function joinWorkflow(wf: LensWorkflows, spawner: string, call: string, agents: Record<string, LensAgent>, callAgent: Record<string, string>): LensWorkflows {
+  if (wf.of[call] !== undefined) return wf
+  const self = agents[spawner]
+  let w = spawner !== 'main' && self && self.toolUseId !== '' ? wf.of[self.toolUseId] : undefined
+  if (w === undefined) {
+    const latest = [...wf.order].reverse().find(x => wf.parent[x] === spawner)
+    if (latest !== undefined && workflowActive(wf, latest, agents, callAgent)) w = latest
+  }
+  if (w === undefined) return { of: { ...wf.of, [call]: call }, by: { ...wf.by, [call]: spawner }, parent: { ...wf.parent, [call]: spawner }, order: [...wf.order, call] }
+  return { ...wf, of: { ...wf.of, [call]: w }, by: { ...wf.by, [call]: spawner } }
+}
+
+/** One workflow as a batch for `batchView`: its spawner and the calls it made; what those agents spawned joins as descendants. */
+export function workflowBatch(wf: LensWorkflows, w: string, batches: Record<string, LensBatch>): LensBatch {
+  const parent = wf.parent[w] ?? 'main'
+  const ids = Object.keys(wf.of).filter(c => wf.of[c] === w && wf.by[c] === parent)
+  const pending: Record<string, LensPending> = {}
+  for (const b of Object.values(batches)) for (const id of ids) if (b.pending[id]) pending[id] = b.pending[id]!
+  return { parent, ids, pending }
+}
+
+/**
+ * The model's limits the avatar panel lists (round 4): only those the metadata file gives. A null
+ * limit (max input without an API key, a long-context window the model lacks) is left out, not `—`.
+ */
+export function limitRows(c: Costing, model: string): [string, string][] {
+  const json = parseCosting(c)
+  const f = json === null ? null : lookupModel(json, model)
+  if (f === null) return []
+  const rows: [string, number | null][] = [
+    ['Long-context window', f.longWindow],
+    ['Max input', f.maxInput],
+    ['Max output', f.maxOutput],
+  ]
+  return rows.filter((r): r is [string, number] => r[1] !== null).map(([k, v]) => [k, fmtTokens(v)])
 }

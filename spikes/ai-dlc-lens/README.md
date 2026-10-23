@@ -23,7 +23,7 @@ claude plugin install spike028-lens@ai-dlc-agent-workflow --scope local
 claude plugin install spike029-avatars@ai-dlc-agent-workflow --scope local
 ```
 
-027 is at version `0.1.2` for round 3. If an earlier copy is installed, also run `claude plugin update ai-dlc-lens-spike-027@ai-dlc-agent-workflow --scope local`.
+027 is at version `0.1.3` for round 4. If an earlier copy is installed, also run `claude plugin update ai-dlc-lens-spike-027@ai-dlc-agent-workflow --scope local`.
 
 Then run `/reload-plugins` in an open Claude Code session, or open a new one in VS Code. On this machine `/reload-plugins` reports "3 errors during load". None comes from a spike: two plugins are enabled in `.claude/settings.json` but not installed (`superpowers`, `sonarqube`), and two claude.ai-synced `figma` copies share one name (`027/CHECK.md`, round 2 automatic checks). The commands are `/spike027` (the lens card), `/spike027-lens-init`, `/spike027-lens-configure`, `/spike027-kit`, `/spike027-probe`, `/spike027-gate`, `/spike028-lens`, `/spike028-probe`, `/spike029` and `/spike029-overcap`.
 

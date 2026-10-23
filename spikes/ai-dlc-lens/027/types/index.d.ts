@@ -37,9 +37,25 @@ export type LensAgent = {
   endedAt: number | null
   /** Background tasks: `$.agent.list()` children and stop-time `background_tasks`. */
   bg: LensTask[]
+  /** `classic.SubagentStop` `last_assistant_message`: the result its background task shows. */
+  output?: string
 }
 
-export type LensTask = { id: string; type: string; status: string; description: string; source: string }
+export type LensTask = {
+  id: string
+  type: string
+  status: string
+  description: string
+  /** Where the entry came from (`agent.list`, `tool.call`, `Stop`, `SubagentStop`): kept for debugging, never drawn. */
+  source: string
+  /** The agent type of a subagent task (`agent.list` `type`, `background_tasks` `agent_type`). */
+  agentType?: string
+  /** When the lens first saw it, and when it first saw it end (round 4: no event gives the times). */
+  startedAt?: number
+  endedAt?: number | null
+  /** Its output or result, when an event carries one. */
+  output?: string
+}
 
 export type LensCall = {
   id: string
@@ -83,6 +99,12 @@ export type LensBatch = { parent: string; ids: string[]; pending: Record<string,
 /** The arrow panel: the matched record and its hand-back, else the orchestrator's prompt (finding 2); `hint` a record found by time order only. */
 export type LensDoc = { agent: string; handoff: string; handoffText: string; handback: string; handbackText: string; error: string; prompt: string; hint: string }
 
+/**
+ * Workflows across messages (round 4 bug): `of` maps each Agent call to its workflow (named by its
+ * first call), `by` to its spawner; `parent` is each workflow's spawner; `order` oldest first.
+ */
+export type LensWorkflows = { of: Record<string, string>; by: Record<string, string>; parent: Record<string, string>; order: string[] }
+
 declare module 'claude-code' {
   interface PluginState {
     'ai-dlc-lens-spike-027': {
@@ -107,6 +129,9 @@ declare module 'claude-code' {
       roster: Record<string, string>
       costing: Shaped<LensCosting>
       chartLead: string
+      callTask: Record<string, string>
+      mainPrompt: string
+      workflows: Shaped<LensWorkflows>
       lens: Shaped<LensConfig>
     }
   }

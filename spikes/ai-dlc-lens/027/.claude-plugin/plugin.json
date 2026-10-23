@@ -1,6 +1,6 @@
 {
   "name": "ai-dlc-lens-spike-027",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Throwaway spike (ITEM-027): the lens card in the chat (a small flowchart with persona, model and role, or an Open flowchart button; hand-off and avatar panels with the figures and the cost), lens settings, the /spike027 pane and the round-0 kit",
   "author": {
     "name": "Rafsanul Hasan",
