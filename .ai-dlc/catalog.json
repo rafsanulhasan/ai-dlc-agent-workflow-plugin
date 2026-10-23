@@ -55,6 +55,7 @@
     "k6-performance-testing",
     "k6-stress-testing",
     "manage-memory",
+    "model-metadata",
     "node-rules",
     "node-test-gate",
     "npm-package-deployment",

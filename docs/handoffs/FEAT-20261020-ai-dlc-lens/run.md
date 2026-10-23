@@ -136,3 +136,10 @@ The spike loop's raised limit (4 rounds) is used up. Open for the human: the rou
 
 ## After round 5 (2026-10-23)
 Spike loop limit (5) used up. Open for the human: the round 5 check (X1–X7); status order (in progress before teammate waiting?); does "waiting" cover only teammates?; the parent-task heuristic for prompts. AAW-20261023-model-costing-hook reviews (critique 4, code review 2) were held until this round completed — now resumed.
+
+## Pending human requests after round 5 (2026-10-23)
+- "pressing esc when the panel is open, close it" — Esc closes an open lens panel (workflow pane, avatar panel, arrow panel). The spike loop limit (5) is used up: needs the human's decision (round 6, or carry into the stories).
+- Human decision: spike loop limit raised to **6 rounds** (one-off). Round 6 starts after the human's round 5 check (X1–X7) and takes Esc-to-close plus those findings.
+- Round 6 answers (human, 2026-10-23): the status dot shows **both colours** when agents are running and waiting at once (a split dot or a second small orange dot); "waiting" applies to any waiting agent, parallel agents included, not only teammates; automatic notices are never used as the parent task — show them as an exclamation icon whose tooltip on hover shows the notice. Plus Esc closes an open lens panel. Round 6 starts after the human's round 5 check (X1–X7).
+- AAW-20261023-model-costing-hook closed 2026-10-23 (the lens reads `.ai-dlc/model-metadata.json`).
+- "a new workflow for the same task is not needed to be generated. instead update the existing one" → round 6: a spawn for the same task (same run / parent task) joins and updates the existing workflow even after all its agents finished; a new workflow starts only for a different task.

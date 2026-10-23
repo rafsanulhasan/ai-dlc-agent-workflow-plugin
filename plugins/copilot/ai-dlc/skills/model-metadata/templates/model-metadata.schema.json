@@ -1,0 +1,159 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/rafsanulhasan/ai-dlc-agent-workflow-plugin/model-metadata.schema.json",
+  "title": "AI-DLC model metadata",
+  "description": "Prices and limits of every model on Anthropic's pricing page, committed in .ai-dlc/model-metadata.json. Written only by .claude/hooks/update-model-metadata.mjs (installed by /ai-dlc:init through the model-metadata skill) from Anthropic's official docs; never edit it by hand. Every figure comes from a docs page named in `sources`, except longContextThresholdTokensOverride (from an environment variable) and the limits a model lists in sources.modelsApi (from Anthropic's Models API, read only when ANTHROPIC_API_KEY is set, and only to fill a figure the docs leave null). A figure no source states is null, never estimated; a consumer does not show a null limit. A tool computing cost reads prices only from this file and shows a model missing from it as unknown.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "currency", "unit", "source", "sources", "fetchedAt", "longContextThresholdTokensOverride", "models"],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Points editors at this schema: ./model-metadata.schema.json."
+    },
+    "version": {
+      "const": 1,
+      "description": "Format version of this file."
+    },
+    "currency": {
+      "const": "USD",
+      "description": "Currency of every price (the pricing page states all prices in USD)."
+    },
+    "unit": {
+      "const": "MTok",
+      "description": "Every price is per million tokens."
+    },
+    "source": {
+      "type": "string",
+      "format": "uri",
+      "description": "The pricing page the prices come from."
+    },
+    "sources": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pricing", "models", "deprecations"],
+      "description": "Every docs page the hook reads. Model limits come from each model's own page, named in that model's sources.metadata.",
+      "properties": {
+        "pricing": { "type": "string", "format": "uri", "description": "Prices: the model pricing, batch processing and fast mode tables." },
+        "models": { "type": "string", "format": "uri", "description": "The models overview page, which links each model page." },
+        "deprecations": { "type": "string", "format": "uri", "description": "The model status table: API model IDs and active / deprecated / retired." }
+      }
+    },
+    "fetchedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the docs were read for the content now in the file. A refetch that finds the same figures does not rewrite the file (so it causes no commit churn); it only touches the file's modification time, which the hook uses as its refresh clock. A run without ANTHROPIC_API_KEY, or whose Models API call fails, keeps the limits an earlier run filled from the API, so it finds the same figures."
+    },
+    "longContextThresholdTokensOverride": {
+      "$ref": "#/$defs/tokenCount",
+      "description": "The repository's override of every model's long-context threshold: the value of AI_DLC_MODEL_METADATA_LONG_CONTEXT_THRESHOLD_TOKENS (a positive integer) when the hook last wrote the file; null when it is unset or not a positive integer. The hook only records it. A consumer applies it: for a model whose longContextPricing is not null, the threshold is this value when it is not null, else longContextPricing.thresholdTokens; a request whose prompt (all input tokens, cache reads and writes included) is over the threshold is charged at longContextPricing for all its tokens, any other at pricing. When both are null the consumer cannot tell which rates apply and shows the cost as unknown, never a guess. It has no effect on a model whose longContextPricing is null."
+    },
+    "models": {
+      "type": "array",
+      "minItems": 3,
+      "description": "One entry per model row of the pricing page, in the page's order.",
+      "items": { "$ref": "#/$defs/model" }
+    }
+  },
+  "$defs": {
+    "price": {
+      "type": "number",
+      "minimum": 0,
+      "description": "USD per million tokens."
+    },
+    "optionalPrice": {
+      "type": ["number", "null"],
+      "minimum": 0,
+      "description": "USD per million tokens; null when the docs give no such price for this model."
+    },
+    "tokenCount": {
+      "type": ["integer", "null"],
+      "exclusiveMinimum": 0,
+      "description": "A number of tokens; null when no source states it."
+    },
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "aliases", "name", "status", "note", "contextWindow", "longContextWindow", "maxInputTokens", "maxOutputTokens", "pricing", "longContextPricing", "sources"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^claude-[a-z0-9.-]+$",
+          "description": "The Claude API model ID: from the model's page, else the deprecations page's status table, else the dateless form the docs give for the 4.6 generation and later (claude-{name}-{major}[-{minor}])."
+        },
+        "aliases": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true,
+          "description": "Other Claude API IDs for the same model: the documented dateless alias of a dated ID (claude-sonnet-4-5 for claude-sonnet-4-5-20250929). To look up a model a platform names differently, first drop an `anthropic.` prefix, a `-v1` or `-v1:0` suffix, an `@YYYYMMDD` suffix and a `[1m]` suffix, then match `id` or `aliases`."
+        },
+        "name": { "type": "string", "description": "The model's name on the pricing page, such as Claude Opus 4.5." },
+        "status": {
+          "enum": ["active", "deprecated", "retired", null],
+          "description": "From the deprecations page's model status table; null when it does not list the model."
+        },
+        "note": {
+          "type": ["string", "null"],
+          "description": "The pricing page's remark next to the name, such as \"limited availability\" or \"retired, except on Google Cloud\"."
+        },
+        "contextWindow": { "$ref": "#/$defs/tokenCount", "description": "Context window in tokens, from the model's page; when the page states none and ANTHROPIC_API_KEY is set, taken to equal the Models API's max_input_tokens (listed in sources.modelsApi)." },
+        "longContextWindow": { "$ref": "#/$defs/tokenCount", "description": "A larger context window the model's page offers on top of contextWindow (for example a beta); null when none is offered." },
+        "maxInputTokens": { "$ref": "#/$defs/tokenCount", "description": "Maximum input tokens: from the model's page when it states them, else the Models API's max_input_tokens when ANTHROPIC_API_KEY is set (listed in sources.modelsApi); null otherwise. A consumer does not show a null value." },
+        "maxOutputTokens": { "$ref": "#/$defs/tokenCount", "description": "Maximum output tokens of a synchronous Messages API request, from the model's page; when the page states none and ANTHROPIC_API_KEY is set, the Models API's max_tokens (listed in sources.modelsApi)." },
+        "pricing": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["input", "output", "cacheWrite5m", "cacheWrite1h", "cacheRead", "batchInput", "batchOutput", "fastInput", "fastOutput"],
+          "description": "Standard prices. For a model priced by prompt length, the prices of the shorter prompts.",
+          "properties": {
+            "input": { "$ref": "#/$defs/price", "description": "Base input tokens." },
+            "output": { "$ref": "#/$defs/price", "description": "Output tokens." },
+            "cacheWrite5m": { "$ref": "#/$defs/price", "description": "Writing to the 5-minute prompt cache." },
+            "cacheWrite1h": { "$ref": "#/$defs/price", "description": "Writing to the 1-hour prompt cache." },
+            "cacheRead": { "$ref": "#/$defs/price", "description": "Cache hits and refreshes (either cache)." },
+            "batchInput": { "$ref": "#/$defs/optionalPrice", "description": "Batch API input." },
+            "batchOutput": { "$ref": "#/$defs/optionalPrice", "description": "Batch API output." },
+            "fastInput": { "$ref": "#/$defs/optionalPrice", "description": "Fast mode input; null for models without fast mode." },
+            "fastOutput": { "$ref": "#/$defs/optionalPrice", "description": "Fast mode output; null for models without fast mode." }
+          }
+        },
+        "longContextPricing": {
+          "description": "For a model priced by prompt length: the prices of a request whose prompt (all input tokens, cache reads and writes included) is over the threshold (thresholdTokens, or the file's longContextThresholdTokensOverride when that is not null). null for every other model.",
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["thresholdTokens", "input", "output", "cacheWrite5m", "cacheWrite1h", "cacheRead", "batchInput", "batchOutput"],
+              "properties": {
+                "thresholdTokens": { "$ref": "#/$defs/tokenCount", "description": "The prompt size above which these prices apply, as the pricing page states it; null when the page names a long-context price but no threshold." },
+                "input": { "$ref": "#/$defs/price" },
+                "output": { "$ref": "#/$defs/price" },
+                "cacheWrite5m": { "$ref": "#/$defs/price" },
+                "cacheWrite1h": { "$ref": "#/$defs/price" },
+                "cacheRead": { "$ref": "#/$defs/price" },
+                "batchInput": { "$ref": "#/$defs/optionalPrice" },
+                "batchOutput": { "$ref": "#/$defs/optionalPrice" }
+              }
+            }
+          ]
+        },
+        "sources": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["pricing", "metadata", "modelsApi"],
+          "properties": {
+            "pricing": { "type": "string", "format": "uri", "description": "Where the prices come from." },
+            "metadata": { "type": ["string", "null"], "format": "uri", "description": "The model's page the ID, context window and output limit come from; null when the docs have no page for the model (retired models), which leaves those figures null." },
+            "modelsApi": {
+              "type": "array",
+              "items": { "enum": ["contextWindow", "maxInputTokens", "maxOutputTokens"] },
+              "uniqueItems": true,
+              "description": "The limits filled from Anthropic's Models API (GET https://api.anthropic.com/v1/models: max_input_tokens, max_tokens) because the docs leave them null; empty when none was. A run without ANTHROPIC_API_KEY, or whose API call fails, keeps the fields an earlier run filled (with their values) and lists them again; a fresh API answer replaces them. A docs figure is never replaced: when a page starts stating one, it takes the field's place and the field leaves this list."
+            }
+          }
+        }
+      }
+    }
+  }
+}

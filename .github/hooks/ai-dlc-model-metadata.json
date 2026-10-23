@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "hooks": {
+    "agentStop": [
+      {
+        "type": "command",
+        "bash": "node \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/update-model-metadata.mjs\"",
+        "powershell": "node .claude/hooks/update-model-metadata.mjs",
+        "cwd": ".",
+        "timeoutSec": 60
+      }
+    ],
+    "preToolUse": [
+      {
+        "type": "command",
+        "bash": "node \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/update-model-metadata.mjs\" --before-commit",
+        "powershell": "node .claude/hooks/update-model-metadata.mjs --before-commit",
+        "cwd": ".",
+        "timeoutSec": 60
+      }
+    ]
+  }
+}
