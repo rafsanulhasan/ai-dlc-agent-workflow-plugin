@@ -2,7 +2,6 @@
 // Round 1 (step 17): the human's lens card. `/spike027` opens it:
 //   L1 orchestrator view: thinking and gathered context, each collapsible (pane section, step 16 Q1)
 //   L2 flowchart: an avatar per agent (Svg), a Button per avatar and per arrow under it (step 16 Q2)
-//   L3 five lines under each avatar: name (model), role, context used/window, in/out, cache r/w/uncached
 //   L4 arrow -> separate pane `lens-027-edge` (or drill-in): handoff record, hand-back, their tokens
 //   L5 avatar -> separate pane `lens-027-agent` (or drill-in): background tasks, tool calls, thinking
 //   L6 loops draw a two-way arrow; running avatars blink green, finished ones stay green
@@ -10,40 +9,67 @@
 // first Agent call of an assistant message draws it for every Agent call of that message (parallel
 // spawns side by side), with the avatar and arrow Buttons, collapsible thinking and gathered context,
 // and the native row last; the message's other Agent rows stay compact, native row kept.
-// Experiments E1-E8 (step 16) log to PROBE-LOG.jsonl while `/spike027-probe on`.
+// Round 3 (step 17.l2): the human's findings. A smaller chart with name, model and role only (no
+// figures); a chip with an "Open flowchart" Button when the row is too narrow; persona names from
+// the roster, models from the agent definitions, readable roles; the figures, the cost (from
+// `.ai-dlc/model-costing.json` only) and the window in the avatar panel; the arrow panel falls
+// back to the orchestrator's prompt; the native row is drawn without the prompt (whole when
+// expanded); only running agents blink; every collapsible starts collapsed; every setting comes
+// from hooks/settings.ts levels. Root cause of the missing second agent: see `ensureIn` (lens.ts).
+// Experiments E1-E9 log to PROBE-LOG.jsonl while `/spike027-probe on`.
 // The round-0 kit (checks 1-5: resize, Svg blink, buttons, transcript cards, gate alert) is `/spike027-kit`.
 import { atom, read, update } from 'claude-code'
 import type { Register } from 'claude-code'
-import type { LensAgent, LensBatch, LensCall, LensDoc, LensTask, LensUi, Tokens } from '../types'
+import type { LensAgent, LensBatch, LensCall, LensConfig, LensCosting, LensDef, LensDoc, LensTask, LensUi, Tokens } from '../types'
 import {
   AGENT_TOOLS,
   CONTEXT_TOOLS,
+  ENDED,
   ZERO,
   addTokens,
   addToBatch,
   batchView,
-  cardLines,
-  displayName,
+  contextUsed,
+  costOf,
+  ensureIn,
   flowchartSvg,
   fmtTokens,
   fromUsage,
+  humanRole,
+  initials,
+  isRespawn,
+  isRunning,
   leadOf,
   matchHandoff,
   mergeStopTasks,
+  modelOf,
   notePending,
+  parseDefinition,
   parseRecord,
+  parseRoster,
+  personaOf,
   pickHandback,
+  pluginOf,
   roleOf,
+  showChart,
   summarize,
   textChart,
+  windowOf,
 } from './lens'
+import type { ChartLabel, ChartSize } from './lens'
+import { DEFAULTS, KEYS, envLevel, envName, fileLevel, initialFile, resolve, schema, setKey } from './settings'
+import type { Key, LensSettings } from './settings'
 
-const P = 'ai-dlc-lens-spike-027'
 const KIT = 'lens-spike-027'
 const LENS = 'lens-027'
 const EDGE = 'lens-027-edge'
 const AGENT = 'lens-027-agent'
+const CHART = 'lens-027-chart'
 const PROBE_PANE = 'lens-027-p'
+const LENS_JSON = '.ai-dlc/lens.json'
+const LENS_SCHEMA = '.ai-dlc/lens.schema.json'
+const SETTINGS_LOCAL = '.claude/settings.local.json'
+const SETTINGS_PROJECT = '.claude/settings.json'
 
 // ---- round-0 kit state ----
 const tick = atom({ plugin: 'ai-dlc-lens-spike-027', key: 'tick' } as const, false)
@@ -52,31 +78,31 @@ const panePresses = atom({ plugin: 'ai-dlc-lens-spike-027', key: 'panePresses' }
 const forceMode = atom({ plugin: 'ai-dlc-lens-spike-027', key: 'forceMode' } as const, 'auto')
 
 // ---- round-1 lens state ----
-const UI0: LensUi = {
-  thinkingOpen: false,
-  contextOpen: false,
-  panelMode: 'pane',
-  edge: null,
-  agent: null,
-  drill: null,
-  edgeDocOpen: true,
-  edgeBackOpen: true,
-  agentThinkingOpen: false,
-}
-const DOC0: LensDoc = { agent: '', handoff: '', handoffText: '', handback: '', handbackText: '', error: '' }
-const agentsA = atom({ plugin: 'ai-dlc-lens-spike-027', key: 'agents' } as const, {}, { shape: 'agents-1' })
+const UI0: LensUi = { panelMode: 'pane', edge: null, agent: null, drill: null, edgeSnap: null, agentSnap: null }
+const DOC0: LensDoc = { agent: '', handoff: '', handoffText: '', handback: '', handbackText: '', error: '', prompt: '', hint: '' }
+const agentsA = atom({ plugin: 'ai-dlc-lens-spike-027', key: 'agents' } as const, {}, { shape: 'agents-2' })
 const orderA = atom({ plugin: 'ai-dlc-lens-spike-027', key: 'order' } as const, [], { shape: 'order-1' })
 const callsA = atom({ plugin: 'ai-dlc-lens-spike-027', key: 'calls' } as const, {}, { shape: 'calls-1' })
 const thinkingA = atom({ plugin: 'ai-dlc-lens-spike-027', key: 'thinking' } as const, {})
 const contextA = atom({ plugin: 'ai-dlc-lens-spike-027', key: 'context' } as const, [], { shape: 'context-1' })
 const mainWindowA = atom({ plugin: 'ai-dlc-lens-spike-027', key: 'mainWindow' } as const, 0)
-const uiA = atom({ plugin: 'ai-dlc-lens-spike-027', key: 'ui' } as const, UI0, { shape: 'ui-1' })
-const docA = atom({ plugin: 'ai-dlc-lens-spike-027', key: 'doc' } as const, DOC0, { shape: 'doc-1' })
+const uiA = atom({ plugin: 'ai-dlc-lens-spike-027', key: 'ui' } as const, UI0, { shape: 'ui-2' })
+const docA = atom({ plugin: 'ai-dlc-lens-spike-027', key: 'doc' } as const, DOC0, { shape: 'doc-2' })
 const probeA = atom({ plugin: 'ai-dlc-lens-spike-027', key: 'probe' } as const, false)
 const probeLinesA = atom({ plugin: 'ai-dlc-lens-spike-027', key: 'probeLines' } as const, 0)
 // ---- round-2 chat card state ----
-const batchesA = atom({ plugin: 'ai-dlc-lens-spike-027', key: 'batches' } as const, {}, { shape: 'batches-1' })
+const batchesA = atom({ plugin: 'ai-dlc-lens-spike-027', key: 'batches' } as const, {}, { shape: 'batches-2' })
+/** Every [+]/[-] section, by key; absent: the `collapsedByDefault` setting decides. */
 const cardOpenA = atom({ plugin: 'ai-dlc-lens-spike-027', key: 'cardOpen' } as const, {})
+// ---- round-3 state ----
+/** tool_use_id -> agent id, written by `agent.spawn` and the Agent call's result: never overwritten by a blank record. */
+const callAgentA = atom({ plugin: 'ai-dlc-lens-spike-027', key: 'callAgent' } as const, {})
+const defsA = atom({ plugin: 'ai-dlc-lens-spike-027', key: 'defs' } as const, {}, { shape: 'defs-1' })
+const rosterA = atom({ plugin: 'ai-dlc-lens-spike-027', key: 'roster' } as const, {})
+const costingA = atom({ plugin: 'ai-dlc-lens-spike-027', key: 'costing' } as const, { path: '', text: '', error: 'not read yet' }, { shape: 'costing-1' })
+const chartLeadA = atom({ plugin: 'ai-dlc-lens-spike-027', key: 'chartLead' } as const, '')
+const LENS0: LensConfig = { settings: { ...DEFAULTS }, sources: Object.fromEntries(KEYS.map(k => [k, 'default'])), ignored: [] }
+const lensA = atom({ plugin: 'ai-dlc-lens-spike-027', key: 'lens' } as const, LENS0, { shape: 'lens-1' })
 
 // Tools whose rows get a transcript card. `Task` is the Agent tool's name in headless runs.
 const CARD_TOOLS = new Set(['Agent', 'Task', 'SendMessage'])
@@ -99,6 +125,8 @@ const thinkBlocks: Record<string, number> = {}
 /** tool_use_id -> the output tokens of the step that asked for it and how many calls that step asked for. */
 const stepOfCall: Record<string, { out: number; n: number }> = {}
 const lastStatus: Record<string, string> = {}
+/** The settings non-drawing code uses (limits); the drawings read `lensA`. */
+let cfg: LensSettings = { ...DEFAULTS }
 
 const nowMs = () => Date.now()
 const cap = (s: string, n: number) => (s.length > n ? s.slice(0, n) + `\n... [+${s.length - n} chars]` : s)
@@ -110,6 +138,9 @@ const blankAgent = (id: string, parent: string | null, type: string): LensAgent 
   name: '',
   description: '',
   model: '',
+  callModel: '',
+  parentModel: '',
+  prompt: '',
   status: 'running',
   toolUseId: '',
   steps: ZERO,
@@ -138,7 +169,102 @@ async function gateIsOn($: { fs: { exists: (p: string) => Promise<boolean>; read
   return text.trim() === 'on'
 }
 
-// ---- probes (E1-E8) ----
+async function readText($: any, path: string): Promise<string | null> {
+  try {
+    return String(await $.fs.read(path))
+  } catch {
+    return null
+  }
+}
+
+// ---- settings (addendum 3): local env > project env > .ai-dlc/lens.json > default; never the process env ----
+async function loadSettings($: any): Promise<LensConfig> {
+  const local = envLevel(SETTINGS_LOCAL, await readText($, SETTINGS_LOCAL))
+  const project = envLevel(SETTINGS_PROJECT, await readText($, SETTINGS_PROJECT))
+  const file = fileLevel(LENS_JSON, await readText($, LENS_JSON))
+  const r = resolve([local.level, project.level, file.level])
+  const problems = [local.problem, project.problem, file.problem].filter(x => x !== '')
+  const conf: LensConfig = { settings: r.settings, sources: r.sources, ignored: [...problems, ...r.ignored] }
+  cfg = r.settings
+  await update($, lensA, () => conf)
+  return conf
+}
+
+const chartSize = (s: LensSettings): ChartSize => ({ col: s.chartColumnPx, row: s.chartRowPx, r: s.avatarRadiusPx, blink: s.blink, blinkMs: s.blinkMs })
+
+/** The model metadata file: `.ai-dlc/model-metadata.json`, else its earlier name `.ai-dlc/model-costing.json` (read only). */
+async function loadCosting($: any) {
+  let c: LensCosting = { path: cfg.costingPath, text: '', error: `${cfg.costingPath} and ${cfg.costingFallbackPath} not found` }
+  for (const path of [cfg.costingPath, cfg.costingFallbackPath]) {
+    const text = await readText($, path)
+    if (text !== null) {
+      c = { path, text, error: '' }
+      break
+    }
+  }
+  await update($, costingA, () => c)
+}
+
+async function loadRoster($: any) {
+  const text = await readText($, cfg.rosterPath)
+  await update($, rosterA, () => (text === null ? {} : parseRoster(text)))
+}
+
+/** A plugin's installed copies: `<plugins cache>/<marketplace>/<plugin>/<version>/`, the newest release first. */
+async function installedRoots($: any, plugin: string): Promise<string[]> {
+  const base = `${$.plugin.root}/../../${plugin}`
+  try {
+    const vers = ((await $.fs.list(base)) as { name: string; kind: string }[]).filter(v => v.kind === 'dir').map(v => v.name)
+    const rank = (v: string) => (v.includes('-') ? 0 : 1)
+    vers.sort((a, b) => rank(b) - rank(a) || b.localeCompare(a, undefined, { numeric: true }))
+    return vers.map(v => `${base}/${v}`)
+  } catch {
+    return []
+  }
+}
+
+/** The definition of an agent type (finding 1d): this repository's plugin source, else the installed plugin, else `.claude/agents/`. */
+async function loadDef($: any, type: string) {
+  if (type === '') return
+  const have = (await read($, defsA)) as Record<string, LensDef>
+  if (have[type]) return
+  const plugin = pluginOf(type)
+  const name = roleOf(type)
+  const first = plugin !== '' ? `plugins/claude/${plugin}/agents/${name}.md` : `.claude/agents/${name}.md`
+  let def: LensDef = { model: '', persona: '', path: '' }
+  let text = await readText($, first)
+  let path = first
+  if (text === null && plugin !== '') {
+    // The installed copy is listed only when this repository has no source for it.
+    for (const r of await installedRoots($, plugin)) {
+      path = `${r}/agents/${name}.md`
+      text = await readText($, path)
+      if (text !== null) break
+    }
+  }
+  if (text !== null) def = { ...parseDefinition(text), path: path.replace(/^.*[\\/]plugins[\\/]cache[\\/]/, '~/.claude/plugins/cache/') }
+  await update($, defsA, m => ({ ...(m as Record<string, LensDef>), [type]: def }))
+}
+
+/** What the chart and the Buttons call an agent: persona, model, role (finding 1d). */
+function labeler(roster: Record<string, string>, defs: Record<string, LensDef>, mainModel: string) {
+  return (a: LensAgent): ChartLabel => {
+    const def = defs[a.type]
+    const usable = def && def.path !== '' ? def : undefined
+    return {
+      name: personaOf(a, roster, usable),
+      model: modelOf(usable, a.callModel, a.parentModel || mainModel || a.model).text,
+      role: a.id === 'main' ? (a.type === '' ? 'Main loop' : humanRole(a.type)) : humanRole(a.type) || 'Agent',
+    }
+  }
+}
+
+/** Whether a [+]/[-] section is open: the person's choice, else the `collapsedByDefault` setting. */
+const isOpen = (open: Record<string, boolean>, key: string, s: LensSettings) => open[key] ?? !s.collapsedByDefault
+const toggleOpen = ($: any, key: string, s: LensSettings) =>
+  update($, cardOpenA, m => ({ ...(m as Record<string, boolean>), [key]: !((m as Record<string, boolean>)[key] ?? !s.collapsedByDefault) }))
+
+// ---- probes (E1-E9) ----
 async function plog($: any, exp: string, data: unknown) {
   if (!probeOn || probePath === '') return
   let line: string
@@ -155,9 +281,8 @@ async function plog($: any, exp: string, data: unknown) {
 }
 
 async function ensureAgent($: any, id: string, parent: string | null, type: string) {
-  const all = (await read($, agentsA)) as Record<string, LensAgent>
-  if (all[id]) return
-  await update($, agentsA, m => ({ ...m, [id]: blankAgent(id, parent, type) }))
+  // The existence check runs inside the write (round 3 root cause): a stale "absent" never overwrites.
+  await update($, agentsA, m => ensureIn(m as Record<string, LensAgent>, id, () => blankAgent(id, parent, type)))
   await update($, orderA, o => (o.includes(id) ? o : [...o, id]))
 }
 
@@ -171,7 +296,7 @@ async function patchAgent($: any, id: string, fn: (a: LensAgent) => LensAgent) {
 async function pushCall($: any, key: string, call: LensCall) {
   await update($, callsA, m => {
     const list = ((m as Record<string, LensCall[]>)[key] ?? []).filter(c => c.id !== call.id)
-    return { ...m, [key]: [...list, call].slice(-80) }
+    return { ...m, [key]: [...list, call].slice(-cfg.callsLimit) }
   })
 }
 
@@ -201,14 +326,15 @@ async function refreshList($: any, reason: string) {
     }
     for (const a of list) {
       const cur = out[a.id]
-      if (cur && cur.status !== a.status && a.status !== 'completed') out[a.id] = { ...cur, status: String(a.status) }
+      // A list that still says `running` never undoes a `turn.complete` (finding 6).
+      if (cur && cur.status !== a.status && a.status !== 'completed' && !ENDED.has(cur.status)) out[a.id] = { ...cur, status: String(a.status) }
     }
     return out
   })
 }
 
 async function findFallbackRecord($: any, role: string, startedAt: number): Promise<string | null> {
-  // Time order + agent type (step 16 Q7 fallback): the newest `*-to-<role>.handoff.md` written before the spawn.
+  // Time order + agent type (step 16 Q7): shown only as a hint since round 3, never as the record.
   let best: { path: string; mtime: number } | null = null
   try {
     for (const run of await $.fs.list('docs/handoffs')) {
@@ -216,7 +342,7 @@ async function findFallbackRecord($: any, role: string, startedAt: number): Prom
       for (const f of await $.fs.list(`docs/handoffs/${run.name}`)) {
         if (f.kind !== 'file' || !f.name.endsWith(`-to-${role}.handoff.md`)) continue
         const mt = Number(f.mtimeMs ?? f.mtime ?? 0)
-        if (mt <= startedAt + 60_000 && (best === null || mt > best.mtime)) best = { path: `docs/handoffs/${run.name}/${f.name}`, mtime: mt }
+        if (mt >= startedAt - 600_000 && mt <= startedAt + 60_000 && (best === null || mt > best.mtime)) best = { path: `docs/handoffs/${run.name}/${f.name}`, mtime: mt }
       }
     }
   } catch {
@@ -225,27 +351,23 @@ async function findFallbackRecord($: any, role: string, startedAt: number): Prom
   return best?.path ?? null
 }
 
-async function loadDoc($: any, id: string) {
-  const agents = (await read($, agentsA)) as Record<string, LensAgent>
-  const a = agents[id]
-  if (!a) return
-  let path = a.handoff
+/** The arrow panel's content (finding 2): the record the brief named and its hand-back, else the prompt. */
+async function loadDoc($: any, a: LensAgent) {
+  const doc: LensDoc = { ...DOC0, agent: a.id, prompt: a.prompt }
+  const path = a.handoff
   if (path === null) {
-    path = await findFallbackRecord($, roleOf(a.type), a.startedAt)
-    if (path !== null) await patchAgent($, id, x => ({ ...x, handoff: path, handoffHow: 'fallback' }))
-  }
-  const doc: LensDoc = { ...DOC0, agent: id }
-  if (path === null) {
-    doc.error = 'No handoff record: the brief named none and no `*-to-' + roleOf(a.type) + '.handoff.md` was found.'
+    if (a.startedAt > 0) {
+      const hint = await findFallbackRecord($, roleOf(a.type), a.startedAt)
+      if (hint !== null) doc.hint = hint
+    }
     await update($, docA, () => doc)
+    await plog($, 'E8', { via: 'arrow press', path: null, prompt: a.prompt.length, hint: doc.hint })
     return
   }
   doc.handoff = path
-  try {
-    doc.handoffText = cap(String(await $.fs.read(path)), 6000)
-  } catch (err) {
-    doc.error = `read ${path}: ${String(err)}`
-  }
+  const text = await readText($, path)
+  if (text === null) doc.error = `read ${path}: not found`
+  else doc.handoffText = cap(text, cfg.recordChars)
   const rec = parseRecord(path)
   if (rec) {
     try {
@@ -253,7 +375,7 @@ async function loadDoc($: any, id: string) {
       const hb = pickHandback(names, rec)
       if (hb !== null) {
         doc.handback = `${rec.dir}/${hb}`
-        doc.handbackText = cap(String(await $.fs.read(doc.handback)), 6000)
+        doc.handbackText = cap((await readText($, doc.handback)) ?? '', cfg.recordChars)
       } else doc.handbackText = '(no hand-back yet)'
     } catch (err) {
       doc.error += ` list ${rec.dir}: ${String(err)}`
@@ -263,27 +385,32 @@ async function loadDoc($: any, id: string) {
   await plog($, 'E8', { via: 'arrow press', path, ok: doc.handoffText !== '', handback: doc.handback, error: doc.error })
 }
 
-/** `fromChat`: pressed in a chat card, which has no drill-in: always the separate pane. */
-async function openEdge($: any, id: string, title: string, fromChat: boolean) {
+/** `fromChat`: pressed in a chat card, which has no drill-in: always the separate pane. `snap`: the agent as drawn. */
+async function openEdge($: any, snap: LensAgent, title: string, fromChat: boolean) {
   const u = (await read($, uiA)) as LensUi
   const pane = fromChat || u.panelMode === 'pane'
-  await update($, uiA, x => ({ ...x, edge: id, drill: pane ? (fromChat ? x.drill : null) : 'edge' }))
-  await loadDoc($, id)
+  await update($, uiA, x => ({ ...x, edge: snap.id, edgeSnap: snap, drill: pane ? (fromChat ? x.drill : null) : 'edge' }))
+  await loadDoc($, snap)
   if (pane) {
     const r = await $.ui.open({ id: EDGE, title: cap(`Hand-off: ${title}`, 60) })
     await plog($, 'E3', { open: EDGE, result: r })
   }
 }
 
-async function openAgent($: any, id: string, title: string, fromChat: boolean) {
+async function openAgent($: any, snap: LensAgent, title: string, fromChat: boolean) {
   const u = (await read($, uiA)) as LensUi
   const pane = fromChat || u.panelMode === 'pane'
-  await update($, uiA, x => ({ ...x, agent: id, drill: pane ? (fromChat ? x.drill : null) : 'agent' }))
+  await update($, uiA, x => ({ ...x, agent: snap.id, agentSnap: snap, drill: pane ? (fromChat ? x.drill : null) : 'agent' }))
   await refreshList($, 'avatar press')
   if (pane) {
     const r = await $.ui.open({ id: AGENT, title: cap(`Agent: ${title}`, 60) })
     await plog($, 'E3', { open: AGENT, result: r })
   }
+}
+
+async function openChart($: any, lead: string) {
+  await update($, chartLeadA, () => lead)
+  await $.ui.open({ id: CHART, title: 'AI-DLC flowchart' })
 }
 
 async function scanUsage($: any, agentId: string) {
@@ -334,7 +461,7 @@ async function beforeCall($: any, e: any): Promise<CallCtx | null> {
       call.stepCalls = s.n
     }
     await pushCall($, key, call)
-    if (key === 'main' && CONTEXT_TOOLS.has(tool)) await update($, contextA, l => [...l.filter(c => c.id !== id), call].slice(-60))
+    if (key === 'main' && CONTEXT_TOOLS.has(tool)) await update($, contextA, l => [...l.filter(c => c.id !== id), call].slice(-cfg.contextLimit))
     if (tool === 'SendMessage' && typeof input.to === 'string') {
       // A message to a running agent is a loop: the arrow becomes two-way (US-12).
       const to = input.to
@@ -344,11 +471,18 @@ async function beforeCall($: any, e: any): Promise<CallCtx | null> {
     }
     if (AGENT_TOOLS.has(tool)) {
       // The chat card's placeholder avatar until agent.spawn names the agent; a call no step reported is a batch of its own.
-      const p = { type: String(input.subagent_type ?? ''), description: String(input.description ?? ''), name: String(input.name ?? '') }
+      const p = {
+        type: String(input.subagent_type ?? ''),
+        description: String(input.description ?? ''),
+        name: String(input.name ?? ''),
+        prompt: String(input.prompt ?? ''),
+        model: typeof input.model === 'string' ? input.model : '',
+      }
       await update($, batchesA, m => notePending(m as Record<string, LensBatch>, key, id, p))
+      await loadDef($, p.type)
     }
-    if (probeOn && (tool === 'Agent' || tool === 'Task'))
-      await plog($, 'E1', { site: 'tool.call', tool, inputKeys: Object.keys(input), hasPrompt: typeof input.prompt === 'string', firstLine: String(input.prompt ?? '').split(/\r?\n/, 1)[0]?.slice(0, 300) })
+    if (probeOn && AGENT_TOOLS.has(tool))
+      await plog($, 'E1', { site: 'tool.call', tool, tool_use_id: id, inputKeys: Object.keys(input), hasPrompt: typeof input.prompt === 'string', firstLine: String(input.prompt ?? '').split(/\r?\n/, 1)[0]?.slice(0, 300) })
     if (probeOn && tool === 'Bash' && input.run_in_background === true) await plog($, 'E7', { site: 'tool.call', command: input.command, agent: key })
     return { key, tool, input, id, call }
   } catch (err) {
@@ -367,13 +501,16 @@ async function afterCall($: any, ctx: CallCtx, r: any) {
       const task: LensTask = { id: bgId, type: 'shell', status: 'running', description: call.summary, source: 'tool.call' }
       await patchAgent($, key, a => ({ ...a, bg: [...a.bg.filter(t => t.id !== bgId), task] }))
     }
+    // The Agent call's own result names its agent (E1: `agentId`): a second source for the call -> agent map.
+    const agentId = r?.result?.agentId
+    if (AGENT_TOOLS.has(tool) && typeof agentId === 'string') await update($, callAgentA, m => ({ ...(m as Record<string, string>), [id]: agentId }))
     await pushCall($, key, { ...call, status })
     if (key === 'main' && CONTEXT_TOOLS.has(tool)) await update($, contextA, l => l.map(c => (c.id === id ? { ...c, status } : c)))
     if (probeOn && tool === 'Bash' && input.run_in_background === true) {
       const list = (await $.agent.list()) as any[]
       await plog($, 'E7', { site: 'after background Bash', result: r?.result ?? null, agentList: list.map(a => ({ id: a.id, type: a.type, status: a.status })) })
     }
-    if (probeOn && (tool === 'Agent' || tool === 'Task')) await plog($, 'E1', { site: 'tool.call result', result: r?.result ?? null })
+    if (probeOn && AGENT_TOOLS.has(tool)) await plog($, 'E1', { site: 'tool.call result', tool_use_id: id, result: r?.result ?? null })
   } catch (err) {
     lensFail('tool.call after', err)
   }
@@ -414,15 +551,19 @@ async function backfillThinking($: any, key: string, streamedBlocks: number) {
   const th = await scanThinking($, key)
   const note =
     th.text !== ''
-      ? th.text.slice(-4000)
+      ? th.text.slice(-cfg.thinkingChars)
       : `[no thinking text: ${streamedBlocks} block(s) streamed empty; transcript holds ${th.blocks} thinking block(s) with ${th.chars} chars, ${th.redacted} redacted]`
   await update($, thinkingA, m => ({ ...m, [key]: note }))
   return th
 }
 
 // ---- drawing helpers (called by name with `$`) ----
-/** `root`: the chat card's top avatar, whose own arrow (from its spawner) is not in that card. */
-function agentButtons($: any, t: any, order: string[], agents: Record<string, LensAgent>, fromChat: boolean, root: string | null) {
+/**
+ * One Button per avatar and per arrow. `agents` is the drawing's own set (the chat card's view, with
+ * the placeholders of calls not spawned yet), so every avatar and arrow of the chart has its Button.
+ * `root`: the chat card's top avatar, whose own arrow (from its spawner) is not in that card.
+ */
+function agentButtons($: any, t: any, order: string[], agents: Record<string, LensAgent>, label: (a: LensAgent) => ChartLabel, fromChat: boolean, root: string | null) {
   const { Box, Text, Button } = t
   const ids = order.filter(id => agents[id])
   const edges = ids.filter(id => id !== root && agents[id]!.parent !== null)
@@ -430,9 +571,10 @@ function agentButtons($: any, t: any, order: string[], agents: Record<string, Le
     <Box flexDirection="column">
       <Box flexDirection="row" flexWrap="wrap">
         <Text dimColor>Avatars: </Text>
-        {ids.map(id => (
-          <Button key={`agent-${id}`} label={displayName(agents[id]!)} onPress={() => openAgent($, id, displayName(agents[id]!), fromChat)} />
-        ))}
+        {ids.map(id => {
+          const name = label(agents[id]!).name
+          return <Button key={`agent-${id}`} label={name} onPress={() => openAgent($, agents[id]!, name, fromChat)} />
+        })}
       </Box>
       <Box flexDirection="row" flexWrap="wrap">
         <Text dimColor>Arrows: </Text>
@@ -441,64 +583,133 @@ function agentButtons($: any, t: any, order: string[], agents: Record<string, Le
           const a = agents[id]!
           const from = agents[a.parent!]
           const code = a.handoff !== null ? (parseRecord(a.handoff)?.code ?? '') : ''
-          const label = `${code !== '' ? code + ' ' : ''}${from ? displayName(from) : '?'} ${a.loop ? '<->' : '->'} ${displayName(a)}`
-          return <Button key={`edge-${id}`} label={label} onPress={() => openEdge($, id, label, fromChat)} />
+          const text = `${code !== '' ? code + ' ' : ''}${from ? label(from).name : '?'} ${a.loop ? '<->' : '->'} ${label(a).name}`
+          return <Button key={`edge-${id}`} label={text} onPress={() => openEdge($, a, text, fromChat)} />
         })}
       </Box>
     </Box>
   )
 }
 
-function edgeBody($: any, t: any, ui: LensUi, doc: LensDoc, agents: Record<string, LensAgent>) {
+/** The live record of a pressed agent, else the one the card drew (a call not spawned yet). */
+const liveOr = (agents: Record<string, LensAgent>, id: string | null, snap: LensAgent | null): LensAgent | undefined => {
+  if (id === null) return undefined
+  const live = agents[id]
+  if (live && live.type !== '') return live
+  return snap ?? live
+}
+
+function edgeBody($: any, t: any, ui: LensUi, doc: LensDoc, agents: Record<string, LensAgent>, label: (a: LensAgent) => ChartLabel, open: Record<string, boolean>, s: LensSettings) {
   const { Box, Text, Button } = t
-  const a = ui.edge !== null ? agents[ui.edge] : undefined
+  const a = liveOr(agents, ui.edge, ui.edgeSnap)
   if (!a) return <Text dimColor>Press an arrow under the flowchart.</Text>
   const from = a.parent !== null ? agents[a.parent] : undefined
   const tk = a.turns
+  const l = label(a)
+  const docOpen = isOpen(open, 'edge:doc', s)
+  const backOpen = isOpen(open, 'edge:back', s)
+  const prompt = doc.agent === a.id ? doc.prompt || a.prompt : a.prompt
   return (
     <Box flexDirection="column">
       <Text bold>
-        {from ? displayName(from) : '?'} {a.loop ? '<->' : '->'} {displayName(a)} ({roleOf(a.type)})
+        {from ? label(from).name : '?'} {a.loop ? '<->' : '->'} {l.name} ({l.role})
       </Text>
       <Text>
         Hand-off tokens (callee's turn.complete, summed): in {fmtTokens(tk.in + tk.cr + tk.cw)}, out {fmtTokens(tk.out)}; cache r {fmtTokens(tk.cr)} / w {fmtTokens(tk.cw)} / uncached {fmtTokens(tk.in)}
       </Text>
-      <Text dimColor>
-        Step sums (turn.step): in {fmtTokens(a.steps.in + a.steps.cr + a.steps.cw)}, out {fmtTokens(a.steps.out)}. Record matched: {a.handoffHow}
-        {a.handoffHow === 'fallback' ? ' (time order + agent type: check it)' : ''}
-      </Text>
       {doc.error !== '' && <Text color="red">{doc.error}</Text>}
-      <Box flexDirection="row">
-        <Button key="edge-doc" label={ui.edgeDocOpen ? '[-]' : '[+]'} onPress={() => update($, uiA, u => ({ ...u, edgeDocOpen: !u.edgeDocOpen }))} />
-        <Text bold> Handoff record </Text>
-        <Text dimColor>{doc.handoff}</Text>
-      </Box>
-      {ui.edgeDocOpen && <Text>{doc.handoffText}</Text>}
-      <Box flexDirection="row">
-        <Button key="edge-back" label={ui.edgeBackOpen ? '[-]' : '[+]'} onPress={() => update($, uiA, u => ({ ...u, edgeBackOpen: !u.edgeBackOpen }))} />
-        <Text bold> Hand-back </Text>
-        <Text dimColor>{doc.handback}</Text>
-      </Box>
-      {ui.edgeBackOpen && <Text>{doc.handbackText}</Text>}
+      {doc.agent === a.id && doc.handoff !== '' ? (
+        <Box flexDirection="column">
+          <Text dimColor>Record matched: {a.handoffHow}</Text>
+          <Box flexDirection="row">
+            <Button key="edge-doc" label={docOpen ? '[-]' : '[+]'} onPress={() => toggleOpen($, 'edge:doc', s)} />
+            <Text bold> Handoff record </Text>
+            <Text dimColor>{doc.handoff}</Text>
+          </Box>
+          {docOpen && <Text>{doc.handoffText}</Text>}
+          <Box flexDirection="row">
+            <Button key="edge-back" label={backOpen ? '[-]' : '[+]'} onPress={() => toggleOpen($, 'edge:back', s)} />
+            <Text bold> Hand-back </Text>
+            <Text dimColor>{doc.handback}</Text>
+          </Box>
+          {backOpen && <Text>{doc.handbackText}</Text>}
+        </Box>
+      ) : (
+        <Box flexDirection="column">
+          <Text bold>Prompt from orchestrator (no handoff record)</Text>
+          <Text>{prompt === '' ? '(the prompt is not known yet)' : prompt}</Text>
+          {doc.agent === a.id && doc.hint !== '' && <Text dimColor>A record found by time order only, not named in the brief: {doc.hint}</Text>}
+        </Box>
+      )}
     </Box>
   )
 }
 
-function agentBody($: any, t: any, ui: LensUi, agents: Record<string, LensAgent>, calls: Record<string, LensCall[]>, thinking: Record<string, string>, mainWindow: number) {
+/** The avatar panel (findings 3, 4 and the window addendum): every figure, with where it came from. */
+function agentBody(
+  $: any,
+  t: any,
+  ui: LensUi,
+  agents: Record<string, LensAgent>,
+  calls: Record<string, LensCall[]>,
+  thinking: Record<string, string>,
+  mainWindow: number,
+  label: (a: LensAgent) => ChartLabel,
+  defs: Record<string, LensDef>,
+  costing: LensCosting,
+  open: Record<string, boolean>,
+  s: LensSettings,
+) {
   const { Box, Text, Button } = t
-  const id = ui.agent
-  const a = id !== null ? agents[id] : undefined
-  if (!a || id === null) return <Text dimColor>Press an avatar under the flowchart.</Text>
+  const a = liveOr(agents, ui.agent, ui.agentSnap)
+  if (!a || ui.agent === null) return <Text dimColor>Press an avatar under the flowchart.</Text>
+  const id = a.id
   const main = agents['main']
-  const l = cardLines(a, main?.model ?? '', mainWindow)
+  const mainModel = main?.model ?? ''
+  const l = label(a)
+  const def = defs[a.type]
+  const mod = modelOf(def && def.path !== '' ? def : undefined, a.callModel, a.parentModel || mainModel)
+  const w = id === 'main' && mainWindow > 0 ? { n: mainWindow as number | null, source: "the session's context window ($.session.usage)" } : windowOf(costing, a.model, mainModel, mainWindow, s.windowFallback)
+  const used = contextUsed(a.last)
+  // Live: the step sums; a loop whose steps no hook saw falls back to its turn sums.
+  const sum = a.steps.in + a.steps.out + a.steps.cr + a.steps.cw > 0 ? a.steps : a.turns
+  const cost = costOf(costing, a.model, sum, s.cacheWriteRate)
   const list = calls[id] ?? []
   const th = thinking[id] ?? ''
+  const thOpen = isOpen(open, 'agent:thinking', s)
+  const notStarted = a.status === 'pending'
   return (
     <Box flexDirection="column">
-      <Text bold>{l.title}</Text>
-      <Text>
-        {l.role} - {a.status} - ctx {l.ctx}
+      <Text bold>
+        {l.name} ({initials(l.name)})
       </Text>
+      <Text>
+        Role: {l.role} <Text dimColor>({roleOf(a.type) || 'main loop'})</Text> - {a.status}
+      </Text>
+      <Text>
+        Model: {mod.text} <Text dimColor>from {mod.source}</Text>
+      </Text>
+      <Text dimColor>Ran on: {a.model === '' ? '(not reported yet)' : a.model}</Text>
+      {notStarted ? (
+        <Text dimColor>Not started yet: no figures.</Text>
+      ) : (
+        <Box flexDirection="column">
+          <Text>
+            Context: {fmtTokens(used)} / {w.n === null ? '—' : fmtTokens(w.n)} <Text dimColor>window from {w.source}</Text>
+          </Text>
+          <Text>
+            Tokens: in {fmtTokens(sum.in + sum.cr + sum.cw)}, out {fmtTokens(sum.out)}
+          </Text>
+          <Text>
+            Cache: read {fmtTokens(sum.cr)} / write {fmtTokens(sum.cw)} / uncached {fmtTokens(sum.in)}
+          </Text>
+          {s.showCost && (
+            <Text>
+              Cost: {cost.text} <Text dimColor>{cost.text === '—' ? `(${cost.source})` : `from ${cost.source}`}</Text>
+            </Text>
+          )}
+        </Box>
+      )}
       <Box flexDirection="row">
         <Button key="agent-view" label="View transcript" onPress={() => $.ui.view(id === 'main' ? {} : { agentId: id })} />
         <Button key="agent-refresh" label="Refresh" onPress={() => refreshList($, 'refresh press')} />
@@ -512,36 +723,104 @@ function agentBody($: any, t: any, ui: LensUi, agents: Record<string, LensAgent>
       ))}
       <Text bold>Tool calls ({list.length})</Text>
       {list.length === 0 && <Text dimColor>none yet</Text>}
-      {list.slice(-40).map(c => (
+      {list.slice(-s.callsShown).map(c => (
         <Text>
           {c.status === 'running' ? '...' : c.status === 'error' ? 'ERR' : 'ok '} {c.tool} {c.summary}
           <Text dimColor>{c.stepCalls > 0 ? `  step out ${fmtTokens(c.stepOut)} / ${c.stepCalls} call${c.stepCalls > 1 ? 's' : ''} (est.)` : ''}</Text>
         </Text>
       ))}
       <Box flexDirection="row">
-        <Button key="agent-thinking" label={ui.agentThinkingOpen ? '[-]' : '[+]'} onPress={() => update($, uiA, u => ({ ...u, agentThinkingOpen: !u.agentThinkingOpen }))} />
+        <Button key="agent-thinking" label={thOpen ? '[-]' : '[+]'} onPress={() => toggleOpen($, 'agent:thinking', s)} />
         <Text bold> Thinking ({th.length} chars)</Text>
       </Box>
-      {ui.agentThinkingOpen && <Text dimColor>{th === '' ? '(no thinking chunks seen)' : th}</Text>}
+      {thOpen && <Text dimColor>{th === '' ? '(no thinking chunks seen)' : th}</Text>}
+    </Box>
+  )
+}
+
+/** The chart as drawn on a surface: the Svg, or the terminal's text chart. */
+function chartNode(t: any, hasSvg: boolean, on1: boolean, ids: string[], agents: Record<string, LensAgent>, label: (a: LensAgent) => ChartLabel, s: LensSettings, alt: string) {
+  const { Box, Text, Svg } = t
+  if (hasSvg) {
+    const chart = flowchartSvg(ids, agents, label, chartSize(s))
+    return <Svg source={chart.source} alt={alt} width={chart.width} height={chart.height} isInteractive={true} />
+  }
+  return (
+    <Box flexDirection="column">
+      {textChart(ids, agents, label).map(row => {
+        const a = agents[row.id]!
+        const blinking = s.blink && isRunning(a.status)
+        const color = blinking ? (on1 ? 'green' : 'gray') : a.status === 'failed' || a.status === 'killed' ? 'red' : a.status === 'pending' ? 'gray' : 'green'
+        return (
+          <Box flexDirection="column">
+            <Text>
+              {row.head}
+              <Text color={color}>{'●'}</Text> {row.lines[0]}
+            </Text>
+            <Text dimColor>{row.lines[1]}</Text>
+          </Box>
+        )
+      })}
+    </Box>
+  )
+}
+
+/** Everything a drawing reads, once. */
+async function snapshot($: any) {
+  const agents = (await read($, agentsA)) as Record<string, LensAgent>
+  const roster = (await read($, rosterA)) as Record<string, string>
+  const defs = (await read($, defsA)) as Record<string, LensDef>
+  const conf = (await read($, lensA)) as LensConfig
+  const s = conf.settings as LensSettings
+  const mainModel = agents['main']?.model ?? ''
+  return { agents, roster, defs, conf, s, mainModel, label: labeler(roster, defs, mainModel) }
+}
+
+function settingsRows(t: any, conf: LensConfig) {
+  const { Box, Text } = t
+  return (
+    <Box flexDirection="column">
+      <Text bold>Lens settings (effective value [level])</Text>
+      {KEYS.map(k => (
+        <Text dimColor>
+          {k} = {JSON.stringify(conf.settings[k])} [{conf.sources[k] ?? 'default'}]
+        </Text>
+      ))}
+      {conf.ignored.map(x => (
+        <Text color="yellow">{x}</Text>
+      ))}
     </Box>
   )
 }
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
-    await $.command.register({ name: 'spike027', description: 'ITEM-027 spike: open the lens card (round 1)' })
+    await $.command.register({ name: 'spike027', description: 'ITEM-027 spike: open the lens card' })
     await $.command.register({ name: 'spike027-kit', description: 'ITEM-027 spike: open the round-0 kit pane (checks 1-5)' })
     await $.command.register({ name: 'spike027-gate', description: 'ITEM-027 spike: gate alert on|off', argumentHint: 'on|off' })
     await $.command.register({
       name: 'spike027-probe',
-      description: 'ITEM-027 spike: experiments E1-E8 (on|off|panes <n>|fs [path]|list|usage)',
+      description: 'ITEM-027 spike: experiments E1-E9 (on|off|panes <n>|fs [path]|list|usage)',
       argumentHint: 'on|off|panes <n>|fs [path]|list|usage',
+    })
+    await $.command.register({ name: 'spike027-lens-init', description: 'ITEM-027 spike, stand-in for /ai-dlc:lens-init: write .ai-dlc/lens.json (defaults) and its schema', argumentHint: '[--force]' })
+    await $.command.register({
+      name: 'spike027-lens-configure',
+      description: 'ITEM-027 spike, stand-in for /ai-dlc:lens-configure: show or change lens settings',
+      argumentHint: '[<key> [<value>|--unset]]',
     })
     // Timer-driven blink (kit check 2, and the terminal's text avatars).
     $.clock.every(500, () => update($, tick, t => !t))
     cwd = e.cwd
     probeOn = (await read($, probeA)) as boolean
     probePath = (await $.fs.exists('spikes/ai-dlc-lens/027/CHECK.md')) ? 'spikes/ai-dlc-lens/027/PROBE-LOG.jsonl' : `${$.plugin.root}/PROBE-LOG.jsonl`
+    try {
+      await loadSettings($)
+      await loadRoster($)
+      await loadCosting($)
+    } catch (err) {
+      lensFail('session.start settings', err)
+    }
     let sessionAgent = ''
     try {
       const v: unknown = await $.settings.read({ key: 'agent' })
@@ -551,6 +830,11 @@ export const register: Register = on => {
     }
     await ensureAgent($, 'main', null, sessionAgent)
     await patchAgent($, 'main', a => ({ ...a, type: a.type === '' ? sessionAgent : a.type, status: 'idle' }))
+    try {
+      await loadDef($, sessionAgent)
+    } catch (err) {
+      lensFail('session.start definition', err)
+    }
     try {
       const u = await $.session.usage()
       await update($, mainWindowA, () => u.context.window)
@@ -565,8 +849,48 @@ export const register: Register = on => {
   })
 
   on('command.run', { command: 'spike027' }, async $ => {
+    await loadSettings($)
     const placed = await $.ui.open({ id: LENS, title: 'AI-DLC lens (spike 027)' })
     return { text: `Lens card opened (isPlaced: ${JSON.stringify(placed)}). Arrows and avatars are the Buttons under the flowchart.` }
+  })
+
+  // Stand-in for /ai-dlc:lens-init (addendum 3): the product command lives in plugins/**, which this spike must not touch.
+  on('command.run', { command: 'spike027-lens-init' }, async ($, e) => {
+    const force = e.args.trim() === '--force'
+    const had = (await readText($, LENS_JSON)) !== null
+    if (had && !force) {
+      await $.fs.write(LENS_SCHEMA, JSON.stringify(schema(), null, 2) + '\n')
+      return { text: `${LENS_JSON} exists and was kept; ${LENS_SCHEMA} written. Pass --force to reset ${LENS_JSON} to the defaults.` }
+    }
+    await $.fs.write(LENS_JSON, initialFile())
+    await $.fs.write(LENS_SCHEMA, JSON.stringify(schema(), null, 2) + '\n')
+    const conf = await loadSettings($)
+    const over = KEYS.filter(k => conf.sources[k] !== LENS_JSON && conf.sources[k] !== 'default')
+    return {
+      text:
+        `${had ? 'Reset' : 'Wrote'} ${LENS_JSON} (every default) and ${LENS_SCHEMA}.` +
+        (over.length > 0 ? ` Still overridden by a settings env: ${over.map(k => `${k} [${conf.sources[k]}]`).join(', ')}.` : ''),
+    }
+  })
+
+  // Stand-in for /ai-dlc:lens-configure: no args lists every setting; `<key>` shows one; `<key> <value>` or `<key> --unset` edits lens.json.
+  on('command.run', { command: 'spike027-lens-configure' }, async ($, e) => {
+    const [k = '', raw = ''] = e.args.trim().split(/\s+/)
+    const show = (c: LensConfig, key: Key) =>
+      `${key} = ${JSON.stringify(c.settings[key])} [${c.sources[key]}] (env ${envName(key)}; default ${JSON.stringify(DEFAULTS[key])})`
+    if (k === '') {
+      const c = await loadSettings($)
+      return { text: [...KEYS.map(key => show(c, key)), ...c.ignored].join('\n') }
+    }
+    if (!(KEYS as string[]).includes(k)) return { text: `Unknown key ${k}. Keys: ${KEYS.join(', ')}` }
+    if (raw === '') return { text: show(await loadSettings($), k as Key) }
+    const r = setKey(await readText($, LENS_JSON), k, raw)
+    if (r.error !== '') return { text: `Not changed: ${r.error}` }
+    await $.fs.write(LENS_JSON, r.text)
+    const c = await loadSettings($)
+    const src = c.sources[k as Key]
+    const note = src !== LENS_JSON && raw !== '--unset' ? ` A higher level wins: ${src}.` : ''
+    return { text: `${LENS_JSON} updated. Effective: ${show(c, k as Key)}.${note}` }
   })
 
   on('command.run', { command: 'spike027-kit' }, async $ => {
@@ -624,7 +948,7 @@ export const register: Register = on => {
       const u = await $.session.usage()
       const agents = (await read($, agentsA)) as Record<string, LensAgent>
       await plog($, 'E6', { context: u.context, mainModel: agents['main']?.model ?? '', models: Object.values(agents).map(a => ({ id: a.id, model: a.model })) })
-      return { text: `E6: main window ${u.context.window}, tokens ${u.context.tokens ?? '?'}; subagent windows: no API, table used.` }
+      return { text: `E6: main window ${u.context.window}, tokens ${u.context.tokens ?? '?'}; subagent windows from ${cfg.costingPath}, else main's for the same model.` }
     }
     const lines = (await read($, probeLinesA)) as number
     return { text: `Probes on, ${lines} log lines in ${probePath}. Verbs: on, off, panes <n>, fs [path], list, usage.` }
@@ -634,37 +958,58 @@ export const register: Register = on => {
   on('agent.spawn', async ($, e, next) => {
     const r: any = await next(e)
     try {
-    const id: string | undefined = r?.agentId ?? e.resume?.agentId
-    const parent = e.parentAgentId ?? 'main'
-    const match = matchHandoff(e.prompt)
-    if (probeOn)
-      await plog($, 'E1', {
-        site: 'agent.spawn',
-        keys: Object.keys(e),
-        subagentType: e.subagentType,
-        firstLine: (e.prompt.split(/\r?\n/, 1)[0] ?? '').slice(0, 300),
-        match,
-        result: { model: r?.model, agentId: r?.agentId, teammateId: r?.teammateId, deny: r?.deny },
+      const id: string | undefined = r?.agentId ?? e.resume?.agentId
+      const parent = e.parentAgentId ?? 'main'
+      const match = matchHandoff(e.prompt)
+      if (probeOn)
+        await plog($, 'E1', {
+          site: 'agent.spawn',
+          tool_use_id: e.tool_use_id,
+          keys: Object.keys(e),
+          subagentType: e.subagentType,
+          model: e.model ?? null,
+          parentModel: e.parentModel,
+          firstLine: (e.prompt.split(/\r?\n/, 1)[0] ?? '').slice(0, 300),
+          match,
+          result: { model: r?.model, agentId: r?.agentId, teammateId: r?.teammateId, deny: r?.deny },
+        })
+      if (id === undefined) return r
+      // One write: create-or-patch, the respawn test against the state as it stands (round 3 root cause).
+      let existedBefore = false
+      await update($, agentsA, m => {
+        const all = m as Record<string, LensAgent>
+        existedBefore = all[id] !== undefined
+        const cur = all[id] ?? blankAgent(id, parent, e.subagentType)
+        const again = isRespawn(all, id, parent, e.subagentType, e.tool_use_id)
+        return {
+          ...all,
+          [id]: {
+            ...cur,
+            parent,
+            type: e.subagentType,
+            name: e.name ?? cur.name,
+            description: e.description,
+            model: String(r?.model ?? cur.model),
+            callModel: e.model ?? '',
+            parentModel: e.parentModel ?? '',
+            prompt: e.prompt,
+            status: ENDED.has(cur.status) && cur.toolUseId === e.tool_use_id ? cur.status : 'running',
+            toolUseId: e.tool_use_id,
+            handoff: match?.path ?? cur.handoff,
+            handoffHow: match?.how ?? cur.handoffHow,
+            loop: cur.loop || again,
+            endedAt: null,
+          },
+        }
       })
-    if (id === undefined) return r
-    const agents = (await read($, agentsA)) as Record<string, LensAgent>
-    const again = agents[id] !== undefined || Object.values(agents).some(a => a.parent === parent && a.type === e.subagentType && a.status !== 'running')
-    await ensureAgent($, id, parent, e.subagentType)
-    await patchAgent($, id, a => ({
-      ...a,
-      parent,
-      type: e.subagentType,
-      name: e.name ?? a.name,
-      description: e.description,
-      model: String(r?.model ?? a.model),
-      status: 'running',
-      toolUseId: e.tool_use_id,
-      handoff: match?.path ?? a.handoff,
-      handoffHow: match?.how ?? a.handoffHow,
-      loop: a.loop || again,
-      endedAt: null,
-    }))
-    if (probeOn) await refreshList($, 'spawn')
+      await update($, orderA, o => (o.includes(id) ? o : [...o, id]))
+      await update($, callAgentA, m => ({ ...(m as Record<string, string>), [e.tool_use_id]: id }))
+      await loadDef($, e.subagentType)
+      if (probeOn) {
+        const now = ((await read($, agentsA)) as Record<string, LensAgent>)[id]
+        await plog($, 'E9', { site: 'agent.spawn after patch', tool_use_id: e.tool_use_id, agentId: id, existedBefore, stored: { type: now?.type, toolUseId: now?.toolUseId, loop: now?.loop } })
+        await refreshList($, 'spawn')
+      }
     } catch (err) {
       lensFail('agent.spawn', err)
     }
@@ -674,6 +1019,7 @@ export const register: Register = on => {
   on('turn.start', async ($, e, next) => {
     try {
       const key = e.agentId ?? 'main'
+      if (probeOn) await plog($, 'E9', { site: 'turn.start', agent: key, known: ((await read($, agentsA)) as Record<string, LensAgent>)[key]?.toolUseId ?? null })
       await ensureAgent($, key, key === 'main' ? null : 'main', '')
       await patchAgent($, key, a => ({ ...a, status: 'running' }))
     } catch (err) {
@@ -694,6 +1040,7 @@ export const register: Register = on => {
     let model = e.model
     // The first Agent call of this message: its chat row draws the flowchart for all of them (round 2).
     let lead: string | null = null
+    const agentCalls: string[] = []
     for await (const c of next(e)) {
       const t0 = nowMs()
       counts[c.kind] = (counts[c.kind] ?? 0) + 1
@@ -705,6 +1052,7 @@ export const register: Register = on => {
         ids.push(c.id)
         if (AGENT_TOOLS.has(c.name)) {
           lead ??= c.id
+          agentCalls.push(c.id)
           const l = lead
           try {
             await update($, batchesA, m => addToBatch(m as Record<string, LensBatch>, l, key, c.id))
@@ -712,8 +1060,7 @@ export const register: Register = on => {
             lensFail('turn.step batch', err)
           }
         }
-      }
-      else if (c.kind === 'stop' && c.usage) {
+      } else if (c.kind === 'stop' && c.usage) {
         usage = fromUsage(c.usage)
         model = c.usage.model
       }
@@ -721,26 +1068,26 @@ export const register: Register = on => {
       yield c
     }
     try {
-    thinkBlocks[key] = (thinkBlocks[key] ?? 0) + thinkingIdx.size
-    const t1 = nowMs()
-    const buf = thinkBuf[key] ?? ''
-    if (buf !== '') {
-      thinkBuf[key] = ''
-      await update($, thinkingA, m => {
-        const prev = (m as Record<string, string>)[key] ?? ''
-        const joined = prev === '' || prev.startsWith('[') ? buf : prev + '\n---\n' + buf
-        return { ...m, [key]: joined.length > 4000 ? '...' + joined.slice(-4000) : joined }
-      })
-    }
-    for (const id of ids) stepOfCall[id] = { out: usage?.out ?? 0, n: ids.length }
-    await ensureAgent($, key, key === 'main' ? null : 'main', '')
-    await patchAgent($, key, a => ({
-      ...a,
-      model: model !== '' ? model : a.model,
-      steps: usage ? addTokens(a.steps, usage) : a.steps,
-      last: usage ?? a.last,
-    }))
-    if (probeOn) await plog($, 'E2', { agent: key, index: e.index, counts, thinkingChars, observeMs: spent, afterMs: nowMs() - t1, usage })
+      thinkBlocks[key] = (thinkBlocks[key] ?? 0) + thinkingIdx.size
+      const t1 = nowMs()
+      const buf = thinkBuf[key] ?? ''
+      if (buf !== '') {
+        thinkBuf[key] = ''
+        await update($, thinkingA, m => {
+          const prev = (m as Record<string, string>)[key] ?? ''
+          const joined = prev === '' || prev.startsWith('[') ? buf : prev + '\n---\n' + buf
+          return { ...m, [key]: joined.length > cfg.thinkingChars ? '...' + joined.slice(-cfg.thinkingChars) : joined }
+        })
+      }
+      for (const id of ids) stepOfCall[id] = { out: usage?.out ?? 0, n: ids.length }
+      await ensureAgent($, key, key === 'main' ? null : 'main', '')
+      await patchAgent($, key, a => ({
+        ...a,
+        model: model !== '' ? model : a.model,
+        steps: usage ? addTokens(a.steps, usage) : a.steps,
+        last: usage ?? a.last,
+      }))
+      if (probeOn) await plog($, 'E2', { agent: key, index: e.index, counts, agentCalls, thinkingChars, observeMs: spent, afterMs: nowMs() - t1, usage })
     } catch (err) {
       lensFail('turn.step', err)
     }
@@ -756,52 +1103,56 @@ export const register: Register = on => {
   on('turn.complete', async ($, e, next) => {
     const r = await next(e)
     try {
-    const key = e.agentId ?? 'main'
-    await ensureAgent($, key, key === 'main' ? null : 'main', '')
-    const usage = e.usage ? fromUsage(e.usage) : null
-    const agents = (await read($, agentsA)) as Record<string, LensAgent>
-    const teammate = (agents[key]?.type ?? '') === 'teammate'
-    const status = key === 'main' || teammate ? 'idle' : e.reason === 'answer' ? 'completed' : e.reason === 'aborted' ? 'killed' : 'failed'
-    await patchAgent($, key, a => ({
-      ...a,
-      status,
-      model: e.usage?.model ?? a.model,
-      turns: usage ? addTokens(a.turns, usage) : a.turns,
-      endedAt: nowMs(),
-    }))
-    if (key === 'main') {
-      try {
-        const u = await $.session.usage()
-        await update($, mainWindowA, () => u.context.window)
-      } catch {
-        // keep the last window
+      const key = e.agentId ?? 'main'
+      await ensureAgent($, key, key === 'main' ? null : 'main', '')
+      const usage = e.usage ? fromUsage(e.usage) : null
+      const agents = (await read($, agentsA)) as Record<string, LensAgent>
+      const teammate = (agents[key]?.type ?? '') === 'teammate'
+      const status = key === 'main' || teammate ? 'idle' : e.reason === 'answer' ? 'completed' : e.reason === 'aborted' ? 'killed' : 'failed'
+      await patchAgent($, key, a => ({
+        ...a,
+        status,
+        model: e.usage?.model ?? a.model,
+        turns: usage ? addTokens(a.turns, usage) : a.turns,
+        endedAt: nowMs(),
+      }))
+      if (key === 'main') {
+        try {
+          const u = await $.session.usage()
+          await update($, mainWindowA, () => u.context.window)
+        } catch {
+          // keep the last window
+        }
+        // A changed lens.json, settings env or costing file shows from the next turn on.
+        await loadSettings($)
+        await loadCosting($)
       }
-    }
-    const stored = await backfillThinking($, key, thinkBlocks[key] ?? 0)
-    if (probeOn && stored !== null) await plog($, 'E2', { site: 'turn.complete stored thinking', agent: key, streamedBlocks: thinkBlocks[key] ?? 0, stored: { blocks: stored.blocks, chars: stored.chars, redacted: stored.redacted, error: stored.error ?? null } })
-    if (probeOn) {
-      const after = ((await read($, agentsA)) as Record<string, LensAgent>)[key]
-      await plog($, 'E5', { agent: key, reason: e.reason, turnUsage: usage, turnsSum: after?.turns, stepsSum: after?.steps, rows: key === 'main' ? null : await scanUsage($, key) })
-      await refreshList($, 'turn.complete')
-    }
+      const stored = await backfillThinking($, key, thinkBlocks[key] ?? 0)
+      if (probeOn && stored !== null) await plog($, 'E2', { site: 'turn.complete stored thinking', agent: key, streamedBlocks: thinkBlocks[key] ?? 0, stored: { blocks: stored.blocks, chars: stored.chars, redacted: stored.redacted, error: stored.error ?? null } })
+      if (probeOn) {
+        const after = ((await read($, agentsA)) as Record<string, LensAgent>)[key]
+        await plog($, 'E5', { agent: key, reason: e.reason, turnUsage: usage, turnsSum: after?.turns, stepsSum: after?.steps, rows: key === 'main' ? null : await scanUsage($, key) })
+        await refreshList($, 'turn.complete')
+      }
     } catch (err) {
       lensFail('turn.complete', err)
     }
     return r
   })
 
-  // ---- the lens card (L1-L6) ----
+  // ---- the lens pane (L1-L6) ----
   on('ui.render', { component: 'Pane', requestId: LENS }, async ($, e) => {
     const t = $.ui.resolve(e) as any
-    const { Box, Text, Button, Svg } = t
-    const agents = (await read($, agentsA)) as Record<string, LensAgent>
+    const { Box, Text, Button } = t
+    const { agents, defs, conf, s, label } = await snapshot($)
     const order = (await read($, orderA)) as string[]
     const ui = (await read($, uiA)) as LensUi
     const thinking = (await read($, thinkingA)) as Record<string, string>
     const context = (await read($, contextA)) as LensCall[]
     const mainWindow = (await read($, mainWindowA)) as number
     const calls = (await read($, callsA)) as Record<string, LensCall[]>
-    const mainModel = agents['main']?.model ?? ''
+    const open = (await read($, cardOpenA)) as Record<string, boolean>
+    const costing = (await read($, costingA)) as LensCosting
     const hasSvg = e.surface !== 'terminal'
 
     const modeRow = (
@@ -816,65 +1167,47 @@ export const register: Register = on => {
       return (
         <Box flexDirection="column">
           <Button key="drill-back" label="< Back" onPress={() => update($, uiA, u => ({ ...u, drill: null }))} />
-          {ui.drill === 'edge' ? edgeBody($, t, ui, (await read($, docA)) as LensDoc, agents) : agentBody($, t, ui, agents, calls, thinking, mainWindow)}
+          {ui.drill === 'edge'
+            ? edgeBody($, t, ui, (await read($, docA)) as LensDoc, agents, label, open, s)
+            : agentBody($, t, ui, agents, calls, thinking, mainWindow, label, defs, costing, open, s)}
         </Box>
       )
     }
 
     const ids = order.filter(id => agents[id])
-    const chart = flowchartSvg(ids, agents, mainModel, mainWindow)
     const on1 = hasSvg ? false : ((await read($, tick)) as boolean)
     const mainThinking = thinking['main'] ?? ''
+    const thOpen = isOpen(open, 'pane:thinking', s)
+    const ctxOpen = isOpen(open, 'pane:context', s)
+    const setOpen = isOpen(open, 'pane:settings', s)
     return (
       <Box flexDirection="column">
         <Text bold>Workflow</Text>
-        {hasSvg ? (
-          <Svg source={chart.source} alt={`Flowchart of ${ids.length} agents`} isInteractive={true} />
-        ) : (
-          ids.map(id => {
-            const a = agents[id]!
-            const running = a.status === 'running' || a.status === 'pending'
-            const depth = a.parent === null ? 0 : a.parent === 'main' ? 1 : 2
-            return (
-              <Text>
-                {'  '.repeat(depth)}
-                {a.parent !== null ? (a.loop ? '<-> ' : '-> ') : ''}
-                <Text color={running ? (on1 ? 'green' : 'gray') : a.status === 'failed' ? 'red' : 'green'}>{'●'}</Text> {displayName(a)}
-              </Text>
-            )
-          })
-        )}
-        {agentButtons($, t, order, agents, false, null)}
-        {ids.map(id => {
-          const l = cardLines(agents[id]!, mainModel, mainWindow)
-          return (
-            <Box flexDirection="column" borderStyle="round">
-              <Text bold>{l.title}</Text>
-              <Text>{l.role}</Text>
-              <Text>ctx {l.ctx}</Text>
-              <Text>{l.io}</Text>
-              <Text>{l.cache}</Text>
-            </Box>
-          )
-        })}
+        {chartNode(t, hasSvg, on1, ids, agents, label, s, `Flowchart of ${ids.length} agents`)}
+        {agentButtons($, t, order, agents, label, false, null)}
         {modeRow}
-        <Text bold>Orchestrator (main loop)</Text>
+        <Text bold>{agents['main'] ? label(agents['main']).name : 'Main loop'} (main loop)</Text>
         <Box flexDirection="row">
-          <Button key="lens-thinking" label={ui.thinkingOpen ? '[-]' : '[+]'} onPress={() => update($, uiA, u => ({ ...u, thinkingOpen: !u.thinkingOpen }))} />
+          <Button key="lens-thinking" label={thOpen ? '[-]' : '[+]'} onPress={() => toggleOpen($, 'pane:thinking', s)} />
           <Text> Thinking ({mainThinking.length} chars)</Text>
         </Box>
-        {ui.thinkingOpen && <Text dimColor>{mainThinking === '' ? '(no thinking chunks seen yet)' : mainThinking}</Text>}
+        {thOpen && <Text dimColor>{mainThinking === '' ? '(no thinking chunks seen yet)' : mainThinking}</Text>}
         <Box flexDirection="row">
-          <Button key="lens-context" label={ui.contextOpen ? '[-]' : '[+]'} onPress={() => update($, uiA, u => ({ ...u, contextOpen: !u.contextOpen }))} />
+          <Button key="lens-context" label={ctxOpen ? '[-]' : '[+]'} onPress={() => toggleOpen($, 'pane:context', s)} />
           <Text> Gathered context ({context.length} calls)</Text>
         </Box>
-        {ui.contextOpen &&
+        {ctxOpen &&
           context.map(c => (
             <Text dimColor>
               {c.status === 'running' ? '...' : c.status === 'error' ? 'ERR' : 'ok '} {c.tool} {c.summary}
             </Text>
           ))}
-        <Text dimColor>uncached = input_tokens (derived); windows other than main's are assumed unless the model matches main's.</Text>
+        <Box flexDirection="row">
+          <Button key="lens-settings" label={setOpen ? '[-]' : '[+]'} onPress={() => toggleOpen($, 'pane:settings', s)} />
+          <Text> Lens settings ({KEYS.filter(k => conf.sources[k] !== 'default').length} set, {conf.ignored.length} ignored)</Text>
+        </Box>
+        {setOpen && settingsRows(t, conf)}
+        <Text dimColor>The figures, the cost and the window are in each avatar's panel.</Text>
         {lensErrors.map(x => (
           <Text color="red">lens hook error: {x}</Text>
         ))}
@@ -884,39 +1217,71 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'Pane', requestId: EDGE }, async ($, e) => {
     const t = $.ui.resolve(e) as any
-    return edgeBody($, t, (await read($, uiA)) as LensUi, (await read($, docA)) as LensDoc, (await read($, agentsA)) as Record<string, LensAgent>)
+    const { agents, s, label } = await snapshot($)
+    return edgeBody($, t, (await read($, uiA)) as LensUi, (await read($, docA)) as LensDoc, agents, label, (await read($, cardOpenA)) as Record<string, boolean>, s)
   })
 
   on('ui.render', { component: 'Pane', requestId: AGENT }, async ($, e) => {
     const t = $.ui.resolve(e) as any
+    const { agents, defs, s, label } = await snapshot($)
     return agentBody(
       $,
       t,
       (await read($, uiA)) as LensUi,
-      (await read($, agentsA)) as Record<string, LensAgent>,
+      agents,
       (await read($, callsA)) as Record<string, LensCall[]>,
       (await read($, thinkingA)) as Record<string, string>,
       (await read($, mainWindowA)) as number,
+      label,
+      defs,
+      (await read($, costingA)) as LensCosting,
+      (await read($, cardOpenA)) as Record<string, boolean>,
+      s,
+    )
+  })
+
+  // Finding 1b: the flowchart of one batch in its own pane, opened from the card's "Open flowchart" Button.
+  on('ui.render', { component: 'Pane', requestId: CHART }, async ($, e) => {
+    const t = $.ui.resolve(e) as any
+    const { Box, Text } = t
+    const { agents, s, label } = await snapshot($)
+    const lead = (await read($, chartLeadA)) as string
+    const batches = (await read($, batchesA)) as Record<string, LensBatch>
+    const order = (await read($, orderA)) as string[]
+    const callAgent = (await read($, callAgentA)) as Record<string, string>
+    const batch = lead !== '' ? batches[lead] : undefined
+    if (!batch) return <Text dimColor>No flowchart chosen: press "Open flowchart" in a chat card.</Text>
+    const view = batchView(batch, agents, order, callAgent)
+    const hasSvg = e.surface !== 'terminal'
+    const on1 = hasSvg ? false : ((await read($, tick)) as boolean)
+    return (
+      <Box flexDirection="column">
+        <Text bold>
+          Workflow: {label(view.agents[batch.parent]!).name} spawned {batch.ids.length} agent{batch.ids.length > 1 ? 's' : ''}
+        </Text>
+        {chartNode(t, hasSvg, on1, view.ids, view.agents, label, s, `Flowchart: ${batch.ids.length} agent(s)`)}
+        {agentButtons($, t, view.ids, view.agents, label, true, batch.parent)}
+      </Box>
     )
   })
 
   // E3 probe panes, one hook per id (`lens-027-p1` .. `lens-027-p16`).
   for (let i = 1; i <= 16; i++)
-  on('ui.render', { component: 'Pane', requestId: `${PROBE_PANE}${i}` }, async ($, e) => {
-    const { Box, Text, Button } = $.ui.resolve(e) as any
-    return (
-      <Box flexDirection="column">
-        <Text>E3 probe pane {e.requestId.slice(PROBE_PANE.length)}: placement={e.props.placement} bodyColumns={e.props.bodyColumns}</Text>
-        <Button
-          key="probe-close"
-          label="Close all probe panes"
-          onPress={async () => {
-            for (const p of await $.ui.panes()) if (p.id.startsWith(PROBE_PANE)) await $.ui.close({ id: p.id })
-          }}
-        />
-      </Box>
-    )
-  })
+    on('ui.render', { component: 'Pane', requestId: `${PROBE_PANE}${i}` }, async ($, e) => {
+      const { Box, Text, Button } = $.ui.resolve(e) as any
+      return (
+        <Box flexDirection="column">
+          <Text>E3 probe pane {e.requestId.slice(PROBE_PANE.length)}: placement={e.props.placement} bodyColumns={e.props.bodyColumns}</Text>
+          <Button
+            key="probe-close"
+            label="Close all probe panes"
+            onPress={async () => {
+              for (const p of await $.ui.panes()) if (p.id.startsWith(PROBE_PANE)) await $.ui.close({ id: p.id })
+            }}
+          />
+        </Box>
+      )
+    })
 
   // ---- round-0 kit pane: sections 1, 2, 3 (checks K1-K3) ----
   on('ui.render', { component: 'Pane', requestId: KIT }, async ($, e) => {
@@ -1002,17 +1367,23 @@ export const register: Register = on => {
     )
   })
 
-  // ---- the chat card (round 2): the flowchart at the top of the first Agent row of a message ----
-  // The native row is always last and unchanged (US-15, AC-15.5): the card wraps it, never replaces it.
+  // ---- the chat card (rounds 2-3): the flowchart at the top of the first Agent row of a message ----
+  // The native row is always last (US-15, AC-15.5): the card wraps it, never replaces it. Finding 5:
+  // the native Agent row is drawn without the prompt (the arrow panel shows it); expanded, it is whole.
   on('ui.render', { component: 'ToolUse' }, async ($, e, next) => {
     const tool = String(e.props.tool)
     if (!CARD_TOOLS.has(tool)) return next(e)
-    const native = await next(e)
+    const input = (e.props.input ?? {}) as Record<string, unknown>
+    const stripPrompt = AGENT_TOOLS.has(tool) && e.props.isExpanded !== true && typeof input.prompt === 'string'
+    let native: any
+    if (stripPrompt) {
+      const { prompt: _p, ...rest } = input
+      native = await next({ ...e, props: { ...e.props, input: rest } } as typeof e)
+    } else native = await next(e)
     toolUseCards += 1
     const t = $.ui.resolve(e) as any
-    const { Box, Text, Button, Svg } = t
+    const { Box, Text, Button } = t
     const id = e.props.tool_use_id
-    const input = (e.props.input ?? {}) as Record<string, unknown>
     if (tool === 'SendMessage') {
       return (
         <Box flexDirection="column">
@@ -1022,7 +1393,7 @@ export const register: Register = on => {
       )
     }
     const batches = (await read($, batchesA)) as Record<string, LensBatch>
-    const agents = (await read($, agentsA)) as Record<string, LensAgent>
+    const { agents, s, label } = await snapshot($)
     const lead = leadOf(batches, id)
     const batch: LensBatch =
       lead !== null
@@ -1030,7 +1401,15 @@ export const register: Register = on => {
         : {
             parent: Object.values(agents).find(a => a.toolUseId === id)?.parent ?? 'main',
             ids: [id],
-            pending: { [id]: { type: String(input.subagent_type ?? ''), description: String(input.description ?? ''), name: String(input.name ?? '') } },
+            pending: {
+              [id]: {
+                type: String(input.subagent_type ?? ''),
+                description: String(input.description ?? ''),
+                name: String(input.name ?? ''),
+                prompt: String(input.prompt ?? ''),
+                model: typeof input.model === 'string' ? input.model : '',
+              },
+            },
           }
     if (lead !== null && lead !== id) {
       return (
@@ -1046,56 +1425,50 @@ export const register: Register = on => {
     const thinking = (await read($, thinkingA)) as Record<string, string>
     const calls = (await read($, callsA)) as Record<string, LensCall[]>
     const mainContext = (await read($, contextA)) as LensCall[]
-    const mainWindow = (await read($, mainWindowA)) as number
     const open = (await read($, cardOpenA)) as Record<string, boolean>
-    const mainModel = agents['main']?.model ?? ''
+    const callAgent = (await read($, callAgentA)) as Record<string, string>
     const hasSvg = e.surface !== 'terminal'
     const on1 = hasSvg ? false : ((await read($, tick)) as boolean)
-    const view = batchView(batch, agents, order)
+    const view = batchView(batch, agents, order, callAgent)
     const root = view.agents[batch.parent]!
-    const chart = flowchartSvg(view.ids, view.agents, mainModel, mainWindow)
     const n = batch.ids.length
     const th = thinking[batch.parent] ?? ''
-    const ctx = batch.parent === 'main' ? mainContext : (calls[batch.parent] ?? []).filter(c => CONTEXT_TOOLS.has(c.tool))
-    const thOpen = open[`${id}:thinking`] === true
-    const ctxOpen = open[`${id}:context`] === true
-    const toggle = (k: string) =>
-      update($, cardOpenA, m => ({ ...(m as Record<string, boolean>), [`${id}:${k}`]: (m as Record<string, boolean>)[`${id}:${k}`] !== true }))
+    const ctx = (batch.parent === 'main' ? mainContext : (calls[batch.parent] ?? []).filter(c => CONTEXT_TOOLS.has(c.tool))).slice(-s.contextLimit)
+    const thOpen = isOpen(open, `${id}:thinking`, s)
+    const ctxOpen = isOpen(open, `${id}:context`, s)
+    const rootName = label(root).name
+    const width = flowchartSvg(view.ids, view.agents, label, chartSize(s)).width
+    const full = showChart(s.chartMode, width, e.viewport?.columns, s.breakpointColumns, s.cellPx)
+    const chip = view.members
+      .map(m => {
+        const a = view.agents[m]!
+        return `${initials(label(a).name)} ${a.status === 'pending' ? 'waiting' : a.status}`
+      })
+      .join(', ')
     return (
       <Box flexDirection="column" borderStyle="round">
         <Text bold>
-          Workflow: {displayName(root)} spawned {n} agent{n > 1 ? 's in parallel' : ''}
+          Workflow: {rootName} spawned {n} agent{n > 1 ? 's in parallel' : ''}
         </Text>
-        {hasSvg ? (
-          <Svg source={chart.source} alt={`Flowchart: ${displayName(root)} spawned ${n} agent(s)`} isInteractive={true} />
+        {full ? (
+          chartNode(t, hasSvg, on1, view.ids, view.agents, label, s, `Flowchart: ${rootName} spawned ${n} agent(s)`)
         ) : (
-          textChart(view.ids, view.agents, mainModel, mainWindow).map(row => {
-            const a = view.agents[row.id]!
-            const running = a.status === 'running' || a.status === 'pending'
-            return (
-              <Box flexDirection="column">
-                <Text>
-                  {row.head}
-                  <Text color={running ? (on1 ? 'green' : 'gray') : a.status === 'failed' || a.status === 'killed' ? 'red' : 'green'}>{'●'}</Text> {row.lines[0]}
-                </Text>
-                {row.lines.slice(1).map(x => (
-                  <Text dimColor>{x}</Text>
-                ))}
-              </Box>
-            )
-          })
+          <Box flexDirection="row" flexWrap="wrap">
+            <Text dimColor>{chip} </Text>
+            <Button key="card-open-chart" label="Open flowchart" onPress={() => openChart($, id)} />
+          </Box>
         )}
-        {agentButtons($, t, view.ids, agents, true, batch.parent)}
+        {agentButtons($, t, view.ids, view.agents, label, true, batch.parent)}
         <Box flexDirection="row">
-          <Button key="card-thinking" label={thOpen ? '[-]' : '[+]'} onPress={() => toggle('thinking')} />
+          <Button key="card-thinking" label={thOpen ? '[-]' : '[+]'} onPress={() => toggleOpen($, `${id}:thinking`, s)} />
           <Text>
             {' '}
-            {displayName(root)} thinking ({th.length} chars)
+            {rootName} thinking ({th.length} chars)
           </Text>
         </Box>
         {thOpen && <Text dimColor>{th === '' ? '(no thinking chunks seen yet)' : th}</Text>}
         <Box flexDirection="row">
-          <Button key="card-context" label={ctxOpen ? '[-]' : '[+]'} onPress={() => toggle('context')} />
+          <Button key="card-context" label={ctxOpen ? '[-]' : '[+]'} onPress={() => toggleOpen($, `${id}:context`, s)} />
           <Text> Gathered context ({ctx.length} calls)</Text>
         </Box>
         {ctxOpen &&
@@ -1133,6 +1506,20 @@ export const register: Register = on => {
     const tasks: LensTask[] = (e.background_tasks ?? []).map(b => ({ id: b.id, type: b.type, status: b.status, description: b.description, source: 'Stop' }))
     await patchAgent($, 'main', a => ({ ...a, bg: mergeStopTasks(a.bg, tasks) }))
     if (probeOn) await plog($, 'E7', { site: 'classic.Stop', background_tasks: e.background_tasks ?? null })
+    if (probeOn) {
+      // E9: what the card would draw for each batch, against the agents as stored.
+      const all = (await read($, agentsA)) as Record<string, LensAgent>
+      const bs = (await read($, batchesA)) as Record<string, LensBatch>
+      const order = (await read($, orderA)) as string[]
+      const callAgent = (await read($, callAgentA)) as Record<string, string>
+      await plog($, 'E9', {
+        site: 'state at Stop',
+        agents: Object.values(all).map(a => ({ id: a.id, type: a.type, toolUseId: a.toolUseId, status: a.status, parent: a.parent, loop: a.loop })),
+        batches: bs,
+        callAgent,
+        views: Object.values(bs).map(b => batchView(b, all, order, callAgent).members),
+      })
+    }
     if (await gateIsOn($ as any)) $.ui.toast('ai-dlc-lens spike: gate alert test (5b, module toast on classic.Stop)')
     return result
   }).catch(($, e, next) => next(e))

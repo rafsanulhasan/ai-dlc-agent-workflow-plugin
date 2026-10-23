@@ -8,9 +8,9 @@ current-stage: spikes
 owner: orchestrator
 session: 734fd039-2bfd-4247-86ee-1d8d2cc510fa
 branch: feat/ai-dlc-lens
-commit: f6e5854
-last-record: 17.l1-agent-manager-to-orchestrator.handback.md
-updated: 2026-10-23 13:35
+commit: 11f36b0
+last-record: 17.l2-agent-manager-to-orchestrator.handback.md
+updated: 2026-10-23 16:35
 ---
 
 # Run: FEAT-20261020-ai-dlc-lens — run-state CLI, gate alert and the ai-dlc-lens mod plugin: one dashboard merging savvy-progress, cache-tax, context-view and agent-flow, with a flowchart view
@@ -69,6 +69,7 @@ Step numbering: steps 1–2 are the 2026-10-20 briefs `01-…` and `02-…` (old
 | 16 | research: can the mods API build the reworked 027 card? | research-assistant | subagent | done (passed) · Svg not clickable → Buttons; no thinking site in transcript → pane section; `$.ui.open` for panels; cache miss derived (uncached); subagent window via table; E1–E8 for step 17; types 2.1.308 vs installed 2.1.309 | `16-orchestrator-to-research-assistant.handoff.md` | `16-research-assistant-to-orchestrator.handback.md` | 2026-10-23 12:20 |
 | 17 | spike 027 rework to the human's card design (round 1 / 2) | agent-manager | subagent | done (passed) · `/spike027` card, `/spike027-kit`, `/spike027-probe` E1–E8; validate ✔, tsc 0, test 16/16; fallbacks: Buttons under Svg, thinking in pane (0 chars headless), subagent window table; awaits human VS Code check | `17-orchestrator-to-agent-manager.handoff.md` | `17-agent-manager-to-orchestrator.handback.md` | 2026-10-23 12:50 |
 | 17.l1 | spike 027 rework round 2 / 2: flowchart at the top of the chat card | agent-manager | subagent | done (passed) · chart in the `ToolUse` row of the first Agent call, one per message; 0.1.1; validate ✔, tsc 0, test 21/21; load errors not 027 (superpowers, sonarqube not installed; duplicate figma); awaits human check | `17.l1-orchestrator-to-agent-manager.handoff.md` | `17.l1-agent-manager-to-orchestrator.handback.md` | 2026-10-23 13:35 |
+| 17.l2 | spike 027 round 3 / 4: the human's findings 1–6 (smaller responsive chart, names/models/roles, metadata to side panel, prompt fallback, blink fix) | agent-manager | subagent | done (passed) · root cause of 1c/1d/6: spawn race (turn.start before agent.spawn) + read-then-write overwrite, fixed; chart 120 px/avatar, persona/model/role; toolbar button not possible → in-card Open flowchart button; settings resolver + lens-init/configure stand-ins; 0.1.2; validate ✔, tsc 0, test 39/39 | `17.l2-orchestrator-to-agent-manager.handoff.md` | `17.l2-agent-manager-to-orchestrator.handback.md` | 2026-10-23 16:35 |
 | — | scope pass: brief (+ claude-lens gaps, options C/D, 027 findings) → critique → stories → critique + backlog → accept → G1 again | product-owner, research-assistant, brutal-critique, requirement-analyst, product-manager | subagent | pending | — | — | — |
 | — | PDLC stories → backlog → accept → G1 | requirement-analyst → product-manager → product-owner; brutal-critique on brief and stories | subagent | pending | — | — | — |
 | — | design (spec, ADRs, LLD) → G2 | software-architect + system-engineer; brutal-critique | subagent | pending | — | — | — |
@@ -88,6 +89,10 @@ Step numbering: steps 1–2 are the 2026-10-20 briefs `01-…` and `02-…` (old
 | Scope (claude-lens gaps) | human | **widened**: add the live-session gaps and reopen options C and D; G1 to be approved again after the scope pass | human | 2026-10-23 |
 | Order | human | spike 027 rework first, then the scope pass | human | 2026-10-23 |
 | spike 027 rework loop | 2 rounds / 1 failure (source `loop`, `rounds --json`) | round 1 / 2: human check **missed** (only the old card in the chat; flowchart was in the `/spike027` pane) — failure 1 / 1; round 2 / 2 sent as `17.l1`; a further miss goes to the human | human / orchestrator | 2026-10-23 |
+| spike 027 round 2 human check | human | **missed**: findings 1–6 (in `17.l2-orchestrator-to-agent-manager.handoff.md`) | human | 2026-10-23 |
+| spike 027 rework loop limit | human | raised for this run from 2 to **4 rounds** (one-off; workflow file unchanged) | human | 2026-10-23 |
+| cost display / pricing | human | cost only from `.ai-dlc/model-costing.json` (`—` when missing); refreshed by a project hook after each run and before commit, in parallel with validation; installed by `/ai-dlc:init` in target repos and here → run `AAW-20261023-model-costing-hook` | human | 2026-10-23 |
+| lens settings | human | **changed** (supersedes 00b L3 "user level"): `AI_DLC_LENS_*` env in settings.local.json (wins) > settings.json env > `.ai-dlc/lens.json` > defaults; commands `/ai-dlc:lens-init`, `/ai-dlc:lens-configure`; all collapsible sections collapsed by default; spike 027 round 3 builds it too; the scope pass updates US-5/US-6 | human | 2026-10-23 |
 | G2, G3, G4, release | human | pending | — | — |
 | Every lifecycle loop (FDLC tests / architecture-review / review, AAW critique / test / code-review, PDLC accept) | limits 2 rounds / 1 failure (source `loop`, from `rounds --json`) | recorded at resume | orchestrator | 2026-10-22 |
 | clarify | 2 / 1 (source `loop`) | recorded at resume | orchestrator | 2026-10-22 |
@@ -110,4 +115,4 @@ Step numbering: steps 1–2 are the 2026-10-20 briefs `01-…` and `02-…` (old
 | 7 | requirement-analyst → human | Q1–Q12 (alert latency/channels; constants as settings; guard off/warn/refuse default off; layout + blink; context per row; unknown price; task bar from run.md; language en; autoOpen; ledger per run; settings reload; Desktop automated only) — see `8-requirement-analyst-to-orchestrator.handback.md` | 1 | closed 2026-10-22: all 12 defaults accepted by the human |
 
 ## Next action
-Human: `/reload-plugins`, then the orchestrator spawns two test agents in parallel and the human checks the chat card (`spikes/ai-dlc-lens/027/CHECK.md` C1–C6). Record the result. Round 2 was the last: a miss stops the loop and the human decides (raise the limit for this run, or accept / stop). A pass → the scope pass, G1 again, ASDLC, G2. Still open for the human: `tests/build-copilot-hooks-module.test.mjs:167`; and `.claude/settings.json:78,89` enable superpowers and sonarqube, which are not installed (load errors).
+Human: `/reload-plugins` (or a new session), then the orchestrator spawns two different test agents in parallel and the human checks the chat card (`spikes/ai-dlc-lens/027/CHECK.md`, R1–R8 and the settings checks). Record the result. Rounds left: 4 / 4 (limit raised by the human). Open questions from 17.l2 for the human: toolbar button impossible (keep in-card button?), long-context pricing in cost. In parallel: run `AAW-20261023-model-costing-hook` (fix round 1.l1, rename to model-metadata). Still open: `tests/build-copilot-hooks-module.test.mjs:167`; `.claude/settings.json` superpowers/sonarqube not installed.

@@ -4,7 +4,7 @@ Throwaway spike plugins for the run `FEAT-20261020-ai-dlc-lens`. They answer, by
 
 | Folder | Plugin | Work item | Question |
 |---|---|---|---|
-| `027/` | `ai-dlc-lens-spike-027` | ITEM-027 | Round 2: the lens card in the chat, with the flowchart at the top of the first Agent row of a response, one chart for parallel spawns. Round 1, now the `/spike027` pane: the lens card (flowchart with an avatar per agent, five figures under each, hand-off and agent panels, collapsible thinking and gathered context) and experiments E1 to E8. Round 0 kit: resize at the dock boundary, Svg blink, buttons, transcript cards, Stop `systemMessage` alert |
+| `027/` | `ai-dlc-lens-spike-027` | ITEM-027 | Round 3: the human's findings on the chat card (a smaller chart with persona, model and role, or an Open flowchart button when narrow; the second parallel agent fixed; the figures, cost and window in the avatar panel from `.ai-dlc/model-metadata.json`, else `.ai-dlc/model-costing.json`; the prompt in the arrow panel; every section collapsed at first) and configurable lens settings (`/spike027-lens-init`, `/spike027-lens-configure`, stand-ins for `/ai-dlc:lens-init` and `/ai-dlc:lens-configure`). Round 2: the lens card in the chat, with the flowchart at the top of the first Agent row of a response, one chart for parallel spawns. Round 1, now the `/spike027` pane: the lens card (flowchart with an avatar per agent, five figures under each, hand-off and agent panels, collapsible thinking and gathered context) and experiments E1 to E8. Round 0 kit: resize at the dock boundary, Svg blink, buttons, transcript cards, Stop `systemMessage` alert |
 | `028/spike028-ka/` | `spike028-ka` | ITEM-028 | provider: a fake keep-alive that publishes its state |
 | `028/spike028-lens/` | `spike028-lens` | ITEM-028 | reader: can another plugin read keep-alive's state (`$.state`, a tool, a file) |
 | `029/` | `spike029-avatars` | ITEM-029 | avatar images and the Svg scrub in the mod pane |
@@ -23,15 +23,15 @@ claude plugin install spike028-lens@ai-dlc-agent-workflow --scope local
 claude plugin install spike029-avatars@ai-dlc-agent-workflow --scope local
 ```
 
-027 is at version `0.1.1` for round 2. If an earlier copy is installed, also run `claude plugin update ai-dlc-lens-spike-027@ai-dlc-agent-workflow --scope local`.
+027 is at version `0.1.2` for round 3. If an earlier copy is installed, also run `claude plugin update ai-dlc-lens-spike-027@ai-dlc-agent-workflow --scope local`.
 
-Then run `/reload-plugins` in an open Claude Code session, or open a new one in VS Code. On this machine `/reload-plugins` reports "3 errors during load". None comes from a spike: two plugins are enabled in `.claude/settings.json` but not installed (`superpowers`, `sonarqube`), and two claude.ai-synced `figma` copies share one name (`027/CHECK.md`, round 2 automatic checks). The commands are `/spike027` (the lens card), `/spike027-kit`, `/spike027-probe`, `/spike027-gate`, `/spike028-lens`, `/spike028-probe`, `/spike029` and `/spike029-overcap`.
+Then run `/reload-plugins` in an open Claude Code session, or open a new one in VS Code. On this machine `/reload-plugins` reports "3 errors during load". None comes from a spike: two plugins are enabled in `.claude/settings.json` but not installed (`superpowers`, `sonarqube`), and two claude.ai-synced `figma` copies share one name (`027/CHECK.md`, round 2 automatic checks). The commands are `/spike027` (the lens card), `/spike027-lens-init`, `/spike027-lens-configure`, `/spike027-kit`, `/spike027-probe`, `/spike027-gate`, `/spike028-lens`, `/spike028-probe`, `/spike029` and `/spike029-overcap`.
 
 For one session in the terminal without installing: `claude --plugin-dir "<SPIKES>\027"` (likewise `028`, which loads both of its plugins, and `029`). Each `CHECK.md` also gives the `CLAUDE_CODE_PLUGIN_DIRS` alternative, which you set and remove yourself.
 
 ## Order of checks
 
-1. `027/CHECK.md`: first the round 2 checks C1 to C6. Spawn two agents in parallel and look at the card in the chat; no command is needed. Then the round 1 checks L1 to L6 in the `/spike027` pane (one per item of the human's card design) and experiments E1 to E8, then the round-0 kit checks K1 to K5 if they were not done. L2 and L4 (the flowchart and the hand-off pane) decide how much of the card holds; K1 (does the pane redraw on resize) still decides the compact and flowchart switch.
+1. `027/CHECK.md`: first the round 3 checks R1 to R9 and the settings checks S1 to S4, then the round 2 checks C1 to C6. Spawn two agents in parallel and look at the card in the chat; no command is needed. Then the round 1 checks L1 to L6 in the `/spike027` pane (one per item of the human's card design) and experiments E1 to E8, then the round-0 kit checks K1 to K5 if they were not done. L2 and L4 (the flowchart and the hand-off pane) decide how much of the card holds; K1 (does the pane redraw on resize) still decides the compact and flowchart switch.
 2. `029/CHECK.md`: VS Code rows 1 to 23, then terminal rows 24 to 27.
 3. `028/CHECK.md`: the manual check, from the terminal with `--plugin-dir`.
 

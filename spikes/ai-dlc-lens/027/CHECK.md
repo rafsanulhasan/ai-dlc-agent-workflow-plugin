@@ -6,7 +6,44 @@ Round 1 (step 17, 2026-10-23) reworks the spike to the lens card the human descr
 
 Round 2 (step 17.l1, 2026-10-23) moves the card into the chat. In the round 1 check, two agents spawned in parallel showed only the round-0 card in the chat, because the flowchart lived in the `/spike027` pane. The human asked for it at the top of the card in the chat. Now the first `Agent` call of an assistant message draws, in its own transcript row, one flowchart for every `Agent` call of that message, with parallel spawns side by side. Under the chart are the avatar and arrow Buttons, the collapsible thinking and gathered context, and the native row last. **Check C1 first: spawn two agents in parallel and look at the chat card. No command is needed.** The `/spike027` pane still works as a second view (L1 to L6).
 
+Round 3 (step 17.l2, 2026-10-23) applies the human's findings 1 to 6 on the round 2 card and three addenda. **Check R1 first** (below). In short:
+
+- The chart is smaller (120 px per avatar, was 200) and shows three lines per avatar: the persona name, the model and the role. No context, tokens or cache in it.
+- When the row is narrower than the chart, the card shows a one-line chip and an "Open flowchart" Button, which opens the chart in its own pane. Claude Code 2.1.309 has no way to add a button to the VS Code prompt toolbar (see the round 3 automatic checks), so the Button is in the card.
+- The second agent of a parallel pair keeps its avatar, its arrow, its Buttons and its name. Its avatar blinks only while it runs.
+- Names: the persona from the roster (Kent Beck, KB), the model as the agent definition writes it (`sonnet`), the role in words (SQA Engineer).
+- The arrow panel shows the orchestrator's prompt when no handoff record was named.
+- The figures (context and window, tokens, cache, cost) are in the avatar panel. Cost and a subagent's window come only from `.ai-dlc/model-metadata.json`, or from `.ai-dlc/model-costing.json`, the file's name before the rename. A missing file or model shows `—`.
+- The prompt is gone from under the gathered-context section.
+- Every `[+]`/`[-]` section starts collapsed.
+- Every lens setting can be changed (S1 to S4).
+
 `<REPO>` is the main checkout of this repository, the folder registered as the `ai-dlc-agent-workflow` marketplace (`CLAUDE.md`), switched to the `feat/ai-dlc-lens` branch. `<SPIKES>` = `<REPO>\spikes\ai-dlc-lens`; `<SPIKE>` = `<SPIKES>\027`, this plugin.
+
+## What was checked automatically, round 3 (2026-10-23, Claude Code 2.1.309)
+
+- **Root cause of findings 1c, 1d (the "SE" label) and 6.** A headless run started two parallel Agent calls, `ai-dlc:software-engineer` and `ai-dlc:sqa-engineer`, each running an 8 s `node -e setTimeout`. It ran with `claude -p --setting-sources user --plugin-dir <SPIKE> --plugin-dir <REPO>\plugins\claude\ai-dlc --model haiku`, with probes on. New E9 lines show the order of events:
+  - each subagent's own `turn.start` runs before the lens's `agent.spawn` hook resumes after `next(e)` (`turn.start` at .519, spawn patch at .524). So the round 2 code always saw the agent as "already there" and drew every arrow two-way (`loop: true` for both agents).
+  - Round 2's `ensureAgent` wrote a blank record whenever its earlier read had found none. A `turn.start` that read before `agent.spawn` wrote, and wrote after it, therefore replaced the spawned agent with a blank one: no type and no call id. Its call stayed a placeholder. The placeholder blinked for ever, was named from its call's type (`sqa-engineer`, title-cased to "Sqa Engineer", so "SE"), and had no Buttons, because round 2 drew Buttons only for agents in the stored state. That matches findings 1c, 1d and 6 exactly. The headless run did not hit this interleaving (it is a timing race); the test `C2b` and the `ensureIn` unit test pin the fix.
+  - The fix has four parts. The existence check now runs inside the write (`ensureIn`). A two-way arrow needs an earlier spawn under another call (`isRespawn`). The lens keeps a separate call-to-agent map from `agent.spawn` and from the Agent call's result (`callAgent`). Placeholders never blink and get their own Buttons. A `$.agent.list()` that still says `running` no longer undoes a `turn.complete`.
+  - The same headless run after the fix: both agents mapped, `loop: false` for both, one batch with both calls.
+- **1b, a button in the prompt toolbar.** Not possible. The render sites (`RenderComponent`, `.tsc/claude-code.d.ts`:9835) include no prompt-toolbar site. The two prompt-side sites, `PromptHint` and `AbovePrompt` (:10769-10830), are "Raised on the terminal and desktop surfaces only": VS Code is not one of them. The fallback is a chip with an "Open flowchart" Button in the card, opening the pane `lens-027-chart`. The card measures its width from the row's `viewport.columns` (cells, :10957-10962). One cell is taken as `cellPx` = 8 CSS px, because no API gives the cell width. Without a viewport the chart is drawn, and `Svg` shrinks to its slot on its own (:13099-13105).
+- **5, the native row without the prompt.** The card calls `next(e)` with the Agent input minus `prompt`. When the row is expanded (`isExpanded`, :10409-10417), the input is passed whole, so ctrl+o still shows everything. The subagent's response (`ToolResult`) is untouched. Whether VS Code's native row honours the rewrite is R5.
+- `claude plugin validate <SPIKE>`: passed (the icon warning only).
+- `npx -p typescript@5 tsc -p <SPIKE>\.tsc` (2.1.309 types): exit 0.
+- `claude plugin test <SPIKE>`: 39 passed, 0 failed. The tests cover:
+  - names, models and roles;
+  - the cost and the window from the file, and `—` when it is missing;
+  - `model-metadata.json` read before `model-costing.json`;
+  - the root cause (`C2b`, `ensureIn`, `isRespawn`, batch folding);
+  - blinking only while running;
+  - the narrow chip and the chart pane;
+  - the native row without the prompt;
+  - the prompt in the arrow panel;
+  - the figures in the avatar panel;
+  - every section collapsed at first;
+  - the settings precedence;
+  - `/spike027-lens-init` and `/spike027-lens-configure`.
 
 ## What was checked automatically, round 2 (2026-10-23, Claude Code 2.1.309)
 
@@ -54,7 +91,7 @@ Main route: the repository's own marketplace, `ai-dlc-agent-workflow`, read from
 2. Run `/reload-plugins` in an open Claude Code session, or open a new one in VS Code.
 3. For round 2 nothing needs typing: spawn agents and the card is in the chat (C1). `/spike027` opens the pane view "AI-DLC lens (spike 027)".
 
-Round 2 is version `0.1.1`. If an earlier round is installed, run `claude plugin marketplace update ai-dlc-agent-workflow` and then `claude plugin update ai-dlc-lens-spike-027@ai-dlc-agent-workflow --scope local`, or uninstall and install it again. Then run `/reload-plugins`, or start a new session. `/reload-plugins` reports "3 errors during load" on this machine; none is the spike's (see the round 2 automatic checks).
+Round 3 is version `0.1.2` (round 2 was `0.1.1`). If an earlier round is installed, run `claude plugin marketplace update ai-dlc-agent-workflow` and then `claude plugin update ai-dlc-lens-spike-027@ai-dlc-agent-workflow --scope local`, or uninstall and install it again. Then run `/reload-plugins`, or start a new session. `/reload-plugins` reports "3 errors during load" on this machine; none is the spike's (see the round 2 automatic checks).
 
 Terminal: `claude --plugin-dir "<SPIKE>"` loads the folder for that session only, with nothing installed.
 
@@ -73,6 +110,35 @@ claude plugin uninstall ai-dlc-lens-spike-027@ai-dlc-agent-workflow --scope loca
 ```
 
 Keep the `ai-dlc-agent-workflow` marketplace; it also serves `ai-dlc`. If you used the alternative, remove the `CLAUDE_CODE_PLUGIN_DIRS` entry.
+
+## Round 3 manual checks: the human's findings (no command needed for R1 to R9)
+
+Setup as for C1: a new session with the orchestrator in VS Code, then: `In ONE response, make two Agent tool calls in parallel: an ai-dlc:software-engineer and an ai-dlc:sqa-engineer, each told to run node -e "setTimeout(()=>{},30000)" with Bash and then reply OK.`
+
+| # | Finding | What you should see | Result |
+| --- | --- | --- | --- |
+| R1 | 1a smaller, no figures | The chart is about 240 px wide for two agents. Under each avatar there are three lines: the persona name in bold, the model, the role. No `ctx`, `in`/`out` or `cache`. Record whether a five-agent fan-out (600 px) fits. | |
+| R2 | 1b responsive | Make the Claude Code panel narrow (under about 30 columns for two agents). The chart gives way to one line, for example `DF running, KB running`, and an `Open flowchart` Button. Press it: the pane "AI-DLC flowchart" opens with the full chart and its Buttons. Widen the panel: the chart comes back. No button can be added to the prompt toolbar (round 3 automatic checks). | |
+| R3 | 1c the second agent | Both avatars, both arrows, and under "Arrows:" both `Scott Hanselman -> David Fowler` and `Scott Hanselman -> Kent Beck`. "Avatars:" has a Button for each. `Kent Beck`'s avatar panel has its tool calls and `View transcript`. | |
+| R4 | 1d names | Avatars read `DF` and `KB` (`SH` for the orchestrator). Name lines: `David Fowler`, `Kent Beck`, `Scott Hanselman`. Model lines: `sonnet`, `sonnet`, `opus`, as `model:` in each agent definition. Role lines: `Software Engineer`, `SQA Engineer`, `Orchestrator`. | |
+| R5 | 5 the prompt under gathered context | Under `[+] Gathered context` there is the native Agent row without the prompt text. Expanding the row (VS Code's own expand, or ctrl+o) shows the prompt again. If VS Code still draws the prompt, record it: it means the native row ignores the rewritten input. | |
+| R6 | 6 blinking | Each avatar blinks only while its agent runs. Once an agent replies, its avatar is solid green, without a click or a scroll. An agent that has not started yet is grey and steady. | |
+| R7 | 2 the arrow panel | Press `Scott Hanselman -> Kent Beck`. With no handoff record named in the brief, the pane shows `Prompt from orchestrator (no handoff record)` and the whole prompt. With a record (an orchestrator run), the record and hand-back sections show, both collapsed. | |
+| R8 | 3, 4 the avatar panel | Press `Kent Beck`. The panel shows `Model: sonnet from agent definition (...)`, `Ran on: <id>`, `Context: X / Y window from <file or main session>`, `Tokens: in X, out Y`, `Cache: read / write / uncached`, and `Cost: $… from <file>`. With neither `.ai-dlc/model-metadata.json` nor `.ai-dlc/model-costing.json` in the repository, `Cost: — (…not found)` and a window of `—` for a model other than the orchestrator's. The panel names the file it read. | |
+| R9 | collapsed by default | Every `[+]` in the card, in `/spike027` (thinking, gathered context, lens settings) and in the two panels (handoff record, hand-back, thinking) starts as `[+]`. | |
+
+## Lens settings (S1 to S4)
+
+Each setting comes from the first of these levels that holds a valid value: `AI_DLC_LENS_*` in the `env` of `.claude/settings.local.json`, then in the `env` of `.claude/settings.json`, then `.ai-dlc/lens.json`, then the default. An invalid value is skipped and the next level decides. The process environment is never read. `/spike027-lens-init` and `/spike027-lens-configure` stand in for the product commands `/ai-dlc:lens-init` and `/ai-dlc:lens-configure`, which belong in the plugin, which this spike does not touch.
+
+Settings: `chartMode` (auto, chart or button), `breakpointColumns`, `cellPx`, `chartColumnPx`, `chartRowPx`, `avatarRadiusPx`, `collapsedByDefault`, `blink`, `blinkMs`, `showCost`, `cacheWriteRate` (5m or 1h), `windowFallback` (main or none), `costingPath` (`.ai-dlc/model-metadata.json`), `costingFallbackPath` (`.ai-dlc/model-costing.json`), `rosterPath`, `contextLimit`, `callsLimit`, `callsShown`, `recordChars` and `thinkingChars`. The env name is `AI_DLC_LENS_` plus the key in upper snake case (`chartColumnPx` is `AI_DLC_LENS_CHART_COLUMN_PX`). `.ai-dlc/lens.schema.json` documents each one.
+
+| # | Steps | What you should see | Result |
+| --- | --- | --- | --- |
+| S1 | `/spike027-lens-init` | It writes `.ai-dlc/lens.json` with every default and `.ai-dlc/lens.schema.json`; an existing `lens.json` is kept unless you pass `--force`. Open `/spike027`, press `[+]` beside "Lens settings": every key with its value and `[default]` or `[.ai-dlc/lens.json]`. | |
+| S2 | `/spike027-lens-configure chartColumnPx 200`, then spawn two agents again. | The reply shows `chartColumnPx = 200 [.ai-dlc/lens.json]`. The new card's chart is wider (400 px for two). Then `/spike027-lens-configure chartMode button`: the next card shows the chip and the `Open flowchart` Button at any width. | |
+| S3 | Add `"AI_DLC_LENS_CHART_MODE": "chart"` to the `env` of `.claude/settings.json`, then send a prompt (settings are re-read after each main turn) or reopen `/spike027`. | The settings list shows `chartMode = "chart" [.claude/settings.json env]`. The card draws the chart again. Then add `"AI_DLC_LENS_CHART_MODE": "button"` to `.claude/settings.local.json`: it wins (`[.claude/settings.local.json env]`). `/spike027-lens-configure chartMode chart` then says `A higher level wins`. | |
+| S4 | Set `"AI_DLC_LENS_BLINK": "maybe"` in `.claude/settings.local.json`, and `/spike027-lens-configure collapsedByDefault false`. | The settings list shows a yellow line `... AI_DLC_LENS_BLINK = "maybe" is invalid, ignored`, and `blink` comes from the next level. New sections open as `[-]`. Remove both afterwards, and delete `.ai-dlc/lens.json` and `.ai-dlc/lens.schema.json` when the checks are done: nothing ignores them, so a commit would pick them up. | |
 
 ## Round 2 manual checks: the card in the chat (no command needed)
 
@@ -219,8 +285,9 @@ What each outcome means:
 
 - `.claude-plugin/plugin.json`: the manifest. Its marketplace entry is in `<REPO>\.claude-plugin\marketplace.json`, with the other three spike plugins and `ai-dlc`.
 - `hooks/hooks.json`: the module and the command `Stop` hook.
-- `hooks/register.tsx`: the hooks module: the chat card (C1 to C6), the lens pane (L1 to L6), the probes (E1 to E8) and the round-0 kit (K1 to K5).
-- `hooks/lens.ts`: pure helpers of the card: figure formatting, record matching, the flowchart Svg, the batching of parallel Agent calls and the terminal's text chart.
+- `hooks/register.tsx`: the hooks module: the chat card (R1 to R9, C1 to C6), the chart pane, the lens pane (L1 to L6), the settings commands (S1 to S4), the probes (E1 to E9) and the round-0 kit (K1 to K5).
+- `hooks/lens.ts`: pure helpers of the card: names, models and roles, the cost and window from the model metadata file, record matching, the flowchart Svg, the width rule, the batching of parallel Agent calls and the terminal's text chart.
+- `hooks/settings.ts`: the lens settings, their levels, the schema and the `lens.json` edits.
 - `scripts/gate-alert.mjs`: check K5, 5a.
 - `types/index.d.ts`: the `$.state` contract.
 - `tests/spike.test.tsx`: the headless tests.

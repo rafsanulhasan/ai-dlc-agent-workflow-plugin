@@ -12,8 +12,14 @@ export type LensAgent = {
   /** `Agent({ name })` when given. */
   name: string
   description: string
-  /** Resolved model id (`AgentSpawnResult.model`, then `TurnUsage.model`). */
+  /** Resolved model id (`AgentSpawnResult.model`, then `TurnUsage.model`): the key for costs and windows. */
   model: string
+  /** The Agent call's `model` parameter as given (`agent.spawn` `model`), '' when it named none. */
+  callModel: string
+  /** The parent's effective model (`agent.spawn` `parentModel`): what `inherit` resolves to. */
+  parentModel: string
+  /** The brief the orchestrator wrote (`agent.spawn` `prompt`): the arrow panel's fallback (finding 2). */
+  prompt: string
   status: string
   toolUseId: string
   /** Sum of every `turn.step` usage of this loop. */
@@ -46,20 +52,27 @@ export type LensCall = {
 }
 
 export type LensUi = {
-  thinkingOpen: boolean
-  contextOpen: boolean
   /** `pane`: arrow and avatar panels open as separate panes; `drill`: inside the lens pane with a Back button. */
   panelMode: string
   edge: string | null
   agent: string | null
   drill: string | null
-  edgeDocOpen: boolean
-  edgeBackOpen: boolean
-  agentThinkingOpen: boolean
+  /** The pressed arrow's / avatar's agent as the card drew it: a call not spawned yet is in no other state. */
+  edgeSnap: LensAgent | null
+  agentSnap: LensAgent | null
 }
 
 /** What `tool.call` saw of one Agent call before `agent.spawn` named its agent: the placeholder avatar. */
-export type LensPending = { type: string; description: string; name: string }
+export type LensPending = { type: string; description: string; name: string; prompt: string; model: string }
+
+/** An agent definition as the lens read it: `model:` and `Persona name:` (finding 1d), and where from. */
+export type LensDef = { model: string; persona: string; path: string }
+
+/** The resolved lens settings (hooks/settings.ts): each value, the level it came from, the values ignored. */
+export type LensConfig = { settings: Record<string, number | boolean | string>; sources: Record<string, string>; ignored: string[] }
+
+/** `.ai-dlc/model-costing.json` as read (never written here): its text, or why there is none. */
+export type LensCosting = { path: string; text: string; error: string }
 
 /**
  * The Agent calls one assistant message made (one `turn.step`), in the order the model made them.
@@ -67,7 +80,8 @@ export type LensPending = { type: string; description: string; name: string }
  */
 export type LensBatch = { parent: string; ids: string[]; pending: Record<string, LensPending> }
 
-export type LensDoc = { agent: string; handoff: string; handoffText: string; handback: string; handbackText: string; error: string }
+/** The arrow panel: the matched record and its hand-back, else the orchestrator's prompt (finding 2); `hint` a record found by time order only. */
+export type LensDoc = { agent: string; handoff: string; handoffText: string; handback: string; handbackText: string; error: string; prompt: string; hint: string }
 
 declare module 'claude-code' {
   interface PluginState {
@@ -88,6 +102,12 @@ declare module 'claude-code' {
       probeLines: number
       batches: Shaped<Record<string, LensBatch>>
       cardOpen: Record<string, boolean>
+      callAgent: Record<string, string>
+      defs: Shaped<Record<string, LensDef>>
+      roster: Record<string, string>
+      costing: Shaped<LensCosting>
+      chartLead: string
+      lens: Shaped<LensConfig>
     }
   }
 }
