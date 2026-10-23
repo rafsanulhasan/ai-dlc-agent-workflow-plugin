@@ -44,7 +44,7 @@ export const SPEC = {
   statusInProgressColor: { kind: 'color', def: '#2e7d32', doc: 'Status indicator: in progress (blinks)' },
   statusPendingColor: { kind: 'color', def: '#cfd8dc', doc: 'Status indicator: pending (spawned, not started)' },
   statusHaltedColor: { kind: 'color', def: '#c62828', doc: 'Status indicator: halted (an agent failed or was killed, or the run is blocked)' },
-  statusWaitingColor: { kind: 'color', def: '#ef6c00', doc: 'Status indicator: an agent teammate waiting' },
+  statusWaitingColor: { kind: 'color', def: '#ef6c00', doc: 'Status indicator: an agent waiting (held, or a teammate idle between messages); beside the in-progress colour when both hold' },
   statusCompletedColor: { kind: 'color', def: '#2e7d32', doc: 'Status indicator: completed (steady)' },
 } as const satisfies Record<string, Spec>
 

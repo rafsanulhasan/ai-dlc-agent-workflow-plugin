@@ -37,6 +37,17 @@ import {
   workflowStatus,
   workflowTask,
   isHumanRequest,
+  isNotice,
+  isPersonOrigin,
+  noticeWorkflow,
+  REQS_CAP,
+  runningAndWaiting,
+  statusDotSvg,
+  statusLooks,
+  taskKeyOf,
+  thresholdOverrideOf,
+  workflowTasks,
+  flowchartSvg,
 } from '../hooks/lens'
 import { DEFAULTS, envLevel, envName, fileLevel, resolve, schema, setKey } from '../hooks/settings'
 
@@ -280,6 +291,8 @@ type SeedOpts = {
   prompt2?: string
   /** Round 5: a1 is an agent-team teammate (agent.spawn answers a teammateId). */
   teammate?: boolean
+  /** Round 6: the status `$.agent.list()` gives a1 (default `running`). */
+  listStatus?: string
 }
 
 /**
@@ -289,11 +302,13 @@ type SeedOpts = {
  * resumes, the order the headless run showed (E9). `files`: path -> text, or null for missing.
  */
 async function seed($: any, on: any, opts: SeedOpts = {}) {
-  const { parallel = false, spawnSecond = true, complete = true, turnStartFirst = false, desc = ['build', 'tests'], prompt2 = 'SQA PROMPT: test the change.', teammate = false } = opts
+  const { parallel = false, spawnSecond = true, complete = true, turnStartFirst = false, desc = ['build', 'tests'], prompt2 = 'SQA PROMPT: test the change.', teammate = false, listStatus = 'running' } = opts
   const files: Record<string, string | null> = { ...BASE_FILES, ...(opts.files ?? {}) }
   const opened: string[] = []
   const nativeInputs: unknown[] = []
   const writes: { path: string; text: string }[] = []
+  const openArgs: any[] = []
+  const closed: string[] = []
   on('ui.render', ($s: any, e: any) => {
     nativeInputs.push(e.props?.input)
     const { Text } = $s.ui.resolve(e)
@@ -320,10 +335,15 @@ async function seed($: any, on: any, opts: SeedOpts = {}) {
     return { value: undefined }
   })
   on('fs.list', () => ({ value: [{ name: '17-orchestrator-to-agent-manager.handoff.md', kind: 'file', size: 1, mtimeMs: 1 }, { name: '17-agent-manager-to-orchestrator.handback.md', kind: 'file', size: 1, mtimeMs: 1 }] }))
-  on('agent.list', () => ({ value: [{ id: 'a1', description: desc[0], type: 'ai-dlc:software-engineer', status: 'running' }] }))
+  on('agent.list', () => ({ value: [{ id: 'a1', description: desc[0], type: 'ai-dlc:software-engineer', status: listStatus }] }))
   on('ui.open', (_: unknown, e: any) => {
     opened.push(e.id)
+    openArgs.push(e)
     return { value: { isPlaced: true } }
+  })
+  on('ui.close', (_: unknown, e: any) => {
+    closed.push(e.id)
+    return { value: undefined }
   })
   on('ui.view', () => ({ value: undefined }))
   on('agent.spawn', (_: unknown, e: any) => ({
@@ -389,7 +409,7 @@ async function seed($: any, on: any, opts: SeedOpts = {}) {
       fork: false,
     })
   if (complete) await completeAgent($, 'a1')
-  return { opened, nativeInputs, writes, files }
+  return { opened, nativeInputs, writes, files, openArgs, closed }
 }
 
 async function completeAgent($: any, agentId: string) {
@@ -417,7 +437,22 @@ const SE_INPUT = { subagent_type: 'ai-dlc:software-engineer', description: 'buil
 
 // ---------------- the chat card ----------------
 const CHART_PANE = 'lens-027-chart'
-const chartPane = ($: any, surface: (typeof SURFACES)[number] = 'vscode') => $.ui.mount({ ...pane(CHART_PANE), surface })
+/**
+ * Round 6 (A2): every workflow and every task is a collapsed panel. `openPanels` presses each closed
+ * one open (never the thinking or context sections), so a test can reach the charts and their Buttons.
+ */
+async function openPanels(ui: any) {
+  for (let round = 0; round < 6; round++) {
+    const shut = ((await ui.findAll({ type: 'Button' })) as any[]).filter((b: any) => /^(wf-(?!thinking$|context$)|tk-)/.test(String(b.key)) && /\[\+\]/.test(String(b.text ?? b.label ?? b.props?.label ?? '')))
+    if (shut.length === 0) return
+    for (const b of shut) await ui.press({ key: b.key })
+  }
+}
+const chartPane = async ($: any, surface: (typeof SURFACES)[number] = 'vscode', open = true) => {
+  const ui = await $.ui.mount({ ...pane(CHART_PANE), surface })
+  if (open) await openPanels(ui)
+  return ui
+}
 
 describe('chat card', () => {
   test('C1 (round 4): the card is one line and an "Open flowchart" Button; the pane draws persona, model and role', async ($, on) => {
@@ -1030,8 +1065,8 @@ describe('round 4: workflows', () => {
     await $.turn.start({ text: 'and now test it', turnId: 'm2' })
     await later($)
     const wp = await chartPane($)
-    // One workflow: no section Buttons; both avatars and both arrows in one chart.
-    expect((await wp.findAll({ type: 'Button' })).some((b: any) => String(b.key).startsWith('wf-toolu'))).toBe(false)
+    // One workflow (round 6: one panel, A2); both avatars and both arrows in one chart.
+    expect((await wp.findAll({ type: 'Button' })).filter((b: any) => String(b.key).startsWith('wf-toolu')).map((b: any) => b.key)).toEqual(['wf-toolu_1'])
     for (const k of ['agent-a1', 'agent-a2', 'edge-a1', 'edge-a2']) expect(await wp.find({ type: 'Button', key: k })).toBeDefined()
     expect((await wp.find({ type: 'Button', key: 'edge-a2' }))?.text).toBe('Scott Hanselman -> Kent Beck')
     const src = await svgSource(wp)
@@ -1049,7 +1084,7 @@ describe('round 4: workflows', () => {
     await seed($, on, { files: { 'docs/handoffs/R/run.md': '---\nrun: R\n---\n\n# Run: R — the lens spike\n' } })
     await $.turn.start({ text: 'Test the change please\nmore lines', turnId: 'm2' })
     await later($)
-    const wp = await chartPane($)
+    const wp = await chartPane($, 'vscode', false)
     expect((await wp.find({ type: 'Button', key: 'wf-toolu_2' }))?.text).toBe('[+]')
     expect((await wp.find({ type: 'Button', key: 'wf-toolu_1' }))?.text).toBe('[+]')
     // Titles: the run's title from run.md (the brief names its record), else the request; never "Agent: <description>".
@@ -1063,6 +1098,9 @@ describe('round 4: workflows', () => {
     expect(await wp.find({ type: 'Button', key: 'toolu_1:agent-a1' })).toBe(undefined)
     await wp.press({ key: 'wf-toolu_1' })
     await wp.press({ key: 'wf-toolu_2' })
+    // Round 6 (A2): each workflow holds its task panels, collapsed too.
+    expect(await wp.find({ type: 'Button', key: 'toolu_1:agent-a1' })).toBe(undefined)
+    await openPanels(wp)
     expect(await wp.find({ type: 'Button', key: 'toolu_1:agent-a1' })).toBeDefined()
     expect(await wp.find({ type: 'Button', key: 'toolu_2:agent-a2' })).toBeDefined()
     const all = (await wp.findAll({ type: 'Button' })).map((b: any) => b.key)
@@ -1150,11 +1188,12 @@ describe('round 5: centring (requirement 1)', () => {
     await seed($, on)
     const wp = await chartPane($)
     const bs = await boxes(wp)
-    // The pane body takes the rows the surface gives it; the chart area grows into them and centres its content.
-    expect(bs.some(b => b.minHeight === 80)).toBe(true)
-    expect(bs.some(b => centred(b) && b.flexGrow === 1)).toBe(true)
-    // The Svg's own Box, the header, the Buttons rows: centred.
-    expect(bs.filter(centred).length).toBeGreaterThanOrEqual(4)
+    // Round 6 (A9): no filler under the content: no Box takes a minHeight, and the outermost Box adds no margin or padding.
+    expect(bs.some(b => b.minHeight !== undefined)).toBe(false)
+    const outer: any = bs[0]
+    for (const k of ['margin', 'marginTop', 'marginBottom', 'padding', 'paddingTop', 'paddingBottom']) expect(outer?.[k] ?? 0).toBe(0)
+    // The Svg's own Box, the task's chart area, the Buttons rows: centred.
+    expect(bs.filter(centred).length).toBeGreaterThanOrEqual(3)
     const src = await svgSource(wp)
     expect(src).toMatch(/preserveAspectRatio="xMidYMid meet"/)
     // The initials sit on the circle's centre: middle anchor, central baseline, the circle's own y.
@@ -1177,33 +1216,37 @@ describe('round 5: centring (requirement 1)', () => {
 })
 
 describe('round 5: the task title at the top (requirement 2)', () => {
-  test('the top shows the running stage of the run, follows a run.md write, then the run title when all are done', async ($, on) => {
+  test('the workflow panel shows the parent task; its task panel the running stage, following a run.md write (round 6, A2)', async ($, on) => {
     const { files } = await seed($, on, { complete: false, files: { 'docs/handoffs/R/run.md': RUN_R('build the lens') } })
     const wp = await chartPane($)
+    // The workflow panel's header: the run's title. Its one task panel: the record's stage row.
+    expect(await wp.find({ type: 'Text', text: 'R — the lens spike' })).toBeDefined()
+    expect(await wp.find({ type: 'Text', text: 'build the lens' })).toBeDefined()
     const all: any[] = await wp.findAll({})
-    const ti = all.findIndex((x: any) => x.type === 'Text' && x.text === 'build the lens')
-    expect(ti).toBeGreaterThan(-1)
-    // At the top: before the chart and its Buttons.
-    expect(ti).toBeLessThan(all.findIndex((x: any) => x.type === 'Button'))
-    expect(await wp.find({ type: 'Text', text: /^Parent task: R — the lens spike$/ })).toBeDefined()
-    // The orchestrator writes run.md (the next fix round): the title follows, with no other event.
+    const head = all.findIndex((x: any) => x.type === 'Text' && x.text === 'R — the lens spike')
+    expect(head).toBeLessThan(all.findIndex((x: any) => x.type === 'Text' && x.text === 'build the lens'))
+    // The orchestrator writes run.md (the next fix round): the task follows with no other event, its panel still open.
     files['docs/handoffs/R/run.md'] = RUN_R('build the lens: fix round 1')
     await $.tool.call({ tool: 'Write', file_path: 'docs/handoffs/R/run.md', content: 'x', tool_use_id: 'toolu_w' })
     expect(await wp.find({ type: 'Text', text: 'build the lens: fix round 1' })).toBeDefined()
     expect(await wp.find({ type: 'Text', text: /^build the lens$/ })).toBe(undefined)
-    // Every agent done: the parent task, the run's title.
+    expect(await chartSvg(wp)).toBeDefined()
     await completeAgent($, 'a1')
     expect(await wp.find({ type: 'Text', text: 'R — the lens spike' })).toBeDefined()
-    expect(await wp.find({ type: 'Text', text: /^Parent task:/ })).toBe(undefined)
     await wp.unmount()
   })
 
   test('two agents on two tasks (two runs): the top shows the parent task, the human request; never a description', async ($, on) => {
     await seed($, on, { parallel: true, complete: false, request: 'Ship the lens\nwith the panels', prompt2: S_BRIEF, desc: ['Wait one', 'Wait two'], files: { 'docs/handoffs/R/run.md': RUN_R('build the lens'), 'docs/handoffs/S/run.md': RUN_S } })
     const wp = await chartPane($)
+    // The panel's header is the human's request; round 6 (A2): each run's stage is a task panel of its own.
     expect(await wp.find({ type: 'Text', text: 'Ship the lens' })).toBeDefined()
-    expect(await wp.find({ type: 'Text', text: /^build the lens$/ })).toBe(undefined)
-    expect(await wp.find({ type: 'Text', text: 'write the tests' })).toBe(undefined)
+    expect(await wp.find({ type: 'Text', text: 'build the lens' })).toBeDefined()
+    expect(await wp.find({ type: 'Text', text: 'write the tests' })).toBeDefined()
+    expect(await wp.find({ type: 'Button', key: 'tk-toolu_1-0' })).toBeDefined()
+    expect(await wp.find({ type: 'Button', key: 'tk-toolu_1-1' })).toBeDefined()
+    expect(await wp.find({ type: 'Button', key: 't0:agent-a1' })).toBeDefined()
+    expect(await wp.find({ type: 'Button', key: 't1:agent-a2' })).toBeDefined()
     expect((await drawn(wp)).filter(t => /Wait one|Wait two|Agent: /.test(t))).toEqual([])
     await wp.unmount()
     const card = await $.ui.mount(toolRow('toolu_1', 'vscode', SE_INPUT))
@@ -1238,7 +1281,7 @@ describe('round 5: several workflows (requirement 3) and the status indicator (r
     await $.turn.start({ text: 'Test the change please', turnId: 'm2' })
     await $.tool.call({ tool: 'Agent', subagent_type: 'ai-dlc:sqa-engineer', description: 'later', prompt: 'SQA PROMPT: test the change.', tool_use_id: 'toolu_2' })
     await $.agent.spawn({ tool_use_id: 'toolu_2', prompt: 'SQA PROMPT: test the change.', description: 'later', subagentType: 'ai-dlc:sqa-engineer', provider: { plugin: 'ai-dlc', tier: 'user' }, parentModel: 'claude-opus-5-5', background: true, fork: false })
-    const wp = await chartPane($)
+    const wp = await chartPane($, 'vscode', false)
     for (const k of ['wf-toolu_1', 'wf-toolu_2']) expect((await wp.find({ type: 'Button', key: k }))?.text).toBe('[+]')
     expect(await chartSvg(wp)).toBe(undefined)
     // Newest first: its status is in progress (blinking), the older completed (steady).
@@ -1246,17 +1289,18 @@ describe('round 5: several workflows (requirement 3) and the status indicator (r
     expect(await wp.find({ type: 'Text', text: /^\s*Test the change please$/ })).toBeDefined()
     expect(await wp.find({ type: 'Text', text: /^\s*R — the lens spike$/ })).toBeDefined()
     await wp.press({ key: 'wf-toolu_2' })
+    await wp.press({ key: 'tk-toolu_2-0' })
     expect(await wp.find({ type: 'Button', key: 'toolu_2:agent-a2' })).toBeDefined()
     expect(await wp.find({ type: 'Button', key: 'toolu_1:agent-a1' })).toBe(undefined)
     await wp.unmount()
   })
 
-  test('each colour: in progress blinks green, pending light grey, halted red, teammate waiting orange, completed steady green', async ($, on) => {
+  test('each colour: in progress blinks green, pending light grey, halted red, waiting orange, completed steady green', async ($, on) => {
     const look = { ...DEFAULTS }
     expect(statusStyle('in-progress', look)).toEqual({ label: 'in progress', color: '#2e7d32', blink: true })
     expect(statusStyle('pending', look)).toEqual({ label: 'pending', color: '#cfd8dc', blink: false })
     expect(statusStyle('halted', look)).toEqual({ label: 'halted', color: '#c62828', blink: false })
-    expect(statusStyle('waiting', look)).toEqual({ label: 'teammate waiting', color: '#ef6c00', blink: false })
+    expect(statusStyle('waiting', look)).toEqual({ label: 'waiting', color: '#ef6c00', blink: false })
     expect(statusStyle('completed', look)).toEqual({ label: 'completed', color: '#2e7d32', blink: false })
     expect(statusStyle('in-progress', { ...look, statusBlink: false }).blink).toBe(false)
     const a = (status: string, extra: object = {}) => ({ status, type: 'ai-dlc:x', ...extra }) as any
@@ -1274,9 +1318,9 @@ describe('round 5: several workflows (requirement 3) and the status indicator (r
     expect(workflowStatus([a('completed'), a('idle')])).toBe('completed')
   })
 
-  test('the indicator in the pane: in progress blinks; completed steady; halted in the colour lens.json sets; pending; teammate waiting', async ($, on) => {
+  test('the indicator in the pane: in progress blinks; completed steady; halted in the colour lens.json sets; pending; waiting', async ($, on) => {
     const { files } = await seed($, on, { complete: false, files: { '.ai-dlc/lens.json': JSON.stringify({ statusHaltedColor: '#ff0000', statusBlinkMs: 600 }) } })
-    const wp = await chartPane($)
+    const wp = await chartPane($, 'vscode', false)
     expect(await statusSvgs(wp)).toEqual(['status: in progress'])
     let src = await statusSource(wp)
     expect(src).toMatch(/fill="#2e7d32"/)
@@ -1295,9 +1339,9 @@ describe('round 5: several workflows (requirement 3) and the status indicator (r
 
   test('the indicator: an agent that failed halts; a call not started is pending; a teammate idle waits', async ($, on) => {
     await seed($, on, { parallel: true, spawnSecond: false, teammate: true })
-    const wp = await chartPane($)
-    // a1 (a teammate) answered and is idle, toolu_2 not started: the teammate waiting wins over pending.
-    expect(await statusSvgs(wp)).toEqual(['status: teammate waiting'])
+    const wp = await chartPane($, 'vscode', false)
+    // a1 (a teammate) answered and is idle, toolu_2 not started: waiting wins over pending.
+    expect(await statusSvgs(wp)).toEqual(['status: waiting'])
     expect(await statusSource(wp)).toMatch(/fill="#ef6c00"/)
     await $.turn.complete({ reason: 'error', answer: '', durationMs: 1, isAborted: false, turnId: 't', agentId: 'a1' } as any)
     expect(await statusSvgs(wp)).toEqual(['status: halted'])
@@ -1306,12 +1350,12 @@ describe('round 5: several workflows (requirement 3) and the status indicator (r
 
   test('pending: every spawned call not started yet; on the terminal the dot is text', async ($, on) => {
     await seed($, on, { parallel: true, spawnSecond: false })
-    const wp = await chartPane($)
+    const wp = await chartPane($, 'vscode', false)
     // a1 completed, toolu_2 not started.
     expect(await statusSvgs(wp)).toEqual(['status: pending'])
     expect(await statusSource(wp)).toMatch(/fill="#cfd8dc"/)
     await wp.unmount()
-    const term = await chartPane($, 'terminal')
+    const term = await chartPane($, 'terminal', false)
     expect(await term.find({ type: 'Text', text: 'pending' })).toBeDefined()
     expect(await term.find({ type: 'Text', text: '●' })).toBeDefined()
     await term.unmount()
@@ -1406,5 +1450,274 @@ describe('round 5: long-context pricing (requirement 6) and limits (requirement 
       ['Max output', '64K'],
     ])
     expect(lookupModel(JSON.parse(META(LONG)), 'claude-sonnet-5-5')?.long).toEqual({ threshold: 100000, input: 6, output: 20, cacheRead: 0.6, cacheWrite5m: 7, cacheWrite1h: 12 })
+  })
+})
+
+// ---------------- round 6 (step 17.l5) ----------------
+describe('round 6: pane controls (A1, A3, A4, A9)', () => {
+  test('A1: minimise sits just left of close on the first row; minimised, one line with the dot and the title; restore', async ($, on) => {
+    const { closed } = await seed($, on, { complete: false })
+    const wp = await chartPane($, 'vscode', false)
+    const keys = (await wp.findAll({ type: 'Button' })).map((b: any) => String(b.key))
+    // The first two Buttons drawn: minimise, then close.
+    expect(keys.slice(0, 2)).toEqual(['pane-min', 'pane-close'])
+    await wp.press({ key: 'pane-min' })
+    expect(await wp.find({ type: 'Button', key: 'wf-toolu_1' })).toBe(undefined)
+    expect(await chartSvg(wp)).toBe(undefined)
+    expect(await statusSvgs(wp)).toEqual(['status: in progress'])
+    expect(await wp.find({ type: 'Text', text: 'R — the lens spike' })).toBe(undefined)
+    expect((await wp.find({ type: 'Button', key: 'pane-min' }))?.text).toBe('□')
+    await wp.press({ key: 'pane-min' })
+    expect(await wp.find({ type: 'Button', key: 'wf-toolu_1' })).toBeDefined()
+    await wp.press({ key: 'pane-close' })
+    expect(closed).toContain(CHART_PANE)
+    await wp.unmount()
+  })
+
+  test('A3, A4: the avatar and arrow panes have a close Button and open with Esc closing them', async ($, on) => {
+    const { closed, openArgs } = await seed($, on)
+    const wp = await chartPane($)
+    await wp.press({ key: 'agent-a1' })
+    await wp.press({ key: 'edge-a1' })
+    await wp.unmount()
+    for (const id of ['lens-027-agent', 'lens-027-edge']) {
+      const args = openArgs.filter((x: any) => x.id === id).at(-1)
+      expect([args?.closeOnEscape, args?.focus]).toEqual([true, true])
+      const ui = await $.ui.mount({ ...pane(id), surface: 'vscode' })
+      const close: any = await ui.find({ type: 'Button', key: 'pane-close' })
+      expect(close?.text ?? close?.props?.label).toBe('×')
+      await ui.press({ key: 'pane-close' })
+      expect(closed).toContain(id)
+      await ui.unmount()
+    }
+    // The workflow pane's own open: Esc closes it too; the unasked open never takes the keyboard.
+    const auto = openArgs.find((x: any) => x.id === CHART_PANE)
+    expect([auto?.closeOnEscape, auto?.focus]).toEqual([true, undefined])
+  })
+
+  test('A9: no filler at the bottom edge on either placement', async ($, on) => {
+    await seed($, on)
+    for (const placement of ['inline', 'dock'] as const) {
+      const ui = await $.ui.mount({ ...pane(CHART_PANE, placement), surface: 'vscode' })
+      await openPanels(ui)
+      const bs = await boxes(ui)
+      expect(bs.some(b => b.minHeight !== undefined)).toBe(false)
+      const outer: any = bs[0]
+      for (const k of ['margin', 'marginBottom', 'padding', 'paddingBottom']) expect(outer?.[k] ?? 0).toBe(0)
+      await ui.unmount()
+    }
+  })
+})
+
+describe('round 6: tasks as panels, same-task workflows (A2, A8)', () => {
+  test('A2: one workflow and one task still each get a collapsed panel; "Open flowchart" opens the pane without expanding (18.4-1)', async ($, on) => {
+    const { opened } = await seed($, on)
+    const card = await $.ui.mount(toolRow('toolu_1', 'vscode', SE_INPUT))
+    opened.length = 0
+    await card.press({ key: 'card-open-chart' })
+    expect(opened).toContain(CHART_PANE)
+    await card.unmount()
+    const wp = await chartPane($, 'vscode', false)
+    expect((await wp.find({ type: 'Button', key: 'wf-toolu_1' }))?.text).toBe('[+]')
+    expect(await wp.find({ type: 'Button', key: 'tk-toolu_1-0' })).toBe(undefined)
+    await wp.press({ key: 'wf-toolu_1' })
+    expect((await wp.find({ type: 'Button', key: 'tk-toolu_1-0' }))?.text).toBe('[+]')
+    expect(await chartSvg(wp)).toBe(undefined)
+    await wp.press({ key: 'tk-toolu_1-0' })
+    expect(await chartSvg(wp)).toBeDefined()
+    // The workflow's dot and the task's dot.
+    expect((await statusSvgs(wp)).length).toBe(2)
+    await wp.unmount()
+  })
+
+  test('A8: a spawn for the same run after every agent finished updates the existing workflow; another task gets a new one', async ($, on) => {
+    await seed($, on, { files: { 'docs/handoffs/R/run.md': RUN_R('build the lens') } })
+    const brief = 'Your handoff record is docs/handoffs/R/18-orchestrator-to-sqa-engineer.handoff.md (root x).\nTest it.'
+    await $.turn.start({ text: 'and test it', turnId: 'm2' })
+    await $.tool.call({ tool: 'Agent', subagent_type: 'ai-dlc:sqa-engineer', description: 'later', prompt: brief, tool_use_id: 'toolu_2' })
+    await $.agent.spawn({ tool_use_id: 'toolu_2', prompt: brief, description: 'later', subagentType: 'ai-dlc:sqa-engineer', provider: { plugin: 'ai-dlc', tier: 'user' }, parentModel: 'claude-opus-5-5', background: true, fork: false })
+    let wp = await chartPane($, 'vscode', false)
+    const panels = async () => (await wp.findAll({ type: 'Button' })).filter((b: any) => /^wf-toolu/.test(String(b.key))).map((b: any) => b.key)
+    expect(await panels()).toEqual(['wf-toolu_1'])
+    await openPanels(wp)
+    expect(await wp.find({ type: 'Text', text: /^Scott Hanselman spawned 2 agents$/ })).toBeDefined()
+    await wp.unmount()
+    // A different task (no record, a new request) after all finished: a new workflow.
+    await completeAgent($, 'a2')
+    await $.turn.start({ text: 'Something else', turnId: 'm3' })
+    await $.tool.call({ tool: 'Agent', subagent_type: 'ai-dlc:sqa-engineer', description: 'other', prompt: 'plain brief', tool_use_id: 'toolu_3' })
+    wp = await chartPane($, 'vscode', false)
+    expect(await panels()).toEqual(['wf-toolu_3', 'wf-toolu_1'])
+    await wp.unmount()
+  })
+
+  test('taskKeyOf, joinWorkflow keys and workflowTasks', () => {
+    expect(taskKeyOf('Your handoff record is docs/handoffs/R/17-a-to-b.handoff.md', 'x')).toBe('run:docs/handoffs/R')
+    expect(taskKeyOf('no record', ' Ship it ')).toBe('req:Ship it')
+    expect(taskKeyOf('no record', '')).toBe('')
+    const done = { a1: { id: 'a1', toolUseId: 'c1', status: 'completed' } as any }
+    let wf = joinWorkflow(WF0, 'main', 'c1', {}, {}, { c1: 'run:R' })
+    wf = joinWorkflow(wf, 'main', 'c2', done, { c1: 'a1' }, { c1: 'run:R', c2: 'run:R' })
+    expect(wf.of['c2']).toBe('c1')
+    const done2 = { ...done, a2: { id: 'a2', toolUseId: 'c2', status: 'completed' } as any }
+    wf = joinWorkflow(wf, 'main', 'c3', done2, { c1: 'a1', c2: 'a2' }, { c1: 'run:R', c2: 'run:R', c3: 'run:S' })
+    expect(wf.order).toEqual(['c1', 'c3'])
+    const runs = { 'docs/handoffs/R': parseRun(RUN_R('build'))! }
+    const ag = (id: string, handoff: string | null) => ({ id, handoff, prompt: '', status: 'running', type: 't' }) as any
+    expect(workflowTasks([ag('a1', 'docs/handoffs/R/17-o-to-x.handoff.md'), ag('a2', null), ag('a3', 'docs/handoffs/R/16-o-to-y.handoff.md')], runs, 'REQ')).toEqual([
+      { title: 'build', ids: ['a1'] },
+      { title: 'REQ', ids: ['a2'] },
+      { title: 'research', ids: ['a3'] },
+    ])
+  })
+})
+
+describe('round 6: status (A5, A6, 18.2)', () => {
+  test('A5: running and waiting at once: both colours, the in-progress half blinking; the words say both', async ($, on) => {
+    const look = { ...DEFAULTS }
+    expect(statusLooks('in-progress', true, look)).toEqual({ label: 'in progress, waiting', colors: ['#2e7d32', '#ef6c00'], blink: true })
+    expect(statusLooks('in-progress', false, look).colors).toEqual(['#2e7d32'])
+    const svg = statusDotSvg(['#2e7d32', '#ef6c00'], true, 1000)
+    expect((svg.match(/<path /g) ?? []).length).toBe(2)
+    expect(svg).toMatch(/fill="#2e7d32"><animate /)
+    expect(svg).toMatch(/fill="#ef6c00"\/>/)
+    const a = (status: string, extra: object = {}) => ({ status, type: 'x', ...extra }) as any
+    expect(runningAndWaiting([a('running'), a('waiting')])).toBe(true)
+    expect(runningAndWaiting([a('running'), a('idle', { teammate: true })])).toBe(true)
+    expect(runningAndWaiting([a('running'), a('idle')])).toBe(false)
+    // The spawner never counts (18.3-4): main running while its only agent waits is "waiting".
+    expect(runningAndWaiting([a('running', { id: 'main' }), a('waiting')], 'main')).toBe(false)
+    expect(workflowStatus([a('running', { id: 'main' }), a('waiting')], [], 'main')).toBe('waiting')
+    // In the pane: a1 a teammate idle (waiting), a2 running.
+    await seed($, on, { parallel: true, teammate: true })
+    const wp = await chartPane($, 'vscode', false)
+    expect(await statusSvgs(wp)).toEqual(['status: in progress, waiting'])
+    const src = await statusSource(wp)
+    expect(src).toMatch(/fill="#2e7d32"><animate/)
+    expect(src).toMatch(/fill="#ef6c00"/)
+    await wp.unmount()
+    const term = await chartPane($, 'terminal', false)
+    expect(await term.find({ type: 'Text', text: 'in progress, waiting' })).toBeDefined()
+    await term.unmount()
+  })
+
+  test('A6, 18.2: an ordinary subagent the list says is waiting shows the orange "waiting" dot in the pane', async ($, on) => {
+    await seed($, on, { complete: false, listStatus: 'waiting' })
+    let wp = await chartPane($)
+    // Any list read (the 2 s poll while agents work; here also an avatar press) brings the held status in.
+    await wp.press({ key: 'agent-a1' })
+    await wp.unmount()
+    wp = await chartPane($, 'vscode', false)
+    // The workflow's dot and its task's (opened above): both orange "waiting".
+    expect(await statusSvgs(wp)).toEqual(['status: waiting', 'status: waiting'])
+    expect(await statusSource(wp)).toMatch(/fill="#ef6c00"/)
+    await wp.unmount()
+  })
+})
+
+describe('round 6: notices (A7)', () => {
+  test('a notice is never the title: an exclamation icon whose hover card and press show it', async ($, on) => {
+    await seed($, on, { request: 'Ship the lens', parallel: true })
+    await $.turn.start({ text: '<task-notification><task-id>a1</task-id><summary>Agent "build" completed</summary></task-notification>', turnId: 'm2' })
+    const wp = await chartPane($, 'vscode', false)
+    expect(await wp.find({ type: 'Text', text: /task-notification/ })).toBe(undefined)
+    expect(await wp.find({ type: 'Text', text: 'Ship the lens' })).toBeDefined()
+    // The icon sits on the workflow's header (the newest workflow: an id as short as a1 is not matched by name).
+    expect(await wp.find({ type: 'Button', key: 'nt-toolu_1' })).toBeDefined()
+    // The hover card: hidden, revealed by hover, placed absolutely, holding the notice.
+    // The harness keeps `hover` beside `props` on the child of the keyed Box (the hover scope).
+    const scope: any = await wp.find({ type: 'Box', key: 'nb-toolu_1' })
+    const tip = (scope?.children ?? []).find((c: any) => c.type === 'Box' && c.props?.display === 'none' && c.props?.position === 'absolute' && c.hover?.display === 'flex')
+    expect(tip).toBeDefined()
+    expect(await wp.find({ type: 'Text', text: /Agent "build" completed/ })).toBeDefined()
+    // The click fallback: the notice listed under the header.
+    await wp.press({ key: 'nt-toolu_1' })
+    expect(await wp.find({ type: 'Text', text: /^! .*Agent "build" completed/ })).toBeDefined()
+    await wp.unmount()
+    const card = await $.ui.mount(toolRow('toolu_1', 'vscode', SE_INPUT))
+    expect(await card.find({ type: 'Text', text: /task-notification/ })).toBe(undefined)
+    await card.unmount()
+  })
+
+  test('isNotice, isHumanRequest (18.3-7), isPersonOrigin, noticeWorkflow', () => {
+    expect(isNotice('<task-notification>x</task-notification>')).toBe(true)
+    expect(isNotice('<system-reminder>x</system-reminder>')).toBe(true)
+    expect(isNotice('[auto-handoff] Handoff from session')).toBe(true)
+    expect(isHumanRequest('<div>pasted html</div> fix this')).toBe(true)
+    expect(isHumanRequest('<task-notification>x')).toBe(false)
+    expect(isPersonOrigin('composer')).toBe(true)
+    expect(isPersonOrigin('task-notification')).toBe(false)
+    expect(isPersonOrigin('scheduled-trigger')).toBe(false)
+    const wf = { of: { c1: 'c1', c2: 'c2' }, by: {}, parent: {}, order: ['c1', 'c2'] }
+    const agents = { abcdef12: { id: 'abcdef12', toolUseId: 'c1' } as any }
+    expect(noticeWorkflow('task abcdef12 done', wf, agents)).toBe('c1')
+    expect(noticeWorkflow('something', wf, agents)).toBe('c2')
+    expect(noticeWorkflow('something', WF0, {})).toBe('')
+  })
+})
+
+describe('round 6: review findings (18.3, 18.4)', () => {
+  test('18.3-1: only the initials take the central baseline; the label lines keep theirs', () => {
+    const agents = { main: { id: 'main', parent: null, status: 'running', loop: false, handoff: null } as any }
+    const src = flowchartSvg(['main'], agents, () => ({ name: 'Kent Beck', model: 'sonnet', role: 'SQA Engineer' })).source
+    expect((src.match(/dominant-baseline/g) ?? []).length).toBe(1)
+    expect(src).toMatch(/dominant-baseline="central"[^>]*>KB</)
+  })
+
+  test('18.3-3: parseRun reads only the stages table, never the gates or clarifications tables', () => {
+    const text =
+      RUN_R('build') +
+      '\n## Gates and loops\n| Gate or loop | Approver |\n|---|---|\n| 17 | human, in-progress |\n\n## Open clarifications\n| # | Question | Status |\n|---|---|---|\n| 1 | why? | in-progress |\n| 16 | overwrite? | open |\n'
+    expect(parseRun(text)).toEqual({ title: 'R — the lens spike', status: 'active', stage: 'build', stages: { '16': 'research', '17': 'build' } })
+    // A table under a "Stages" heading whose header has no Stage column still counts.
+    expect(parseRun('# Run: Q\n\n## Stages\n| Step | Name |\n|---|---|\n| 3 | design |\n')!.stages).toEqual({ '3': 'design' })
+  })
+
+  test('18.3-8: thresholdOverrideOf reads longContextThresholdTokensOverride only', () => {
+    expect(thresholdOverrideOf({ longContextThresholdTokensOverride: 150000 })).toBe(150000)
+    expect(thresholdOverrideOf({ thresholdOverride: 150000 })).toBe(null)
+    expect(thresholdOverrideOf({ longContextThresholdTokensOverride: null })).toBe(null)
+  })
+
+  test('18.4-2: a long-context cost is — (partial) when the requests seen do not add up; a flat one stays exact', () => {
+    const meta = JSON.stringify({
+      longContextThresholdTokensOverride: null,
+      models: [
+        { id: 'long', pricing: { input: 3, output: 15, cacheRead: 0.3, cacheWrite5m: 3.75 }, longContextPricing: { thresholdTokens: 100, input: 6, output: 20, cacheRead: 0.6, cacheWrite5m: 7 } },
+        { id: 'flat', pricing: { input: 3, output: 15, cacheRead: 0.3, cacheWrite5m: 3.75 }, longContextPricing: null },
+      ],
+    })
+    const c = { path: 'm.json', text: meta, error: '' }
+    const r1 = { in: 50, out: 10, cr: 0, cw: 0 }
+    const r2 = { in: 200, out: 10, cr: 0, cw: 0 }
+    const total = { in: 250, out: 20, cr: 0, cw: 0 }
+    const all = costOfAgent(c, 'long', [r1, r2], total)
+    expect([all.partial, all.long]).toEqual([false, 1])
+    // One request missed: the seen ones would undercount, so —, partial.
+    const missed = costOfAgent(c, 'long', [r2], total)
+    expect([missed.text, missed.partial]).toEqual(['—', true])
+    // A flat model is costed from the totals, exact either way.
+    expect(costOfAgent(c, 'flat', [r2], total).text).toBe(costOf(c, 'flat', total).text)
+  })
+
+  test('18.4-3: the module keeps at most REQS_CAP requests per agent; past the cap a long-context cost is partial', async ($, on) => {
+    const meta = JSON.stringify({
+      longContextThresholdTokensOverride: null,
+      models: [{ id: 'claude-sonnet-5-5', pricing: { input: 3, output: 15, cacheRead: 0.3, cacheWrite5m: 3.75 }, longContextPricing: { thresholdTokens: 100000, input: 6, output: 20, cacheRead: 0.6, cacheWrite5m: 7 } }],
+    })
+    await seed($, on, { complete: false, files: { '.ai-dlc/model-metadata.json': meta } })
+    for (let i = 0; i < REQS_CAP; i++)
+      for await (const _ of $.turn.step({ turnId: 't', index: 0, model: 'claude-sonnet-5-5', messageCount: 1, agentId: 'a1' })) {
+        // drain
+      }
+    const ui = await $.ui.mount({ ...pane('lens-027'), surface: 'vscode' })
+    await ui.press({ key: 'agent-a1' })
+    await ui.unmount()
+    const ag = await $.ui.mount({ ...pane('lens-027-agent'), surface: 'vscode' })
+    await ag.press({ key: 'agent-usage' })
+    // REQS_CAP + 1 steps seen, REQS_CAP kept: the kept ones do not add up to the totals.
+    expect(await ag.find({ type: 'Box', text: /^Cost— \(partial/ })).toBeDefined()
+    expect(await ag.find({ type: 'Text', text: 'Long-context requests' })).toBe(undefined)
+    await ag.unmount()
   })
 })

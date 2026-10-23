@@ -31,7 +31,7 @@ Round 4 (step 17.l3, 2026-10-23, version `0.1.3`) applies the human's round 3 fi
 
 Not possible with the 2.1.309 components: a real divider element (the divider is a dim `─` line), a scroll box inside a panel (long text is in a collapsed section; the pane body itself scrolls), and pinning in VS Code (see above).
 
-Round 5 (step 17.l4, 2026-10-23, version `0.1.4`) is the last round. It applies the human's requirements of 2026-10-23. **Check X1 first** (below). In short:
+Round 5 (step 17.l4, 2026-10-23, version `0.1.4`) applies the human's requirements of 2026-10-23; its checks X1 to X7 are replaced by round 6's Y checks. Round 6 changed the label "teammate waiting" to "waiting" and dropped the `minHeight` filler (see below). In short:
 
 - **Centring.** The workflow pane's body takes the rows VS Code gives it (`minHeight` = `scroll.bodyRows`, d.ts:12561-12576). Under the title, the chart area grows into those rows (`flexGrow`) and centres the chart both ways (`alignItems` and `justifyContent` `center`, d.ts:987-989). The chart's Svg sits in a Box of its own that centres it, because `Svg` has no alignment prop (SvgProps, d.ts:13088-13110). In the drawing, each avatar's initials sit on the circle's centre (`text-anchor="middle"`, `dominant-baseline="central"`), and the name, model and role lines are centred under it. The chat card's line and its "Open flowchart" Button are centred in the card's box, and so is the header of the avatar and arrow panels. What cannot be centred: the lines inside a wrapped text, since `Text` has no alignment prop (TextProps, d.ts:13378 on); the chat card vertically, since a transcript row gets no height to centre in; the native Agent row, which is Claude Code's own; and the label/value rows of the panels, which stay label left, value right on purpose.
 - **The task title at the top.** The top line of the workflow pane is the task the agents are working on, with the status indicator before it. For an agent whose brief names a handoff record, that is the name of its record's stage row in the run's `run.md` (for `17.l4-...handoff.md`, the row `17.l4`), or the run's stage in progress when the row is not there yet. The lens re-reads `run.md` when anyone writes it through Write or Edit, at every spawn, Agent call and turn end, and when "Open flowchart" is pressed, so the title moves with the run. When the agents work on different tasks, or one names no record, or all have finished, the top line is the parent task instead: the run's title when the workflow is in one run, else the human's request to the orchestrator (the main loop's prompt that made the calls; notifications such as `<task-notification>` are skipped). When the top line is a stage, a dim "Parent task: <run title>" line follows it. Never an Agent call's `description`. The chat card uses the same title.
@@ -50,7 +50,27 @@ Round 5 (step 17.l4, 2026-10-23, version `0.1.4`) is the last round. It applies 
 - **Long-context pricing.** The cost is now added up per request (each `turn.step` usage), as `.ai-dlc/model-metadata.json` prescribes. For a model whose `longContextPricing` is not null, the threshold is the lens setting `longContextThresholdTokens` (`AI_DLC_LENS_LONG_CONTEXT_THRESHOLD_TOKENS`) when it is above 0, else the file's `longContextThresholdTokensOverride`, else the model's `longContextPricing.thresholdTokens`. A request whose prompt (input, cache read and cache write tokens) is over the threshold pays the long-context prices for all its tokens; any other pays `pricing`. A model with long-context prices and no threshold anywhere shows `—`, as does a loop whose requests no hook saw (a total cannot say which requests were over). Usage shows "Long-context requests: n of m" for such a model. The file is only read.
 - **Null limits** stay hidden. "Max input" shows when the file has a number, which the Models API may now fill (`sources.modelsApi`).
 
+Round 6 (step 17.l5, 2026-10-23, version `0.1.5`) is the last round the human allowed. It applies the human's round 5 check (A1 to A9) and the review findings of steps 18.1 to 18.4. **Run the Y checks below; the X checks of round 5 are replaced by them.** In short, with what Claude Code 2.1.309 allows (`.tsc/claude-code.d.ts`, cited as d.ts):
+
+- **A1 Minimise.** No mod can put a control in the pane's title bar or tab, or minimise a pane: the `Pane` title is read-only (d.ts:10876-10884), the close mark is the engine's (d.ts:10868-10873, 10892), and `$.ui.open` takes only `id`, `title`, `focus`, `closeOnEscape`, `holdToasts`, `rows` and `columns` (`PaneOpenArgs`, d.ts:7588-7660). Fallback: the pane's first row holds, right-aligned, a minimise control `–` and then a close control `×`. Minimised, the pane is one line: the newest workflow's status dot and title, `□` (restore) and `×`.
+- **A2 Every task is a panel.** Every workflow is a collapsible panel, even when there is only one: `[+]`, its status dot, its parent task. Opened, it lists one collapsible panel per task its agents work on (the stage row of each agent's record in the run's `run.md`; an agent with no run works on the parent task), each with its own dot and title, then the spawner's thinking and gathered context. Opened, a task panel shows the chart of that task's agents and their Buttons. Every panel starts collapsed, and "Open flowchart" no longer expands one (finding 18.4-1).
+- **A3 Close on the avatar and arrow tabs.** Each has `×` as its first row, right-aligned, which calls `$.ui.close` (d.ts:2538-2550). It is drawn with `role="dismiss"`, so a desktop may draw its native close control instead (d.ts:1159-1168). The host's own close mark (ctrl+x x, d.ts:10868-10873) still works where VS Code shows it.
+- **A4 Esc.** Every lens pane opens with `closeOnEscape` (d.ts:7614-7624): Esc closes it while it holds the keyboard, and at an idle, empty prompt once the prompt has the keys back. The avatar, arrow and "Open flowchart" opens also ask for the keyboard (`focus`); the workflow pane's own first open does not, so it never takes the keys unasked. There is no key event for panes in the types other than this and a Button's `hotkey` (d.ts:1113-1124).
+- **A5 Two colours.** When agents run and others wait at once, the dot is split: the left half green (blinking), the right half orange, and the words read "in progress, waiting". The terminal draws two text dots.
+- **A6 "Waiting" for any agent.** Orange "waiting" covers any agent `$.agent.list()` reports `waiting` (held on background work, a plan's approval or, a background subagent, an Agent call alone; `AgentStatus`, d.ts:558-566) and a teammate `idle` between messages. The lens now reads the list every 2 seconds while any agent is at work, so a held agent turns orange without a click. A list that still says `running` no longer undoes an `idle` set at the turn's end.
+- **A7 Notices.** A prompt the main loop gets from anything but the person (`prompt.submit` `origin`, `PromptOrigin`, d.ts:9287 on, 9562-9569), or one in an engine tag (`<task-notification>`, `<system-reminder>`, ...) is a notice: never a title. It shows as a yellow `!` after the title of the workflow it names (else the newest workflow; with none, on the pane's first row). Hovering the `!` shows the last three notices in a small card: a keyed Box is a hover scope and the card is drawn hidden, placed absolutely, and revealed by `hover` (d.ts:889-922, 926-958). Pressing `!` lists them under the row, for the terminal and the keyboard.
+- **A8 Same task, same workflow.** A spawn for the same task (its brief names a record in the same run folder, or it comes from the same request) joins that task's workflow even after all its agents finished. A different task starts a new workflow; a spawn while a workflow still works joins it, as before.
+- **A9 Placement.** Not possible: no `$.ui.open` option and no pane prop sets where a pane goes or in what order (d.ts:7588-7660; `placement` is read-only, d.ts:10894-10902; a pane is "placed by the surface (docked in fullscreen, else above the prompt)", d.ts:10870); `AbovePrompt` is raised on the terminal and desktop only (d.ts:10811-10817). The lens adds no space of its own any more: no `minHeight` filler (round 5 had one), no outer margin or padding, no empty rows. The frame's border and its tab row are the engine's (d.ts:10904-10909); a gap between the pane and VS Code's browser-connected panel cannot be changed by the lens. Y10 records where it lands.
+- **Review findings.** 18.3: the avatar label lines keep their baseline (only the initials are centred); `parseRun` reads only the stages table; `workflowStatus` takes the spawner and leaves it out itself; the "One entry's facts" comment is back above `factsOf` and the file headers name round 6; `costOf` and `costOfRequests` share `resolveCosting` and `priceAt`, with no `f.long!`; a notice is matched by the engine's tags, so a human prompt that starts with `<` stays the request; `thresholdOverrideOf` reads `longContextThresholdTokensOverride` only. 18.4: a long-context cost shows `— (partial: not every request was seen)` when the requests seen do not add up to the agent's totals; each agent keeps at most 500 requests; the status dot is not on the chat card, by design (the card is one line). 18.2: a test drives an ordinary agent to the orange dot in the pane.
+
 `<REPO>` is the main checkout of this repository, the folder registered as the `ai-dlc-agent-workflow` marketplace (`CLAUDE.md`), switched to the `feat/ai-dlc-lens` branch. `<SPIKES>` = `<REPO>\spikes\ai-dlc-lens`; `<SPIKE>` = `<SPIKES>\027`, this plugin.
+
+## What was checked automatically, round 6 (2026-10-23, Claude Code 2.1.309)
+
+- `claude plugin validate 027`: passed (the icon warning only). `npx -p typescript@5 tsc -p 027/.tsc`: no errors. `claude plugin test 027`: 77 tests pass, 0 fail.
+- Tests added (15): the pane's first row (`–` then `×`), minimise to one line and restore, close; `×` on the avatar and arrow tabs and `closeOnEscape` / `focus` on their opens, none on the unasked open; no `minHeight` and no outer margin or padding, docked and inline; one workflow and one task each a collapsed panel, "Open flowchart" expanding none; a spawn for the same run after all finished joins its workflow, another task starts a new one; `taskKeyOf`, `joinWorkflow` with task keys, `workflowTasks`; the split dot (Svg, words, terminal) and `runningAndWaiting`, the spawner left out; an ordinary agent the list reports `waiting` turns the pane's dot orange (18.2); a `<task-notification>` is never the title, its `!` icon, hover card and press list; `isNotice`, `isHumanRequest` with a prompt starting `<`, `isPersonOrigin`, `noticeWorkflow`; the label lines' baseline (18.3-1); `parseRun` ignoring the gates and clarifications tables (18.3-3); `thresholdOverrideOf` (18.3-8); the partial long-context cost (18.4-2) and the request cap (18.4-3).
+- Tests changed: the workflow pane's tests open the panels first (`openPanels`) or check them collapsed; the title tests read the parent task on the workflow panel and the stage on its task panel; "teammate waiting" is "waiting"; the centring test expects no `minHeight`.
+- Not run this round: a headless `claude -p` session. What the headless tests cannot show: where VS Code places the pane and whether it leaves a gap (Y10), whether the hover card shows (Y9), whether `role="dismiss"` changes how VS Code draws `×` (Y7), whether Esc closes in VS Code (Y8), and whether the split dot's half blinks (Y5d).
 
 ## What was checked automatically, round 5 (2026-10-23, Claude Code 2.1.309)
 
@@ -135,9 +155,9 @@ Main route: the repository's own marketplace, `ai-dlc-agent-workflow`, read from
 
 1. In a terminal at `<REPO>`: `claude plugin marketplace update ai-dlc-agent-workflow`, then `claude plugin install ai-dlc-lens-spike-027@ai-dlc-agent-workflow --scope local`.
 2. Run `/reload-plugins` in an open Claude Code session, or open a new one in VS Code.
-3. For round 2 nothing needs typing: spawn agents and the card is in the chat (C1). `/spike027` opens the pane view "AI-DLC lens (spike 027)".
+3. Nothing needs typing to start: spawn an agent and the **AI-DLC workflow** pane opens (or press "Open flowchart" on the chat card). `/spike027` opens the older pane view "AI-DLC lens (spike 027)". For round 6, follow the Setup of the Y checks.
 
-Round 5 is version `0.1.4` (round 4 was `0.1.3`, round 3 `0.1.2`, round 2 `0.1.1`). If an earlier round is installed, run `claude plugin marketplace update ai-dlc-agent-workflow` and then `claude plugin update ai-dlc-lens-spike-027@ai-dlc-agent-workflow --scope local`, or uninstall and install it again. Then run `/reload-plugins`, or start a new session. `/reload-plugins` reports "3 errors during load" on this machine; none is the spike's (see the round 2 automatic checks).
+Round 6 is version `0.1.5` (round 5 was `0.1.4`, round 4 `0.1.3`, round 3 `0.1.2`, round 2 `0.1.1`). If an earlier round is installed, run `claude plugin marketplace update ai-dlc-agent-workflow` and then `claude plugin update ai-dlc-lens-spike-027@ai-dlc-agent-workflow --scope local`, or uninstall and install it again. Then run `/reload-plugins`, or start a new session. `/reload-plugins` reports "3 errors during load" on this machine; none is the spike's (see the round 2 automatic checks).
 
 Terminal: `claude --plugin-dir "<SPIKE>"` loads the folder for that session only, with nothing installed.
 
@@ -157,17 +177,72 @@ claude plugin uninstall ai-dlc-lens-spike-027@ai-dlc-agent-workflow --scope loca
 
 Keep the `ai-dlc-agent-workflow` marketplace; it also serves `ai-dlc`. If you used the alternative, remove the `CLAUDE_CODE_PLUGIN_DIRS` entry.
 
-## Round 5 manual checks (X1 to X7)
+## Round 6 manual checks (Y1 to Y14)
 
-| # | What to do | Expected | Result |
-|---|---|---|---|
-| X1 | Spawn one agent whose brief names a handoff record of a run with a `run.md` (or ask the orchestrator for any staged work). Open the **AI-DLC workflow** pane. | The top line is the record's stage name with a blinking green dot and "in progress"; a dim "Parent task: <run title>" under it. The chart is centred across the pane and in the height left under the title. | |
-| X2 | While it runs, have the orchestrator move the run to its next stage (it writes `run.md`). | The top line changes to the new stage without pressing anything. When every agent has finished: the run's title, a steady green dot, "completed". | |
-| X3 | Spawn two agents in parallel on two different tasks (two runs, or one with a record and one without). | The top line is the parent task: the run's title, or your request to the orchestrator. Never "Agent: ...". | |
-| X4 | Start a second workflow after the first finished (or ask for two separate tasks). | The top is a list of panels, newest first, each `[+]`, a status dot and its parent task; all collapsed. `[+]` opens one: "Now: <task>" when there is one, then its chart, centred. | |
-| X5 | Watch the dots through a workflow: an agent not started, running, a teammate waiting for a message (agent team), an agent stopped or failed, all done. | Light grey "pending"; blinking green "in progress"; orange "teammate waiting"; red "halted"; steady green "completed". Set `statusHaltedColor` (for example `/spike027-lens-configure statusHaltedColor #ff00ff`) and `statusBlink false`: the next draw uses them. | |
-| X6 | Open an avatar's Usage for an agent on a model that has long-context prices (`longContextPricing` not null in `.ai-dlc/model-metadata.json`). Then set `/spike027-lens-configure longContextThresholdTokens 1000`. | Cost and "Long-context requests: n of m". With the low threshold, more (usually all) requests count as long-context and the cost rises. `--unset` it afterwards. A model priced flat shows no such row. | |
-| X7 | Look at the chat card and an avatar panel's header in a wide and a narrow pane. | The card's line and its Button centred in the card; the panel header centred. Wrapped text inside a line stays left-aligned (not possible to centre). | |
+Each row has one trigger and one expected result. Write in the Result column what you saw (a screenshot or the line), and mark it pass or fail.
+
+**Failure rule:** a row fails when what you see differs from Expected in any way. Record what you saw, then go on to the next row: one failed row never stops the others.
+
+**Also record, once:** the VS Code and Claude Code extension versions; where VS Code places the **AI-DLC workflow** pane (Y10); how many rows its body takes with every panel collapsed and with one chart open; and whether the dots and the avatars blink (Y5a). If something does not blink, write "no blink" and go on.
+
+**Widths.** Run Y1 and Y11 twice: with the Claude Code panel about 30 columns wide (narrow) and about 100 columns wide (wide). To measure, type a line of 100 characters (`1234567890` ten times) into the prompt without sending it: wide fits it on one line; narrow is about a third of it.
+
+### Setup (once)
+
+1. Install `0.1.5` (*Install*), run `/reload-plugins`, and open a new session with the orchestrator in VS Code.
+2. Send this prompt, which writes a scratch run the lens reads (`.scratch/` is never committed):
+
+   ```text
+   Write the file .scratch/lens-check/R/run.md with exactly this content, using the Write tool:
+   ---
+   run: R
+   status: active
+   ---
+
+   # Run: R — lens check
+
+   ## Stages
+   | Step | Stage | Agent | Status |
+   |---|---|---|---|
+   | 1 | design the lens | research-assistant | in-progress |
+   | 2 | test the lens | research-assistant | pending |
+   ```
+
+3. Prompts used below (copy each exactly):
+
+   - **P1**: `Spawn one ai-dlc:research-assistant in the background. The first line of its brief must be exactly: Your handoff record is .scratch/lens-check/R/1-orchestrator-to-research-assistant.handoff.md. Tell it to run sleep 90 with Bash and then reply OK. Do not write that record or any other file.`
+   - **P2**: the same as P1 with `1-orchestrator` replaced by `2-orchestrator` and `sleep 90` by `sleep 60`.
+   - **P3**: `Spawn one Explore agent that counts the files in spikes/ai-dlc-lens, then reply DONE.`
+   - **P4**: `In ONE response, spawn two agents in the background: a general-purpose agent told to spawn an Explore agent in the background that runs sleep 60 with Bash, wait for it, and then reply DONE; and an ai-dlc:research-assistant told to run sleep 60 with Bash and then reply OK.`
+
+### Checks
+
+| # | Item | Trigger | Expected | Result |
+|---|---|---|---|---|
+| Y1 | A2 one workflow, one task | Send P1. Open the **AI-DLC workflow** pane (it opens by itself, or press "Open flowchart" on the chat card). | One panel: `[+]`, a dot, `R — lens check`. Press `[+]`: one task panel `[+]`, a dot, `design the lens`. Press it: the chart (the orchestrator above the research-assistant, by their persona names), centred, and its Buttons. Every `[+]` was collapsed until pressed; "Open flowchart" did not open one. | |
+| Y2 | A8 same task, after it finished | Wait until P1's agent finished (its task dot is steady green), then send P2. | Still one workflow panel. Opened, it lists two task panels: `design the lens` (steady green) and `test the lens` (blinking green). No second workflow panel. | |
+| Y3 | A8 a different task | Wait until P2's agent finished, then send P3. | A second workflow panel on top, titled `Spawn one Explore agent that counts the files in spikes/ai-dlc-lens, then reply DONE.`; the `R — lens check` panel under it. Both collapsed. | |
+| Y4 | Stage title follows run.md | Send P2 again; while it runs, send: `In .scratch/lens-check/R/run.md, change "test the lens" to "test the lens: fix round 1" with the Edit tool.` | The task panel's title changes to `test the lens: fix round 1` without a press, and the panel stays open or closed as it was. | |
+| Y5a | Dot: in progress | Send P1 and look at once. | Workflow and task dots green and blinking, "in progress". | |
+| Y5b | Dot: completed | Wait until P1's agent replied. | Both dots steady green, "completed". | |
+| Y5c | Dot: waiting, any agent | Send P4 and wait until the research-assistant replied (about 60 s), while the general-purpose agent still waits for its Explore agent. | Within 2 s: orange "waiting". If it stays green, type `/spike027-probe on`, then `/spike027-probe list`, and copy the line: it shows the status the engine gives. | |
+| Y5d | Dot: two colours | Send P4 and look while both of its agents work, the general-purpose one waiting for its Explore agent. | The dot split: left half green and blinking, right half orange; the words read "in progress, waiting". | |
+| Y5e | Dot: halted (stopped) | Send P1, then at once: `Stop the research-assistant you just spawned.` | Red "halted". | |
+| Y5f | Dot: halted (blocked run) | Send: `In .scratch/lens-check/R/run.md, change "status: active" to "status: blocked" with the Edit tool.` | The `R — lens check` panel's dot turns red, "halted". Then send the same prompt with `blocked` and `active` swapped. | |
+| Y5g | Dot colour setting | Type `/spike027-lens-configure statusHaltedColor #ff00ff`, then repeat Y5f. | The halted dot is magenta. Cleanup: `/spike027-lens-configure statusHaltedColor --unset`; if `.ai-dlc/lens.json` did not exist before, delete `.ai-dlc/lens.json`. | |
+| Y5h | Dot: pending (optional) | Send P1 and look in the first second. | Light grey "pending" before it turns green. It may be too brief to see: then write "not seen". | |
+| Y5i | Dot: teammate (optional) | Only if agent teams are enabled: ask for a team of two teammates, one told to wait for a message. | The idle teammate counts as "waiting" (orange). | |
+| Y6 | A1 minimise | With the workflow pane open, press `–` (just left of `×` on its first row). | The pane is one line: the dot, the newest workflow's title, `□` and `×`. Press `□`: the panels come back as they were. Record the pane's height in rows before and after. | |
+| Y7 | A3 close on the tabs | Open a task panel, press an avatar Button, then press an arrow Button. | Each opens a tab (`Agent: ...`, `Hand-off: ...`) with `×` at the right of its first row. Pressing `×` closes that tab. Record whether VS Code also draws its own close control. | |
+| Y8 | A4 Esc | Press an avatar Button (the tab takes the keyboard), then press Esc. Then click inside the workflow pane and press Esc. | Esc closes the avatar tab, then the workflow pane. Reopen the workflow pane with "Open flowchart". | |
+| Y9 | A7 notices | Send P1 and wait until the orchestrator is told the agent finished. | A yellow `!` after `R — lens check` (or the newest workflow's title). Hovering it shows a small card with the notice; pressing it lists the notice under the title. No title, panel or card line reads `<task-notification>` or the notice's text. | |
+| Y10 | A9 placement and gap | Look at the workflow pane with every panel collapsed. | Record where it is (bottom right, directly above the browser-connected panel, as the human asked, or elsewhere) and how many empty rows sit between its last line and the browser-connected panel. The lens adds none of its own; a gap or a place VS Code chooses cannot be changed by a mod (round 6 summary, A9). | |
+| Y11 | Centring at both widths | At about 30 and about 100 columns, open a task panel's chart and an avatar tab. | The chart, its Buttons and the avatar tab's header are centred across the pane; text that wraps stays left-aligned inside its line (not possible to centre). | |
+| Y12 | Long-context cost | After P1's agent finished, press its avatar and open Usage (it runs `haiku`, `claude-haiku-5-5` in `.ai-dlc/model-metadata.json`, the one model there with `longContextPricing`, threshold 100000). Write down Cost and "Long-context requests: n of m". | Cost is a dollar figure and n is 0 (short prompts). Then `/spike027-lens-configure longContextThresholdTokens 1000`, send P1 again and open the new agent's Usage: n equals m. Cleanup: `/spike027-lens-configure longContextThresholdTokens --unset`; delete `.ai-dlc/lens.json` if it was not there before. | |
+| Y13 | Cost `—` | `/spike027-lens-configure costingPath .scratch/none.json` and `/spike027-lens-configure costingFallbackPath .scratch/none.json`, send `Reply OK`, then open any avatar's Usage. | Cost `—`. Cleanup: `--unset` both keys; delete `.ai-dlc/lens.json` if it was not there before. | |
+| Y14 | The chat card | Look at the chat card of P1's Agent call. | One line `Workflow: <title> - <initials> <status>` and "Open flowchart"; no status dot on the card (by design: the dot is in the pane). | |
+
+Cleanup when done: delete the folder `.scratch/lens-check/`; check that `git status` lists no `.ai-dlc/lens.json` or `.ai-dlc/lens.schema.json` you did not have before.
 
 ## Round 4 manual checks (W1 to W7)
 

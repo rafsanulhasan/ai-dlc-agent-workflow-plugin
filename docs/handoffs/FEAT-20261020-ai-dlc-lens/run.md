@@ -8,9 +8,9 @@ current-stage: spikes
 owner: orchestrator
 session: 734fd039-2bfd-4247-86ee-1d8d2cc510fa
 branch: feat/ai-dlc-lens
-commit: 06af622
-last-record: 17.l4-agent-manager-to-orchestrator.handback.md
-updated: 2026-10-23 21:10
+commit: 462a87e
+last-record: 17.l5-agent-manager-to-orchestrator.handback.md
+updated: 2026-10-23 23:45
 ---
 
 # Run: FEAT-20261020-ai-dlc-lens — run-state CLI, gate alert and the ai-dlc-lens mod plugin: one dashboard merging savvy-progress, cache-tax, context-view and agent-flow, with a flowchart view
@@ -72,6 +72,7 @@ Step numbering: steps 1–2 are the 2026-10-20 briefs `01-…` and `02-…` (old
 | 17.l2 | spike 027 round 3 / 4: the human's findings 1–6 (smaller responsive chart, names/models/roles, metadata to side panel, prompt fallback, blink fix) | agent-manager | subagent | done (passed) · root cause of 1c/1d/6: spawn race (turn.start before agent.spawn) + read-then-write overwrite, fixed; chart 120 px/avatar, persona/model/role; toolbar button not possible → in-card Open flowchart button; settings resolver + lens-init/configure stand-ins; 0.1.2; validate ✔, tsc 0, test 39/39 | `17.l2-orchestrator-to-agent-manager.handoff.md` | `17.l2-agent-manager-to-orchestrator.handback.md` | 2026-10-23 16:35 |
 | 17.l3 | spike 027 round 4 / 4: label removal + addenda (source labels, collapsible tasks, pinned panel → auto-opened pane + compact card, UI panels, late-spawn fix, null limits) | agent-manager | subagent | done (passed) · pinning impossible in VS Code (cited) → auto-opened pane; 0.1.3; validate ✔, tsc 0, test 48/48 | `17.l3-orchestrator-to-agent-manager.handoff.md` | `17.l3-agent-manager-to-orchestrator.handback.md` | 2026-10-23 19:15 |
 | 17.l4 | spike 027 round 5 / 5: centring, task title at top (auto-updating, parent task), workflows list collapsed with status colours, long-context cost | agent-manager | subagent | done (passed) · centring (with cited limits), auto-updating task title / parent task, collapsed workflow panels with status dots, per-request long-context cost; 0.1.4; validate ✔, tsc 0, test 62/62 | `17.l4-orchestrator-to-agent-manager.handoff.md` | `17.l4-agent-manager-to-orchestrator.handback.md` | 2026-10-23 21:10 |
+| 17.l5 | spike 027 round 6 / 6: minimise button, tasks as collapsible panels, tab close buttons, Esc, two-colour dot, waiting for any agent, notices as icon+tooltip, same-task workflow update, review findings 18.1–18.4 | agent-manager | subagent | done (passed) · A1 minimise in-pane fallback; A3 close via $.ui.close; A4 Esc via closeOnEscape; A9 placement not possible (host places panes), lens spacing removed; 0.1.5; validate ✔, tsc 0, test 77/77 | `17.l5-orchestrator-to-agent-manager.handoff.md` | `17.l5-agent-manager-to-orchestrator.handback.md` | 2026-10-23 23:45 |
 | — | scope pass: brief (+ claude-lens gaps, options C/D, 027 findings) → critique → stories → critique + backlog → accept → G1 again | product-owner, research-assistant, brutal-critique, requirement-analyst, product-manager | subagent | pending | — | — | — |
 | — | PDLC stories → backlog → accept → G1 | requirement-analyst → product-manager → product-owner; brutal-critique on brief and stories | subagent | pending | — | — | — |
 | — | design (spec, ADRs, LLD) → G2 | software-architect + system-engineer; brutal-critique | subagent | pending | — | — | — |
@@ -143,3 +144,7 @@ Spike loop limit (5) used up. Open for the human: the round 5 check (X1–X7); s
 - Round 6 answers (human, 2026-10-23): the status dot shows **both colours** when agents are running and waiting at once (a split dot or a second small orange dot); "waiting" applies to any waiting agent, parallel agents included, not only teammates; automatic notices are never used as the parent task — show them as an exclamation icon whose tooltip on hover shows the notice. Plus Esc closes an open lens panel. Round 6 starts after the human's round 5 check (X1–X7).
 - AAW-20261023-model-costing-hook closed 2026-10-23 (the lens reads `.ai-dlc/model-metadata.json`).
 - "a new workflow for the same task is not needed to be generated. instead update the existing one" → round 6: a spawn for the same task (same run / parent task) joins and updates the existing workflow even after all its agents finished; a new workflow starts only for a different task.
+- 18.1–18.4 (2026-10-23): live fixture for the human's round 5 check — brutal-critique, sqa-engineer, code-reviewer ×2 in parallel, read-only tasks on spike 027.
+- 18.1–18.4 returned: BC REVISE on CHECK.md X1–X7 (X5 not runnable; split per status, exact prompts, widths); SQA 62/62, gap: orange dot in the pane; CR standards 4 Warnings (avatar label baseline, "teammate waiting" label for any waiting agent, parseRun reads every table, workflowStatus spawner filter); CR spec all 7 met, 2 Warnings (Open flowchart expands a panel; partial long-context cost). All go into round 6 with the human's check.
+- Round 5 human check (2026-10-23): workflow pane now pinned at the bottom; wants a minimise button left of close, every task a collapsible panel, close buttons on the agent / handoff tabs → round 6 (17.l5).
+- Round 6 done (2026-10-23): the spike limit (6) is used up. Next: the human checks Y1–Y14; anything left goes into the stories at the scope pass.

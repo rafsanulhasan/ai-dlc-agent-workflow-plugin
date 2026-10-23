@@ -1,4 +1,4 @@
-// ITEM-027 spike, rounds 1-3 (steps 17, 17.l1, 17.l2): pure helpers of the lens card. No `$` here.
+// ITEM-027 spike, rounds 1-6 (steps 17 to 17.l5): pure helpers of the lens card and the workflow pane. No `$` here.
 import type { LensAgent, LensBatch, LensDef, LensPending, LensRun, LensTask, LensWorkflows, Tokens } from '../types'
 
 export const ZERO: Tokens = { in: 0, out: 0, cr: 0, cw: 0 }
@@ -180,10 +180,6 @@ function leaves(v: unknown, path = '', out: [string, number][] = []): [string, n
 
 const first = (ls: [string, number][], ok: (k: string) => boolean): number | null => ls.find(([k]) => ok(k))?.[1] ?? null
 
-/**
- * One entry's facts. The file's schema is being written in parallel (AAW-20261023-model-costing-hook),
- * so the keys are matched by name, not position: prices are $ per million tokens.
- */
 const isTokens = (k: string) => /token|window|max|context|threshold/.test(k)
 
 /** The five prices among an entry's leaves; `long` false leaves the long-context ones out. */
@@ -208,6 +204,10 @@ function longPricingOf(entry: unknown): LongPricing | null {
   return { ...pricesOf(ls, true), threshold: first(ls, k => /threshold/.test(k)) }
 }
 
+/**
+ * One entry's facts. The keys are matched by name, not position (the file had other names before
+ * `.ai-dlc/model-metadata.schema.json` landed): prices are $ per million tokens.
+ */
 export function factsOf(id: string, entry: unknown): ModelFacts {
   const ls = leaves(entry)
   return {
@@ -221,12 +221,11 @@ export function factsOf(id: string, entry: unknown): ModelFacts {
   }
 }
 
-/** The file's `longContextThresholdTokensOverride`: a positive number, else null (read only, round 5). */
+/** The file's `longContextThresholdTokensOverride` (model-metadata.schema.json): a positive number, else null (round 6: that key only). */
 export function thresholdOverrideOf(json: unknown): number | null {
   if (json === null || typeof json !== 'object' || Array.isArray(json)) return null
-  for (const [k, v] of Object.entries(json as Record<string, unknown>))
-    if (/threshold/i.test(k) && /override/i.test(k) && typeof v === 'number' && Number.isFinite(v) && v > 0) return v
-  return null
+  const v = (json as Record<string, unknown>).longContextThresholdTokensOverride
+  return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : null
 }
 
 /** The entries of the file: `models` as an array (`id`, `aliases`) or an object keyed by id; else the root. */
@@ -268,27 +267,43 @@ export function parseCosting(c: Costing): unknown {
   }
 }
 
+/** The file and the model's facts a cost needs, or why there are none (`—`). Shared by every cost below (round 6). */
+function resolveCosting(c: Costing, model: string): { ok: true; json: unknown; f: ModelFacts } | { ok: false; source: string } {
+  if (c.text === '') return { ok: false, source: c.error !== '' ? c.error : `${c.path} not found` }
+  const json = parseCosting(c)
+  if (json === null) return { ok: false, source: `${c.path} is not valid JSON` }
+  const f = lookupModel(json, model)
+  if (f === null) return { ok: false, source: `${model || 'the model'} is not in ${c.path}` }
+  return { ok: true, json, f }
+}
+
+/** One request (or one total) at one set of prices, and the prices its tokens need that the file lacks. */
+function priceAt(p: Prices, t: Tokens, w: '5m' | '1h'): { usd: number; missing: string[] } {
+  const need: [number | null, number, string][] = [
+    [p.input, t.in, 'input'],
+    [p.output, t.out, 'output'],
+    [p.cacheRead, t.cr, 'cache read'],
+    [w === '1h' ? p.cacheWrite1h : p.cacheWrite5m, t.cw, `cache write ${w}`],
+  ]
+  return { usd: need.reduce((s, [x, n]) => s + (x ?? 0) * n, 0) / 1_000_000, missing: need.filter(([x, n]) => x === null && n > 0).map(([, , k]) => k) }
+}
+
+const usdText = (usd: number): string => `$${usd.toFixed(usd < 1 ? 4 : 2)}`
+const rateOf = (rate: string): '5m' | '1h' => (rate === '1h' ? '1h' : '5m')
+const rateWords = (w: '5m' | '1h'): string => (w === '1h' ? '1-hour' : '5-minute')
+
 /**
  * Cost from the file's prices only (finding 4): never estimated, `—` when the file, the model or a
  * needed price is missing. Cache writes are priced at the 5-minute rate: `ModelUsage` does not say
  * the TTL (D:6605-6627), so the label says so.
  */
 export function costOf(c: Costing, model: string, t: Tokens, rate: string = '5m'): { text: string; source: string } {
-  if (c.text === '') return { text: '—', source: c.error !== '' ? c.error : `${c.path} not found` }
-  const json = parseCosting(c)
-  if (json === null) return { text: '—', source: `${c.path} is not valid JSON` }
-  const f = lookupModel(json, model)
-  if (f === null) return { text: '—', source: `${model || 'the model'} is not in ${c.path}` }
-  const need: [number | null, number, string][] = [
-    [f.input, t.in, 'input'],
-    [f.output, t.out, 'output'],
-    [f.cacheRead, t.cr, 'cache read'],
-    [rate === '1h' ? f.cacheWrite1h : f.cacheWrite5m, t.cw, `cache write ${rate === '1h' ? '1h' : '5m'}`],
-  ]
-  const missing = need.filter(([p, n]) => p === null && n > 0).map(([, , k]) => k)
-  if (missing.length > 0) return { text: '—', source: `${c.path} has no ${missing.join(', ')} price for ${f.id}` }
-  const usd = need.reduce((s, [p, n]) => s + (p ?? 0) * n, 0) / 1_000_000
-  return { text: `$${usd.toFixed(usd < 1 ? 4 : 2)}`, source: `${c.path} (${f.id}; cache writes at the ${rate === '1h' ? '1-hour' : '5-minute'} rate: the usage does not say the TTL)` }
+  const r = resolveCosting(c, model)
+  if (!r.ok) return { text: '—', source: r.source }
+  const w = rateOf(rate)
+  const p = priceAt(r.f, t, w)
+  if (p.missing.length > 0) return { text: '—', source: `${c.path} has no ${p.missing.join(', ')} price for ${r.f.id}` }
+  return { text: usdText(p.usd), source: `${c.path} (${r.f.id}; cache writes at the ${rateWords(w)} rate: the usage does not say the TTL)` }
 }
 
 /** A request's prompt as the long-context rule counts it: all input tokens, cache reads and writes included. */
@@ -309,52 +324,58 @@ export function costOfRequests(
   lensThreshold: number | null = null,
 ): { text: string; source: string; long: number } {
   const none = (source: string) => ({ text: '—', source, long: 0 })
-  if (c.text === '') return none(c.error !== '' ? c.error : `${c.path} not found`)
-  const json = parseCosting(c)
-  if (json === null) return none(`${c.path} is not valid JSON`)
-  const f = lookupModel(json, model)
-  if (f === null) return none(`${model || 'the model'} is not in ${c.path}`)
-  let threshold: number | null = null
-  let from = ''
+  const r = resolveCosting(c, model)
+  if (!r.ok) return none(r.source)
+  const f = r.f
+  // Round 6: the long prices travel with their threshold, so a request over it never needs `f.long!`.
+  let rule: { prices: LongPricing; threshold: number; from: string } | null = null
   if (f.long !== null) {
-    const fileOverride = thresholdOverrideOf(json)
-    if (lensThreshold !== null && lensThreshold > 0) [threshold, from] = [lensThreshold, 'the lens setting longContextThresholdTokens']
-    else if (fileOverride !== null) [threshold, from] = [fileOverride, `${c.path} longContextThresholdTokensOverride`]
-    else if (f.long.threshold !== null) [threshold, from] = [f.long.threshold, `${f.id} longContextPricing.thresholdTokens`]
+    const fileOverride = thresholdOverrideOf(r.json)
+    if (lensThreshold !== null && lensThreshold > 0) rule = { prices: f.long, threshold: lensThreshold, from: 'the lens setting longContextThresholdTokens' }
+    else if (fileOverride !== null) rule = { prices: f.long, threshold: fileOverride, from: `${c.path} longContextThresholdTokensOverride` }
+    else if (f.long.threshold !== null) rule = { prices: f.long, threshold: f.long.threshold, from: `${f.id} longContextPricing.thresholdTokens` }
     else return none(`${f.id} has long-context prices but ${c.path} gives no threshold`)
   }
-  const w = rate === '1h' ? '1h' : '5m'
+  const w = rateOf(rate)
   let usd = 0
   let long = 0
   for (const t of reqs) {
-    const over = threshold !== null && promptTokens(t) > threshold
-    const p: Prices = over ? f.long! : f
-    const need: [number | null, number, string][] = [
-      [p.input, t.in, 'input'],
-      [p.output, t.out, 'output'],
-      [p.cacheRead, t.cr, 'cache read'],
-      [w === '1h' ? p.cacheWrite1h : p.cacheWrite5m, t.cw, `cache write ${w}`],
-    ]
-    const missing = need.filter(([x, n]) => x === null && n > 0).map(([, , k]) => k)
-    if (missing.length > 0) return none(`${c.path} has no ${over ? 'long-context ' : ''}${missing.join(', ')} price for ${f.id}`)
-    if (over) long += 1
-    usd += need.reduce((s, [x, n]) => s + (x ?? 0) * n, 0) / 1_000_000
+    const longPrices = rule !== null && promptTokens(t) > rule.threshold ? rule.prices : null
+    const p = priceAt(longPrices ?? f, t, w)
+    if (p.missing.length > 0) return none(`${c.path} has no ${longPrices ? 'long-context ' : ''}${p.missing.join(', ')} price for ${f.id}`)
+    if (longPrices) long += 1
+    usd += p.usd
   }
-  const rule = threshold === null ? 'flat prices' : `long-context over ${threshold} prompt tokens (${from}): ${long} of ${reqs.length} requests`
-  return { text: `$${usd.toFixed(usd < 1 ? 4 : 2)}`, source: `${c.path} (${f.id}; ${rule}; cache writes at the ${w === '1h' ? '1-hour' : '5-minute'} rate)`, long }
+  const said = rule === null ? 'flat prices' : `long-context over ${rule.threshold} prompt tokens (${rule.from}): ${long} of ${reqs.length} requests`
+  return { text: usdText(usd), source: `${c.path} (${f.id}; ${said}; cache writes at the ${rateWords(w)} rate)`, long }
 }
 
+/** The requests an agent keeps for its cost (round 6: capped; past the cap a long-context model's cost is partial). */
+export const REQS_CAP = 500
+
+const sameTokens = (a: Tokens, b: Tokens): boolean => a.in === b.in && a.out === b.out && a.cr === b.cr && a.cw === b.cw
+
 /**
- * An agent's cost: per request when the steps were seen; from the totals only for a model priced
- * flat, since a total cannot say which requests were over the threshold (`—` then).
+ * An agent's cost (round 6). A model priced flat: from the totals, exact whatever was seen per request.
+ * A model priced by prompt length: per request, and only when the requests seen add up to the loop's
+ * totals; otherwise `—` and `partial` (a hook missed steps, a respawn, or more than REQS_CAP requests),
+ * never an undercount.
  */
-export function costOfAgent(c: Costing, model: string, reqs: readonly Tokens[], totals: Tokens, rate: string = '5m', lensThreshold: number | null = null): { text: string; source: string; long: number } {
-  if (reqs.length > 0) return costOfRequests(c, model, reqs, rate, lensThreshold)
-  const json = parseCosting(c)
-  const f = json === null ? null : lookupModel(json, model)
-  if (f !== null && f.long !== null && totals.in + totals.out + totals.cr + totals.cw > 0)
-    return { text: '—', source: `${f.id} is priced by prompt length and no request of this loop was seen`, long: 0 }
-  return { ...costOf(c, model, totals, rate), long: 0 }
+export function costOfAgent(
+  c: Costing,
+  model: string,
+  reqs: readonly Tokens[],
+  totals: Tokens,
+  rate: string = '5m',
+  lensThreshold: number | null = null,
+): { text: string; source: string; long: number; partial: boolean } {
+  const r = resolveCosting(c, model)
+  if (r.ok && r.f.long !== null) {
+    if (reqs.length === 0 || !sameTokens(reqs.reduce(addTokens, ZERO), totals))
+      return { text: '—', source: `${r.f.id} is priced by prompt length and the ${reqs.length} requests seen do not add up to the loop's totals`, long: 0, partial: reqs.length > 0 }
+    return { ...costOfRequests(c, model, reqs, rate, lensThreshold), partial: false }
+  }
+  return { ...costOf(c, model, totals, rate), long: 0, partial: false }
 }
 
 /**
@@ -488,7 +509,8 @@ export function flowchartSvg(order: readonly string[], agents: Record<string, Le
       `<text x="${p.x}" y="${p.y}" text-anchor="middle" dominant-baseline="central" font-size="11" font-weight="bold" fill="#fff">${esc(initials(l.name))}</text>`,
     )
     ;[l.name, l.model, l.role].forEach((t, i) =>
-      parts.push(`<text x="${p.x}" y="${p.y + R + 13 + i * 12}" text-anchor="middle" dominant-baseline="central" font-size="${i === 0 ? 10.5 : 9.5}"${i === 0 ? ' font-weight="bold"' : ''} fill="#90a4ae">${esc(clip(t, 22))}</text>`),
+      // Round 6: the label lines keep the alphabetic baseline their offsets were set for; only the initials are centred.
+      parts.push(`<text x="${p.x}" y="${p.y + R + 13 + i * 12}" text-anchor="middle" font-size="${i === 0 ? 10.5 : 9.5}"${i === 0 ? ' font-weight="bold"' : ''} fill="#90a4ae">${esc(clip(t, 22))}</text>`),
     )
   }
   parts.push('</svg>')
@@ -766,14 +788,38 @@ export function workflowActive(wf: LensWorkflows, w: string, agents: Record<stri
 }
 
 /**
- * The workflow an Agent call joins. An agent of a workflow spawning: that workflow. Otherwise the
- * spawner's latest workflow, while any agent in it (a descendant included) is still at work. Otherwise
- * a new workflow, named by this call: every agent of the last one has finished, or the spawner is new.
+ * The task an Agent call works for (round 6): the run folder its brief's handoff record is in, else the
+ * request or brief that made the call; '' when neither is known. Two calls with one key are one task.
  */
-export function joinWorkflow(wf: LensWorkflows, spawner: string, call: string, agents: Record<string, LensAgent>, callAgent: Record<string, string>): LensWorkflows {
+export function taskKeyOf(prompt: string, request: string): string {
+  const rec = matchHandoff(prompt)?.path
+  const dir = rec === undefined ? null : (parseRecord(rec)?.dir ?? null)
+  if (dir !== null && dir !== '.') return `run:${dir}`
+  return request.trim() === '' ? '' : `req:${request.trim()}`
+}
+
+/**
+ * The workflow an Agent call joins. An agent of a workflow spawning: that workflow. Otherwise (round 6)
+ * the spawner's newest workflow for the same task (`keys`, from `taskKeyOf`), even when all its agents
+ * have finished. Otherwise the spawner's latest workflow, while any agent in it (a descendant included)
+ * is still at work. Otherwise a new workflow, named by this call: a different task, or a new spawner.
+ */
+export function joinWorkflow(
+  wf: LensWorkflows,
+  spawner: string,
+  call: string,
+  agents: Record<string, LensAgent>,
+  callAgent: Record<string, string>,
+  keys: Record<string, string> = {},
+): LensWorkflows {
   if (wf.of[call] !== undefined) return wf
   const self = agents[spawner]
   let w = spawner !== 'main' && self && self.toolUseId !== '' ? wf.of[self.toolUseId] : undefined
+  const key = keys[call] ?? ''
+  if (w === undefined && key !== '') {
+    const sameTask = new Set(Object.keys(wf.of).filter(c => c !== call && keys[c] === key).map(c => wf.of[c]!))
+    w = [...wf.order].reverse().find(x => wf.parent[x] === spawner && sameTask.has(x))
+  }
   if (w === undefined) {
     const latest = [...wf.order].reverse().find(x => wf.parent[x] === spawner)
     if (latest !== undefined && workflowActive(wf, latest, agents, callAgent)) w = latest
@@ -807,14 +853,23 @@ export function limitRows(c: Costing, model: string): [string, string][] {
   return rows.filter((r): r is [string, number] => r[1] !== null).map(([k, v]) => [k, fmtTokens(v)])
 }
 
-// ---- round 5 (step 17.l4): task titles, run state, workflow status ----
+// ---- round 5 (step 17.l4) and round 6 (step 17.l5): task titles, run state, workflow status, notices ----
 
 const STEP_CODE = /^\d+(?:\.(?:\d+|l\d+))*$/
+const TABLE_RULE = /^\|\s*:?-{2,}/
+
+/** A table row's cells, trimmed, backticks dropped. */
+const cellsOf = (line: string): string[] =>
+  line
+    .split('|')
+    .slice(1, -1)
+    .map(x => x.trim().replace(/^`|`$/g, ''))
 
 /**
  * A run's `run.md`: its title (`runTitle`), its `status:`, the stage in progress (the last stage row
  * whose status starts with `in-progress`, else `current-stage:`), and every stage row's name by its
- * step code. Null when there is no file.
+ * step code. Round 6: only the stages table is read, the one whose header has a `Stage` column or that
+ * sits under a `Stages` heading; the gates, loops and clarifications tables are not. Null when there is no file.
  */
 export function parseRun(text: string | null): LensRun | null {
   if (text === null) return null
@@ -822,18 +877,28 @@ export function parseRun(text: string | null): LensRun | null {
   const field = (k: string) => new RegExp(`^${k}:\\s*(.+?)\\s*$`, 'm').exec(fm)?.[1] ?? ''
   const stages: Record<string, string> = {}
   let inProgress = ''
-  for (const line of text.split(/\r?\n/)) {
-    if (!line.startsWith('|')) continue
-    const cells = line
-      .split('|')
-      .slice(1, -1)
-      .map(x => x.trim().replace(/^`|`$/g, ''))
+  let heading = ''
+  let inStages = false
+  const lines = text.split(/\r?\n/)
+  lines.forEach((line, i) => {
+    if (/^#{1,6}\s/.test(line)) heading = line
+    if (!line.startsWith('|')) {
+      inStages = false
+      return
+    }
+    if (TABLE_RULE.test(line)) return
+    const cells = cellsOf(line)
+    if (TABLE_RULE.test(lines[i + 1] ?? '')) {
+      // The header row: it decides whether this table is the stages table.
+      inStages = cells.some(x => /^stages?$/i.test(x)) || /^#{1,6}\s+stages?\b/i.test(heading)
+      return
+    }
     const code = cells[0] ?? ''
-    if (!STEP_CODE.test(code) || cells.length < 2) continue
+    if (!inStages || !STEP_CODE.test(code) || cells.length < 2) return
     const name = cells[1]!
     stages[code] = name
     if (cells.slice(2).some(x => /^in-progress\b/i.test(x))) inProgress = name
-  }
+  })
   return { title: runTitle(text), status: field('status'), stage: inProgress || field('current-stage'), stages }
 }
 
@@ -846,9 +911,24 @@ export function runDirOf(a: Pick<LensAgent, 'handoff' | 'prompt'>): string | nul
 
 export const isTeammate = (a: Pick<LensAgent, 'type' | 'teammate'>): boolean => a.teammate === true || a.type === 'teammate'
 
-/** Agents still at work: not started, running, held, or a teammate idle between messages. */
-const atWork = (a: Pick<LensAgent, 'status' | 'type' | 'teammate'>): boolean =>
-  a.status === 'pending' || a.status === 'running' || a.status === 'waiting' || (isTeammate(a) && a.status === 'idle')
+/**
+ * Round 6: an agent waiting, whatever kind it is: `waiting` (held on background work it owns, a
+ * plan's approval or, a background subagent, an Agent call alone; `AgentStatus`, D:556-566), or a
+ * teammate `idle` between messages. A subagent `idle` after its answer has finished, not waiting.
+ */
+export const isWaiting = (a: Pick<LensAgent, 'status' | 'type' | 'teammate'>): boolean => a.status === 'waiting' || (isTeammate(a) && a.status === 'idle')
+
+/** Agents still at work: not started, running, or waiting. */
+const atWork = (a: Pick<LensAgent, 'status' | 'type' | 'teammate'>): boolean => a.status === 'pending' || a.status === 'running' || isWaiting(a)
+
+/** The task one agent works on: its record's stage row, else its run's stage in progress, else its run's title; '' with no run. */
+function agentTask(a: LensAgent, runs: Record<string, LensRun>): string {
+  const d = runDirOf(a)
+  const r = d === null ? undefined : runs[d]
+  if (r === undefined) return ''
+  const code = parseRecord(a.handoff ?? matchHandoff(a.prompt)?.path ?? '')?.code ?? ''
+  return r.stages[code] ?? (r.stage || r.title)
+}
 
 /**
  * A workflow's titles (round 5, requirements 2 and 3). `parent`: the task the human gave the
@@ -859,42 +939,66 @@ const atWork = (a: Pick<LensAgent, 'status' | 'type' | 'teammate'>): boolean =>
  * Agent call's `description`.
  */
 export function workflowTask(members: readonly LensAgent[], runs: Record<string, LensRun>, request: string): { parent: string; current: string } {
-  const runOf = (a: LensAgent) => {
-    const d = runDirOf(a)
-    return d === null ? undefined : runs[d]
-  }
-  const titles = [...new Set(members.map(a => runOf(a)?.title ?? '').filter(t => t !== ''))]
+  const titles = [
+    ...new Set(
+      members
+        .map(a => {
+          const d = runDirOf(a)
+          return d === null ? '' : (runs[d]?.title ?? '')
+        })
+        .filter(t => t !== ''),
+    ),
+  ]
   const parent = titles.length === 1 ? titles[0]! : request
-  const tasks = new Set(
-    members.filter(atWork).map(a => {
-      const r = runOf(a)
-      if (r === undefined) return ''
-      const code = parseRecord(a.handoff ?? matchHandoff(a.prompt)?.path ?? '')?.code ?? ''
-      return r.stages[code] ?? (r.stage || r.title)
-    }),
-  )
+  const tasks = new Set(members.filter(atWork).map(a => agentTask(a, runs)))
   const current = tasks.size === 1 && !tasks.has('') ? [...tasks][0]! : parent
   return { parent, current }
+}
+
+/**
+ * Round 6, requirement A2: the tasks of one workflow, each its own panel: its agents grouped by the
+ * task each works on (`agentTask`; an agent with no run works on the parent task), in the order first seen.
+ */
+export function workflowTasks(members: readonly LensAgent[], runs: Record<string, LensRun>, parent: string): { title: string; ids: string[] }[] {
+  const out: { title: string; ids: string[] }[] = []
+  for (const a of members) {
+    const title = agentTask(a, runs) || parent
+    const hit = out.find(t => t.title === title)
+    if (hit) hit.ids.push(a.id)
+    else out.push({ title, ids: [a.id] })
+  }
+  return out
 }
 
 /** The five states of a workflow's status indicator. */
 export type FlowStatus = 'in-progress' | 'pending' | 'halted' | 'waiting' | 'completed'
 
+/** What `workflowStatus` reads of an agent; `id` to leave the spawner out. */
+export type StatusMember = Pick<LensAgent, 'status' | 'type' | 'teammate'> & { id?: string }
+
 /**
- * A workflow's status from its agents (the spawner left out) and its runs' `status:` (round 5,
- * requirement 4); the first match wins:
+ * A workflow's status from its agents and its runs' `status:` (round 5, requirement 4). Round 6: the
+ * spawner (`spawner`, the agent id that made the workflow's calls) is left out here, not by the caller.
+ * The first match wins:
  * halted: an agent failed or was killed, or a run is `blocked`;
  * in-progress: an agent is running a turn;
- * waiting: an agent is `waiting` (held), or an agent-team teammate is `idle`, waiting on a message;
+ * waiting: an agent is waiting (`isWaiting`);
  * pending: an Agent call not started yet (or no agent yet);
  * completed: every agent has ended (`completed`, or a subagent `idle` after its answer).
  */
-export function workflowStatus(members: readonly Pick<LensAgent, 'status' | 'type' | 'teammate'>[], runStatuses: readonly string[] = []): FlowStatus {
-  if (members.some(a => a.status === 'failed' || a.status === 'killed') || runStatuses.some(x => x.trim().toLowerCase() === 'blocked')) return 'halted'
-  if (members.some(a => a.status === 'running')) return 'in-progress'
-  if (members.some(a => a.status === 'waiting' || (isTeammate(a) && a.status === 'idle'))) return 'waiting'
-  if (members.length === 0 || members.some(a => a.status === 'pending')) return 'pending'
+export function workflowStatus(members: readonly StatusMember[], runStatuses: readonly string[] = [], spawner: string | null = null): FlowStatus {
+  const ms = spawner === null ? members : members.filter(a => a.id !== spawner)
+  if (ms.some(a => a.status === 'failed' || a.status === 'killed') || runStatuses.some(x => x.trim().toLowerCase() === 'blocked')) return 'halted'
+  if (ms.some(a => a.status === 'running')) return 'in-progress'
+  if (ms.some(isWaiting)) return 'waiting'
+  if (ms.length === 0 || ms.some(a => a.status === 'pending')) return 'pending'
   return 'completed'
+}
+
+/** Round 6, requirement A5: whether some agents run while others wait (the dot then shows both colours). */
+export const runningAndWaiting = (members: readonly StatusMember[], spawner: string | null = null): boolean => {
+  const ms = spawner === null ? members : members.filter(a => a.id !== spawner)
+  return ms.some(a => a.status === 'running') && ms.some(isWaiting)
 }
 
 /** The colours and blink of the indicator (lens settings). */
@@ -912,24 +1016,73 @@ export function statusStyle(st: FlowStatus, s: StatusLook): { label: string; col
   if (st === 'in-progress') return { label: 'in progress', color: s.statusInProgressColor, blink: s.statusBlink }
   if (st === 'pending') return { label: 'pending', color: s.statusPendingColor, blink: false }
   if (st === 'halted') return { label: 'halted', color: s.statusHaltedColor, blink: false }
-  if (st === 'waiting') return { label: 'teammate waiting', color: s.statusWaitingColor, blink: false }
+  // Round 6: any waiting agent, not only a teammate.
+  if (st === 'waiting') return { label: 'waiting', color: s.statusWaitingColor, blink: false }
   return { label: 'completed', color: s.statusCompletedColor, blink: false }
 }
 
-/** The indicator as an SVG dot centred in its box; a SMIL blink when `blink`. */
-export function statusDotSvg(color: string, blink: boolean, ms: number, size = 14): string {
+/**
+ * Round 6, requirement A5: the indicator with every colour it shows. In progress with agents waiting
+ * at once: both colours (the dot split, the in-progress half blinking) and both words.
+ */
+export function statusLooks(st: FlowStatus, both: boolean, s: StatusLook): { label: string; colors: string[]; blink: boolean } {
+  const one = statusStyle(st, s)
+  if (st === 'in-progress' && both) return { label: 'in progress, waiting', colors: [one.color, s.statusWaitingColor], blink: one.blink }
+  return { label: one.label, colors: [one.color], blink: one.blink }
+}
+
+/**
+ * The indicator as an SVG dot centred in its box; a SMIL blink when `blink`. Two colours (round 6):
+ * the left half in the first, blinking when `blink`, the right half in the second, steady.
+ */
+export function statusDotSvg(color: string | readonly string[], blink: boolean, ms: number, size = 14): string {
+  const colors = typeof color === 'string' ? [color] : color
   const r = Math.round(size * 0.36)
   const c = size / 2
+  const anim = blink ? `<animate attributeName="opacity" values="1;0.2;1" dur="${ms / 1000}s" repeatCount="indefinite"/>` : ''
+  const head = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" preserveAspectRatio="xMidYMid meet">`
+  if (colors.length < 2) return head + `<circle cx="${c}" cy="${c}" r="${r}" fill="${esc(colors[0] ?? '')}">` + anim + `</circle></svg>`
   return (
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" preserveAspectRatio="xMidYMid meet">` +
-    `<circle cx="${c}" cy="${c}" r="${r}" fill="${esc(color)}">` +
-    (blink ? `<animate attributeName="opacity" values="1;0.2;1" dur="${ms / 1000}s" repeatCount="indefinite"/>` : '') +
-    `</circle></svg>`
+    head +
+    `<path d="M${c},${c - r} A${r},${r} 0 0,0 ${c},${c + r} Z" fill="${esc(colors[0]!)}">${anim}</path>` +
+    `<path d="M${c},${c - r} A${r},${r} 0 0,1 ${c},${c + r} Z" fill="${esc(colors[1]!)}"/>` +
+    `</svg>`
   )
 }
 
-/** A main-loop prompt that is the human's request, not a notification the engine fed the loop. */
-export const isHumanRequest = (text: string): boolean => {
+/**
+ * The tags the engine wraps a prompt it feeds the main loop in (a background task's notification, a
+ * reminder, a slash command's echo, a shell escape, a hook's or a peer's message). Round 6: only these
+ * are notices; a human prompt that starts with `<` (pasted HTML or XML) stays the request.
+ */
+const NOTICE_TAG = /^<(task-notification|system-reminder|teammate-message|local-command-[a-z]+|command-(?:name|message|args)|bash-(?:input|stdout|stderr)|user-prompt-submit-hook)\b/
+
+/** A main-loop prompt that is an automatic notice: one of the engine's tags, or an automatic handoff seed. */
+export const isNotice = (text: string): boolean => {
   const t = text.trim()
-  return t !== '' && !t.startsWith('<') && !t.startsWith('[auto-handoff]')
+  return NOTICE_TAG.test(t) || t.startsWith('[auto-handoff]')
+}
+
+/** A main-loop prompt that is the human's request, not a notice the engine fed the loop. */
+export const isHumanRequest = (text: string): boolean => text.trim() !== '' && !isNotice(text)
+
+/**
+ * Round 6: who sent a prompt (`prompt.submit` `origin.kind`, `PromptOrigin`, D:9287-9340): the person's
+ * own (`composer`, `bridge`, `sdk`), or something automatic (a task notification, a trigger, a peer, a relay).
+ */
+export const isPersonOrigin = (kind: string): boolean => kind === 'composer' || kind === 'bridge' || kind === 'sdk'
+
+/**
+ * The workflow a notice belongs to: the one whose agent or Agent call the notice names (a task
+ * notification carries the task's id), else the newest workflow, else '' (round 6).
+ */
+export function noticeWorkflow(text: string, wf: LensWorkflows, agents: Record<string, LensAgent>): string {
+  for (const a of Object.values(agents)) {
+    if (a.id === 'main' || a.toolUseId === '') continue
+    if ((a.id.length >= 6 && text.includes(a.id)) || text.includes(a.toolUseId)) {
+      const w = wf.of[a.toolUseId]
+      if (w !== undefined) return w
+    }
+  }
+  return wf.order.at(-1) ?? ''
 }
