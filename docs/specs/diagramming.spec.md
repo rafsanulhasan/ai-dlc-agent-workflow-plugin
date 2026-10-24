@@ -46,41 +46,37 @@ Mermaid, math and PlantUML fences in an assistant reply are shown today as raw t
 
 | AC | Design | Item |
 |---|---|---|
-| AC-20.1.1, 20.1.2 | D1 placement (**G2 question**, OQ1), D4 surface formats | 053 |
-| AC-20.1.3, 20.1.4 | D2 (fences in order; no fence means `next()` untouched) | 053 |
-| AC-20.1.5 | D3 beautiful-mermaid kinds (the floor holds; XY is an extra) | 053 |
-| AC-20.2.1-20.2.3 | D2 classification, D3 MathJax | 054 |
-| AC-20.3.1-20.3.3 | D3 PlantUML, D6 path trust | 055 |
-| AC-20.4.1-20.4.3 | D2 closed fences only | 053 |
-| AC-20.5.1-20.5.3 | D5 offline | 053, 054, 055 |
-| AC-20.6.1-20.6.4 | D4 caps, D7 fallback | 053 |
-| AC-20.9.1, 20.9.2 | D6 settings | 053, 054, 055 |
-| AC-20.7.1-20.7.3 | D8 notices | 056 |
-| AC-20.8.1 | manual check (`MANUAL-CHECKS.md`) | 053 |
+| AC-20.1.1, 20.1.2 | D1 placement (after its fence; OQ1 closed at G2), D4 surface formats |
+| AC-20.1.3, 20.1.4 | D2 (fences in order; no fence means `next()` untouched) |
+| AC-20.1.5 | D3 beautiful-mermaid kinds (the floor holds; XY is an extra) |
+| AC-20.2.1-20.2.3 | D2 classification, D3 MathJax |
+| AC-20.3.1-20.3.3 | D3 PlantUML, D6 path trust |
+| AC-20.4.1-20.4.3 | D2 closed fences only |
+| AC-20.5.1-20.5.3 | D5 offline |
+| AC-20.6.1-20.6.4 | D4 caps, D7 fallback |
+| AC-20.9.1, 20.9.2 | D6 settings |
+| AC-20.7.1-20.7.3 | D8 notices |
+| AC-20.8.1 | manual check (`MANUAL-CHECKS.md`) |
 
 **AC clarified (po accepted OQ2, 2026-10-24; main ruled it a clarification within the story).** For build and test, this wording replaces the stories' wording.
 - **AC-20.3.2** Given no configured `plantumlJar`, or no Java found (no `javaPath` is set and there is no `java` on PATH), when a `plantuml` fence renders, then the source is shown with a one-line notice that names what is missing (the jar, or Java) and how to configure it, and no render is attempted.
 
-**AC wordings for OQ1 (both PENDING G2).** The G2 answer picks one wording, and the tree-shape test rows of these ACs follow it. Under either answer, every other part of the ACs, and every other test, stays the same.
+**AC wordings, OQ1 resolved at G2 (human, 2026-10-24, `run.v3.md`): the picture goes after its fence.** These are the binding wordings for build and test, and they replace "beneath the reply" in the stories. `requirement-analyst` updates the stories to match.
 
-| AC | (A) default: after its fence | (B) fallback: beneath the reply |
-|---|---|---|
-| AC-20.1.1 | …then a PNG picture of it is shown **directly after the fence's source**, and the source is still shown | …then a PNG picture of it is shown **beneath the reply**, and the source is still shown (as in the stories) |
-| AC-20.1.2 | the same with an Svg picture, directly after the fence's source | the same with an Svg picture, beneath the reply |
-| AC-20.1.3 | three pictures, each directly after its own fence | three pictures beneath the reply, in fence order |
-| AC-20.2.1 | the formula picture directly after its block | the formula picture beneath the reply |
-| AC-20.3.1 | the PlantUML picture directly after its fence | the PlantUML picture beneath the reply |
+| AC | Binding wording |
+|---|---|
+| AC-20.1.1 | …then a PNG picture of it is shown **directly after the fence's source**, and the source is still shown |
+| AC-20.1.2 | the same with an Svg picture, directly after the fence's source |
+| AC-20.1.3 | three pictures, each directly after its own fence |
+| AC-20.2.1 | the formula picture directly after its block |
+| AC-20.3.1 | the PlantUML picture directly after its fence |
 
 ## Design (high level)
 
 - **D1 Hook and placement.** A new `ui.render` hook on `AssistantMessage` in the lens. It is a separate handler with its own module, `hooks/diagram.ts`, and it shares nothing with the Pane hooks.
   - **No fence.** When the block has no closed diagram fence, the hook returns `next(e)` unchanged (AC-20.1.4).
   - **Fences.** Otherwise it returns a `Box` that holds, for each fence in order, the text before it as `Markdown`, then the fence source as `Markdown`, then the picture or the reason line. It ends with the remaining text.
-  - **Placement.** The spike shows that a picture can sit **right after its own fence**, not only at the end of the reply. The stories say "beneath the reply", and they also say that `po` raises in-place placement at G2 if the spike allows it.
-    - Default: right after the fence, with the source still shown above the picture.
-    - Fallback: all pictures beneath the reply, in fence order.
-    - Both are one layout setting in the LLD's renderer of the tree, so the G2 answer changes no other design element.
-    - The two layouts differ only for AC-20.1.1-20.1.3. Those ACs get one wording per answer (OQ1).
+  - **Placement (G2, OQ1 resolved).** Each picture sits **right after its own fence**, and the fence's source stays shown above the picture. There is one layout only: no picture is drawn beneath the reply, and no layout setting exists.
 - **D2 Fence finder (pure).** `findFences(text)` returns a list of text segments and fence segments, each fence with `{ kind: 'mermaid' | 'math' | 'texDiagram' | 'plantuml', source, closed }`. It follows the *Terms*:
   - **Tags.** `mermaid`; `math`; `latex` and `tex`, which are math unless the body holds a TeX-document marker; `tikz`, which is always a TeX diagram; `plantuml` and `puml`; and the display-math blocks `$$…$$` and `\[…\]`.
   - **Open fences.** A fence with no closing delimiter in this block is `closed: false`. It is never rendered and shows no reason. While the reply streams, an open fence is just text. Once the reply is finished, it is shown as source only (AC-20.4.x).
@@ -124,7 +120,6 @@ Mermaid, math and PlantUML fences in an assistant reply are shown today as raw t
   | `diagramPlantuml` | `AI_DLC_LENS_DIAGRAM_PLANTUML` | `true` | Takes effect only with a jar |
   | `plantumlJar` | `AI_DLC_LENS_PLANTUML_JAR` | unset | Trust-gated path |
   | `javaPath` | `AI_DLC_LENS_JAVA` | `java` on PATH | Trust-gated path |
-  | `diagramLayout` | `AI_DLC_LENS_DIAGRAM_LAYOUT` | `afterFence` (pending G2 OQ1; `belowReply` is the other value) | The G2 answer sets the default |
 
   - **Turning a kind off** draws its fences exactly as they are without the submodule, with no reason line (AC-20.9.2).
   - **A path outside the trusted folders, or a path that does not exist,** is never run. The fence shows the source with a reason (AC-20.3.3). The trust check uses `trustedFolders` and `isInside` from `avatar.ts`.
@@ -187,7 +182,7 @@ The LLD fixes the exact CLI arguments, the cache key and the bound.
 ## Test seams
 
 - **Existing, primary:** the lens tests (`plugins/claude/ai-dlc-lens/tests/lens.test.tsx` style), which render `ui.render` element trees with a stubbed `$.process.run`. They cover:
-  - every `[PT]` AC: tree shape, order and placement (both layouts);
+  - every `[PT]` AC: tree shape, order and placement (after its fence);
   - surface formats and caps;
   - fallbacks and settings;
   - the network stub recording no attempts (AC-20.5.1).
@@ -210,7 +205,7 @@ Also out of scope:
 
 ## Open questions
 
-- **OQ1 (G2, human; `po` raises it with the default below, and if the build proves the default impossible, the fallback applies).** Where does a picture go? It can go right after its own fence, with the source still shown above it, or beneath the whole reply. Default: right after its own fence, which the spike shows works. The answer changes only the layout setting and the wording of AC-20.1.1 to AC-20.1.3.
+- **OQ1 (closed at G2, 2026-10-24).** The human chose to put the picture after its fence. The `belowReply` layout and the `diagramLayout` setting are removed: a setting with a single value would be dead configuration (YAGNI).
 - **OQ2 (po, accepted 2026-10-24; AC-20.3.2 restated above).** For PlantUML, `plantumlJar` is required, and `javaPath` defaults to `java` on PATH. Story AC-20.3.2 reads "no configured Java or jar". Default: a jar must be configured, and Java may come from PATH.
 - **OQ3 (G2, human).** Vendoring pre-built renderer bundles into the lens plugin, under MIT, EPL-2.0, Apache-2.0 and MPL-2.0 plus the font's licence, with the notices shipped. Default: accept, provided ITEM-053.a measures `renderer/` at **no more than 15 MB** unpacked and finds no licence beyond those named. Above 15 MB, or with another licence, the item goes back to the human with the numbers (brief §8 Q20a).
 

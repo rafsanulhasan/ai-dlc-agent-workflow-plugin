@@ -4,7 +4,7 @@ root: 18
 kind: user-stories
 author: requirement-analyst
 date: 2026-10-24
-revision: 3 (bc round 1 fixed: id table, AC-18.9.2 settled, epic wording, AC-18.8 split, session-cell format; po decisions applied)
+revision: 4 (G2 narrowing, approved by the human 2026-10-24 in 31-orchestrator-to-human.handoff.md: AC-18.3.3, AC-18.5.3, AC-18.9.2 and AC-18.11.2 run under `validate --artefacts`; revision 3: bc round 1 fixed, po decisions applied)
 status: draft, awaiting brutal-critique round 2, product-owner acceptance and G1
 epic: multi-agent-workflow-foundations
 sprint: sprint-1 (2026-10-20 to 2026-10-27 inclusive)
@@ -28,6 +28,8 @@ Sources: the approved plan `00c-approved-plan-2026-10-24.md` ("00c"), the team b
 | `[PT]` | `npx @anthropic-ai/claude-code plugin test ./plugins/claude/ai-dlc` (auto-handoff `run.ts`) or `./plugins/claude/ai-dlc-lens` (lens parser) |
 | `[BV]` | `node .ai-dlc/workflow.mjs validate`, `node tools/build-copilot.mjs --check`, or a scripted search named in the AC |
 | `[DC]` | document check against the named skill or file |
+
+**Two validate commands (G2, revision 4).** The human approved at G2 (2026-10-24, `docs/handoffs/FEAT-20261020-ai-dlc-lens/31-orchestrator-to-human.handoff.md`) that plain `node .ai-dlc/workflow.mjs validate` checks only the taxonomy declaration, and that the checks of tagged artefacts, unique run ids and run ↔ task links run only under `node .ai-dlc/workflow.mjs validate --artefacts` (`docs/specs/taxonomy.spec.md`; ADR-0003, ADR-0004). So in AC-18.3.3, AC-18.5.3, AC-18.9.2 and AC-18.11.2, "when validate runs" means `validate --artefacts`, and each of those ACs now names that command. Every other "when `validate` runs" in this file means plain `validate`.
 
 ## Terms
 
@@ -59,7 +61,7 @@ As a product owner, product manager or orchestrator, I want each run state, back
 
 - AC-18.3.1 `[DC]` (ITEM-038) Given the `handoff` skill's run-state format, when it is read, then its front matter lists `module`, `submodule`, `feature` and `integrations`, says they are written at Confirm from the work item, and says they are left out when the repository declares no taxonomy.
 - AC-18.3.2 `[DC]` (ITEM-042) Given the `product-planning` and `task-triage` skills, when they are read, then the backlog-item, story and task formats carry the same four keys.
-- AC-18.3.3 `[NT]` (ITEM-038) Given a declaration and a tagged artefact whose `module`, `submodule`, `feature` or any `integrations` entry is not a declared id, or whose submodule is not under its module, when `validate` runs, then it exits non-zero and names the artefact's path, the key and the id (00c root 18).
+- AC-18.3.3 `[NT]` (ITEM-038) Given a declaration and a tagged artefact whose `module`, `submodule`, `feature` or any `integrations` entry is not a declared id, or whose submodule is not under its module, when `node .ai-dlc/workflow.mjs validate --artefacts` runs, then it exits non-zero and names the artefact's path, the key and the id (00c root 18; G2).
 - AC-18.3.4 `[PT]` (ITEM-038) Given a run state with none of the four keys, when `run.ts` and the lens parse it, then parsing succeeds and the keys are absent (`null` or an empty list), with no error.
 
 ### US-18.4 The work breakdown is tagged (ITEM-042)
@@ -72,7 +74,7 @@ As anyone reading runs (the orchestrator, `workflow.mjs`, auto-handoff, the lens
 
 - AC-18.5.1 `[PT]` Given a fixture handoffs root with a flat run `docs/handoffs/<run>/` and a nested run `docs/handoffs/<epic>/<sprint>/<feature>/<run>/`, when `run.ts` (`handoffsRoot`, today `run.ts:56-73`) and the lens (today the one-level scan at `lens.ts:986`) list runs, then both runs are found.
 - AC-18.5.2 `[DC]` Given the `handoff` skill's *Run state* section (the resume scan, today `SKILL.md:288`), when it is read, then it describes the scan at any depth.
-- AC-18.5.3 `[NT]` Given two runs with the same folder name under two different sprints, when `validate` runs, then it exits non-zero and names both paths (`tasks.md` ITEM-039).
+- AC-18.5.3 `[NT]` Given two runs with the same folder name under two different sprints, when `node .ai-dlc/workflow.mjs validate --artefacts` runs, then it exits non-zero and names both paths (`tasks.md` ITEM-039; G2).
 
 ### US-18.6 Auto-handoff can pick a run by module (ITEM-040)
 As a developer working on one module while other runs are open on the branch, I want auto-handoff's run pick to be filterable by module, so that the right run is resumed.
@@ -98,7 +100,7 @@ As anyone holding an old brief, I want a path to a run folder that moved to stil
 As the product manager and the lens, I want a run state to name its backlog item and tasks, and each stage its sessions, so that a run, a work item, a task and a Claude session can each be reached from the others (00c tier 1 table, root 18 tasks; 13b decisions).
 
 - AC-18.9.1 `[DC]` Given the `handoff` skill's run-state format, when it is read, then a run state names its backlog item (`work-item`, existing) and the ids of the tasks it implements, and the `product-planning` task format names the run that builds it.
-- AC-18.9.2 `[NT]` Given a declaration, a run state naming a task id and that task naming the run, when `validate` runs, then it exits 0; when the task names a different run, it exits non-zero and names both files and both run ids. The test uses a fixture run state and a fixture task file under `tests/workflow/`. *(Stays in root 18: po's condition for moving it to root 21 was "task files do not exist", and they exist, for example `docs/product/active/multi-agent-workflow-foundations/sprint-1/taxonomy/tasks.md`.)*
+- AC-18.9.2 `[NT]` Given a declaration, a run state naming a task id and that task naming the run, when `node .ai-dlc/workflow.mjs validate --artefacts` runs (G2), then it exits 0; when the task names a different run, it exits non-zero and names both files and both run ids. The test uses a fixture run state and a fixture task file under `tests/workflow/`. *(Stays in root 18: po's condition for moving it to root 21 was "task files do not exist", and they exist, for example `docs/product/active/multi-agent-workflow-foundations/sprint-1/taxonomy/tasks.md`.)*
 
 ### US-18.10 Prioritised items get run states in order (ITEM-066)
 As the orchestrator, I want run states written in the breakdown's priority order, so that the next run to start is always the top priority (00c tier 1 table, root 18 tasks; 13b decisions).
@@ -125,7 +127,7 @@ As the maintainer of this repository, I want its taxonomy declared, so that tier
   | integration | `integration-2` | Integration2 | `ai-dlc` ↔ `ai-dlc-lens`: (i) the lens shows keep-alive status per session and auto-handoff sessions, (ii) the lens groups ai-dlc workflows into flowcharts using the handoff skill, (iii) auto-handed-off sessions as several flowcharts mapped to run steps and tasks |
 
   Its features are exactly the list the human approves at G1 for ITEM-044 (pm's G1 question, default: the plan's *Area* values). That list must include the five tier 1 feature ids of the stories and tasks front matter (`auto-handoff-session-numbering`, `keepalive-cache-status`, `taxonomy`, `aaw-variants`, `diagramming`) and the human's features as kebab-case slugs (13b: skills, agents, workflow design, handoff, loop design, commands, rules, hooks; setup, configure, statusline; setup, configure, handing off to a new session). Ids are unique (AC-18.1.2), so the human's repeated names take their submodule as a prefix: `cache-keepalive-setup`, `cache-keepalive-configure`, `auto-handoff-setup`, `auto-handoff-configure`.
-- AC-18.11.2 `[BV]` Given the tier 1 `stories.md` and `tasks.md` files under `docs/product/active/`, and the existing run states and backlog items `tasks.md` ITEM-044 tags, when `validate` runs against the declaration, then every `module`, `submodule`, `feature` and `integrations` value is a declared id.
+- AC-18.11.2 `[BV]` Given the tier 1 `stories.md` and `tasks.md` files under `docs/product/active/`, and the existing run states and backlog items `tasks.md` ITEM-044 tags, when `node .ai-dlc/workflow.mjs validate --artefacts` runs against the declaration (G2), then every `module`, `submodule`, `feature` and `integrations` value is a declared id.
 
 ## Out of scope
 

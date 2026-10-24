@@ -9,7 +9,7 @@ integrations: []
 items: [ITEM-052, ITEM-053, ITEM-053.a, ITEM-054, ITEM-055, ITEM-056]
 author: system-engineer
 date: 2026-10-24
-status: draft revision 3 (bc round 1 fixed), awaiting brutal-critique round 2
+status: draft revision 4 (G2 OQ1 resolved: picture right after its fence; no layout setting), bc round 2 PASS on revision 3, text confirmation of revision 4 requested
 spec: docs/specs/diagramming.spec.md
 adrs: [ADR-0005]
 stories: docs/product/active/ai-dlc-lens/sprint-1/diagramming/stories.md
@@ -100,17 +100,15 @@ Reason texts (literal, `reasonFor`), shown under the source as a dim one line, e
 
 AC-20.3.2 (restated by the spec): `noJar` when `plantumlJar` is unset, `noJava` when `javaPath` is unset and `java` is not found on PATH (found by `$.process.run(['java', '-version'])` exit 0, cached for the session). The reason names what is missing and how to configure it. **Once per message:** the `noJar`/`noJava` notice is shown for the first PlantUML fence of a message only; later PlantUML fences of the same message show their source with no reason line (spec D6 minor; `layoutParts` takes `noticeShown: Set<ReasonCode>`).
 
-### 2.3 Layout (the G2 placement answer, one setting)
+### 2.3 Placement (G2 resolved OQ1: right after the fence; no setting)
 
 ```ts
-export type Layout = 'afterFence' | 'belowReply'
 export type Part = { md: string } | { source: Fence } | { picture: Fence } | { reason: string }
-export function layoutParts(segs: Segment[], layout: Layout, outcome: (f: Fence) => Outcome): Part[]
+export function layoutParts(segs: Segment[], outcome: (f: Fence) => Outcome, noticeShown?: Set<ReasonCode>): Part[]
 ```
 
-- `afterFence` (default): for each text segment a `md` part; for a closed fence of an enabled kind the `source` part (the fence as it was written) then its `picture` or `reason` part; an open or disabled fence is a `source`-only part (`md` of the original text, no picture, no reason; AC-20.4.1 shows nothing for it, AC-20.4.3 shows source only).
-- `belowReply`: the text and every fence's `source` in original order, then all pictures and reasons in fence order after the last segment (AC-20.1.1 to 20.1.3 wording of the "beneath" answer).
-- A pure function, so both layouts are table-tested; the G2 answer changes the default value of one setting and the wording of three ACs (spec OQ1).
+- The only placement: for each text segment a `md` part; for a closed fence of an enabled kind the `source` part (the fence as it was written) then its `picture` or `reason` part; an open or disabled fence is a `source`-only part (`md` of the original text, no picture, no reason; AC-20.4.1 shows nothing for it, AC-20.4.3 shows source only).
+- A pure function, table-tested for 0, 1 and 3 fences, an open fence and a disabled fence. The `belowReply` layout and the `diagramLayout` setting are removed (sa, after G2: a one-value setting is dead config).
 
 ## 3. The renderer process (ADR-0005)
 
@@ -161,7 +159,7 @@ Registered from `hooks/register.tsx` beside the other `ui.render` hooks (line ~3
 2. `cfg = await settingsNow($)` (section 5). If all three kinds are off, `return next(e)`.
 3. `segs = findFences(String(e.props.text))`. If no fence is closed and enabled, `return next(e)` (so the tree is exactly the engine's, AC-20.1.4, 20.4.1, 20.9.2).
 4. For each closed, enabled fence compute `outcome(f)` (4.1), concurrently (`Promise.all`, at most 3 renderer processes at once). **One shared deadline for the whole render:** `deadline = now + RENDER_WAIT_MS` is taken once at the start of this step and every fence awaits against that same deadline, so three uncached fences together never hold a redraw longer than `RENDER_WAIT_MS` (300 ms), not 3 x 300 ms. A fence not done at the deadline becomes `rendering…` and continues in the background.
-5. `const t = $.ui.resolve(e)`; `{ Box, Markdown, Text, Image, Svg }`. `parts = layoutParts(segs, cfg.diagramLayout, outcome)`. Build one `Box flexDirection="column"` with, per part: `md` → `<Markdown text=…/>`; `source` → `<Markdown text={original fence text}/>`; `picture` → `<Image source={{ png: body }} columns rows alt/>` when `t.Image`, else `<Svg source alt width? height?/>` when `t.Svg`; `reason` → `<Text dimColor>{reason}</Text>`; after a picture whose `removed > 0`, `<Text dimColor>removed N remote reference(s)</Text>`.
+5. `const t = $.ui.resolve(e)`; `{ Box, Markdown, Text, Image, Svg }`. `parts = layoutParts(segs, outcome)`. Build one `Box flexDirection="column"` with, per part: `md` → `<Markdown text=…/>`; `source` → `<Markdown text={original fence text}/>`; `picture` → `<Image source={{ png: body }} columns rows alt/>` when `t.Image`, else `<Svg source alt width? height?/>` when `t.Svg`; `reason` → `<Text dimColor>{reason}</Text>`; after a picture whose `removed > 0`, `<Text dimColor>removed N remote reference(s)</Text>`.
 6. `columns = clamp(ceil(width / 8), 1, 255)`, `rows = clamp(ceil(height / 16), 1, 255)` (a nominal 8×16 px cell; the engine scales the picture to the box, so the values are hints). `alt` = `<kind> diagram: <first line, at most 80 chars>`.
 7. The stored message is never changed (ctrl+o shows the original).
 
@@ -192,10 +190,9 @@ diagramMath:     { kind: 'bool', def: true,  doc: 'Draw closed math fences and d
 diagramPlantuml: { kind: 'bool', def: true,  doc: 'Draw closed plantuml fences with a local Java and plantuml.jar; takes effect only with plantumlJar set' },
 plantumlJar:     { kind: 'path', def: '',     doc: 'Path of plantuml.jar; must be inside a folder Claude Code trusts' },
 javaPath:        { kind: 'path', def: '',     doc: 'Path of the java executable; empty: java on PATH' },
-diagramLayout:   { kind: 'enum', values: ['afterFence', 'belowReply'], def: 'afterFence', doc: 'Where a picture goes: right after its fence, or beneath the whole reply' },
 ```
 
-`diagramLayout` is not in the spec's D6 table; it is the "one layout setting" of spec D1. `plantumlJar` and `javaPath` are paths in the lens's `path` kind (trust-gated like `costingPath`: the lens `coerce` for `kind: 'path'` and the trusted-folder check at use). AC-20.9.1: with no setting, Mermaid and math are on, PlantUML is on but draws only with a jar. The `lens-configure` skill's listing of settings and the lens schema (if the skill ships one) gain the six rows; `settings.test` style checks (`lens.test.tsx` has one pinning `SPEC` keys against the README table) change with them (build counts the pinned tests).
+`plantumlJar` and `javaPath` are paths in the lens's `path` kind (trust-gated like `costingPath`: the lens `coerce` for `kind: 'path'` and the trusted-folder check at use). AC-20.9.1: with no setting, Mermaid and math are on, PlantUML is on but draws only with a jar. The `lens-configure` skill's listing of settings and the lens schema (if the skill ships one) gain the five rows; `settings.test` style checks (`lens.test.tsx` has one pinning `SPEC` keys against the README table) change with them (build counts the pinned tests).
 
 ## 6. Offline proof (US-20.5)
 
@@ -209,9 +206,9 @@ Seams: `plugins/claude/ai-dlc-lens/tests/lens.test.tsx` (mounts `AssistantMessag
 
 | AC | Element | Test |
 |---|---|---|
-| AC-20.1.1 | terminal: `Image` PNG + source (OQ1 default A: directly after the fence source; wording B: beneath the reply, the same test with `diagramLayout: belowReply`) | `AC-20.1.1 a closed mermaid fence on the terminal gives an Image and keeps the source` (mount `surface: 'terminal'`; stub returns a png envelope; find `Image` with `alt`, and the fence text in a `Markdown`) |
+| AC-20.1.1 | terminal: `Image` PNG + source (G2 OQ1: the picture is directly after the fence source) | `AC-20.1.1 a closed mermaid fence on the terminal gives an Image and keeps the source` (mount `surface: 'terminal'`; stub returns a png envelope; find `Image` with `alt`, and the fence text in a `Markdown`) |
 | AC-20.1.2 | `Svg` elsewhere | `AC-20.1.2 on desktop and vscode (and mobile) the picture is an Svg` (loop over the three surfaces) |
-| AC-20.1.3 | order | `AC-20.1.3 three fences give three pictures in order` (`afterFence` layout; and the same with `belowReply`) |
+| AC-20.1.3 | order | `AC-20.1.3 three fences give three pictures in order` (each picture directly after its own fence) |
 | AC-20.1.4 | no fence → `next(e)` | `AC-20.1.4 a reply with no diagram fence is drawn exactly as without the submodule` (compare the tree with the native `next` result) |
 | AC-20.1.5 | five kinds | `AC-20.1.5 flowchart, sequence, class, state and ER each give a picture` (renderer test on five fixtures; hook test with one stub per kind) |
 | AC-20.2.1 | math display blocks | `AC-20.2.1 $$ block, \[ \] block and a math fence each give a picture` |
@@ -238,7 +235,7 @@ Seams: `plugins/claude/ai-dlc-lens/tests/lens.test.tsx` (mounts `AssistantMessag
 | AC-20.8.1 `[MV]` | `MANUAL-CHECKS.md` | the steps added by ITEM-053 |
 | AC-20.9.1 | defaults | `AC-20.9.1 with no setting Mermaid and math are on; PlantUML draws only with a jar` (`DEFAULTS` + hook) |
 | AC-20.9.2 | per-kind off | `AC-20.9.2 mermaid off, math on: the mermaid fence is drawn as without the submodule and the math block gets a picture` (tree comparison for the first, picture for the second), for each kind |
-| Placement | `layoutParts` | pure table: `afterFence` and `belowReply` for 0, 1 and 3 fences, an open fence, a disabled fence |
+| Placement | `layoutParts` | pure table: picture right after its fence for 0, 1 and 3 fences, an open fence, a disabled fence |
 | Render budget | 3.4 | `a render slower than 300 ms shows rendering… and exactly one invalidate("ui.render") follows its result; the next render shows the picture` (mock clock; the `ui.invalidate` call recorded; a second slow fence gives its own single invalidate) |
 
 ## 8. Tasks for `pm` (merge group LENS: 053 → 054 → 055 → 056, one at a time; root 20 before root 18's lens work)
@@ -247,19 +244,19 @@ Seams: `plugins/claude/ai-dlc-lens/tests/lens.test.tsx` (mounts `AssistantMessag
 |---|---|
 | ITEM-052 | closed: the API spike (20.1.1). The live surface check is AC-20.8.1 in 053. |
 | ITEM-053.a | build spike, first: confirm the resvg WebAssembly package, licence, size and offline load; the PlantUML security profile; bundle sizes of beautiful-mermaid with ELK and MathJax. Also: the PlantUML security profile (does the installed PlantUML offer one that blocks includes and URLs; the real control, with stripping as the backstop), the bundled font (name, licence, size), the unpacked size of `renderer/` against the 15 MB threshold of spec OQ3 (above 15 MB, or a licence beyond MIT, EPL-2.0, Apache-2.0, MPL-2.0 and the font's, the item goes back to the human with the numbers). Output: a written result (package names and versions, sizes, pass/fail per CONDITIONAL) in the run folder. Decides 3.2, 3.3 and the font. |
-| ITEM-053 | `diagram.ts` (pure functions), `registerDiagram`, `renderer/` (`render.mjs`, vendor bundle for Mermaid; the rasteriser per 053.a), cache, settings rows, Mermaid tests, layout, caps, fallbacks, the offline tests, `MANUAL-CHECKS.md` steps, README section request |
+| ITEM-053 | `diagram.ts` (pure functions), `registerDiagram`, `renderer/` (`render.mjs`, vendor bundle for Mermaid; the rasteriser per 053.a), cache, settings rows, Mermaid tests, placement, caps, fallbacks, the offline tests, `MANUAL-CHECKS.md` steps, README section request |
 | ITEM-054 | MathJax in `render.mjs`, the math kind in `findFences` tests and hook tests, TeX-diagram reason |
 | ITEM-055 | PlantUML (`javaPath`, `plantumlJar`, trust check, profile per 053.a), tests AC-20.3.x |
 | ITEM-056 | create `hooks/ATTRIBUTION.md`; `THIRD_PARTY_NOTICES.md` entries (beautiful-mermaid, ELK.js, MathJax, the rasteriser, the bundled font, mermaid-inline, LaTeX Inline; claude-code-figures only if reused, its NOTICE checked), the attribution record, lens `validate` and `test` |
 
-053.a may split into 053.a1 (rasteriser and sizes) and 053.a2 (PlantUML profile) for `pm`. 053 may split into 053.b (pure functions in `diagram.ts`, the renderer, their tests) and 053.c (the hook, the six `settings.ts` rows, the hook tests, `MANUAL-CHECKS.md`) with 053.b first; 053.c owns `settings.ts` and `register.tsx`, 053.b owns `diagram.ts` and `renderer/`.
+053.a may split into 053.a1 (rasteriser and sizes) and 053.a2 (PlantUML profile) for `pm`. 053 may split into 053.b (pure functions in `diagram.ts`, the renderer, their tests) and 053.c (the hook, the five `settings.ts` rows, the hook tests, `MANUAL-CHECKS.md`) with 053.b first; 053.c owns `settings.ts` and `register.tsx`, 053.b owns `diagram.ts` and `renderer/`.
 
 ## 9. Questions for `sa` (Refine)
 
 1. (Closed by sa: confirmed, spec D4 now says it.) **Element-table detection instead of a surface name.** The hook picks `Image` or `Svg` from `$.ui.resolve(e)`; the spec says `e.surface`. The types show the terminal table has `Image` and the others `Svg`. Confirm (it also covers a future surface).
 2. (Closed by spec rev 2: `RENDER_WAIT_MS` 300 ms, one redraw per fence result, `$.ui.invalidate("ui.render")` named from the types.)
 3. (Closed by sa: ITEM-056 creates `plugins/claude/ai-dlc-lens/hooks/ATTRIBUTION.md`, as auto-handoff does; `NOTICE.md` already points to it; spec D8 says so.)
-4. (Closed by sa: key `diagramLayout`, variable `AI_DLC_LENS_DIAGRAM_LAYOUT`, values `afterFence` and `belowReply`, default `afterFence` pending G2 OQ1; it is in the spec D6 table.)
+4. (Closed by sa after G2: the picture goes right after its fence; the `belowReply` layout and the `diagramLayout` setting are removed.)
 5. **Hash and cache.** FNV-1a 128-bit keys (no crypto import is guaranteed in the hooks module), 64 in-memory and 200 on-disk entries. Confirm, or name an allowed hash.
 6. **Image size to terminal cells.** `columns = ceil(width/8)`, `rows = ceil(height/16)`, capped at 255; no setting. Confirm.
 7. **`plantumlJar` and `javaPath` as `path` kind** go through the lens's trust gate at use, not at settings-read. Confirm that is the lens's `costingPath` pattern, not a stricter one.

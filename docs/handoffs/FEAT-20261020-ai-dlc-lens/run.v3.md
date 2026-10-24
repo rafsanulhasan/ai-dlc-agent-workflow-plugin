@@ -3,15 +3,15 @@ run: FEAT-20261020-ai-dlc-lens
 work-item: FEAT-20261020-ai-dlc-lens (scope v2)
 version: "3"
 previous: run.v2.md
-status: active
+status: done
 lifecycle: AI-DLC (AAW plugin/mod chain override)
 mode: team (named teammates; orchestrator leads only)
-current-stage: G2 approved; pm plan revision (30.2.l1.2) → G3; ra updates root 18 stories
+current-stage: Wave 2 done (G2, G3 approved); continues in run.v4.md (Wave 3 Build)
 owner: orchestrator
 session: 599f511f-ceae-4288-babb-06a85ef91e3c
 branch: feat/ai-dlc-lens
 commit: b00eb2c
-last-record: 31-orchestrator-to-human.handoff.md
+last-record: 32-orchestrator-to-human.handoff.md
 updated: 2026-10-24
 wave: 2 (Design; previous v2 Plan done with G1 approved)
 ---
@@ -53,7 +53,7 @@ As in `run.v2.md`: `00c-approved-plan-2026-10-24.md`, plus G1 (tier 1) approved 
 | 30.po | po acceptance of the five specs (roots 16-20) | po | team | done · ACCEPTED all five (AC traceability complete); G2 note 4 (AAWH subagents only) dropped by the orchestrator: stale, spec :96 says both modes in both variants | 599f511f | — | message to sa | po report | 2026-10-24 |
 | 20.1.3 | root 20 LLD (docs/specs/diagramming.lld.md) → bc round 1 | se → bc | team | done · REVISE r1 (1 Blocker: cleanSource narrower than spec sanitiseSource; 5 Major: render wait 1500 ms vs 300 ms bound, fonts, Mermaid-kind reason, PlantUML notice once, sanitise order); fix round 2 with se → PASS r2 (20.1.3.l1.2); all design closed | 599f511f | — | `20.1.3-system-engineer-to-brutal-critique.handoff.md` | `20.1.3-brutal-critique-to-system-engineer.handback.md` | 2026-10-24 |
 | 31 | G2 (tier 1) | human | — | done · approved, all defaults | — | — | `31-orchestrator-to-human.handoff.md` | — | 2026-10-24 |
-| 32 | G3 (tier 1 task plan) | human | — | pending | — | — | — | — | — |
+| 32 | G3 (tier 1 task plan) | human | — | done · approved | — | — | `32-orchestrator-to-human.handoff.md` | — | 2026-10-24 |
 
 ## Features
 | Step | Feature | Status |
@@ -75,7 +75,8 @@ As in `run.v2.md`: `00c-approved-plan-2026-10-24.md`, plus G1 (tier 1) approved 
 | Q34 after G2 spike 17.1.1 | human | observe now + spike the message ping; opt-in, default off, only if proven cheap and safe | human | 2026-10-24 |
 | gate-critique, root 17 spec | human | raised for this run from 2 to **3 rounds** (one-off; workflow file unchanged); round 3 = fix Blocker + 3 Majors | human | 2026-10-24 |
 | G2 (tier 1) | human | **approved**: specs, LLDs, narratives and ADR-0001..0005 frozen (ADRs Accepted); OQ1 picture right after its fence; OQ3 bundle renderers ≤ 15 MB unpacked subject to 053.a; root 18 --artefacts narrowing accepted (ra updates stories, bc check); taxonomy.json owned by product-manager; 034.a thresholds as written | human | 2026-10-24 |
-| G3 (tier 1) | human | pending (pm plan REVISE r1, 30.2.l1.1) | — | — |
+| G2 follow-up | human | the --artefacts narrowing covers AC-18.11.2 too (all four ACs) | human | 2026-10-24 |
+| G3 (tier 1) | human | **approved**: plan docs/plans/tier-1-sprint-1.tasks.md; sprint 1 cut as proposed (Commit: 030, 031, 032, 033, 035 + WF-1; Stretch: 034.c, 034, 048, 034.a, 036, 053.a; Carry: rest); capacity S=1/M=2/L=3, ~4 sessions/day/chain; human available to watch 034.c after 033 | human | 2026-10-24 |
 
 ## Open clarifications
 | # | Asker → upstream | Question | Round | Status |
@@ -88,4 +89,4 @@ As in `run.v2.md`: `00c-approved-plan-2026-10-24.md`, plus G1 (tier 1) approved 
 | Q34-G2 | orchestrator → human | 17.1.1: no API pings a subagent's cache prefix; only $.session.send (wakes the agent for a real turn). Accept the fallback, or spike session.send? | 1 | closed 2026-10-24: observe now (status line shows each subagent cache and when it goes cold); a build-time spike tests session.send to an idle subagent; messaging ping becomes an opt-in setting, off by default, only if the spike proves it cheap and safe |
 
 ## Next action
-G2 approved 2026-10-24. pm revises the task plan per bc 30.2.l1.1 (round 2 of 2) and resolves the OQ1 rows to afterFence; ra updates the root 18 stories for the --artefacts narrowing (bc check); po decides on bc's backlog-table Tags note. Then G3, then run.v4.md (Wave 3 Build).
+Wave 2 closed. Continue in run.v4.md: ra updates the root 20 stories to "after its fence" (bc check); Wave 3 Build starts with chain A (root 16: 030, 031) and WF-1.

@@ -28,6 +28,6 @@ run-state: run.v3.md
 ## Questions for the human
 1. Root 20 OQ1: picture placement, (A) right after its fence with the source still shown, or (B) beneath the reply.
 2. Root 20 OQ3: vendor renderer bundles (MIT, EPL-2.0, Apache-2.0, MPL-2.0), renderer/ at most 15 MB unpacked, fonts included, subject to the 053.a check.
-3. Root 18: "when validate runs" in AC-18.3.3, 18.5.3 and 18.9.2 means `validate --artefacts`; plain validate checks only the declaration. This narrows the G1 stories.
+3. Root 18: "when validate runs" in AC-18.3.3, 18.5.3, 18.9.2 (and, as the human confirmed at G3, AC-18.11.2) means `validate --artefacts`; plain validate checks only the declaration. This narrows the G1 stories.
 4. Root 18 ownership: `.ai-dlc/taxonomy.json` kept by product-manager as product data (ADR-0003), not by agent-manager as an agent artifact.
 5. Root 17 OQ3: 034.a pass thresholds. Cheap: at most 2x the main ping per agent per ping, with a cache hit. Safe: one woken turn, no tool call, no message, a reply of at most 50 output tokens, and the next task unchanged.
