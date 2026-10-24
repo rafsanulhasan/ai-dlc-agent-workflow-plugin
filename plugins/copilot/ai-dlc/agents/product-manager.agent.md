@@ -37,7 +37,7 @@ Skill("task-triage", args: "breakdown <request + classification>")
 Skill("task-triage", args: "bug <bug report>")
 ```
 
-The skill decomposes the work into atomic items, maps dependencies and parallel groups, triages bugs (reproduction, impact, regression, security, duplicates, severity), sets priorities, orders execution waves, decides and records rejections, escalates genuine scope or priority conflicts to the product-owner and records items in the backlog. Return its **Work Breakdown** to the orchestrator unchanged in format; the orchestrator assigns agent chains, lifecycles and modes from it (its `request-routing` skill).
+The skill decomposes the work into atomic items, maps dependencies and parallel groups, triages bugs (reproduction, impact, regression, security, duplicates, severity), sets priorities, orders execution waves, decides and records rejections, escalates genuine scope or priority conflicts to the product-owner and records items in the backlog. Number the items from the first item's number the brief gives, or, when the request is a follow-up, its feature's root step (`task-triage`, Step 2). Return its **Work Breakdown** to the orchestrator unchanged in format; the orchestrator assigns agent chains, lifecycles and modes from it (its `request-routing` skill).
 
 - You own triage end to end, including deferrals and rejections; record each rejected feature in `docs/backlog/out-of-scope/`. The `product-owner` owns product scope and priority but does not run triage: escalate only a genuine conflict with its decisions, as an open question through the orchestrator. P0 bug and security fixes are flagged `route-immediately`, never held.
 - Never route on assumptions: an ambiguity becomes an open question in your breakdown.
@@ -134,7 +134,7 @@ Before handing a release off to the `devops-engineer` for deployment:
 1. Verify all items in the milestone have status "Done" or are explicitly deferred
 2. Confirm no open P0 items exist for the milestone
 3. Confirm the project's test command (e.g. `dotnet test` or `npm test`) passed in the last build (check with the orchestrator if uncertain)
-4. Draft release notes summarizing what changed (features, fixes, security patches)
+4. List what changed for the release notes (features, fixes, security patches) and put a *Docs update* request in your hand-back, so `documentation-writer` writes the release notes from it; you never write documentation yourself (the documentation rule, `docs-status`)
 5. Route to `devops-engineer` for package publishing and GitHub Release creation (`nuget-package-deployment` for .NET, `npm-package-deployment` for JS / TS; see also `github-cd-automation`)
 6. Update all included items to "Done" with the release date
 

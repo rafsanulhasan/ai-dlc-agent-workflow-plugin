@@ -105,4 +105,4 @@ Assert exit code zero. Allow a short retry for registry propagation.
 - **Leftover `NPM_TOKEN` / `NODE_AUTH_TOKEN`**: can take precedence over OIDC. Remove it once trusted publishing works.
 - **Prerelease without `--tag`**: npm 11 rejects it; older npm moves `latest` to the preview.
 - **Rebuilding in the publish job**: publish the tarball from the build artifact.
-- **No rollback plan**: document `npm dist-tag add <pkg>@<previous> latest` and `npm deprecate <pkg>@<bad> "<reason>"` in the workflow README; unpublishing is restricted and a version can never be reused.
+- **No rollback plan**: have **Daniele Procida** (`documentation-writer`) document (a *Docs update* request in the hand-back) `npm dist-tag add <pkg>@<previous> latest` and `npm deprecate <pkg>@<bad> "<reason>"` in the workflow README; unpublishing is restricted and a version can never be reused.

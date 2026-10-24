@@ -163,7 +163,7 @@ Add a post-publish smoke step (in production releases) that installs the just-pu
 - **Missing `contents: write`**: `action-gh-release` fails silently with permission denied.
 - **Tag-pattern overlap**: a single workflow trying to handle both stable and preview tags often leaks preview secrets. Separate workflows are safer.
 - **Changelog includes merge commits noise**: filter `--no-merges` or use a curated tool.
-- **No rollback plan**: document the registry's rollback procedure (stack reference) in the workflow README.
+- **No rollback plan**: have **Daniele Procida** (`documentation-writer`) document the registry's rollback procedure (stack reference) in the workflow README — a *Docs update* request in the hand-back (the documentation rule, `docs-status`).
 - Stack-specific pitfalls are listed at the end of each stack reference.
 
 ## Output

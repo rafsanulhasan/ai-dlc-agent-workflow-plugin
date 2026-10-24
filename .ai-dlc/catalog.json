@@ -40,6 +40,7 @@
     "csharp-mutation-testing",
     "csharp-unit-testing",
     "design-test-cases",
+    "docs-rules",
     "dotnet-rules",
     "dotnet-test-gate",
     "fix-bug",

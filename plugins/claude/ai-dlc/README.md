@@ -52,6 +52,7 @@ Every skill of the plugin is a command. In Claude Code, type `/ai-dlc:<name>`; i
 | `/ai-dlc:csharp-mutation-testing` | — | Runs and interprets Stryker.NET mutation testing for C# projects — installing the tool, configuring stryker-config.json, running full, incremental (--since) and baseline runs, and triaging surviving mutants into real test gaps vs … |
 | `/ai-dlc:csharp-unit-testing` | — | Comprehensive guidance for writing C# unit tests using TUnit, TUnit.Mocks, Bogus, and TUnit.Assertions.Should with project conventions |
 | `/ai-dlc:design-test-cases` | — | Structured test case design skill for software projects. |
+| `/ai-dlc:docs-rules` | — | Installs the AI-DLC documentation rule (docs-status) into the current repository, for every stack. |
 | `/ai-dlc:dotnet-rules` | — | Installs the AI-DLC .NET rules into the current repository: C# coding style, the GlobalUsings convention and the dotnet test / dotnet stryker testing gates, as Claude rules (.claude/rules) with identical GitHub Copilot instruction twins … |
 | `/ai-dlc:dotnet-test-gate` | — | Installs the AI-DLC .NET test gate into the current repository: a Claude Code Stop hook and a GitHub Copilot agentStop hook that block the agent from finishing while `dotnet test` fails after runtime changes. |
 | `/ai-dlc:fix-bug` | — | Structured bug investigation workflow for software projects. |
