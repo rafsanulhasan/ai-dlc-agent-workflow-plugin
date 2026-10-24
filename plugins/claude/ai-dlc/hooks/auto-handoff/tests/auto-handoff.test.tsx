@@ -1,6 +1,6 @@
 import { describe, expect, mock, test } from 'claude-code/testing'
 import type { TestBody } from 'claude-code/testing'
-import type { On, SessionMessage } from 'claude-code'
+import type { FsEntry, On, SessionMessage } from 'claude-code'
 import { briefPrompt, extractFacts, factsBlock, hasUnansweredLastRequest, isValidBrief, markUnverifiedFigures } from '../brief.ts'
 import { renderTemplate } from '../templates.ts'
 import { parseBrief } from '../viewer.ts'
@@ -81,7 +81,8 @@ const files = (written: Record<string, string>) => Object.keys(written).filter(p
 
 // The engine beneath the plugin: everything the mod calls, answered from memory.
 // commands: the slash commands the engine lists (default: clear and rename); failRename: /rename rejects.
-function engine(on: On, opts: { tokens: number; files?: Record<string, string>; env?: Record<string, string>; brief?: string | null; messages?: SessionMessage[]; toolChars?: number; streamToolChars?: number; store?: Record<string, unknown>; stepUsage?: boolean; surfaces?: ('terminal' | 'desktop' | 'mobile' | 'vscode')[]; noSh?: boolean; git?: Git; failWrite?: RegExp; window?: number | null; percent?: number; breakdown?: Record<string, unknown> | 'throw'; commands?: string[]; failRename?: boolean; hold?: Promise<unknown>; stepRead?: number }): Calls {
+// failList: listing a folder whose path matches it fails, as an unreadable folder does.
+function engine(on: On, opts: { tokens: number; files?: Record<string, string>; env?: Record<string, string>; brief?: string | null; messages?: SessionMessage[]; toolChars?: number; streamToolChars?: number; store?: Record<string, unknown>; stepUsage?: boolean; surfaces?: ('terminal' | 'desktop' | 'mobile' | 'vscode')[]; noSh?: boolean; git?: Git; failWrite?: RegExp; failList?: RegExp; window?: number | null; percent?: number; breakdown?: Record<string, unknown> | 'throw'; commands?: string[]; failRename?: boolean; hold?: Promise<unknown>; stepRead?: number }): Calls {
   const calls: Calls = { compacts: 0, steps: 0, cleared: 0, seeded: [], written: {}, completes: 0, tokens: opts.tokens, prompts: [], toasts: [], ran: 0, clearedAtWrite: {}, renamed: [], commandOrder: [], branchQueries: 0, usageArgs: [] }
   let sessionId = 'old-session'
   let clears = 0
@@ -137,15 +138,16 @@ function engine(on: On, opts: { tokens: number; files?: Record<string, string>; 
   // Files directly in the folder, and the folders below it, from the seeded files and the writes.
   on('fs.list', async (_$, e) => {
     const dir = posix(e.path)
-    const names = new Map<string, 'file' | 'directory'>()
+    if (opts.failList?.test(dir)) throw new Error(`EACCES ${e.path}`)
+    const names = new Map<string, FsEntry['kind']>()
     for (const p of [...Object.keys(opts.files ?? {}), ...Object.keys(calls.written)]) {
       if (!p.startsWith(`${dir}/`)) continue
       const rest = p.slice(dir.length + 1)
       const name = rest.split('/')[0]!
-      names.set(name, rest.includes('/') ? 'directory' : 'file')
+      names.set(name, rest.includes('/') ? 'dir' : 'file')
     }
     if (!names.size) throw new Error(`ENOENT ${e.path}`)
-    return { value: [...names].map(([name, kind]) => ({ name, kind: kind as never, size: 0, mtimeMs: 0, isLink: false })) }
+    return { value: [...names].map(([name, kind]) => ({ name, kind, size: 0, mtimeMs: 0, isLink: false })) }
   })
   on('process.run', async (_$, e) => {
     // No `sh`, as on Windows: every sh call refused. The log's `sh` append is kept in the file store.
@@ -1188,10 +1190,11 @@ describe('auto-handoff', () => {
   })
 })
 
-// An AI-DLC run on disk: run.md as the handoff skill's Run state template writes it.
+// An AI-DLC run on disk: a run state as the handoff skill's Run state template writes it (run.md
+// from before versions; the versioned tests name run.v<N>.md).
 const ROOT = '/home/test/proj'
 const GIT: Git = { root: ROOT, branch: 'feat/x', commit: 'abc1234' }
-const runMd = (o: { status?: string; branch?: string; session?: string; updated?: string; next?: string; stages?: string } = {}) => `---
+const runMd = (o: { status?: string; branch?: string; session?: string; updated?: string; next?: string; stages?: string; lastRecord?: string } = {}) => `---
 run: AAW-20261021-demo
 work-item: WI-1
 status: ${o.status ?? 'active'}
@@ -1202,7 +1205,7 @@ owner: orchestrator
 session: ${o.session ?? ''}
 branch: ${o.branch ?? 'feat/x'}
 commit: abc1234
-last-record: 2-orchestrator-to-agent-manager.handoff.md
+last-record: ${o.lastRecord ?? '2-orchestrator-to-agent-manager.handoff.md'}
 updated: ${o.updated ?? '2026-10-21 11:10'}
 ---
 
@@ -1250,6 +1253,195 @@ describe('ai-dlc run', () => {
     expect(calls.seeded[0]).toContain(`Read the session handoff at ${path}`)
     expect(calls.seeded[0]).toContain('It continues AI-DLC run AAW-20261021-demo: resume the run from its run state docs/handoffs/AAW-20261021-demo/run.md')
     expect(calls.seeded[0]?.split('\n').length).toBe(1)
+  })
+
+  test('a versioned run: the highest run.v<N>.md is read and updated, no new version is written', async ($, on) => {
+    const dir = `${ROOT}/docs/handoffs/AAW-20261021-demo`
+    // v1 is an older session's version (another session, done): only v2 decides and is written.
+    const files = { [`${dir}/run.v1.md`]: runMd({ status: 'done', session: 'earlier' }), [`${dir}/run.v2.md`]: runMd() }
+    const calls = engine(on, { tokens: 165_000, git: GIT, files })
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    const path = sessionHandoffOf(calls.written)
+    expect(path).toBeDefined()
+    const handoff = calls.written[path!]!
+    expect(handoff).toContain('- Run state: `docs/handoffs/AAW-20261021-demo/run.v2.md`')
+    expect(handoff).not.toContain('`run.md`')
+    expect(calls.written[`${dir}/run.v2.md`]).toContain(`from the session handoff \`${path!.slice(ROOT.length + 1)}\``)
+    expect(calls.written[`${dir}/run.v1.md`]).toBeUndefined()
+    expect(Object.keys(calls.written).some(p => /\/run\.v3\.md$|\/run\.md$/.test(p))).toBe(false)
+    await $.classic.SessionStart({ source: 'clear' })
+    await settle(() => calls.seeded.length > 0)
+    expect(calls.seeded[0]).toContain('resume the run from its run state docs/handoffs/AAW-20261021-demo/run.v2.md,')
+  })
+
+  test('run.v10.md wins over run.v9.md: versions compare as numbers, not text', async ($, on) => {
+    const dir = `${ROOT}/docs/handoffs/AAW-20261021-demo`
+    // Read as text, v9 would win; it is done, so the run would not be picked at all.
+    const files = { [`${dir}/run.v9.md`]: runMd({ status: 'done' }), [`${dir}/run.v10.md`]: runMd() }
+    const calls = engine(on, { tokens: 165_000, git: GIT, files })
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    expect(sessionHandoffOf(calls.written)).toBeDefined()
+    expect(calls.written[`${dir}/run.v10.md`]).toContain('automatic context-limit handoff')
+    expect(calls.written[`${dir}/run.v9.md`]).toBeUndefined()
+  })
+
+  test('a minor pair: run.v1.2.md is read and updated, v1.1 and v1 are untouched, no new version', async ($, on) => {
+    const dir = `${ROOT}/docs/handoffs/AAW-20261021-demo`
+    // v1.1 records what the change of direction deprecated; v1.2 is current. Only v1.2 decides.
+    const files = {
+      [`${dir}/run.v1.md`]: runMd({ status: 'done', session: 'earlier' }),
+      [`${dir}/run.v1.1.md`]: runMd({ status: 'done' }),
+      [`${dir}/run.v1.2.md`]: runMd(),
+    }
+    const calls = engine(on, { tokens: 165_000, git: GIT, files })
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    const path = sessionHandoffOf(calls.written)
+    expect(path).toBeDefined()
+    expect(calls.written[path!]).toContain('- Run state: `docs/handoffs/AAW-20261021-demo/run.v1.2.md`')
+    expect(calls.written[`${dir}/run.v1.2.md`]).toContain(`from the session handoff \`${path!.slice(ROOT.length + 1)}\``)
+    expect(calls.written[`${dir}/run.v1.1.md`]).toBeUndefined()
+    expect(calls.written[`${dir}/run.v1.md`]).toBeUndefined()
+    expect(Object.keys(calls.written).some(p => /\/run\.v(?:1\.3|2)\.md$|\/run\.md$/.test(p))).toBe(false)
+    await $.classic.SessionStart({ source: 'clear' })
+    await settle(() => calls.seeded.length > 0)
+    expect(calls.seeded[0]).toContain('resume the run from its run state docs/handoffs/AAW-20261021-demo/run.v1.2.md,')
+  })
+
+  test('a new major wins over the minors of the old one, and minors compare as numbers', async ($, on) => {
+    const dir = `${ROOT}/docs/handoffs/AAW-20261021-demo`
+    // v1.9 and v1.10 are done; only v2, the new major, is active. Minors read as text would rank
+    // v1.9 over v1.10, and a minor ranked over its major's successor would end the run.
+    const files = {
+      [`${dir}/run.v1.9.md`]: runMd({ status: 'done' }),
+      [`${dir}/run.v1.10.md`]: runMd({ status: 'done' }),
+      [`${dir}/run.v2.md`]: runMd(),
+    }
+    const calls = engine(on, { tokens: 165_000, git: GIT, files })
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    expect(sessionHandoffOf(calls.written)).toBeDefined()
+    expect(calls.written[`${dir}/run.v2.md`]).toContain('automatic context-limit handoff')
+    expect(calls.written[`${dir}/run.v1.9.md`]).toBeUndefined()
+    expect(calls.written[`${dir}/run.v1.10.md`]).toBeUndefined()
+  })
+
+  test('a done minor version ends the run even when its bare major is active', async ($, on) => {
+    const dir = `${ROOT}/docs/handoffs/AAW-20261021-demo`
+    const files = { [`${dir}/run.v1.md`]: runMd(), [`${dir}/run.v1.1.md`]: runMd({ status: 'done' }) }
+    const calls = engine(on, { tokens: 165_000, git: GIT, files })
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    expect(sessionHandoffOf(calls.written)).toBeUndefined()
+    for (const p of Object.keys(files)) expect(calls.written[p]).toBeUndefined()
+  })
+
+  test('zero and zero-padded versions are not run states: run.v01.md never outranks run.v1.md', async ($, on) => {
+    const dir = `${ROOT}/docs/handoffs/AAW-20261021-demo`
+    // Were v0, v01 or v1.01 accepted, a done one would tie or beat v1 and the run would not be picked.
+    const files = {
+      [`${dir}/run.v1.md`]: runMd(),
+      [`${dir}/run.v0.md`]: runMd({ status: 'done' }),
+      [`${dir}/run.v01.md`]: runMd({ status: 'done' }),
+      [`${dir}/run.v1.01.md`]: runMd({ status: 'done' }),
+      [`${dir}/run.v1.0.md`]: runMd({ status: 'done' }),
+    }
+    const calls = engine(on, { tokens: 165_000, git: GIT, files })
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    expect(sessionHandoffOf(calls.written)).toBeDefined()
+    expect(calls.written[`${dir}/run.v1.md`]).toContain('automatic context-limit handoff')
+    for (const n of ['run.v0.md', 'run.v01.md', 'run.v1.01.md', 'run.v1.0.md']) expect(calls.written[`${dir}/${n}`]).toBeUndefined()
+  })
+
+  test('a done newest version ends the run even when an older version is active', async ($, on) => {
+    const dir = `${ROOT}/docs/handoffs/AAW-20261021-demo`
+    const files = { [`${dir}/run.v1.md`]: runMd(), [`${dir}/run.v2.md`]: runMd({ status: 'done' }) }
+    const calls = engine(on, { tokens: 165_000, git: GIT, files })
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    expect(sessionHandoffOf(calls.written)).toBeUndefined()
+    for (const p of Object.keys(files)) expect(calls.written[p]).toBeUndefined()
+  })
+
+  test('a run.v<N>.md beside a stray run.md: the version is current and run.md is left alone', async ($, on) => {
+    const dir = `${ROOT}/docs/handoffs/AAW-20261021-demo`
+    // run.md is active, the version is the current one and is done: the run has ended.
+    const files = { [`${dir}/run.md`]: runMd(), [`${dir}/run.v1.md`]: runMd({ status: 'done' }) }
+    const calls = engine(on, { tokens: 165_000, git: GIT, files })
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    expect(sessionHandoffOf(calls.written)).toBeUndefined()
+    expect(calls.written[`${dir}/run.md`]).toBeUndefined()
+    expect(calls.written[`${dir}/run.v1.md`]).toBeUndefined()
+  })
+
+  test('near-named files are never the run state: only run.v<N>.md counts', async ($, on) => {
+    const dir = `${ROOT}/docs/handoffs/AAW-20261021-demo`
+    const files = {
+      [`${dir}/run.v2.md`]: runMd(),
+      [`${dir}/run.v3.md.bak`]: runMd({ status: 'done' }),
+      [`${dir}/run.V9.md`]: runMd({ status: 'done' }),
+      [`${dir}/myrun.v8.md`]: runMd({ status: 'done' }),
+      [`${dir}/run.vx.md`]: runMd({ status: 'done' }),
+    }
+    const calls = engine(on, { tokens: 165_000, git: GIT, files })
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    expect(sessionHandoffOf(calls.written)).toBeDefined()
+    expect(calls.written[`${dir}/run.v2.md`]).toContain('automatic context-limit handoff')
+    for (const n of ['run.v3.md.bak', 'run.V9.md', 'myrun.v8.md', 'run.vx.md']) expect(calls.written[`${dir}/${n}`]).toBeUndefined()
+  })
+
+  test('a run.v<N>.md inside a sub-folder of the run folder is not the run state', async ($, on) => {
+    const dir = `${ROOT}/docs/handoffs/AAW-20261021-demo`
+    const files = { [`${dir}/run.v1.md`]: runMd(), [`${dir}/old/run.v9.md`]: runMd({ status: 'done' }) }
+    const calls = engine(on, { tokens: 165_000, git: GIT, files })
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    expect(calls.written[`${dir}/run.v1.md`]).toContain('automatic context-limit handoff')
+    expect(calls.written[`${dir}/old/run.v9.md`]).toBeUndefined()
+  })
+
+  test('takeover guard: a current version written by another session is not touched', async ($, on) => {
+    const dir = `${ROOT}/docs/handoffs/AAW-20261021-demo`
+    // v1 is unclaimed and active, but the current version v2 names another session: no run is ours.
+    const files = { [`${dir}/run.v1.md`]: runMd(), [`${dir}/run.v2.md`]: runMd({ session: 'someone-else' }) }
+    const calls = engine(on, { tokens: 165_000, git: GIT, files })
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    expect(sessionHandoffOf(calls.written)).toBeUndefined()
+    expect(calls.written[`${dir}/run.v1.md`]).toBeUndefined()
+    expect(calls.written[`${dir}/run.v2.md`]).toBeUndefined()
+  })
+
+  test('the version read changes only updated and Next action; older versions are untouched', async ($, on) => {
+    const dir = `${ROOT}/docs/handoffs/AAW-20261021-demo`
+    const v1 = runMd({ status: 'done', session: 'earlier' })
+    const v2 = runMd()
+    const calls = engine(on, { tokens: 165_000, git: GIT, files: { [`${dir}/run.v1.md`]: v1, [`${dir}/run.v2.md`]: v2 } })
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    const out = calls.written[`${dir}/run.v2.md`]!
+    const head = (t: string) => t.slice(0, t.indexOf('## Next action'))
+    expect(head(out).replace(/^updated:.*$/m, '')).toBe(head(v2).replace(/^updated:.*$/m, ''))
+    expect(out).not.toContain('updated: 2026-10-21 11:10')
+    expect(out).toMatch(/^updated: \d{4}-\d{2}-\d{2} \d{2}:\d{2}$/m)
+    expect(out.slice(out.indexOf('## Next action'))).toContain('Continue stage `change` from the session handoff')
+    expect(calls.written[`${dir}/run.v1.md`]).toBeUndefined()
+  })
+
+  test('a failed write to a versioned run state names that file in the log', async ($, on) => {
+    const dir = `${ROOT}/docs/handoffs/AAW-20261021-demo`
+    const calls = engine(on, { tokens: 165_000, git: GIT, files: { [`${dir}/run.v2.md`]: runMd() }, failWrite: /\/run\.v2\.md$/ })
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    const path = sessionHandoffOf(calls.written)
+    const log = calls.written['/home/test/.claude/state/auto-handoff/auto-handoff.log'] ?? ''
+    expect(log).toContain('session handoff failed run=AAW-20261021-demo step="write run.v2.md"')
+    expect(log).toContain(`${path} written but not linked from docs/handoffs/AAW-20261021-demo/run.v2.md`)
   })
 
   test('with a run, Haiku is asked for the session handoff sections', async ($, on) => {
@@ -1329,7 +1521,7 @@ describe('ai-dlc run', () => {
     expect(path).toBeDefined()
     const log = calls.written['/home/test/.claude/state/auto-handoff/auto-handoff.log'] ?? ''
     expect(log).toContain('session handoff failed run=AAW-20261021-demo step="write run.md"')
-    expect(log).toContain(`${path} written but not linked from run.md`)
+    expect(log).toContain(`${path} written but not linked from docs/handoffs/AAW-20261021-demo/run.md`)
     await $.classic.SessionStart({ source: 'clear' })
     await settle(() => calls.seeded.length > 0)
     expect(calls.seeded[0]).toContain('Read the brief at /home/test/.claude/state/auto-handoff/old-session.md')
@@ -1522,6 +1714,30 @@ describe('handoff records', () => {
     await settle(() => calls.seeded.length > 0)
     expect(calls.seeded[0]).toContain('resume the run from its run state docs/handoffs/AAW-20261021-demo/run.md')
     expect(calls.seeded[0]).toContain('read the open records its Handoff records section lists')
+  })
+
+  test('a round code in last-record is found: the round in progress first, the done first pass left out', async ($, on) => {
+    const stages = `| Step | Stage | Owner | Mode | Status | Sessions | Agents | Handoff | Handback | Updated |
+|---|---|---|---|---|---|---|---|---|---|
+| 1.2 | change | agent-manager | subagent | done | \`s1\` | agent-manager | \`1.2-orchestrator-to-agent-manager.handoff.md\` | \`1.2-agent-manager-to-orchestrator.handback.md\` | 2026-10-24 |
+| 1.3 | testing, loop \`1.3.l1\` round 1 | sqa-engineer | subagent | in-progress | \`s1\` | sqa-engineer, agent-manager | \`1.3-orchestrator-to-sqa-engineer.handoff.md\`, \`1.3.l1.1-orchestrator-to-agent-manager.handoff.md\`, \`1.3.l1.1-orchestrator-to-sqa-engineer.handoff.md\` | \`1.3-sqa-engineer-to-orchestrator.handback.md\`, \`1.3.l1.1-agent-manager-to-orchestrator.handback.md\` | 2026-10-24 |`
+    const last = '1.3.l1.1-agent-manager-to-orchestrator.handback.md'
+    const calls = engine(on, { tokens: 165_000, git: GIT, files: { [RUN_MD]: runMd({ stages, lastRecord: last }), [`${RUN_DIR}/${last}`]: 'report' } })
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    const handoff = calls.written[sessionHandoffOf(calls.written)!]!
+    expect(handoff).toContain(' / 1.3.l1.1, agent ')
+    const section = handoff.slice(handoff.indexOf('## Handoff records'))
+    const paths = [...section.matchAll(/^- `([^`]+)`/gm)].map(m => m[1])
+    expect(paths.slice(2)).toEqual([
+      `docs/handoffs/AAW-20261021-demo/${last}`,
+      'docs/handoffs/AAW-20261021-demo/1.3.l1.1-orchestrator-to-agent-manager.handoff.md',
+      'docs/handoffs/AAW-20261021-demo/1.3.l1.1-orchestrator-to-sqa-engineer.handoff.md',
+    ])
+    expect(section).toContain(`\`docs/handoffs/AAW-20261021-demo/${last}\` — last record, step 1.3.l1.1 in 1.3, in-progress`)
+    expect(section).not.toContain('1.3-orchestrator-to-sqa-engineer')
+    expect(section).not.toContain('1.3-sqa-engineer-to-orchestrator')
+    expect(section).not.toContain('1.2-orchestrator-to-agent-manager')
   })
 
   test('without a run the brief has no records section', async ($, on) => {
@@ -1865,6 +2081,44 @@ describe('workspace trust for the repository file', () => {
     const calls = engine(on, { tokens: 1_000, git: GIT, files: { [REPO_FILE]: JSON.stringify({ thresholdTokens: 60000 }), [CLAUDE_JSON]: '{ not json' } })
     await $.classic.SessionStart({ source: 'startup' })
     expect(calls.written[LOG_FILE] ?? '').not.toContain('trust')
+  })
+})
+
+// 11.19: a run folder the lookup cannot list, and folders whose run-state names are odd.
+describe('run folders the lookup skips or notes', () => {
+  const LOG = '/home/test/.claude/state/auto-handoff/auto-handoff.log'
+
+  test('an unreadable run folder is skipped and the readable run is still handed off', async ($, on) => {
+    const locked = `${ROOT}/docs/handoffs/AAW-20261021-locked`
+    const files = { [RUN_MD]: runMd(), [`${locked}/run.v1.md`]: runMd({ session: 'someone-else' }) }
+    const calls = engine(on, { tokens: 165_000, git: GIT, files, failList: /\/AAW-20261021-locked$/ })
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    expect(sessionHandoffOf(calls.written)).toBeDefined()
+    expect(calls.written[RUN_MD]).toContain('Continue stage `change` from the session handoff')
+    expect(calls.written[`${locked}/run.v1.md`]).toBeUndefined()
+    expect(calls.written[LOG] ?? '').not.toContain('run lookup error')
+  })
+
+  test('a folder whose version names are all rejected is logged once, across lookups', async ($, on) => {
+    const odd = `${ROOT}/docs/handoffs/AAW-20261021-padded`
+    const files = { [RUN_MD]: runMd(), [`${odd}/run.v01.md`]: runMd({ session: 'someone-else' }) }
+    const calls = engine(on, { tokens: 31_000, env: LOW, git: GIT, files })
+    await chainRounds($, calls, 2)
+    expect(calls.cleared).toBe(2)
+    const note = 'run state names docs/handoffs/AAW-20261021-padded: no valid run-state version among run.v01.md; folder ignored'
+    expect((calls.written[LOG] ?? '').split(note).length - 1).toBe(1)
+  })
+
+  test('run.md beside versions is logged, naming the version read', async ($, on) => {
+    const both = `${ROOT}/docs/handoffs/AAW-20261021-both`
+    const files = { [`${both}/run.md`]: runMd({ session: 'x' }), [`${both}/run.v1.md`]: runMd() }
+    const calls = engine(on, { tokens: 165_000, git: GIT, files })
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    expect(calls.written[LOG] ?? '').toContain('run state names docs/handoffs/AAW-20261021-both: run.md beside run-state versions; run.v1.md read')
+    expect(calls.written[`${both}/run.v1.md`]).toContain('Continue stage `change` from the session handoff')
+    expect(calls.written[`${both}/run.md`]).toBeUndefined()
   })
 })
 
