@@ -408,8 +408,15 @@ export function seedCacheLine(c: SeedCache): string {
 /** The handoff line in tokens: thresholdPercent of the window, rounded down. */
 export const contextLine = (thresholdPercent: number, window: number) => Math.floor(window * thresholdPercent / 100)
 
+/** The chain's session suffix, "(Session <n>)": written by sessionSuffix, read by parseTitle through
+ * the one pattern below (its group captures n). Change the two together. */
+export const sessionSuffix = (n: number) => `(Session ${n})`
+const SESSION_SUFFIX = String.raw`\(Session (\d+)\)`
+const TRAILING_NUMBER = new RegExp(String.raw`${SESSION_SUFFIX}\s*$`)
+const TRAILING_SUFFIX = new RegExp(String.raw`\s*${SESSION_SUFFIX}$`)
+
 /** A session name in a handoff chain: "<prefix>: <base> (Session <n>)". */
-export const sessionName = (prefix: string, base: string, n: number) => `${prefix}: ${base} (Session ${n})`
+export const sessionName = (prefix: string, base: string, n: number) => `${prefix}: ${base} ${sessionSuffix(n)}`
 
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
@@ -432,13 +439,12 @@ export function parseTitle(title: string | undefined, prefix: string): TitlePart
   let t = title?.trim()
   if (!t) return {}
   const parts: TitleParts = {}
-  const n = Number(/\(Session (\d+)\)\s*$/.exec(t)?.[1])
+  const n = Number(TRAILING_NUMBER.exec(t)?.[1])
   if (Number.isSafeInteger(n) && n >= 1) parts.number = n
-  const suffix = /\s*\(Session \d+\)$/
   const lead = new RegExp(`^(?:${escapeRe(DEFAULT_SESSION_PREFIX)}|${escapeRe(prefix)}):\\s*`)
   for (let before = ''; before !== t;) {
     before = t
-    t = t.replace(suffix, '').replace(lead, '').trim()
+    t = t.replace(TRAILING_SUFFIX, '').replace(lead, '').trim()
   }
   if (t) parts.base = t
   return parts
@@ -469,10 +475,14 @@ export function numbering(titleNumber: number | undefined, depth: number | undef
  * its panel step and the toast shown where the band is not drawn. */
 export function numberingNotice(session: string, error: string, n: Numbering): { log: string; step: { mark: 'warn'; text: string }; toast: string } {
   const fromTitle = n.source === 'title'
+  // One set of fragments for both forms: the log adds the details (the number, why it defaulted).
+  const outcome = (detail: boolean) => fromTitle
+    ? `number${detail ? ` ${n.current}` : ''} taken from the title${detail ? ` ${sessionSuffix(n.current)}` : ''}`
+    : `number defaulted to 1${detail ? ', the title has none' : ''}`
   const tail = `, chain id restarted${fromTitle ? '' : ', session not renamed'}`
-  const text = `numbering: store unreadable, ${fromTitle ? 'number taken from the title' : 'number defaulted to 1'}${tail}`
+  const text = `numbering: store unreadable, ${outcome(false)}${tail}`
   return {
-    log: `numbering fallback: lineage read failed session=${session} (${error}); ${fromTitle ? `number ${n.current} taken from the title (Session ${n.current})` : 'number defaulted to 1, the title has none'}${tail}`,
+    log: `numbering fallback: lineage read failed session=${session} (${error}); ${outcome(true)}${tail}`,
     step: { mark: 'warn', text },
     toast: text,
   }

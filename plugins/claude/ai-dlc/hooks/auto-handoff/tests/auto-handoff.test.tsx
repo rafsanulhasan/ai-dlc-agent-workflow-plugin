@@ -269,6 +269,19 @@ async function settle(check: () => boolean) {
   for (let i = 0; i < 50 && !check(); i++) await new Promise(r => setTimeout(r, 10))
 }
 
+// One handoff of a session titled `title` (none: no title from the engine), started as `source`;
+// returns the name the seeded session asked for through its SessionStart answer.
+async function handOffTitled($: Parameters<TestBody>[0], calls: Calls, title?: string, source: 'startup' | 'resume' = 'startup'): Promise<string | undefined> {
+  if (title !== undefined) await $.classic.SessionStart({ source, session_title: title } as never)
+  await $.turn.complete(TURN)
+  await settle(() => calls.cleared > 0)
+  const answer = await $.classic.SessionStart({ source: 'clear' }) as { sessionTitle?: string }
+  return answer.sessionTitle
+}
+const P = '[ai-dlc:auto-handoff]'
+// The number of `numbering fallback:` lines in the log (LOG_FILE, defined below; read at call time).
+const fallbacks = (calls: Calls) => (calls.written[LOG_FILE] ?? '').split('numbering fallback:').length - 1
+
 describe('auto-handoff', () => {
   test('below the threshold nothing happens', async ($, on) => {
     const calls = engine(on, { tokens: 100_000 })
@@ -1773,18 +1786,6 @@ describe('handoff records', () => {
   })
 })
 
-// One handoff of a session titled `title` (none: no title from the engine), started as `source`;
-// returns the name the seeded session asked for through its SessionStart answer.
-async function handOffTitled($: Parameters<TestBody>[0], calls: Calls, title?: string, source: 'startup' | 'resume' = 'startup'): Promise<string | undefined> {
-  if (title !== undefined) await $.classic.SessionStart({ source, session_title: title } as never)
-  await $.turn.complete(TURN)
-  await settle(() => calls.cleared > 0)
-  const answer = await $.classic.SessionStart({ source: 'clear' }) as { sessionTitle?: string }
-  return answer.sessionTitle
-}
-const P = '[ai-dlc:auto-handoff]'
-const fallbacks = (calls: Calls) => (calls.written[LOG_FILE] ?? '').split('numbering fallback:').length - 1
-
 describe('session names', () => {
   test('AC-16.1.1 a main session is renamed Session 1 and the new one is Session 2', async ($, on) => {
     const calls = engine(on, { tokens: 165_000 })
@@ -1842,7 +1843,9 @@ describe('session names', () => {
     calls.tokens = 47_000
     await $.turn.complete(TURN)
     expect(await band($)).toContain(step)
-    await settle(() => calls.toasts.length > 2)
+    const handedOff = () => calls.toasts.some(t => t.startsWith('↪ handed off'))
+    await settle(handedOff)
+    expect(handedOff()).toBe(true)
     expect(fallbacks(calls)).toBe(1)
     expect(calls.toasts.filter(t => t === step)).toEqual([step])
     // The chain id restarted: the new lineage's chain is this session.
@@ -1977,6 +1980,15 @@ describe('session names', () => {
     expect(calls.renamed).toEqual([])
     const answer = await $.classic.SessionStart({ source: 'clear' }) as { sessionTitle?: string }
     expect(answer.sessionTitle).toBeUndefined()
+  })
+
+  test('renameSessions false with a numbered title names nothing, and the chain is still numbered', async ($, on) => {
+    const calls = engine(on, { tokens: 165_000, env: { AI_DLC_AUTO_HANDOFF_RENAME_SESSIONS: 'false' } })
+    const name = await handOffTitled($, calls, `${P}: Fix the parser (Session 3)`)
+    expect(calls.renamed).toEqual([])
+    expect(name).toBeUndefined()
+    await settle(() => calls.seeded.length > 0)
+    expect(calls.store.get('lineage:new-session-1')).toEqual({ from: 'old-session', chain: 'old-session', depth: 4, baseName: 'Fix the parser' })
   })
 
   test('sessionNamePrefix changes the prefix', async ($, on) => {

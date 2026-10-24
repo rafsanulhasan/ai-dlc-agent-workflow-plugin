@@ -62,7 +62,7 @@
       "type": ["boolean", "null"],
       "default": true,
       "x-env": "AI_DLC_AUTO_HANDOFF_RENAME_SESSIONS",
-      "description": "Name the sessions of a chain \"<sessionNamePrefix>: <original name> (Session N)\". The original session is renamed Session 1 with /rename when the running Claude Code has it."
+      "description": "Name the sessions of a chain \"<sessionNamePrefix>: <original name> (Session N)\". The title number wins: N is the session title's (Session n), else its lineage depth, else 1, and the new session is named N + 1. Only the main session (no number in its title, no lineage depth) is renamed, to Session 1, with /rename when the running Claude Code has it; a numbered session keeps its title. Names never nest."
     },
     "sessionNamePrefix": {
       "type": ["string", "null"],

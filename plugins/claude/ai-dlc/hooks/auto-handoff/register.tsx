@@ -368,6 +368,7 @@ async function storedLineage($: EngineInterface, sessionId: string): Promise<Lin
 }
 
 // This session's lineage: in memory for the seeded session, else from the store (a hot reload).
+// handoff() does not use it: its numbering reads the store alone, so a failing store shows (D3).
 async function lineageOf($: EngineInterface, sessionId: string): Promise<Lineage | undefined> {
   return sessionId === seededSession && lineage ? lineage : await storedLineage($, sessionId)
 }
@@ -483,9 +484,6 @@ async function handoff($: EngineInterface, sessionId: string, tokens: number, th
   }
 }
 
-// The brief's text: Haiku's summary in the template's sections, around the facts the code gathered,
-// or the facts alone when the summary is unusable (`problem` says why). With a run, Haiku writes the
-// handoff skill's session handoff sections instead of the brief's.
 // The session's working folder and its transcript path, read once per handoff: the title comes from
 // the transcript before the brief is written, and the brief's header names the folder.
 async function transcriptFor($: EngineInterface, sessionId: string): Promise<{ transcript: string; cwd: string }> {
@@ -495,6 +493,9 @@ async function transcriptFor($: EngineInterface, sessionId: string): Promise<{ t
   return { transcript, cwd }
 }
 
+// The brief's text: Haiku's summary in the template's sections, around the facts the code gathered,
+// or the facts alone when the summary is unusable (`problem` says why). With a run, Haiku writes the
+// handoff skill's session handoff sections instead of the brief's.
 // depth: the session's number in its chain (config.ts, numbering), always known.
 async function composeBrief($: EngineInterface, sessionId: string, tokens: number, threshold: number, depth: number, run: RunTarget | undefined, where: { transcript: string; cwd: string }) {
   const messages = await $.session.messages()

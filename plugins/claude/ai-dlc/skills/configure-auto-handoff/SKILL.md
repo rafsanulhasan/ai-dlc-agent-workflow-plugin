@@ -67,12 +67,12 @@ Done when `validate` exits 0.
 
 ### rename check
 
-Sessions of a chain are named "… (Session 1)", "… (Session 2)" and so on in two ways. Each seeded session asks for its name as it starts, as the `sessionTitle` of the module's session-start answer; whether Claude Code honours a title from a hooks module is not yet confirmed on a live session, and nothing here can check it. And each session handed off is renamed with Claude Code's `/rename` command just before its `/clear`, which the module runs only when the running Claude Code lists it. A skill cannot ask Claude Code which commands it has, so at each session start the module records the answer in `~/.claude/state/auto-handoff/capabilities.json`. This check covers `/rename` only.
+Sessions of a chain are named "… (Session 1)", "… (Session 2)" and so on in two ways. Each seeded session asks for its name as it starts, as the `sessionTitle` of the module's session-start answer; whether Claude Code honours a title from a hooks module is not yet confirmed on a live session, and nothing here can check it. The number is the title's `(Session n)` when it has one (the title number wins), else the chain's lineage depth, else 1, and the new session gets that number + 1. Only the main session, the one whose title has no number and which has no lineage depth, is renamed: to `(Session 1)`, with Claude Code's `/rename` command just before its `/clear`, which the module runs only when the running Claude Code lists it. A session whose title already has a number keeps it. A skill cannot ask Claude Code which commands it has, so at each session start the module records the answer in `~/.claude/state/auto-handoff/capabilities.json`. This check covers `/rename` only.
 
 1. Run `node <skill dir>/templates/auto-handoff.mjs capabilities`.
 2. Report its result:
-   - **available**: every session is renamed as it is handed off, the first one included; the current session's name depends on `sessionTitle`;
-   - **not available**: no session is renamed with `/rename`, so the first session keeps its own name and the others are named only if `sessionTitle` is honoured; the handoff itself is unaffected;
+   - **available**: the main session is renamed `(Session 1)` as it is handed off; every later session's name, the current one's included, comes from `sessionTitle`;
+   - **not available**: the main session keeps its own name and the later sessions are named only if `sessionTitle` is honoured; the numbering and the handoff itself are unaffected;
    - **not recorded**: the module has not run in a session yet (the plugin was installed after this session started, or the session is older than the plugin). Start a new session and run `/ai-dlc:configure-auto-handoff rename-check` there.
 
 Done when one of the three is reported. It never fails the caller.

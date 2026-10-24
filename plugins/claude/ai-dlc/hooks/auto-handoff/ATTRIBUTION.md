@@ -145,12 +145,24 @@ Made by Rafsanul Hasan, 2026-10-22 (run `AAW-20261022-auto-handoff-chain`):
   `<sessionNamePrefix>: <original name> (Session N)`. The original name comes
   from the classic SessionStart / UserPromptSubmit `session_title`, else the
   transcript's last `custom-title`, else its `ai-title`, else the short id; it
-  is carried in the lineage record (`baseName`) and any wrapper is stripped
-  (`baseName` in `config.ts`), so names never nest. The old session is renamed
-  with `$.command.run({ command: 'rename' })` before `/clear`, only when
-  `$.command.list()` includes `rename`; the seeded session's name is the
-  `sessionTitle` of the classic SessionStart answer. Failures are logged and
-  never block the handoff. Open runtime checks, not provable in unit tests:
+  is carried in the lineage record (`baseName`). `parseTitle` in `config.ts`
+  takes every leading `<prefix>:` (the default and the one in force) and every
+  trailing `(Session n)` off it, again and again, so names never nest; any
+  other `X:` stays in the base. The number (`numbering` in `config.ts`): the
+  title's number wins (its last trailing `(Session n)`); the lineage depth is
+  used only when the title has no number; else 1. The new session is that
+  number + 1, and the seed step stores it as the new lineage's `depth`,
+  without reading the old lineage again. Only the main session (no title
+  number, no lineage depth, and a lineage read that did not fail) is renamed:
+  to `(Session 1)` with `$.command.run({ command: 'rename' })` before
+  `/clear`, only when `$.command.list()` includes `rename`. A numbered session
+  keeps its title and gets no rename call. The seeded session's name is the
+  `sessionTitle` of the classic SessionStart answer. A lineage read that fails
+  gives one notice per handoff (one `numbering fallback:` log line, one panel
+  step, one toast where the band is not drawn): the number comes from the
+  title, or defaults to 1 with no rename, and the chain id restarts. Rename
+  failures are logged and never block the handoff. Open runtime checks, not
+  provable in unit tests:
   whether Claude Code honours `sessionTitle` returned by a hooks module, and
   whether `/rename` exists and renames the current session when a hook runs it.
 - **Capabilities record.** At each startup or resume (and once per process),
