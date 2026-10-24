@@ -19,7 +19,7 @@ A track runs only when the session's last cache write used its lifetime. Keep-al
 
 ## Status lines
 
-**In progress:** the cache part of the lines and the reasons for `off` are built and being tested and reviewed. Two parts are not done yet: the `first ping at H:MM` clause (a later task) and the subagents' caches (a later task), so a line shows the main session's cache only.
+**In progress:** the cache part of the lines and the reasons for `off` are built and being tested and reviewed. The `first ping at H:MM` clause is built and in review. One part is not done yet: the subagents' caches (a later task), so a line shows the main session's cache only.
 
 When a turn ends, with or without background tasks, the status line under the prompt shows one line per track. Each line is `keepalive <track>: <cache part>; <keep-alive part>`:
 
@@ -35,6 +35,7 @@ After an automatic session handoff, a third line says whether the new session's 
 
 - **warm until**: in the keep-alive part, when the cache expires if no further ping lands: the last successful ping (or the cache's own time, before the first ping) plus the track's lifetime. A landed 5m ping moves the cache part's time too, to the ping time plus 5 minutes (a 5m hit refreshes the cache's lifetime, even when the ping only read). A landed 1h ping moves the cache part's time only when its response carries a 1h cache write; a 1h ping that only read from the cache moves this time alone, so the two times can differ, as in the example above. A line still on screen after that time is stale.
 - **ping 2/9**: pings sent since the turn ended, out of the track's ping limit (`maxPings`, or more after `/ai-dlc:cache-keepalive <duration>`; see *When the pings stop*).
+- **ping 0/9, first ping at 10:50**: before the first ping lands, the counter says when that ping is due, so `ping 0/9` reads as "not yet". The time is the first tick, one interval after the turn ends: 50 minutes later on the 1h track, 3 minutes later on the 5m track (`ping 0/20, first ping at 10:03`). A Stop that re-arms the track moves it, since it counts from that Stop. The clause goes once a ping lands (`ping 1/9`), and a track that is not running shows none.
 - **keep warm 8h**: the total time the track keeps pinging, counted from the end of the turn, and where that time comes from when it is not the track's own setting.
 - **stop by 18:46**: the end of the turn plus the keep-warm time. A ping due at that time still goes out; none is due after it.
 - **armed, 1 task(s)**: at the start of a line, the turn has just ended with that many background tasks, and no ping has run yet.

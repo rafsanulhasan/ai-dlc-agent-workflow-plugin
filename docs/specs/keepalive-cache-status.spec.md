@@ -10,7 +10,7 @@ integrations: [integration-1]
 items: [ITEM-032, ITEM-033, ITEM-034.c, ITEM-034, ITEM-034.a, ITEM-034.b, ITEM-035, ITEM-036]
 author: software-architect
 date: 2026-10-24
-status: draft revision 3 (bc rounds 1 and 2 fixed), awaiting brutal-critique round 2, product-owner acceptance and G2
+status: draft revision 3 (bc rounds 1 and 2 fixed; 17.1.9: D1 transcript fallback also resolves a main write with no split, per LLD rev 5), awaiting brutal-critique round 2, product-owner acceptance and G2
 stories: docs/product/active/session-continuity-and-cache-visibility/sprint-1/keepalive-cache-status/stories.md (G1-approved)
 narrative: docs/architecture/narratives/keepalive-cache-status.md
 lld: docs/specs/keepalive-cache-status.lld.md (system-engineer)
@@ -79,7 +79,7 @@ If ITEM-034.a fails, AC-17.3.2, 17.3.5 and 17.3.6 go back to the human with the 
 
     Otherwise the read is unattributed and moves nothing. Two rows of the pure-seam table show this. In AC-17.1.3 the 1h write at 10:02 does not move the 5m entry, so the line reads 10:05. In AC-17.1.5 there is no 1h entry, so the line reads 10:09.
   - It never moves a 1h entry. On the 1h track, only a 1h write moves the time (AC-17.1.5).
-  - The ledger replaces `lastSplit` as the arming input. The transcript fallback (`transcriptSplit`, used when no usage was seen) still seeds the `main` entry at Stop, as today.
+  - The ledger replaces `lastSplit` as the arming input. The transcript fallback (`transcriptSplit`) still seeds the `main` entry at Stop, as today, when the ledger has no `main` entry, and also at the Stop after a main write that carried no split: the response is marked pending, the transcript row with a split resolves it without lowering a live entry, and when the transcript has no such row the write records nothing and is not read again.
   - The ledger is cleared where `lastSplit` is cleared today: `session.end` and `stopForHandoff`.
   - A turn start does not clear it (AC-17.2.3).
   - **Landed pings are attributable by construction.** The read-attribution rule above covers ordinary responses only. A keep-alive ping that hits the cache refreshes the entry of **its own track's TTL** for the source it pinged:

@@ -483,11 +483,11 @@ describe('the cache split', () => {
 })
 
 describe('keep-alive', () => {
-  test('a 1h cache: the 1h track pings every 50 minutes and the 5m track is off; two status lines', async ($, on) => {
+  test('AC-17.4.3 (characterisation) a 1h cache: the 1h track pings every 50 minutes and the 5m track is off; two status lines; after the first landed ping the line never shows ping 0/9', async ($, on) => {
     const { part, seen, clock, status, line } = engine(on)
     await $.classic.Stop(stop())
     expect(status()?.split('\n')).toHaveLength(2)
-    expect(part('1h')).toMatch(/^armed, 1 task\(s\), warm until \d+:\d\d, ping 0\/9, keep warm 8h, stop by \d+:\d\d$/)
+    expect(part('1h')).toMatch(new RegExp(`^armed, 1 task\\(s\\), warm until \\d+:\\d\\d, ping 0/9, first ping at ${hhmm(START + 50 * MIN)}, keep warm 8h, stop by \\d+:\\d\\d$`))
     expect(part('5m')).toBe('off (no 5m cache write seen)')
     await clock.fire(49)
     expect(seen.forks).toBe(0)
@@ -505,11 +505,11 @@ describe('keep-alive', () => {
     expect(part('1h')).toMatch(/^kept warm 8h, stopped, warm until \d+:\d\d$/)
   })
 
-  test('a 5m cache: the 5m track pings every 3 minutes for 1h, and the 1h track is off', async ($, on) => {
+  test('AC-17.4.2 (characterisation) a 5m cache: the 5m track pings every 3 minutes for 1h, and the 1h track is off; the k-th landed ping shows ping k/20', async ($, on) => {
     const { part, seen, clock, line } = engine(on, { split: [0, 4_000] })
     await $.classic.Stop(stop())
     expect(part('1h')).toBe('off (no 1h cache write seen)')
-    expect(part('5m')).toMatch(/^armed, 1 task\(s\), warm until \d+:\d\d, ping 0\/20, keep warm 1h, stop by \d+:\d\d$/)
+    expect(part('5m')).toMatch(new RegExp(`^armed, 1 task\\(s\\), warm until \\d+:\\d\\d, ping 0/20, first ping at ${hhmm(START + 3 * MIN)}, keep warm 1h, stop by \\d+:\\d\\d$`))
     await clock.fire(3)
     expect(seen.forks).toBe(1)
     expect(line('5m')).toContain('ping 1/20')
@@ -518,7 +518,7 @@ describe('keep-alive', () => {
     expect(part('5m')).toMatch(/^kept warm 1h, stopped, warm until \d+:\d\d$/)
   })
 
-  test('a cache written for both lifetimes runs both tracks', async ($, on) => {
+  test('AC-17.4.1 and AC-17.4.2 (characterisation) a cache written for both lifetimes runs both tracks; each line shows its landed pings right after them', async ($, on) => {
     const { seen, clock, line } = engine(on, { split: [1_000, 2_000] })
     await $.classic.Stop(stop())
     expect(line('1h')).toContain('armed')
@@ -571,7 +571,7 @@ describe('keep-alive', () => {
     expect(part('1h')).toBe('expired, stopped')
   })
 
-  test('a missed ping stops that track with "missed" and never reads as kept warm', async ($, on) => {
+  test('AC-17.4.6 (characterisation) a missed ping stops that track with "missed", the counter does not move, and it never reads as kept warm', async ($, on) => {
     const { part, seen, clock, line } = engine(on, { cacheRead: 0 })
     await $.classic.Stop(stop())
     await clock.fire(50)
@@ -581,7 +581,7 @@ describe('keep-alive', () => {
     expect(seen.forks).toBe(1)
   })
 
-  test('hitThreshold decides what counts as a hit', async ($, on) => {
+  test('AC-17.4.1 (characterisation) hitThreshold decides what counts as a hit; the landed 1h ping shows ping 1/9', async ($, on) => {
     // 500k of 1.5M read is a third: a miss at the default 0.9, a hit at 0.3. The spend limit is off,
     // since the 1M written would spend it.
     const { seen, clock, line } = engine(on, { cacheRead: 500_000, files: { [`${ROOT}/.claude/settings.local.json`]: JSON.stringify({ env: { AI_DLC_KEEPALIVE_HIT_THRESHOLD: '0.3', AI_DLC_KEEPALIVE_BUDGET_MULTIPLIER: '0' } }) } })
@@ -1304,7 +1304,7 @@ describe('/ai-dlc:cache-keepalive', () => {
     const { part, seen, clock, line } = engine(on)
     await keepalive($, '1d --track 1h')
     await $.classic.Stop(stop())
-    expect(line('1h')).toContain('ping 0/28, keep warm 1d')
+    expect(line('1h')).toContain(`ping 0/28, first ping at ${hhmm(START + 50 * MIN)}, keep warm 1d`)
     expect(await runChain(clock, seen, () => line('1h'), 50)).toBe(28)
     expect(part('1h')).toMatch(/^kept warm 1d, stopped/)
   })
@@ -1485,7 +1485,7 @@ describe('the ping on the limit', () => {
   test('a keep-warm time raised in the settings, without maxPings, is held to the default 9 pings', async ($, on) => {
     const { part, seen, clock, line } = engine(on, { files: local({ AI_DLC_KEEPALIVE_1H_KEEP_WARM_FOR: '1d' }) })
     await $.classic.Stop(stop())
-    expect(line('1h')).toContain('ping 0/9, keep warm 1d')
+    expect(line('1h')).toContain(`ping 0/9, first ping at ${hhmm(START + 50 * MIN)}, keep warm 1d`)
     expect(await runChain(clock, seen, () => line('1h'), 50)).toBe(9)
     expect(part('1h')).toMatch(/^ping limit 9 reached, stopped/)
   })
@@ -1495,7 +1495,7 @@ describe('the ping on the limit', () => {
     const { part, seen, clock, line } = engine(on, { split: [0, 5], files: local({ AI_DLC_KEEPALIVE_BUDGET_MULTIPLIER: '10' }) })
     await keepalive($, '3h --track 5m --machine')
     await $.classic.Stop(stop())
-    expect(line('5m')).toContain('ping 0/60, keep warm 3h')
+    expect(line('5m')).toContain(`ping 0/60, first ping at ${hhmm(START + 3 * MIN)}, keep warm 3h`)
     expect(await runChain(clock, seen, () => line('5m'), 3)).toBe(60)
     expect(part('5m')).toMatch(/^kept warm 3h, stopped/)
   })
@@ -1504,7 +1504,7 @@ describe('the ping on the limit', () => {
     const { part, seen, clock, line } = engine(on)
     await keepalive($, '2h --track 1h')
     await $.classic.Stop(stop())
-    expect(line('1h')).toContain('ping 0/9, keep warm 2h')
+    expect(line('1h')).toContain(`ping 0/9, first ping at ${hhmm(START + 50 * MIN)}, keep warm 2h`)
     expect(await runChain(clock, seen, () => line('1h'), 50)).toBe(2)
     expect(part('1h')).toMatch(/^kept warm 2h, stopped/)
   })
@@ -1512,7 +1512,7 @@ describe('the ping on the limit', () => {
   test('the personal env pair (a keep-warm time with its maxPings = time / interval) runs the whole time: 10h gives 12 pings on 1h, 2h gives 40 on 5m', async ($, on) => {
     const one = engine(on, { files: local({ AI_DLC_KEEPALIVE_1H_KEEP_WARM_FOR: '10h', AI_DLC_KEEPALIVE_1H_MAX_PINGS: '12' }) })
     await $.classic.Stop(stop())
-    expect(one.line('1h')).toContain('ping 0/12, keep warm 10h')
+    expect(one.line('1h')).toContain(`ping 0/12, first ping at ${hhmm(START + 50 * MIN)}, keep warm 10h`)
     expect(await runChain(one.clock, one.seen, () => one.line('1h'), 50)).toBe(12)
     expect(one.part('1h')).toMatch(/^kept warm 10h, stopped/)
   })
@@ -1765,7 +1765,7 @@ describe('[28.1.l3] review fixes', () => {
   })
 
   // Suggestion: one source for a running track's pingEvery and limit (28.4 S1)
-  test('a running track publishes the pingEvery its timer took; a settings change counts from its next arming', async ($, on) => {
+  test('AC-17.4.1 (characterisation) a running track publishes the pingEvery its timer took; a settings change counts from its next arming; the landed 1h ping shows ping 1/9', async ($, on) => {
     const { seen, clock, files, line } = engine(on)
     await $.classic.Stop(stop())
     files[LOCAL] = env({ AI_DLC_KEEPALIVE_1H_PING_EVERY: '40m' })
@@ -2031,15 +2031,14 @@ describe('[T17.2] the cache part and the reasons', () => {
     expect(line('1h')).toBe(`keepalive 1h: main warm until ${at(62)}; off (no background tasks)`)
   })
 
-  // E6 without its `, first ping at HH:MM` clause: that clause is D6 (LLD 3.5), task T17.4 (ITEM-035),
-  // whose red-first test is AC-17.4.5. Here the cache part and the running text around it are pinned.
-  test('E6: the 1h track armed at 10:00 with one background task shows the cache part before the running text', async ($, on) => {
+  // E6 in full, with the first-ping clause of D6 (LLD 3.5, T17.4 / ITEM-035, AC-17.4.5)
+  test('E6: the 1h track armed at 10:00 with one background task shows the cache part, then the running text with its first ping time', async ($, on) => {
     const { seen, line } = engine(on, { split: null })
     const respond = responder(on)
     await respond($, usageOf(3_000, 0))
     await $.classic.Stop(stop())
     await settle()
-    expect(line('1h')).toBe(`keepalive 1h: main warm until ${at(60)}; armed, 1 task(s), warm until ${at(60)}, ping 0/9, keep warm 8h, stop by ${at(480)}`)
+    expect(line('1h')).toBe(`keepalive 1h: main warm until ${at(60)}; armed, 1 task(s), warm until ${at(60)}, ping 0/9, first ping at ${at(50)}, keep warm 8h, stop by ${at(480)}`)
     expect(line('5m')).toBe('keepalive 5m: off (no 5m cache write seen)')
     expect(track(last(seen), '1h')).toMatchObject({ running: true, caches: [{ source: 'main', warmUntil: START + 60 * MIN, expired: false }] })
   })
@@ -2240,5 +2239,94 @@ describe('[T17.2] gaps found by mutation', () => {
     await settle()
     expect(seen.readPaths).not.toContain(TRANSCRIPT)
     expect(seen.runs.filter(r => r[0] === 'tail')).toEqual([])
+  })
+})
+
+// T17.4 (ITEM-035): before a track's first ping lands, its running text says when that ping is due
+// (spec D6, LLD 3.5), so `ping 0/m` reads as "not yet", not "stuck". START is "10:00" in E6.
+describe('[T17.4] the first ping time', () => {
+  const at = (minutes: number) => hhmm(START + minutes * MIN)
+  const track = (seen: { states: Published[] }, n: '1h' | '5m') => seen.states.at(-1)?.tracks.find(t => t.name === n)
+
+  test('AC-17.4.5 (red first) an armed 1h track before its first ping: ping 0/9, first ping at 10:50, on screen and in the published line', async ($, on) => {
+    const { seen, line } = engine(on, { split: null })
+    const respond = responder(on)
+    await respond($, usageOf(3_000, 0))
+    await $.classic.Stop(stop())
+    await settle()
+    expect(line('1h')).toContain(`ping 0/9, first ping at ${at(50)}, keep warm 8h`)
+    expect(track(seen, '1h')?.line).toBe(line('1h'))
+  })
+
+  test('AC-17.4.5 (red first) an armed 5m track before its first ping: ping 0/20, first ping at 10:03', async ($, on) => {
+    const { part } = engine(on, { split: [0, 4_000] })
+    await $.classic.Stop(stop())
+    expect(part('5m')).toMatch(new RegExp(`^armed, 1 task\\(s\\), warm until \\d+:\\d\\d, ping 0/20, first ping at ${at(3)}, keep warm 1h, stop by \\d+:\\d\\d$`))
+  })
+
+  test('AC-17.4.5 a track re-armed by a later Stop counts from that Stop: its first ping time moves with it', async ($, on) => {
+    const { clock, line } = engine(on, { split: null })
+    const respond = responder(on)
+    await respond($, usageOf(3_000, 0))
+    await $.classic.Stop(stop())
+    await clock.fire(10)
+    await respond($, usageOf(3_000, 0))
+    await $.classic.Stop(stop())
+    await settle()
+    expect(line('1h')).toContain(`ping 0/9, first ping at ${at(60)}, keep warm 8h`)
+  })
+
+  test('AC-17.4.5 the clause goes once the first ping lands: ping 1/9 has no first ping time', async ($, on) => {
+    const { clock, line } = engine(on, { split: null })
+    const respond = responder(on)
+    await respond($, usageOf(3_000, 0))
+    await $.classic.Stop(stop())
+    await clock.fire(50)
+    expect(line('1h')).toContain('ping 1/9, keep warm 8h')
+    expect(line('1h')).not.toContain('first ping at')
+  })
+
+  test('AC-17.4.5 a track that is not armed shows no first ping time', async ($, on) => {
+    const { line } = engine(on, { split: null })
+    const respond = responder(on)
+    await respond($, usageOf(3_000, 0))
+    await $.classic.Stop(stop([]))
+    await settle()
+    expect(line('1h')).toBe(`keepalive 1h: main warm until ${at(60)}; off (no background tasks)`)
+  })
+})
+
+// T17.3 (testing of T17.4) gap: AC-17.4.1 says k = 1 ... 9, and only k = 1 was asserted on the line
+describe('[T17.4] every landed ping shows on the line', () => {
+  test('AC-17.4.1 the 1h track: the k-th landed ping shows ping k/9 right after it, k = 1 to 9, with no first ping time', async ($, on) => {
+    const { seen, clock, line } = engine(on)
+    await $.classic.Stop(stop())
+    for (let k = 1; k <= 9; k++) {
+      await clock.fire(50)
+      expect(seen.forks).toBe(k)
+      expect(line('1h')).toContain(`ping ${k}/9, keep warm 8h`)
+      expect(line('1h')).not.toContain('first ping at')
+      expect(line('1h')).not.toContain('ping 0/9')
+    }
+  })
+
+  test('AC-17.4.2 the 5m track: the k-th landed ping shows ping k/20 right after it, k = 1 to 20, with no first ping time', async ($, on) => {
+    const { seen, clock, line } = engine(on, { split: [0, 4_000] })
+    await $.classic.Stop(stop())
+    for (let k = 1; k <= 20; k++) {
+      await clock.fire(3)
+      expect(seen.forks).toBe(k)
+      expect(line('5m')).toContain(`ping ${k}/20, keep warm 1h`)
+      expect(line('5m')).not.toContain('first ping at')
+    }
+  })
+
+  test('AC-17.4.6 a missed ping leaves the counter at 0: no ping k/m and no first ping time in the line', async ($, on) => {
+    const { seen, clock, line } = engine(on, { cacheRead: 0 })
+    await $.classic.Stop(stop())
+    await clock.fire(50)
+    expect(line('1h')).toMatch(/; missed, stopped$/)
+    expect(line('1h')).not.toMatch(/ping \d/)
+    expect(seen.states.at(-1)?.tracks.find(t => t.name === '1h')).toMatchObject({ running: false, pings: 0 })
   })
 })

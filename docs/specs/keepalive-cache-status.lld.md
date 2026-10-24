@@ -9,7 +9,7 @@ integrations: [integration-1]
 items: [ITEM-032, ITEM-033, ITEM-034, ITEM-034.a, ITEM-034.b, ITEM-035, ITEM-036]
 author: system-engineer
 date: 2026-10-24
-status: draft revision 4 (bc round 1 fixed; spec revisions 2 and 3: 034.c, D2a, read attribution, D5 main-only arming, AC-17.3.8), awaiting sa answers on section 9 and brutal-critique
+status: draft revision 5 (17.1.7: main write without a split resolved from the transcript at the next Stop; spec line 82 correction owed by sa); revision 4 (bc round 1 fixed; spec revisions 2 and 3: 034.c, D2a, read attribution, D5 main-only arming, AC-17.3.8), awaiting sa answers on section 9 and brutal-critique
 spec: docs/specs/keepalive-cache-status.spec.md
 stories: docs/product/active/session-continuity-and-cache-visibility/sprint-1/keepalive-cache-status/stories.md
 handoff: 17.1.3-software-architect-to-system-engineer.handoff.md
@@ -36,7 +36,7 @@ export type Ttl = '5m' | '1h'                     // = TrackName in duration.ts
 export type EntryTtl = Ttl | 'unknown'            // 'unknown' only under D2a (a subagent write without a split)
 export type LedgerEntry = { warmUntil: number }     // writtenAt dropped (spec rev 2)
 export type AgentCaches = { caches: Partial<Record<EntryTtl, LedgerEntry>>; status: 'running' | 'idle' | 'finished' }
-export type Ledger = { main: Partial<Record<Ttl, LedgerEntry>>; agents: Map<string, AgentCaches> }   // main never holds 'unknown': a main write without a split is not recorded
+export type Ledger = { main: Partial<Record<Ttl, LedgerEntry>>; agents: Map<string, AgentCaches>; pendingMain?: { at: number } }   // main never holds 'unknown'. A main write without a split sets `pendingMain` (the time of the response); the next Stop resolves it from the transcript (2.1 step 3, rev 5)
 export type Observation = { at: number; agentId?: string; usage: unknown }
 export type Lifetimes = Record<Ttl, number>        // ms; from settings.fiveMinute.ttl / oneHour.ttl
 
@@ -49,8 +49,13 @@ export function observe(l: Ledger, o: Observation, life: Lifetimes): void
 /** D1, landed ping (spec rev 3). Records the response to a keep-alive ping that hit the cache. `ttl` is the track pinged; `source` is main or an agent id. A landed 5m ping sets that source's 5m entry to at + life['5m'], whatever other entries exist. A landed 1h ping moves the 1h entry only when its usage carries a 1h write (the ordinary write rule). The conservative read rule of `observe` does not apply here. The ping's own writes are then recorded as in `observe`. */
 export function observePing(l: Ledger, o: Observation & { ttl: Ttl }, life: Lifetimes): void
 
-/** D1 seed. The transcript fallback at Stop: gives `main` an entry per TTL with tokens > 0, warm until writtenAt + life, only when `main` has no entry yet and that time is after `now`. `writtenAt` is the timestamp of the transcript row that carried the write (new `splitFromTranscript` result `{ split, at }`); a row with no timestamp uses `now`, today's assumption. */
+/** D1 seed. The transcript fallback at Stop: gives `main` an entry per TTL with tokens > 0, warm until writtenAt + life, only when `needsMainSeed(l)` and that time is after `now`. Rev 5: with a pending write the entry is merged, `max(existing.warmUntil, writtenAt + life)`, so it never lowers a live entry; `pendingMain` is cleared on return. A row with no timestamp uses `pendingMain.at` when pending, else `now`. `writtenAt` is the timestamp of the transcript row that carried the write (new `splitFromTranscript` result `{ split, at }`); a row with no timestamp uses `now`, today's assumption. */
 export function seedMain(l: Ledger, split: Record<Ttl, number>, writtenAt: number, now: number, life: Lifetimes): void   // seeds only entries with writtenAt + life[ttl] > now
+
+/** Rev 5. True when `main` has no entry, or a main write without a split is pending: the Stop reads the transcript only then. */
+export const needsMainSeed = (l: Ledger): boolean => !hasMain(l) || l.pendingMain !== undefined
+/** Rev 5. The transcript had no split for the pending write: forget it (one read per pending write, never retried). */
+export function dropPending(l: Ledger): void
 
 /** Agent liveness (034). `markAgent` creates the agent when unknown. A finished agent keeps its entries. */
 export function markAgent(l: Ledger, agentId: string, status: AgentCaches['status']): void
@@ -77,7 +82,7 @@ export const lineOf = (ttl: Ttl, cache: string | undefined, part: string): strin
 1. `source = o.agentId ? agents.get(o.agentId) ?? created : main`. An observation from an agent sets its status to `running`, unless it is `finished` (a finished agent does not respond; if one does, it was resumed, so it is `running`).
 2. `split = creationSplit(o.usage)` (the existing reader in `auto-handoff/config.ts:385`; it reads the untyped raw fields and needs both `ephemeral_1h_input_tokens` and `ephemeral_5m_input_tokens` to be numbers). For each `ttl` with `split[ttl] > 0`: `entry = { warmUntil: at + life[ttl] }`.
 3. **Read attribution (spec D1 rev 2).** `read = usage.cache_read_input_tokens`. When `typeof read === 'number' && read > 0` and all three hold: the source's `5m` entry exists with `warmUntil > at`; the response wrote no 1h tokens (`split?.['1h'] ?? 0` is 0); the source has no warm `1h` entry (`warmUntil > at`); then `warmUntil = at + life['5m']`. Otherwise the read is unattributed and moves nothing. Never touches a `1h` entry (AC-17.1.5; the 1h refresh rule is unknown, 17.1.2).
-   **D2a.** For an agent source only: when `split` is undefined (or both fields 0) and `usage.cache_creation_input_tokens > 0`, set `agent.caches.unknown = { warmUntil: at }` (a marker; its time is never shown or armed from). Main without a split records nothing (the transcript seed covers it).
+   **D2a.** For an agent source only: when `split` is undefined (or both fields 0) and `usage.cache_creation_input_tokens > 0`, set `agent.caches.unknown = { warmUntil: at }` (a marker; its time is never shown or armed from). **Main without a split (rev 5).** When `usage.cache_creation_input_tokens > 0` and `split` is undefined (or both fields 0), the source is `main`: record nothing in `main` and set `l.pendingMain = { at }` (the later `at` wins). `recordWrites` takes `l` for this, and so does `observePing` (a ping reply with a write and no split is the same case). A read-only response or a main response with a split sets nothing. The Stop resolves the marker (3.4); until then the line shows what the ledger holds, as today.
 4. Order within one call (the only statement of it): step 3 (the read) runs first, then step 2 (the writes), so a response that reads and writes 5m ends at `at + life`; the 'wrote no 1h tokens' test in step 3 uses the same response's split.
 5. No usage, a non-object or a missing split with no read: no change.
 
@@ -124,7 +129,7 @@ The examples E1 to E7 of the stories are exactly `lineOf` over these pieces (E6,
 export async function noteUsage($: EngineInterface, usage: unknown, agentId?: string): Promise<void>
 //   observe(ledger, { at: await $.clock.now(), agentId, usage }, life())
 
-/** Seeds main from the transcript when the ledger has no main entry (replaces `lastSplit ?? transcriptSplit`). */
+/** Seeds main from the transcript when `needsMainSeed(ledger)` (replaces `lastSplit ?? transcriptSplit`; rev 5 widened the guard from `!hasMain`). In keepalive.ts the one change is the guard of `seedFromTranscript` (line 133): `if (!needsMainSeed(ledger)) return`, plus the `dropPending` branch when `r` is undefined. `noteUsage` and the `ping` observation points need no change: the marker is set inside `observe`/`observePing`. */
 ```
 
 `stopForHandoff($)` stays synchronous and returns the boolean; its render stays synchronous and becomes `render($, 0)`: the ledger is emptied first, so no line has a cache part and `now` changes nothing in what is shown (an async IIFE would let the caller's `/clear` run before the render). `republishKeep` is still launched with `void`.
@@ -142,7 +147,7 @@ tasks = e.background_tasks?.length ?? 0
 now = await $.clock.now()
 if compacting or handingOff: return next
 if (!settings.enabled)   [after load, when tasks > 0]: stopAll; each track's part = reasonText('disabled') (else `off (turn running)` from turn.start would stay published); publish; clear status. With 0 tasks and keep-alive disabled the no-tasks branch renders each track's `disabled` part (status hidden by `settings.status` as usual)
-seed (`seedFromTranscript`): if the ledger has no main entry { r = await transcriptSplit(...) /* returns { split, at? } */; if (r) seedMain(ledger, r.split, r.at ?? now, now, life()) }   // only when no usage was seen. Placement: tasks = 0 -> before the no-tasks branch; tasks > 0 -> right after `load`, before every later branch (disabled, overage, arming), so life() and those lines use the fresh settings
+seed (`seedFromTranscript`): if needsMainSeed(ledger) { r = await transcriptSplit(...) /* returns { split, at? } */; if (r) seedMain(ledger, r.split, r.at ?? ledger.pendingMain?.at ?? now, now, life()); else dropPending(ledger) }   // rev 5: when no main entry exists (as before) or a main write without a split is pending. One transcript read per Stop with a pending write, none otherwise: reads are never per response, because the response's own row may not be flushed when `turn.step` returns, while at Stop it is. No row with a split (transcript missing, unreadable or without one): `dropPending`, nothing recorded, one debug line `keepalive: main write without split, transcript has none`; the track then reads `expired` or `no write seen` as before, and the next Stop does not read again. Placement: tasks = 0 -> before the no-tasks branch; tasks > 0 -> right after `load`, before every later branch (disabled, overage, arming), so life() and those lines use the fresh settings
 if (!tasks) {                                      // NEW: renders (AC-17.2.2)
   if anyRunning(): stopAll('work done, stopped')   // unchanged text, existing branch
   for each track not running:
@@ -243,6 +248,7 @@ Seams (spec): the pure table in a new `tests/cache-state.test.ts` (alongside `ke
 | arming after landed pings (clarify, T17.1) | `Track.pingWarmUntil` | `D1 arming: after landed 1h pings with no 1h write, a new Stop re-arms the 1h track (not expired, stopped); after a miss it does not; the cache part still shows the ledger time` (keep-alive test: fork usage with no 1h write, `clock.fire` to the first ping, a second turn and Stop; assert `armed` and the cache part unchanged) |
 | landed ping (spec rev 3) | `observePing` | `D1 landed ping: a landed 5m ping refreshes the 5m entry whatever other entries exist; a landed 1h ping without a 1h write leaves the 1h entry` (pure table, plus a keep-alive test: 5m track, `clock.fire(3)`, the line's cache part moves to `main warm until` + 5m) |
 | AC-17.3.8 | `onlyAgentsWarm`, `armUntil` main-only | `AC-17.3.8 a subagent-only warm cache with pingSubagents off: no arm, no model.fork, line is subagents warm until 10:07; off (only subagent caches; subagent pings off)` |
+| D2a main (rev 5) | `pendingMain`, `needsMainSeed`, `seedMain` merge, `dropPending` | pure (cache-state.test.ts): `AC-17.1.1 (D2a main) a main write with no split sets pendingMain and records no entry; a read-only response or a write with a split does not`; `seedMain merges max and clears pending, never lowers a live entry`; `needsMainSeed`/`dropPending`. Keep-alive (keepalive.test.ts, mock clock, transcript fixture with a timestamped split row): `AC-17.1.4 (D2a main) after a first main entry, a no-split main write at 10:00 then Stop at 10:03 shows main warm until 10:05, not expired` (red today); `AC-17.1.1 (D2a main) no split in the transcript either: no entry added, one transcript read, a second Stop reads nothing`; `AC-17.1.1 (D2a main) a ping reply with a write and no split is resolved at the next Stop`; `AC-17.1.1 (D2a main) a row with no timestamp uses the response time, not the Stop time` |
 | D2a | `observe` unknown marker, `subagentsUnknown` | `AC-17.1.2 (D2a) a subagent write without a split shows subagents: split unknown on both tracks and arms nothing` (pure and keep-alive) |
 | ITEM-034.c | debug log line | a keep-alive test asserts the `agent usage … split=` log line for a subagent response with and without a split; the live check is a recorded manual step |
 | AC-17.3.2, 17.3.5, 17.3.6 **CONDITIONAL** | `pingRound` | `AC-17.3.2 with pingSubagents on, a round pings main and the running subagent` (stub `AgentPinger`; also the off case: one ping); `AC-17.3.5 an idle teammate with a warm cache is pinged`; `AC-17.3.6 ping k/9 counts rounds and spend counts every ping` (a subagent cost makes `spent >= budget` earlier than the cap) |

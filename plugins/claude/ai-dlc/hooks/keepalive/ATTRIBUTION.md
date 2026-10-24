@@ -652,3 +652,22 @@ D4, D8; LLD 2.2, 3.3, 3.4, 3.6, 7):
   that no rendered or published line ends `: off`. The test "a Stop with
   no background task and nothing armed publishes nothing" became AC-17.2.2's
   published form. `tests/cache-state.test.ts`: E2 and E3, and `hasMain`.
+
+Made by Rafsanul Hasan, 2026-10-25 (run FEAT-20261020-ai-dlc-lens, feature
+root 17, step 17.2.3, task T17.4 / ITEM-035; spec keepalive-cache-status D6;
+LLD 3.5, 7):
+
+- **The first ping time.** `keepalive.ts`: `pingsOf` follows `ping 0/m`
+  with `, first ping at H:MM`, the time of the armed timer's first tick
+  (`t.nextPingAt`), until a ping lands; after that the counter is `ping k/m`
+  as before. A track armed at 10:00 on the 1h track reads `ping 0/9, first
+  ping at 10:50` (stories E6, AC-17.4.5).
+- **Tests.** `tests/keepalive.test.ts`: a block *[T17.4] the first ping
+  time* (AC-17.4.5, red before this change: both tracks, a re-arm by a
+  later Stop, the clause gone after a landed ping, none on a track that is
+  not armed); E6 pinned in full; the five assertions on `ping 0/m, keep
+  warm …` and the two anchored armed lines take the clause; the
+  characterisation tests of AC-17.4.1, 17.4.2, 17.4.3 and 17.4.6 renamed
+  to cite their AC ids, their assertions unchanged.
+- **Manual check.** New `MANUAL-CHECKS.md`: row P1, the host repaint check
+  of AC-17.4.4 in the terminal and VS Code.

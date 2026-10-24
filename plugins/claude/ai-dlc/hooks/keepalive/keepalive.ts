@@ -546,8 +546,14 @@ export const pingsWithin = (keepMs: number, pingEvery: number) => Math.floor(kee
 export const pingCap = (maxPings: number, pingEvery: number, keep: { ms: number; override?: boolean }) =>
   keep.override ? Math.max(maxPings, pingsWithin(keep.ms, pingEvery)) : maxPings
 
-// Written right after arm(), so cfgOf gives the settings the armed timer took
-const pingsOf = (t: Track, keep: Keep) => { const cfg = cfgOf(t); return `ping ${t.pings}/${pingCap(cfg.maxPings, cfg.pingEvery, keep)}` }
+// Written right after arm(), so cfgOf gives the settings the armed timer took, and nextPingAt is the
+// first tick: until a ping lands, the counter says when the first one is due, so 0 reads "not yet"
+// (spec D6, LLD 3.5)
+const pingsOf = (t: Track, keep: Keep) => {
+  const cfg = cfgOf(t)
+  const first = t.pings === 0 && t.nextPingAt !== null ? `, first ping at ${hhmm(t.nextPingAt)}` : ''
+  return `ping ${t.pings}/${pingCap(cfg.maxPings, cfg.pingEvery, keep)}${first}`
+}
 const runningText = (t: Track, keep: Keep, lead = '') =>
   `${lead}warm until ${hhmm(t.warmUntil)}, ${pingsOf(t, keep)}, keep warm ${formatDuration(keep.ms)}, stop by ${hhmm(t.armedTime + keep.ms)}`
 
