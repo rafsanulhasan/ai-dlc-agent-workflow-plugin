@@ -32,6 +32,9 @@
 // a warning on stderr and the next level is tried. Values that make maxFailures >= maxRounds are ignored too.
 // Gate critique (the critique of every `critique`-marked stage, row `gate-critique` in `rounds`) has no loop
 // object: only the AI_DLC_CRITIQUE_* pair or the default 2 / 1 apply to it.
+// Handoff review (brutal-critique's review of each handoff record, row `handoff-review` in `rounds`) takes its
+// values from `handoffReview` and has its own pair, read at the same levels; it never reads AI_DLC_CRITIQUE_*:
+//   handoff-review   AI_DLC_HANDOFF_REVIEW_MAX_ROUNDS  AI_DLC_HANDOFF_REVIEW_MAX_FAILURES
 //
 // Exit codes: 0 ok (no errors; diff: no differences) · 1 problems (errors or no catalog; diff: differences)
 //             2 usage error or unreadable file.
@@ -135,7 +138,7 @@ function didYouMean(word, names) {
   return best && bestD <= Math.max(2, Math.floor(word.length / 3)) ? ` (did you mean "${best}"?)` : "";
 }
 
-// Fixed guardrail: these run every agent-artifact change (AAW), so a project cannot disable them.
+// Fixed guardrail: these run every agent-artifact change (AAWH, AAWP), so a project cannot disable them.
 const UNDISABLEABLE = {
   "orchestrator": "",
   "agent-manager": "",
@@ -143,7 +146,8 @@ const UNDISABLEABLE = {
   "sqa-engineer": ": it tests the code of every agent-artifact change",
   "code-reviewer": ": it reviews the code of every agent-artifact change",
 };
-// AAW review stages: the only `when` each may carry, and why it must loop back to agent-manager.
+// Agent-artifact review stages: the only `when` each may carry, and why it must loop back to agent-manager.
+// The harness variant needs brutal-critique; the plugin variant needs all three (guards G4 and G5).
 const AAW_REVIEWERS = {
   "brutal-critique": { when: "the change set contains docs", why: "on REVISE: the docs of every agent-artifact change are critiqued" },
   "sqa-engineer": { when: "the change set contains code", why: "on failing tests: the code of every agent-artifact change is tested" },
@@ -153,7 +157,15 @@ const APPROVERS = ["human", "orchestrator", "none"];
 const KINDS = ["primary", "segment", "focused", "custom"];
 const AXES = ["standards", "spec"];
 const ARTIFACTS = ["backlog", "product", "specs", "decisions", "narratives", "plans", "handoffs"];
-const TOP = ["$schema", "version", "agents", "gates", "lifecycles", "routing", "clarify", "documents", "review", "artifacts"];
+const TOP = ["$schema", "version", "agents", "gates", "lifecycles", "routing", "clarify", "documents", "review", "handoffReview", "artifacts"];
+// The lifecycles of agent-artifact work (routing.byType["Agent Artifact"], a list) each carry a variant.
+const VARIANTS = ["harness", "plugin"];
+const HARNESS_REVIEWERS = ["brutal-critique"];
+// Guard G3: who may start an agent-artifact lifecycle.
+const AAW_START = ["product-owner", "software-architect", "agent-manager"];
+// The routing value of the single AAW lifecycle older plugins shipped (refused with an upgrade hint).
+const LEGACY_AAW_CODE = "AAW";
+const AA_KEY = `routing.byType["Agent Artifact"]`;
 const STAGE_KEYS = ["id", "agent", "skills", "produces", "after", "when", "gate", "loop", "critique", "note"];
 const ID = /^[a-z][a-z0-9-]*$/;
 const CODE = /^[A-Za-z][A-Za-z0-9_-]*$/;
@@ -271,9 +283,10 @@ function validate(wf, catalog) {
     const p = `lifecycles.${code}`;
     if (!CODE.test(code)) err(p, "lifecycle code must start with a letter and use letters, digits, - or _");
     if (!isObj(lc)) { err(p, "must be an object"); continue; }
-    unknownKeys(lc, ["name", "kind", "pickWhen", "exitArtifact", "segments", "stages", "note"], p);
+    unknownKeys(lc, ["name", "kind", "variant", "pickWhen", "exitArtifact", "segments", "stages", "note"], p);
     for (const k of ["name", "pickWhen", "exitArtifact"]) if (!isStr(lc[k])) err(p, `needs ${k}`);
     if (!KINDS.includes(lc.kind)) err(p, `kind must be ${KINDS.join(", ")}`);
+    if ("variant" in lc && !VARIANTS.includes(lc.variant)) err(`${p}.variant`, `variant must be "harness" or "plugin"`);
     const hasSeg = "segments" in lc, hasStages = "stages" in lc;
     if (hasSeg === hasStages) { err(p, "needs exactly one of `segments` or `stages`"); continue; }
     if (hasSeg) {
@@ -353,46 +366,32 @@ function validate(wf, catalog) {
   // routing
   const r = wf.routing;
   if (isObj(r)) {
-    unknownKeys(r, ["byType", "handOff", "routeImmediately"], "routing");
+    unknownKeys(r, ["byType", "handOff", "routeImmediately", "agentArtifact"], "routing");
     if (!isObj(r.byType)) err("routing.byType", "must be an object { <request type>: <lifecycle code> }");
-    else for (const [t, lc] of Object.entries(r.byType)) if (t !== "Agent Artifact" && !(lc in lifecycles)) err(`routing.byType.${t}`, `"${lc}" is not a defined lifecycle`);
+    else for (const [t, lc] of Object.entries(r.byType)) {
+      if (t === "Agent Artifact") continue;
+      if (Array.isArray(lc)) err(`routing.byType.${t}`, `must be one lifecycle code (only "Agent Artifact" may be a list)`);
+      else if (!(lc in lifecycles)) err(`routing.byType.${t}`, `"${lc}" is not a defined lifecycle`);
+    }
     if (!isObj(r.handOff)) err("routing.handOff", "must be an object { <work kind>: <agent id> }");
     else {
       for (const [k, a] of Object.entries(r.handOff)) usedAgent(a, `routing.handOff["${k}"]`);
       if ("agent-artifact work" in r.handOff && r.handOff["agent-artifact work"] !== "agent-manager") err(`routing.handOff["agent-artifact work"]`, "must stay agent-manager (fixed guardrail)");
     }
-    // The lifecycle agent-artifact work runs: agent-manager makes the change; brutal-critique reviews the
-    // docs, sqa-engineer tests and code-reviewer reviews the code, each sending findings back to agent-manager.
-    const aaw = isObj(r.byType) ? r.byType["Agent Artifact"] : undefined;
-    const lc = typeof aaw === "string" ? lifecycles[aaw] : undefined;
-    if (isObj(r.byType) && aaw === undefined) err(`routing.byType["Agent Artifact"]`, `missing: agent-artifact work needs its lifecycle (default "AAW": agent-manager, then brutal-critique for docs and sqa-engineer, code-reviewer for code) — run /ai-dlc:workflow upgrade to bring it in`);
-    else if (isObj(r.byType) && !isObj(lc)) err(`routing.byType["Agent Artifact"]`, `lifecycle "${aaw}" is not defined — run /ai-dlc:workflow upgrade to bring in the default AAW`);
-    else if (isObj(lc) && !Array.isArray(lc.stages)) err(`routing.byType["Agent Artifact"]`, `"${aaw}" must be a lifecycle with stages, not segments`);
-    else if (isObj(lc) && lc.stages.length && lc.stages.every(isObj)) {
-      const st = lc.stages;
-      if (st.some((s, i) => afterOf(st, i).length === 0 && s.agent !== "agent-manager"))
-        err(`lifecycles.${aaw}`, `agent-artifact work runs this lifecycle (routing.byType["Agent Artifact"]), so every starting stage must be agent-manager (fixed guardrail)`);
-      // The rules are documented in the workflow skill's references/aaw-review.md.
-      const reviews = st.filter((s) => typeof s.agent === "string" && Object.hasOwn(AAW_REVIEWERS, s.agent) && isObj(s.loop) && st.some((t) => t.id === s.loop.to && t.agent === "agent-manager"));
-      for (const [agent, { why }] of Object.entries(AAW_REVIEWERS))
-        if (!reviews.some((s) => s.agent === agent)) err(`lifecycles.${aaw}`, `needs a ${agent} stage that loops back to the agent-manager stage ${why} (fixed guardrail; run /ai-dlc:workflow upgrade to bring in the default AAW stages)`);
-      const where = (s) => `lifecycles.${aaw}.stages[${st.indexOf(s)}] (${s.id})`;
-      // Only stages that already loop back to agent-manager are checked here; a review stage with no valid
-      // loop is reported once, by the "needs a <agent> stage that loops back" error above. Each review loop
-      // has its own maxRounds / maxFailures, checked by the generic loop check.
-      for (const s of reviews) {
-        // `when` is an exact phrase (case and spacing ignored), so a reworded condition cannot switch a review off.
-        // `\s+` also collapses NBSP and other Unicode spaces on purpose (pinned by tests): never narrow it to ASCII spaces.
-        const expected = AAW_REVIEWERS[s.agent].when;
-        if ("when" in s && (typeof s.when !== "string" || s.when.trim().replace(/\s+/g, " ").toLowerCase() !== expected))
-          err(`${where(s)}.when`, `must be "${expected}" (case and spacing ignored), or be omitted so the stage runs on every change (fixed guardrail)`);
+    if ("agentArtifact" in r) {
+      // The folder lists the variant rule reads (references/aaw-review.md): path globs.
+      const aa = r.agentArtifact;
+      if (!isObj(aa)) err("routing.agentArtifact", "must be an object { harnessPaths, pluginPaths }");
+      else {
+        unknownKeys(aa, ["harnessPaths", "pluginPaths"], "routing.agentArtifact");
+        for (const k of ["harnessPaths", "pluginPaths"]) {
+          if (!isStrArr(aa[k])) err(`routing.agentArtifact.${k}`, "must be an array of path globs");
+          else for (const d of dupes(aa[k])) err(`routing.agentArtifact.${k}`, `"${d}" is listed twice`);
+        }
       }
-      // code-review must name the sqa-engineer stage in its own `after` (directly, not through another stage).
-      const testIds = reviews.filter((s) => s.agent === "sqa-engineer").map((s) => s.id);
-      for (const s of reviews.filter((x) => x.agent === "code-reviewer"))
-        if (testIds.length && !afterOf(st, st.indexOf(s)).some((x) => testIds.includes(x)))
-          err(`${where(s)}.after`, `must include the sqa-engineer stage (${testIds.join(" or ")}): code is reviewed with its tests (fixed guardrail)`);
     }
+    // The lifecycles agent-artifact work runs: guards G1 to G6 (the rules: the workflow skill's references/aaw-review.md).
+    if (isObj(r.byType)) for (const code of checkAgentArtifact(r.byType["Agent Artifact"], lifecycles, err)) guardVariant(code, lifecycles[code], err);
     if (!isStrArr(r.routeImmediately)) err("routing.routeImmediately", "must be an array of request types");
     else for (const d of dupes(r.routeImmediately)) err("routing.routeImmediately", `"${d}" is listed twice`);
   } else if ("routing" in wf) err("routing", "must be an object");
@@ -433,6 +432,19 @@ function validate(wf, catalog) {
       for (const d of dupes(wf.review.axes)) err("review.axes", `"${d}" is listed twice`);
     }
   } else if ("review" in wf) err("review", "must be an object");
+  // handoffReview: brutal-critique reviews each handoff record of these lifecycles, under these limits.
+  // There is no reviewer key: the reviewer is always brutal-critique, which cannot be disabled. Omitted limits
+  // take the loop defaults (2 / 1), as on every loop.
+  const h = wf.handoffReview;
+  if (isObj(h)) {
+    unknownKeys(h, ["lifecycles", "maxRounds", "maxFailures"], "handoffReview");
+    if (!isStrArr(h.lifecycles) || !h.lifecycles.length) err("handoffReview.lifecycles", "must be a non-empty array of lifecycle codes");
+    else {
+      for (const x of h.lifecycles) if (!(x in lifecycles)) err("handoffReview.lifecycles", `"${x}" is not a defined lifecycle`);
+      for (const x of dupes(h.lifecycles)) err("handoffReview.lifecycles", `"${x}" is listed twice`);
+    }
+    checkLimits(h, "handoffReview", err);
+  } else if ("handoffReview" in wf) err("handoffReview", "must be an object { lifecycles, maxRounds, maxFailures }");
   if (isObj(wf.artifacts)) {
     unknownKeys(wf.artifacts, ARTIFACTS, "artifacts");
     for (const k of ARTIFACTS) if (!isStr(wf.artifacts[k])) err(`artifacts.${k}`, "must be a non-empty path");
@@ -443,6 +455,83 @@ function validate(wf, catalog) {
 
 // `after` defaults to the previous stage; [] starts the lifecycle.
 const afterOf = (stages, i) => Array.isArray(stages[i].after) ? stages[i].after : i === 0 ? [] : [stages[i - 1].id];
+// Whether stage `from` follows stage `to` through `after`, directly or through other stages.
+function reaches(stages, from, to) {
+  const seen = new Set(), queue = [from];
+  while (queue.length) {
+    const id = queue.shift();
+    const i = stages.findIndex((s) => s.id === id);
+    if (i < 0) continue;
+    for (const a of afterOf(stages, i)) {
+      if (a === to) return true;
+      if (!seen.has(a)) { seen.add(a); queue.push(a); }
+    }
+  }
+  return false;
+}
+
+// routing.byType["Agent Artifact"]: the one byType value that is a list of lifecycle codes, with the variant
+// counts (guard G6). Returns the codes of the lifecycles with stages that guardVariant then checks.
+function checkAgentArtifact(aaw, lifecycles, err) {
+  if (aaw === undefined) { err(AA_KEY, `missing: agent-artifact work needs its lifecycles (default ["AAWH", "AAWP"]) — run /ai-dlc:workflow upgrade to bring them in`); return []; }
+  if (aaw === LEGACY_AAW_CODE) { err(AA_KEY, `${AA_KEY} is the single AAW lifecycle of an older plugin; run /ai-dlc:workflow upgrade to replace it with AAWH and AAWP`); return []; }
+  if (!Array.isArray(aaw)) { err(AA_KEY, `must be a list of lifecycle codes, for example ["AAWH", "AAWP"]`); return []; }
+  if (!aaw.length || aaw.some((x) => typeof x !== "string")) { err(AA_KEY, "must be a non-empty list of lifecycle codes"); return []; }
+  for (const x of dupes(aaw)) err(AA_KEY, `"${x}" is listed twice`);
+  const named = [...new Set(aaw)].filter((x) => {
+    if (!isObj(lifecycles[x])) { err(AA_KEY, `"${x}" is not a defined lifecycle`); return false; }
+    if (!Array.isArray(lifecycles[x].stages)) { err(AA_KEY, `"${x}" must be a lifecycle with stages, not segments`); return false; }
+    return true;
+  });
+  for (const x of named) if (!("variant" in lifecycles[x])) err(`lifecycles.${x}.variant`, `must be "harness" or "plugin" for a lifecycle named in ${AA_KEY}`);
+  const count = (v) => named.filter((x) => lifecycles[x].variant === v).length;
+  if (count("plugin") !== 1) err(AA_KEY, `needs exactly one variant "plugin" lifecycle (found ${count("plugin")})`);
+  if (count("harness") > 1) err(AA_KEY, `may name at most one variant "harness" lifecycle (found ${count("harness")})`);
+  return named.filter((x) => lifecycles[x].stages.length && lifecycles[x].stages.every(isObj));
+}
+
+// Guards G1 to G5 for one agent-artifact lifecycle, by role, whatever its code. G7 (no disabled agent owns a
+// stage) is the disabled-agent check every stage gets (usedAgent).
+function guardVariant(code, lc, err) {
+  const st = lc.stages;
+  const where = (s) => `lifecycles.${code}.stages[${st.indexOf(s)}] (${s.id})`;
+  // G1: never software-engineer.
+  for (const s of st) if (s.agent === "software-engineer") err(where(s), "agent-artifact work never uses software-engineer (fixed guardrail)");
+  // G2: the change is built by agent-manager.
+  const changes = st.filter((s) => s.agent === "agent-manager");
+  if (!changes.length) err(`lifecycles.${code}`, "needs an agent-manager stage: agent-artifact changes are always built by agent-manager (fixed guardrail)");
+  // G3: who may start.
+  st.forEach((s, i) => {
+    if (afterOf(st, i).length === 0 && !AAW_START.includes(s.agent))
+      err(where(s), `a starting stage must be ${AAW_START.slice(0, -1).join(", ")} or ${AAW_START.at(-1)} (fixed guardrail)`);
+  });
+  // G4 (both variants: brutal-critique) and G5 (plugin: all three): review stages loop back to agent-manager.
+  const needed = lc.variant === "plugin" ? Object.keys(AAW_REVIEWERS) : HARNESS_REVIEWERS;
+  const reviews = st.filter((s) => needed.includes(s.agent) && isObj(s.loop) && st.some((t) => t.id === s.loop.to && t.agent === "agent-manager"));
+  for (const agent of needed)
+    if (!reviews.some((s) => s.agent === agent))
+      err(`lifecycles.${code}`, `needs a ${agent} stage that loops back to the agent-manager stage ${AAW_REVIEWERS[agent].why} (fixed guardrail; run /ai-dlc:workflow upgrade to bring in the default AAWH and AAWP stages)`);
+  // Only stages that already loop back to agent-manager are checked here; a review stage with no valid
+  // loop is reported once, by the "needs a <agent> stage that loops back" error above. Each review loop
+  // has its own maxRounds / maxFailures, checked by the generic loop check.
+  for (const s of reviews) {
+    // `when` is an exact phrase (case and spacing ignored), so a reworded condition cannot switch a review off.
+    // `\s+` also collapses NBSP and other Unicode spaces on purpose (pinned by tests): never narrow it to ASCII spaces.
+    const expected = AAW_REVIEWERS[s.agent].when;
+    if ("when" in s && (typeof s.when !== "string" || s.when.trim().replace(/\s+/g, " ").toLowerCase() !== expected))
+      err(`${where(s)}.when`, `must be "${expected}" (case and spacing ignored), or be omitted so the stage runs on every change (fixed guardrail)`);
+  }
+  if (lc.variant !== "plugin") return;
+  // G5: code-review names the sqa-engineer stage in its own `after` (directly, not through another stage).
+  const testIds = reviews.filter((s) => s.agent === "sqa-engineer").map((s) => s.id);
+  for (const s of reviews.filter((x) => x.agent === "code-reviewer"))
+    if (testIds.length && !afterOf(st, st.indexOf(s)).some((x) => testIds.includes(x)))
+      err(`${where(s)}.after`, `must include the sqa-engineer stage (${testIds.join(" or ")}): code is reviewed with its tests (fixed guardrail)`);
+  // G5: design comes first — an agent-manager stage follows a software-architect and a system-engineer stage.
+  for (const agent of ["software-architect", "system-engineer"])
+    if (!st.some((d) => d.agent === agent && changes.some((c) => reaches(st, c.id, d.id))))
+      err(`lifecycles.${code}`, `the plugin variant needs a ${agent} stage that the agent-manager stage follows through after: design is part of the plugin variant (fixed guardrail)`);
+}
 
 function findCycle(stages) {
   const graph = new Map(stages.map((s, i) => [s.id, afterOf(stages, i).filter((a) => stages.some((x) => x.id === a))]));
@@ -475,7 +564,7 @@ function show(wf, only, mermaid) {
   for (const code of codes) {
     const lc = wf.lifecycles[code];
     if (mermaid) { out.push(`### ${code} · ${lc.name}`, "", "```mermaid", ...flowchart(wf, code), "```", ""); continue; }
-    out.push(`## ${code} · ${lc.name} (${lc.kind})`, `Pick when: ${lc.pickWhen}`, `Exit artifact: ${lc.exitArtifact}`);
+    out.push(`## ${code} · ${lc.name} (${lc.kind}${lc.variant ? `, ${lc.variant} variant` : ""})`, `Pick when: ${lc.pickWhen}`, `Exit artifact: ${lc.exitArtifact}`);
     if (lc.note) out.push(`Note: ${lc.note}`);
     if (lc.segments) {
       out.push(`Segments: ${lc.segments.map((s) => { const g = lastGate(wf, s); return g ? `${s} -> ${g}` : s; }).join(" -> ")}`, "");
@@ -501,9 +590,10 @@ function show(wf, only, mermaid) {
     out.push("## Gates", "", table([["gate", "name", "approver", "approves"], ...Object.entries(wf.gates).map(([g, d]) => [g, d.name, d.approver, d.approves])]), "");
     const cl = fileLimits(wf.clarify);
     const gc = gateCritiqueLimits();
+    const hr = handoffReviewLimits(wf);
     const dis = wf.agents.disabled.length ? wf.agents.disabled.join(", ") : "none";
     const cus = Object.keys(wf.agents.custom).length ? Object.keys(wf.agents.custom).join(", ") : "none";
-    out.push(`Disabled agents: ${dis} · Custom agents: ${cus} · Clarify: x${cl.maxRounds} f${cl.maxFailures} · Gate critique: x${gc.maxRounds.value} f${gc.maxFailures.value} · Review axes: ${wf.review.axes.join(", ")}`);
+    out.push(`Disabled agents: ${dis} · Custom agents: ${cus} · Clarify: x${cl.maxRounds} f${cl.maxFailures} · Gate critique: x${gc.maxRounds.value} f${gc.maxFailures.value} · Handoff review: x${hr.maxRounds.value} f${hr.maxFailures.value} · Review axes: ${wf.review.axes.join(", ")}`);
     out.push("Loops: x<N> is maxRounds, f<N> maxFailures (node .ai-dlc/workflow.mjs rounds shows where each comes from)");
   }
   console.log(out.join("\n").trimEnd());
@@ -559,11 +649,16 @@ function flowchart(wf, code) {
 // Each loop's limits: maxRounds (most review passes) and maxFailures (failing verdicts the reviewer may
 // return before the loop stops, even with rounds left). Per property: a valid variable for the loop's stage
 // agent (settings.local.json -> settings.json -> process environment) -> the loop's own value -> the default
-// (fileLimits). Only the three reviewers have variables; other loops and clarify are file-only.
+// (fileLimits). Only the three reviewers have variables (keyed by agent); other loops and clarify are
+// file-only. A row that is not a stage loop but has variables of its own is keyed by row id in ROW_ENV.
 const ENV_VARS = {
   "brutal-critique": { maxRounds: "AI_DLC_CRITIQUE_MAX_ROUNDS", maxFailures: "AI_DLC_CRITIQUE_MAX_FAILURES" },
   "sqa-engineer": { maxRounds: "AI_DLC_TEST_MAX_ROUNDS", maxFailures: "AI_DLC_TEST_MAX_FAILURES" },
   "code-reviewer": { maxRounds: "AI_DLC_CODE_REVIEW_MAX_ROUNDS", maxFailures: "AI_DLC_CODE_REVIEW_MAX_FAILURES" },
+};
+const HANDOFF_REVIEW = "handoff-review";
+const ROW_ENV = {
+  [HANDOFF_REVIEW]: { maxRounds: "AI_DLC_HANDOFF_REVIEW_MAX_ROUNDS", maxFailures: "AI_DLC_HANDOFF_REVIEW_MAX_FAILURES" },
 };
 // A whole number without sign, exponent or leading zeros (007, +2, 1e3, 0x2 do not count), within the
 // safe-integer range. Surrounding spaces are allowed. Unset or blank means not set, with no warning.
@@ -620,7 +715,7 @@ const LEVELS = [
 // Each variable's value and source: the first level with a valid value. An invalid value is warned about
 // and resolution falls through to the next level. Settings files may hold a string or a JSON number.
 const ENV = {};
-for (const vars of Object.values(ENV_VARS)) for (const [prop, name] of Object.entries(vars)) {
+for (const vars of [...Object.values(ENV_VARS), ...Object.values(ROW_ENV)]) for (const [prop, name] of Object.entries(vars)) {
   ENV[name] = null;
   const min = prop === "maxRounds" ? 1 : 0;
   for (const level of LEVELS) {
@@ -636,7 +731,8 @@ for (const vars of Object.values(ENV_VARS)) for (const [prop, name] of Object.en
 // Loops where the variables would make maxFailures >= maxRounds: "<vars>" -> [loop ids].
 const envConflicts = new Map();
 
-function loopLimits(agent, loop, id) {
+// `vars`: the variables that may override the file — the stage agent's by default, a row's own (ROW_ENV) otherwise.
+function loopLimits(agent, loop, id, vars = ENV_VARS[agent]) {
   const file = fileLimits(loop);
   const src = {
     maxRounds: posInt(loop?.maxRounds) ? "loop" : "default",
@@ -646,7 +742,6 @@ function loopLimits(agent, loop, id) {
     maxRounds: { value: file.maxRounds, source: src.maxRounds },
     maxFailures: { value: file.maxFailures, source: src.maxFailures },
   });
-  const vars = ENV_VARS[agent];
   if (!vars) return fromFile();
   const applied = Object.entries(vars).filter(([, name]) => ENV[name] !== null);
   if (!applied.length) return fromFile();
@@ -664,8 +759,10 @@ function loopLimits(agent, loop, id) {
 // combined check as a loop) or the default 2 / 1. Its sources are those of a loop, with `default` for `loop`.
 const GATE_CRITIQUE = "gate-critique";
 const gateCritiqueLimits = (id) => loopLimits("brutal-critique", null, id);
+// Handoff review: its file values are `handoffReview`; its variables are its own (ROW_ENV), never brutal-critique's.
+const handoffReviewLimits = (wf, id) => loopLimits(null, wf.handoffReview, id, ROW_ENV[HANDOFF_REVIEW]);
 
-// Every stage loop, as lifecycle/stage, then clarify, then gate-critique. Segment lifecycles have no stages.
+// Every stage loop, as lifecycle/stage, then clarify, gate-critique and handoff-review. Segment lifecycles have no stages.
 function rounds(wf) {
   envConflicts.clear();
   const list = [];
@@ -686,6 +783,11 @@ function rounds(wf) {
   const g = gateCritiqueLimits(GATE_CRITIQUE);
   list.push({ id: GATE_CRITIQUE, lifecycle: null, stage: null, agent: "brutal-critique", to: null,
     maxRounds: g.maxRounds.value, maxRoundsSource: g.maxRounds.source, maxFailures: g.maxFailures.value, maxFailuresSource: g.maxFailures.source });
+  if (isObj(wf.handoffReview)) {
+    const hr = handoffReviewLimits(wf, HANDOFF_REVIEW);
+    list.push({ id: HANDOFF_REVIEW, lifecycle: null, stage: null, agent: null, to: null,
+      maxRounds: hr.maxRounds.value, maxRoundsSource: hr.maxRounds.source, maxFailures: hr.maxFailures.value, maxFailuresSource: hr.maxFailures.source });
+  }
   return list;
 }
 

@@ -19,7 +19,7 @@ before(() => { tmp = fs.mkdtempSync(path.join(os.tmpdir(), "wf-test-")); root = 
 after(() => fs.rmSync(tmp, { recursive: true, force: true }));
 
 const defaultWf = () => JSON.parse(fs.readFileSync(DEFAULT, "utf8"));
-const aaw = (wf) => wf.lifecycles.AAW.stages;
+const aaw = (wf) => wf.lifecycles.AAWP.stages;
 
 function write(wf, name = `wf-${++n}.json`) {
   const f = path.join(tmp, name);
@@ -29,7 +29,7 @@ function write(wf, name = `wf-${++n}.json`) {
 function cli(args, opts = {}) {
   // The shell's loop-limit variables never leak in; a test sets them through opts.env.
   const env = { ...process.env };
-  for (const k of Object.keys(env)) if (/^AI_DLC_(CRITIQUE|TEST|CODE_REVIEW)_MAX_(ROUNDS|FAILURES)$/.test(k)) delete env[k];
+  for (const k of Object.keys(env)) if (/^AI_DLC_(CRITIQUE|TEST|CODE_REVIEW|HANDOFF_REVIEW)_MAX_(ROUNDS|FAILURES)$/.test(k)) delete env[k];
   const r = spawnSync(process.execPath, [CLI, "--root", opts.root ?? root, ...args], { encoding: "utf8", cwd: tmp, env: { ...env, ...opts.env } });
   return { code: r.status, out: r.stdout, err: r.stderr };
 }
@@ -126,7 +126,7 @@ for (const [id, agent] of [["critique", "brutal-critique"], ["test", "sqa-engine
     for (const s of aaw(wf)) if (Array.isArray(s.after)) s.after = s.after.filter((a) => a !== id);
     const r = validate(wf);
     assert.equal(r.code, 1, r.out);
-    assert.match(r.out, new RegExp(`error: lifecycles\\.AAW: needs a ${agent} stage that loops back to the agent-manager stage`));
+    assert.match(r.out, new RegExp(`error: lifecycles\\.AAWP: needs a ${agent} stage that loops back to the agent-manager stage`));
     assert.match(r.out, /\/ai-dlc:workflow upgrade/);
     for (const other of ["brutal-critique", "sqa-engineer", "code-reviewer"].filter((a) => a !== agent))
       assert.doesNotMatch(r.out, new RegExp(`needs a ${other} stage`));
@@ -155,7 +155,7 @@ test("a loop pointing at a stage id that does not exist reports it (and the guar
   aaw(wf).find((s) => s.id === "test").loop.to = "ghost";
   const r = validate(wf);
   assert.equal(r.code, 1);
-  assert.match(r.out, /loop\.to: "ghost" is not a stage of AAW/);
+  assert.match(r.out, /loop\.to: "ghost" is not a stage of AAWP/);
   assert.match(r.out, /needs a sqa-engineer stage that loops back/);
 });
 
@@ -169,7 +169,7 @@ test("the guardrail accepts a review stage with a different id if agent and loop
 
 test("loop-back is resolved by the target stage's agent, not its id", () => {
   const wf = defaultWf();
-  aaw(wf)[0].id = "make-change";
+  aaw(wf).find((s) => s.id === "change").id = "make-change";
   for (const s of aaw(wf)) {
     if (s.after?.includes("change")) s.after = s.after.map((a) => (a === "change" ? "make-change" : a));
     if (s.loop?.to === "change") s.loop.to = "make-change";
@@ -178,12 +178,12 @@ test("loop-back is resolved by the target stage's agent, not its id", () => {
   assert.equal(r.code, 0, r.out);
 });
 
-test("every AAW starting stage must be agent-manager", () => {
+test("AC-19.3.1 a starting stage of an agent other than product-owner, software-architect or agent-manager fails (G3)", () => {
   const wf = defaultWf();
   aaw(wf).find((s) => s.id === "test").after = [];
   const r = validate(wf);
   assert.equal(r.code, 1);
-  assert.match(r.out, /every starting stage must be agent-manager/);
+  assert.match(r.out, /error: lifecycles\.AAWP\.stages\[\d\] \(test\): a starting stage must be product-owner, software-architect or agent-manager \(fixed guardrail\)/);
 });
 
 test("routing.byType['Agent Artifact'] missing -> error naming upgrade", () => {
@@ -195,17 +195,17 @@ test("routing.byType['Agent Artifact'] missing -> error naming upgrade", () => {
 });
 
 test("routing.byType['Agent Artifact'] naming an undefined lifecycle -> error", () => {
-  const wf = defaultWf(); wf.routing.byType["Agent Artifact"] = "NOPE";
+  const wf = defaultWf(); wf.routing.byType["Agent Artifact"] = ["AAWH", "AAWP", "NOPE"];
   const r = validate(wf);
   assert.equal(r.code, 1);
-  assert.match(r.out, /lifecycle "NOPE" is not defined/);
+  assert.match(r.out, /routing\.byType\["Agent Artifact"\]: "NOPE" is not a defined lifecycle/);
 });
 
 test("routing.byType['Agent Artifact'] naming a segments lifecycle -> error", () => {
-  const wf = defaultWf(); wf.routing.byType["Agent Artifact"] = "AI-DLC";
+  const wf = defaultWf(); wf.routing.byType["Agent Artifact"] = ["AAWH", "AAWP", "AI-DLC"];
   const r = validate(wf);
   assert.equal(r.code, 1);
-  assert.match(r.out, /must be a lifecycle with stages, not segments/);
+  assert.match(r.out, /"AI-DLC" must be a lifecycle with stages, not segments/);
 });
 
 test("handOff 'agent-artifact work' must stay agent-manager", () => {
@@ -368,9 +368,9 @@ test("unknown command, unknown option and valueless option are usage errors (exi
 
 // ---- show ----------------------------------------------------------------------
 test("show AAW lists the change, critique, test and code-review stages with agents and loops", () => {
-  const r = cli(["show", "AAW", "--file", write(defaultWf()), "--plugin", PLUGIN]);
+  const r = cli(["show", "AAWP", "--file", write(defaultWf()), "--plugin", PLUGIN]);
   assert.equal(r.code, 0, r.out + r.err);
-  assert.match(r.out, /## AAW . Agent Artifact Work/);
+  assert.match(r.out, /## AAWP . Agent Artifact Work, plugin \/ mod \(focused, plugin variant\)/);
   for (const [id, agent] of [["change", "agent-manager"], ["critique", "brutal-critique"], ["test", "sqa-engineer"], ["code-review", "code-reviewer"]])
     assert.match(r.out, new RegExp(`\\| ${id}\\s+\\| ${agent}\\s+\\|`), `${id}/${agent}`);
   assert.equal((r.out.match(/-> change x2 f1/g) ?? []).length, 3);
@@ -379,7 +379,7 @@ test("show AAW lists the change, critique, test and code-review stages with agen
 });
 
 test("show AAW --mermaid draws the three loop-back edges to change", () => {
-  const r = cli(["show", "AAW", "--mermaid", "--file", write(defaultWf()), "--plugin", PLUGIN]);
+  const r = cli(["show", "AAWP", "--mermaid", "--file", write(defaultWf()), "--plugin", PLUGIN]);
   assert.equal(r.code, 0, r.out + r.err);
   assert.match(r.out, /flowchart LR/);
   for (const id of ["critique", "test", "code_review"]) assert.match(r.out, new RegExp(`${id} -\\.->\\|"[^"]+"\\| change`));
@@ -401,7 +401,7 @@ test("show of an unknown lifecycle is a usage error", () => {
 
 test("show refuses an invalid workflow (exit 1) and prints the errors", () => {
   const wf = withoutStage(defaultWf(), "code-review");
-  const r = cli(["show", "AAW", "--file", write(wf), "--plugin", PLUGIN]);
+  const r = cli(["show", "AAWP", "--file", write(wf), "--plugin", PLUGIN]);
   assert.equal(r.code, 1);
   assert.match(r.out, /needs a code-reviewer stage/);
   assert.match(r.out, /is invalid; fix it before showing it/);
@@ -419,7 +419,7 @@ test("diff reports a removed stage and a changed field, exit 1", () => {
   mine.review.axes = ["standards"];
   const r = cli(["diff", "--file", write(mine), "--against", write(defaultWf())]);
   assert.equal(r.code, 1);
-  assert.match(r.out, /\+ only in other:\s+lifecycles\.AAW\.stages\.code-review/);
+  assert.match(r.out, /\+ only in other:\s+lifecycles\.AAWP\.stages\.code-review/);
   assert.match(r.out, /review\.axes/);
   assert.match(r.out, /\d+ difference\(s\)/);
 });
@@ -675,7 +675,7 @@ test("when empty string: rejected with the exact-phrase error as well as the gen
 
 test("the error names the stage, quotes the phrase for its own kind, and leaves the other reviewers alone", () => {
   const r = whenResult("critique", "docs");
-  assert.match(r.out, /lifecycles\.AAW\.stages\[\d\] \(critique\)\.when: must be "the change set contains docs"/);
+  assert.match(r.out, /lifecycles\.AAWP\.stages\[\d\] \(critique\)\.when: must be "the change set contains docs"/);
   assert.equal((r.out.match(/\.when: must be/g) ?? []).length, 1, r.out);
 });
 
@@ -710,7 +710,7 @@ test("a wrong `when` on a review stage that does not loop back is not checked (t
 
 test("show still renders a normalised-valid but mixed-case `when` verbatim", () => {
   const wf = defaultWf(); aaw(wf).find((s) => s.id === "test").when = "The Change Set Contains CODE";
-  const r = cli(["show", "AAW", "--file", write(wf), "--plugin", PLUGIN]);
+  const r = cli(["show", "AAWP", "--file", write(wf), "--plugin", PLUGIN]);
   assert.equal(r.code, 0, r.out + r.err);
   assert.match(r.out, /The Change Set Contains CODE/);
 });
@@ -729,7 +729,12 @@ const PAIRS = {
 };
 const invalidWarning = (name, min, where = "environment") => new RegExp(`^warning: ${name}=.* in ${where.replace(/\./g, "\\.")} ignored: not a whole number >= ${min}; falling back to the next level$`, "m");
 const allLoops = (wf) => Object.values(wf.lifecycles).filter((l) => Array.isArray(l.stages)).flatMap((l) => l.stages.filter((s) => s.loop));
-const stripLimits = (wf) => { for (const s of allLoops(wf)) { delete s.loop.maxRounds; delete s.loop.maxFailures; } delete wf.clarify.maxRounds; delete wf.clarify.maxFailures; return wf; };
+const stripLimits = (wf) => {
+  for (const s of allLoops(wf)) { delete s.loop.maxRounds; delete s.loop.maxFailures; }
+  delete wf.clarify.maxRounds; delete wf.clarify.maxFailures;
+  delete wf.handoffReview.maxRounds; delete wf.handoffReview.maxFailures;
+  return wf;
+};
 
 // template
 test("the template sets maxRounds 2 and maxFailures 1 on every loop and on clarify", () => {
@@ -818,7 +823,7 @@ test("an old file with only maxRounds stays valid; maxFailures defaults to 1, or
   wf.clarify.maxRounds = 3;
   assert.equal(validate(wf).code, 0);
   const m = byId(parseRounds(rounds(wf)));
-  for (const id of REVIEW_IDS) assert.deepEqual(lim(m[`AAW/${id}`]), [3, "loop", 1, "default"], id);
+  for (const id of REVIEW_IDS) assert.deepEqual(lim(m[`AAWP/${id}`]), [3, "loop", 1, "default"], id);
   assert.deepEqual(lim(m[`FDLC/${fdlc.id}`]), [1, "loop", 0, "default"]);
   assert.deepEqual(lim(m.clarify), [3, "loop", 1, "default"]);
 });
@@ -830,19 +835,19 @@ test("loops and clarify with no limits at all validate and take the defaults 2 /
 });
 
 // rounds
-test("rounds lists every stage loop as lifecycle/stage, then clarify, then gate-critique, with both limits and their sources", () => {
+test("rounds lists every stage loop as lifecycle/stage, then clarify, gate-critique and handoff-review, with both limits and their sources", () => {
   const wf = defaultWf();
   const list = parseRounds(rounds(wf));
   const expected = [];
   for (const [code, lc] of Object.entries(wf.lifecycles)) if (Array.isArray(lc.stages))
     for (const s of lc.stages) if (s.loop) expected.push(`${code}/${s.id}`);
-  assert.deepEqual(list.map((l) => l.id), [...expected, "clarify", "gate-critique"]);
+  assert.deepEqual(list.map((l) => l.id), [...expected, "clarify", "gate-critique", "handoff-review"]);
   for (const l of list) {
     assert.deepEqual(Object.keys(l).sort(), ["agent", "id", "lifecycle", "maxFailures", "maxFailuresSource", "maxRounds", "maxRoundsSource", "stage", "to"], l.id);
     assert.deepEqual(lim(l), l.id === "gate-critique" ? [2, "default", 1, "default"] : [2, "loop", 1, "loop"], l.id);
   }
-  const c = byId(list)["AAW/critique"];
-  assert.deepEqual([c.lifecycle, c.stage, c.agent, c.to], ["AAW", "critique", "brutal-critique", "change"]);
+  const c = byId(list)["AAWP/critique"];
+  assert.deepEqual([c.lifecycle, c.stage, c.agent, c.to], ["AAWP", "critique", "brutal-critique", "change"]);
   const cl = byId(list).clarify;
   assert.deepEqual([cl.lifecycle, cl.stage, cl.agent, cl.to], [null, null, null, null]);
 });
@@ -851,7 +856,7 @@ test("rounds without --json prints a table with both limits and a clarify row", 
   const r = cli(["rounds", "--file", write(defaultWf()), "--plugin", PLUGIN]);
   assert.equal(r.code, 0, r.out + r.err);
   assert.match(r.out, /\| loop\s+\| agent\s+\| to\s+\| maxRounds \| source\s+\| maxFailures \| source\s+\|/);
-  assert.match(r.out, /\| AAW\/critique\s+\| brutal-critique\s+\| change\s+\| 2\s+\| loop\s+\| 1\s+\| loop\s+\|/);
+  assert.match(r.out, /\| AAWP\/critique\s+\| brutal-critique\s+\| change\s+\| 2\s+\| loop\s+\| 1\s+\| loop\s+\|/);
   assert.match(r.out, /\| clarify\s+\|\s+\|\s+\| 2\s+\| loop\s+\| 1\s+\| loop\s+\|/);
   assert.match(r.out, /\| gate-critique\s+\| brutal-critique\s+\|\s+\| 2\s+\| default \| 1\s+\| default \|/);
 });
@@ -869,14 +874,14 @@ test("precedence per property: a valid variable beats the loop value, which beat
   const wf = defaultWf(); const t = aaw(wf).find((s) => s.id === "test").loop;
   Object.assign(t, { maxRounds: 3, maxFailures: 1 });
   let m = byId(parseRounds(rounds(wf)));
-  assert.deepEqual(lim(m["AAW/test"]), [3, "loop", 1, "loop"]);
+  assert.deepEqual(lim(m["AAWP/test"]), [3, "loop", 1, "loop"]);
   m = byId(parseRounds(rounds(wf, { AI_DLC_TEST_MAX_ROUNDS: "5" })));
-  assert.deepEqual(lim(m["AAW/test"]), [5, "env", 1, "loop"]);
+  assert.deepEqual(lim(m["AAWP/test"]), [5, "env", 1, "loop"]);
   m = byId(parseRounds(rounds(wf, { AI_DLC_TEST_MAX_FAILURES: "2" })));
-  assert.deepEqual(lim(m["AAW/test"]), [3, "loop", 2, "env"]);
+  assert.deepEqual(lim(m["AAWP/test"]), [3, "loop", 2, "env"]);
   delete t.maxFailures;
   m = byId(parseRounds(rounds(wf, { AI_DLC_TEST_MAX_ROUNDS: "4" })));
-  assert.deepEqual(lim(m["AAW/test"]), [4, "env", 1, "default"]);
+  assert.deepEqual(lim(m["AAWP/test"]), [4, "env", 1, "default"]);
 });
 
 for (const [agent, [ROUNDS, FAILURES]] of Object.entries(PAIRS)) {
@@ -911,16 +916,16 @@ test("unset or blank variables are not set: file values, no warning", () => {
 
 test("surrounding spaces are accepted; the largest safe integer is accepted", () => {
   let r = rounds(defaultWf(), { AI_DLC_CODE_REVIEW_MAX_ROUNDS: "  3 " });
-  assert.equal(byId(parseRounds(r))["AAW/code-review"].maxRounds, 3);
+  assert.equal(byId(parseRounds(r))["AAWP/code-review"].maxRounds, 3);
   assert.equal(r.err, "");
   r = rounds(defaultWf(), { AI_DLC_CODE_REVIEW_MAX_ROUNDS: "9007199254740991" });
-  assert.equal(byId(parseRounds(r))["AAW/code-review"].maxRounds, 9007199254740991);
+  assert.equal(byId(parseRounds(r))["AAWP/code-review"].maxRounds, 9007199254740991);
   assert.equal(r.err, "");
 });
 
 test("007 is rejected: leading zeros never count (ROUNDS and FAILURES)", () => {
   const r = rounds(defaultWf(), { AI_DLC_TEST_MAX_ROUNDS: "007", AI_DLC_TEST_MAX_FAILURES: "00" });
-  assert.deepEqual(lim(byId(parseRounds(r))["AAW/test"]), [2, "loop", 1, "loop"]);
+  assert.deepEqual(lim(byId(parseRounds(r))["AAWP/test"]), [2, "loop", 1, "loop"]);
   assert.match(r.err, invalidWarning("AI_DLC_TEST_MAX_ROUNDS", 1));
   assert.match(r.err, invalidWarning("AI_DLC_TEST_MAX_FAILURES", 0));
 });
@@ -928,7 +933,7 @@ test("007 is rejected: leading zeros never count (ROUNDS and FAILURES)", () => {
 for (const bad of ["0", "-1", "1.5", "abc", "2x", "+2", "007", "00", "1e3", "0x2", "٢", "9007199254740993"]) {
   test(`AI_DLC_CRITIQUE_MAX_ROUNDS=${JSON.stringify(bad)} is ignored with one warning naming it; exit 0`, () => {
     const r = rounds(defaultWf(), { AI_DLC_CRITIQUE_MAX_ROUNDS: bad });
-    assert.deepEqual(lim(byId(parseRounds(r))["AAW/critique"]), [2, "loop", 1, "loop"]);
+    assert.deepEqual(lim(byId(parseRounds(r))["AAWP/critique"]), [2, "loop", 1, "loop"]);
     assert.match(r.err, invalidWarning("AI_DLC_CRITIQUE_MAX_ROUNDS", 1));
     assert.equal((r.err.match(/^warning:/gm) ?? []).length, 1, r.err);
   });
@@ -937,7 +942,7 @@ for (const bad of ["0", "-1", "1.5", "abc", "2x", "+2", "007", "00", "1e3", "0x2
 for (const bad of ["-1", "1.5", "abc", "+0", "01", "1e0"]) {
   test(`AI_DLC_CRITIQUE_MAX_FAILURES=${JSON.stringify(bad)} is ignored with one warning naming it; exit 0`, () => {
     const r = rounds(defaultWf(), { AI_DLC_CRITIQUE_MAX_FAILURES: bad });
-    assert.deepEqual(lim(byId(parseRounds(r))["AAW/critique"]), [2, "loop", 1, "loop"]);
+    assert.deepEqual(lim(byId(parseRounds(r))["AAWP/critique"]), [2, "loop", 1, "loop"]);
     assert.match(r.err, invalidWarning("AI_DLC_CRITIQUE_MAX_FAILURES", 0));
     assert.equal((r.err.match(/^warning:/gm) ?? []).length, 1, r.err);
   });
@@ -945,7 +950,7 @@ for (const bad of ["-1", "1.5", "abc", "+0", "01", "1e0"]) {
 
 test("FAILURES 0 is valid (stop at the first failing verdict)", () => {
   const r = rounds(defaultWf(), { AI_DLC_CRITIQUE_MAX_FAILURES: "0" });
-  assert.deepEqual(lim(byId(parseRounds(r))["AAW/critique"]), [2, "loop", 0, "env"]);
+  assert.deepEqual(lim(byId(parseRounds(r))["AAWP/critique"]), [2, "loop", 0, "env"]);
   assert.equal(r.err, "");
 });
 
@@ -964,16 +969,16 @@ test("combined check: a ROUNDS that makes maxFailures >= maxRounds is ignored on
 
 test("combined check: a FAILURES that reaches maxRounds is ignored; both set and clashing are both ignored", () => {
   let r = rounds(defaultWf(), { AI_DLC_CODE_REVIEW_MAX_FAILURES: "2" });
-  assert.deepEqual(lim(byId(parseRounds(r))["AAW/code-review"]), [2, "loop", 1, "loop"]);
+  assert.deepEqual(lim(byId(parseRounds(r))["AAWP/code-review"]), [2, "loop", 1, "loop"]);
   assert.match(r.err, /AI_DLC_CODE_REVIEW_MAX_FAILURES=2 \(env\) ignored on /);
   r = rounds(defaultWf(), { AI_DLC_CODE_REVIEW_MAX_ROUNDS: "3", AI_DLC_CODE_REVIEW_MAX_FAILURES: "3" });
-  assert.deepEqual(lim(byId(parseRounds(r))["AAW/code-review"]), [2, "loop", 1, "loop"]);
+  assert.deepEqual(lim(byId(parseRounds(r))["AAWP/code-review"]), [2, "loop", 1, "loop"]);
   assert.match(r.err, /AI_DLC_CODE_REVIEW_MAX_ROUNDS=3 \(env\), AI_DLC_CODE_REVIEW_MAX_FAILURES=3 \(env\) ignored on /);
 });
 
 test("combined check: a pair that keeps maxFailures below maxRounds applies, ROUNDS 1 with FAILURES 0 included", () => {
   const r = rounds(defaultWf(), { AI_DLC_TEST_MAX_ROUNDS: "1", AI_DLC_TEST_MAX_FAILURES: "0" });
-  assert.deepEqual(lim(byId(parseRounds(r))["AAW/test"]), [1, "env", 0, "env"]);
+  assert.deepEqual(lim(byId(parseRounds(r))["AAWP/test"]), [1, "env", 0, "env"]);
   assert.equal(r.err, "");
 });
 
@@ -1018,7 +1023,7 @@ test("show prints x<maxRounds> f<maxFailures> for every loop and for clarify, an
   assert.equal((r.out.match(/\| -> [a-z-]+ x\d+ f\d+\s+\|/g) ?? []).length, allLoops(wf).length, r.out);
   assert.match(r.out, /\| critique\s+\|.*\| -> change x1 f0\s+\|/);
   assert.match(r.out, /Clarify: x2 f1 · Gate critique: x2 f1/);
-  r = cli(["show", "AAW", "--file", write(defaultWf()), "--plugin", PLUGIN], { env: { AI_DLC_CODE_REVIEW_MAX_ROUNDS: "5", AI_DLC_CODE_REVIEW_MAX_FAILURES: "4" } });
+  r = cli(["show", "AAWP", "--file", write(defaultWf()), "--plugin", PLUGIN], { env: { AI_DLC_CODE_REVIEW_MAX_ROUNDS: "5", AI_DLC_CODE_REVIEW_MAX_FAILURES: "4" } });
   assert.match(r.out, /\| code-review\s+\|.*\| -> change x5 f4\s+\|/);
   assert.equal((r.out.match(/-> change x2 f1/g) ?? []).length, 2, r.out);
 });
@@ -1051,7 +1056,7 @@ function project({ local, shared } = {}) {
   return dir;
 }
 const roundsIn = (dir, env, wf = defaultWf()) => cli(["rounds", "--json", "--file", write(wf), "--plugin", PLUGIN], { root: dir, env });
-const testLoop = (r) => byId(parseRounds(r))["AAW/test"];
+const testLoop = (r) => byId(parseRounds(r))["AAWP/test"];
 
 test("settings.local.json beats settings.json, which beats the process environment, which beats the loop", () => {
   const both = project({ local: { env: { AI_DLC_TEST_MAX_ROUNDS: "5" } }, shared: { env: { AI_DLC_TEST_MAX_ROUNDS: "4" } } });
@@ -1070,7 +1075,7 @@ test("settings.local.json beats settings.json, which beats the process environme
 test("each property resolves on its own: ROUNDS from one level, FAILURES from another", () => {
   const dir = project({ local: { env: { AI_DLC_CODE_REVIEW_MAX_FAILURES: 2 } }, shared: { env: { AI_DLC_CODE_REVIEW_MAX_ROUNDS: 4 } } });
   const r = roundsIn(dir);
-  assert.deepEqual(lim(byId(parseRounds(r))["AAW/code-review"]), [4, "settings.json", 2, "settings.local.json"]);
+  assert.deepEqual(lim(byId(parseRounds(r))["AAWP/code-review"]), [4, "settings.json", 2, "settings.local.json"]);
 });
 
 test("settings values may be JSON numbers or strings; both follow the same rule", () => {
@@ -1136,22 +1141,22 @@ test("the settings files of the project holding .ai-dlc/ are used, whatever --ro
   const file = path.join(dir, ".ai-dlc", "workflow.json");
   fs.writeFileSync(file, JSON.stringify(defaultWf()));
   const r = cli(["rounds", "--json", "--file", file, "--plugin", PLUGIN], { root: project() });
-  assert.deepEqual(lim(byId(parseRounds(r))["AAW/critique"]), [6, "settings.json", 1, "loop"]);
+  assert.deepEqual(lim(byId(parseRounds(r))["AAWP/critique"]), [6, "settings.json", 1, "loop"]);
 });
 
 test("the combined check names each dropped value with its source; the loop's file values are used", () => {
   const dir = project({ local: { env: { AI_DLC_TEST_MAX_ROUNDS: "1" } } });
   const r = roundsIn(dir);
   assert.deepEqual(lim(testLoop(r)), [2, "loop", 1, "loop"]);
-  assert.match(r.err, /^warning: AI_DLC_TEST_MAX_ROUNDS=1 \(settings\.local\.json\) ignored on .*AAW\/test.*: maxFailures must stay below maxRounds; using workflow\.json$/m);
+  assert.match(r.err, /^warning: AI_DLC_TEST_MAX_ROUNDS=1 \(settings\.local\.json\) ignored on .*AAWP\/test.*: maxFailures must stay below maxRounds; using workflow\.json$/m);
 });
 
 test("show and the rounds table carry the settings sources too", () => {
   const dir = project({ local: { env: { AI_DLC_CODE_REVIEW_MAX_ROUNDS: "5", AI_DLC_CODE_REVIEW_MAX_FAILURES: "4" } } });
-  let r = cli(["show", "AAW", "--file", write(defaultWf()), "--plugin", PLUGIN], { root: dir });
+  let r = cli(["show", "AAWP", "--file", write(defaultWf()), "--plugin", PLUGIN], { root: dir });
   assert.match(r.out, /\| code-review\s+\|.*\| -> change x5 f4\s+\|/);
   r = cli(["rounds", "--file", write(defaultWf()), "--plugin", PLUGIN], { root: dir });
-  assert.match(r.out, /\| AAW\/code-review\s+\| code-reviewer\s+\| change\s+\| 5\s+\| settings\.local\.json \| 4\s+\| settings\.local\.json \|/);
+  assert.match(r.out, /\| AAWP\/code-review\s+\| code-reviewer\s+\| change\s+\| 5\s+\| settings\.local\.json \| 4\s+\| settings\.local\.json \|/);
 });
 
 // ---- gate critique: the critique of every `critique`-marked stage -----------------
@@ -1195,14 +1200,15 @@ test("gate-critique: the combined check drops both critique values there and kee
 test("the AAW critique loop and gate-critique resolve independently: the loop has a file value, the row does not", () => {
   const wf = defaultWf(); Object.assign(aaw(wf).find((s) => s.id === "critique").loop, { maxRounds: 4, maxFailures: 3 });
   let m = byId(parseRounds(rounds(wf)));
-  assert.deepEqual(lim(m["AAW/critique"]), [4, "loop", 3, "loop"]);
+  assert.deepEqual(lim(m["AAWP/critique"]), [4, "loop", 3, "loop"]);
   assert.deepEqual(lim(m["gate-critique"]), [2, "default", 1, "default"]);
   // FAILURES 2 fits the loop (2 < 4) but not gate-critique (2 >= 2): dropped on the row only.
   const r = rounds(wf, { AI_DLC_CRITIQUE_MAX_FAILURES: "2" });
   m = byId(parseRounds(r));
-  assert.deepEqual(lim(m["AAW/critique"]), [4, "loop", 2, "env"]);
+  assert.deepEqual(lim(m["AAWP/critique"]), [4, "loop", 2, "env"]);
   assert.deepEqual(lim(m["gate-critique"]), [2, "default", 1, "default"]);
-  assert.match(r.err, /^warning: AI_DLC_CRITIQUE_MAX_FAILURES=2 \(env\) ignored on gate-critique: /m);
+  // AAWH/critique keeps the template's 2 / 1, so FAILURES 2 is dropped there too.
+  assert.match(r.err, /^warning: AI_DLC_CRITIQUE_MAX_FAILURES=2 \(env\) ignored on AAWH\/critique, gate-critique: /m);
 });
 
 // ---- merge: add what the project file lacks, never overwrite ----------------------
@@ -1240,7 +1246,7 @@ test("merge derives maxFailures from an existing maxRounds: min(1, maxRounds - 1
   const out = readJson(file);
   assert.deepEqual(["critique", "test", "code-review"].map((id) => aaw(out).find((s) => s.id === id).loop.maxFailures), [0, 1, 1]);
   assert.equal(out.clarify.maxFailures, 0);
-  assert.match(r.out, /^\+ lifecycles\.AAW\.stages\[critique\]\.loop\.maxFailures = 0$/m);
+  assert.match(r.out, /^\+ lifecycles\.AAWP\.stages\[critique\]\.loop\.maxFailures = 0$/m);
 });
 
 test("merge matches stages by id: a missing stage is added in template order, a project-only stage is kept", () => {
@@ -1251,10 +1257,10 @@ test("merge matches stages by id: a missing stage is added in template order, a 
   s.push({ id: "security", agent: "code-reviewer", after: ["code-review"] });
   const file = write(wf);
   const r = mergeRun(file, ["--dry-run"]);
-  assert.match(r.out, /^\+ lifecycles\.AAW\.stages\[test\] = /m);
+  assert.match(r.out, /^\+ lifecycles\.AAWP\.stages\[test\] = /m);
   mergeRun(file);
   const ids = aaw(readJson(file)).map((x) => x.id);
-  assert.deepEqual(ids, ["change", "critique", "test", "code-review", "security"]);
+  assert.deepEqual(ids, ["intent", "design", "lld", "change", "test", "code-review", "docs", "critique", "security"]);
   assert.deepEqual(aaw(readJson(file)).find((x) => x.id === "code-review").after, ["change"], "an existing array is not touched");
 });
 
@@ -1376,16 +1382,16 @@ test("settings numbers that are not safe whole numbers (1e21, 0, -1) are invalid
 test("combined check from two levels: ROUNDS (settings.local.json) and FAILURES (env) that clash are both dropped and both sources are named", () => {
   const dir = project({ local: { env: { AI_DLC_CODE_REVIEW_MAX_ROUNDS: "2" } } });
   const r = roundsIn(dir, { AI_DLC_CODE_REVIEW_MAX_FAILURES: "2" });
-  assert.deepEqual(lim(byId(parseRounds(r))["AAW/code-review"]), [2, "loop", 1, "loop"]);
+  assert.deepEqual(lim(byId(parseRounds(r))["AAWP/code-review"]), [2, "loop", 1, "loop"]);
   assert.match(r.err, /AI_DLC_CODE_REVIEW_MAX_ROUNDS=2 \(settings\.local\.json\), AI_DLC_CODE_REVIEW_MAX_FAILURES=2 \(env\) ignored on /);
 });
 
 test("a settings variable of one reviewer leaves the other two reviewers' loops and clarify on their file values", () => {
   const dir = project({ shared: { env: { AI_DLC_CRITIQUE_MAX_ROUNDS: "7", AI_DLC_CRITIQUE_MAX_FAILURES: "6" } } });
   const m = byId(parseRounds(roundsIn(dir)));
-  assert.deepEqual(lim(m["AAW/critique"]), [7, "settings.json", 6, "settings.json"]);
-  assert.deepEqual(lim(m["AAW/test"]), [2, "loop", 1, "loop"]);
-  assert.deepEqual(lim(m["AAW/code-review"]), [2, "loop", 1, "loop"]);
+  assert.deepEqual(lim(m["AAWP/critique"]), [7, "settings.json", 6, "settings.json"]);
+  assert.deepEqual(lim(m["AAWP/test"]), [2, "loop", 1, "loop"]);
+  assert.deepEqual(lim(m["AAWP/code-review"]), [2, "loop", 1, "loop"]);
   assert.deepEqual(lim(m.clarify), [2, "loop", 1, "loop"]);
 });
 
@@ -1424,10 +1430,10 @@ test("merge result validates (with a catalog) when all limits were missing; --dr
 
 test("merge keeps a project-only stage in its position among the template stages", () => {
   const wf = defaultWf();
-  aaw(wf).splice(1, 0, { id: "extra", agent: "code-reviewer", after: ["change"] });
+  aaw(wf).splice(4, 0, { id: "extra", agent: "code-reviewer", after: ["change"] });
   const file = write(wf);
   mergeRun(file);
-  assert.deepEqual(aaw(readJson(file)).map((x) => x.id), ["change", "extra", "critique", "test", "code-review"]);
+  assert.deepEqual(aaw(readJson(file)).map((x) => x.id), ["intent", "design", "lld", "change", "extra", "test", "code-review", "docs", "critique"]);
 });
 
 test("merge adds maxFailures next to an existing maxRounds of every value: 1 -> 0, 2 -> 1, 5 -> 1", () => {
@@ -1501,4 +1507,338 @@ test("a settings file that starts with a UTF-8 BOM is read like one without it",
   const r = roundsIn(dir);
   assert.deepEqual(lim(testLoop(r)), [5, "settings.local.json", 2, "settings.json"]);
   assert.equal(r.err, "");
+});
+
+// ---- root 19, WF-1: the two agent-artifact lifecycles AAWH and AAWP --------------------------------
+// Spec docs/specs/aaw-variants.spec.md (D1-D3, D5, D9), LLD docs/specs/aaw-variants.lld.md (2.1-2.4, 4).
+const aawh = (wf) => wf.lifecycles.AAWH.stages;
+const agentsOf = (stages) => stages.map((s) => s.agent);
+const errorLines = (r) => r.out.split(/\r?\n/).filter((l) => l.startsWith("error:"));
+// Remove a stage and repoint every `after` and `loop.to` that named it at `to` (or drop the edge).
+function dropStage(stages, id, to) {
+  const i = stages.findIndex((s) => s.id === id);
+  stages.splice(i, 1);
+  for (const s of stages) {
+    if (Array.isArray(s.after)) s.after = [...new Set(s.after.flatMap((a) => (a === id ? (to ? [to] : []) : [a])))];
+    if (s.loop?.to === id) delete s.loop;
+  }
+  return stages;
+}
+
+test("AC-19.1.1 the template validates with AAWH and AAWP under one routing key", () => {
+  const wf = defaultWf();
+  assert.deepEqual(wf.routing.byType["Agent Artifact"], ["AAWH", "AAWP"]);
+  assert.equal(wf.lifecycles.AAWH.variant, "harness");
+  assert.equal(wf.lifecycles.AAWP.variant, "plugin");
+  assert.equal("AAW" in wf.lifecycles, false, "the single AAW lifecycle is gone");
+  const r = validate(wf);
+  assert.equal(r.code, 0, r.out + r.err);
+});
+
+test("AC-19.1.1 this repository's .ai-dlc/workflow.json validates and routes agent-artifact work to AAWH and AAWP", () => {
+  const file = path.join(REPO, ".ai-dlc", "workflow.json");
+  const r = cli(["validate", "--file", file, "--plugin", PLUGIN], { root: REPO });
+  assert.equal(r.code, 0, r.out + r.err);
+  assert.deepEqual(JSON.parse(fs.readFileSync(file, "utf8")).routing.byType["Agent Artifact"], ["AAWH", "AAWP"]);
+});
+
+test("AC-19.1.2 AAWH has exactly product-owner, agent-manager, documentation-writer and brutal-critique; AAWP adds the design, test and review agents", () => {
+  const wf = defaultWf();
+  assert.deepEqual(agentsOf(aawh(wf)), ["product-owner", "agent-manager", "documentation-writer", "brutal-critique"]);
+  assert.deepEqual(agentsOf(aaw(wf)), ["product-owner", "software-architect", "system-engineer", "agent-manager", "sqa-engineer", "code-reviewer", "documentation-writer", "brutal-critique"]);
+  for (const st of [aawh(wf), aaw(wf)]) assert.equal(st.some((s) => s.agent === "software-engineer"), false);
+  for (const code of ["AAWH", "AAWP"]) assert.equal(wf.lifecycles[code].stages.some((s) => "gate" in s), false, `${code} has no gate`);
+});
+
+test("AC-19.1.2 the links: design after intent, lld loops to design, change after lld, test and code-review loops, code-review after test, critique loops to change", () => {
+  const wf = defaultWf();
+  const p = Object.fromEntries(aaw(wf).map((s) => [s.id, s]));
+  assert.deepEqual(p.intent.after, []);
+  assert.deepEqual(p.design.after, ["intent"]);
+  assert.deepEqual([p.lld.after, p.lld.loop.to], [["design"], "design"]);
+  assert.deepEqual(p.change.after, ["lld"]);
+  assert.deepEqual([p.test.after, p.test.loop.to], [["change"], "change"]);
+  assert.deepEqual([p["code-review"].after, p["code-review"].loop.to], [["test"], "change"]);
+  assert.deepEqual([p.docs.after, p.critique.after, p.critique.loop.to], [["change"], ["change"], "change"]);
+  const h = Object.fromEntries(aawh(wf).map((s) => [s.id, s]));
+  assert.deepEqual([h.intent.after, h.change.after, h.docs.after, h.critique.after, h.critique.loop.to], [[], ["intent"], ["change"], ["change"], "change"]);
+  // Align (lld <-> change) is a clarify request, not a stage loop.
+  assert.ok(wf.clarify.matrix["agent-manager"].some((row) => row.agent === "system-engineer"));
+  assert.ok(wf.clarify.matrix["agent-manager"].some((row) => row.agent === "software-architect"));
+});
+
+for (const code of ["AAWH", "AAWP"]) {
+  test(`AC-19.1.3 a software-engineer stage in ${code} fails and names the stage (G1)`, () => {
+    const wf = defaultWf();
+    wf.lifecycles[code].stages.push({ id: "build", agent: "software-engineer", after: ["change"] });
+    const r = validate(wf);
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.out, new RegExp(`error: lifecycles\\.${code}\\.stages\\[\\d+\\] \\(build\\): agent-artifact work never uses software-engineer \\(fixed guardrail\\)`));
+  });
+
+  test(`AC-19.1.4 ${code} with no agent-manager stage fails (G2)`, () => {
+    const wf = defaultWf();
+    const st = wf.lifecycles[code].stages;
+    st.find((s) => s.id === "change").agent = "documentation-writer";
+    const r = validate(wf);
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.out, new RegExp(`error: lifecycles\\.${code}: needs an agent-manager stage: agent-artifact changes are always built by agent-manager \\(fixed guardrail\\)`));
+  });
+
+  test(`AC-19.3.3 ${code} without a brutal-critique stage fails (G4)`, () => {
+    const wf = defaultWf();
+    dropStage(wf.lifecycles[code].stages, "critique");
+    const r = validate(wf);
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.out, new RegExp(`error: lifecycles\\.${code}: needs a brutal-critique stage that loops back to the agent-manager stage`));
+    assert.match(r.out, /run \/ai-dlc:workflow upgrade to bring in the default AAWH and AAWP stages/);
+  });
+}
+
+test("AC-19.3.1 a variant starting with product-owner validates; starting with software-architect or agent-manager validates too", () => {
+  assert.equal(validate(defaultWf()).code, 0);
+  const wf = defaultWf();
+  dropStage(aaw(wf), "intent"); // AAWP now starts with software-architect
+  dropStage(aawh(wf), "intent"); // AAWH now starts with agent-manager
+  const r = validate(wf);
+  assert.equal(r.code, 0, r.out);
+});
+
+test("AC-19.3.2 the plugin variant without sqa-engineer or code-reviewer, or code-reviewer not after sqa-engineer, fails (G5)", () => {
+  let wf = defaultWf(); dropStage(aaw(wf), "test", "change");
+  let r = validate(wf);
+  assert.match(r.out, /error: lifecycles\.AAWP: needs a sqa-engineer stage that loops back/);
+  wf = defaultWf(); dropStage(aaw(wf), "code-review");
+  r = validate(wf);
+  assert.match(r.out, /error: lifecycles\.AAWP: needs a code-reviewer stage that loops back/);
+  wf = defaultWf(); aaw(wf).find((s) => s.id === "code-review").after = ["change"];
+  r = validate(wf);
+  assert.match(r.out, /error: lifecycles\.AAWP\.stages\[\d+\] \(code-review\)\.after: must include the sqa-engineer stage \(test\)/);
+});
+
+test("AC-19.3.2 the harness variant needs no sqa-engineer or code-reviewer stage, and a spare one there is not held to the code phrase", () => {
+  const wf = defaultWf();
+  aawh(wf).push({ id: "extra-test", agent: "sqa-engineer", when: "whenever", after: ["change"] });
+  const r = validate(wf);
+  assert.equal(r.code, 0, r.out);
+});
+
+for (const [agent, label, mutate] of [
+  ["software-architect", "no software-architect stage", (st) => dropStage(st, "design", "intent")],
+  ["system-engineer", "no system-engineer stage", (st) => dropStage(st, "lld", "design")],
+  ["software-architect", "the software-architect stage after agent-manager", (st) => { st.find((s) => s.id === "design").after = ["change"]; st.find((s) => s.id === "lld").after = ["intent"]; delete st.find((s) => s.id === "lld").loop; }],
+]) {
+  test(`AC-19.3.2 the plugin variant without a ${agent} stage the agent-manager stage follows fails (G5 design): ${label}`, () => {
+    const wf = defaultWf();
+    mutate(aaw(wf));
+    const r = validate(wf);
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.out, new RegExp(`error: lifecycles\\.AAWP: the plugin variant needs a ${agent} stage that the agent-manager stage follows through after: design is part of the plugin variant \\(fixed guardrail\\)`));
+  });
+}
+
+test("AC-19.3.2 design reached through another stage counts (transitive after)", () => {
+  const wf = defaultWf();
+  // change after lld after design: the architect is reached through system-engineer, not directly.
+  assert.deepEqual(aaw(wf).find((s) => s.id === "change").after, ["lld"]);
+  assert.equal(validate(wf).code, 0);
+});
+
+test("AC-19.3.2 the harness variant needs no design stages", () => {
+  const wf = defaultWf();
+  assert.equal(aawh(wf).some((s) => ["software-architect", "system-engineer"].includes(s.agent)), false);
+  assert.equal(validate(wf).code, 0);
+});
+
+test("AC-19.3.4 G7: disabling product-owner while a listed lifecycle has a product-owner stage fails and names the agent and the lifecycle; removing the stage clears that error", () => {
+  const wf = defaultWf(); wf.agents.disabled = ["product-owner"];
+  let r = validate(wf);
+  assert.equal(r.code, 1, r.out);
+  for (const code of ["AAWH", "AAWP"])
+    assert.match(r.out, new RegExp(`error: lifecycles\\.${code}\\.stages\\[0\\] \\(intent\\)\\.agent: "product-owner" is disabled in agents\\.disabled`));
+  dropStage(aawh(wf), "intent"); dropStage(aaw(wf), "intent");
+  r = validate(wf);
+  // product-owner still has other uses in the template (PDLC, Release, routing, clarify); none of them is AAWH or AAWP.
+  assert.equal(errorLines(r).some((l) => /lifecycles\.AAW[HP]/.test(l)), false, r.out);
+});
+
+// G6: the shape of routing.byType["Agent Artifact"] and the variants of the lifecycles it names.
+test("G6 a listed lifecycle without a variant fails", () => {
+  const wf = defaultWf(); delete wf.lifecycles.AAWH.variant;
+  const r = validate(wf);
+  assert.equal(r.code, 1, r.out);
+  assert.match(r.out, /error: lifecycles\.AAWH\.variant: must be "harness" or "plugin" for a lifecycle named in routing\.byType\["Agent Artifact"\]/);
+});
+
+test("G6 a variant value other than harness or plugin fails, listed or not", () => {
+  const wf = defaultWf(); wf.lifecycles.TLC.variant = "mod";
+  const r = validate(wf);
+  assert.equal(r.code, 1, r.out);
+  assert.match(r.out, /error: lifecycles\.TLC\.variant: variant must be "harness" or "plugin"/);
+});
+
+test("G6 a variant on a lifecycle that is not listed is allowed", () => {
+  const wf = defaultWf(); wf.lifecycles.TLC.variant = "harness";
+  assert.equal(validate(wf).code, 0);
+});
+
+test("G6 the list needs exactly one plugin variant (none, or two, fail)", () => {
+  let wf = defaultWf(); wf.routing.byType["Agent Artifact"] = ["AAWH"];
+  let r = validate(wf);
+  assert.match(r.out, /error: routing\.byType\["Agent Artifact"\]: needs exactly one variant "plugin" lifecycle \(found 0\)/);
+  wf = defaultWf(); wf.lifecycles.AAWP2 = JSON.parse(JSON.stringify(wf.lifecycles.AAWP)); wf.routing.byType["Agent Artifact"] = ["AAWH", "AAWP", "AAWP2"];
+  r = validate(wf);
+  assert.match(r.out, /needs exactly one variant "plugin" lifecycle \(found 2\)/);
+});
+
+test("G6 at most one harness variant; the plugin variant alone is valid (D2: every change set goes to it)", () => {
+  let wf = defaultWf(); wf.lifecycles.AAWH2 = JSON.parse(JSON.stringify(wf.lifecycles.AAWH)); wf.routing.byType["Agent Artifact"] = ["AAWH", "AAWH2", "AAWP"];
+  let r = validate(wf);
+  assert.match(r.out, /error: routing\.byType\["Agent Artifact"\]: may name at most one variant "harness" lifecycle \(found 2\)/);
+  wf = defaultWf(); wf.routing.byType["Agent Artifact"] = ["AAWP"]; wf.handoffReview.lifecycles = ["AAWP"];
+  r = validate(wf);
+  assert.equal(r.code, 0, r.out);
+});
+
+for (const [label, value, re] of [
+  ["a string other than AAW", "AAWP", /routing\.byType\["Agent Artifact"\]: must be a list of lifecycle codes, for example \["AAWH", "AAWP"\]/],
+  ["an empty list", [], /routing\.byType\["Agent Artifact"\]: must be a non-empty list of lifecycle codes/],
+  ["a list with a non-string", ["AAWH", 5], /must be a non-empty list of lifecycle codes/],
+  ["a list naming a lifecycle twice", ["AAWH", "AAWP", "AAWP"], /routing\.byType\["Agent Artifact"\]: "AAWP" is listed twice/],
+]) {
+  test(`G6 ${label} under "Agent Artifact" fails`, () => {
+    const wf = defaultWf(); wf.routing.byType["Agent Artifact"] = value;
+    const r = validate(wf);
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.out, re);
+  });
+}
+
+test("G6 only \"Agent Artifact\" may be a list: a list under another byType key fails", () => {
+  const wf = defaultWf(); wf.routing.byType.Feature = ["AI-DLC", "FDLC"];
+  const r = validate(wf);
+  assert.equal(r.code, 1, r.out);
+  assert.match(r.out, /error: routing\.byType\.Feature: must be one lifecycle code \(only "Agent Artifact" may be a list\)/);
+});
+
+test("the guards apply by role to a custom lifecycle listed under the key", () => {
+  const wf = defaultWf();
+  wf.lifecycles.OURS = { ...JSON.parse(JSON.stringify(wf.lifecycles.AAWH)), kind: "custom" };
+  wf.lifecycles.OURS.stages.push({ id: "build", agent: "software-engineer", after: ["change"] });
+  wf.routing.byType["Agent Artifact"] = ["OURS", "AAWP"];
+  const r = validate(wf);
+  assert.equal(r.code, 1, r.out);
+  assert.match(r.out, /error: lifecycles\.OURS\.stages\[\d+\] \(build\): agent-artifact work never uses software-engineer/);
+});
+
+test("AC-19.8.1 a file with routing AAW fails with the upgrade message and names AAW", () => {
+  const wf = defaultWf(); wf.routing.byType["Agent Artifact"] = "AAW";
+  const r = validate(wf);
+  assert.equal(r.code, 1, r.out);
+  assert.ok(r.out.includes(`error: routing.byType["Agent Artifact"]: routing.byType["Agent Artifact"] is the single AAW lifecycle of an older plugin; run /ai-dlc:workflow upgrade to replace it with AAWH and AAWP`), r.out);
+});
+
+test("routing.agentArtifact: the template's folder lists; a wrong shape fails", () => {
+  const wf = defaultWf();
+  assert.deepEqual(wf.routing.agentArtifact.pluginPaths, ["plugins/**", "tools/**", "tests/**"]);
+  assert.ok(wf.routing.agentArtifact.harnessPaths.includes(".claude/agents/**"));
+  for (const [mutate, re] of [
+    [(w) => { w.routing.agentArtifact = []; }, /error: routing\.agentArtifact: must be an object \{ harnessPaths, pluginPaths \}/],
+    [(w) => { w.routing.agentArtifact.pluginPaths = "plugins/**"; }, /error: routing\.agentArtifact\.pluginPaths: must be an array of path globs/],
+    [(w) => { w.routing.agentArtifact.harnessPaths.push("AGENTS.md"); }, /error: routing\.agentArtifact\.harnessPaths: "AGENTS\.md" is listed twice/],
+    [(w) => { w.routing.agentArtifact.extra = []; }, /error: routing\.agentArtifact\.extra: unknown key/],
+  ]) {
+    const w = defaultWf(); mutate(w);
+    const r = validate(w);
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.out, re);
+  }
+});
+
+// handoffReview (D5, ITEM-050)
+test("handoffReview is required, and its keys are checked", () => {
+  let wf = defaultWf(); delete wf.handoffReview;
+  let r = validate(wf);
+  assert.equal(r.code, 1, r.out);
+  assert.match(r.out, /error: \$: missing required key "handoffReview"/);
+  for (const [mutate, re] of [
+    [(w) => { w.handoffReview.lifecycles = ["NOPE"]; }, /error: handoffReview\.lifecycles: "NOPE" is not a defined lifecycle/],
+    [(w) => { w.handoffReview.lifecycles = []; }, /error: handoffReview\.lifecycles: must be a non-empty array of lifecycle codes/],
+    [(w) => { w.handoffReview.lifecycles = ["AAWH", "AAWH"]; }, /error: handoffReview\.lifecycles: "AAWH" is listed twice/],
+    [(w) => { w.handoffReview.reviewer = "brutal-critique"; }, /error: handoffReview\.reviewer: unknown key/],
+    [(w) => { w.handoffReview.maxFailures = 2; }, /error: handoffReview: maxFailures \(2\) must be below maxRounds \(2\)/],
+    [(w) => { w.handoffReview.maxRounds = 0; }, /error: handoffReview\.maxRounds: must be a whole number >= 1/],
+    [(w) => { w.handoffReview = "AAWH"; }, /error: handoffReview: must be an object/],
+  ]) {
+    wf = defaultWf(); mutate(wf);
+    r = validate(wf);
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.out, re);
+  }
+});
+
+test("handoffReview limits omitted take the loop defaults 2 / 1", () => {
+  const wf = defaultWf(); delete wf.handoffReview.maxRounds; delete wf.handoffReview.maxFailures;
+  assert.equal(validate(wf).code, 0);
+  assert.deepEqual(lim(byId(parseRounds(rounds(wf)))["handoff-review"]), [2, "default", 1, "default"]);
+});
+
+test("a null documents.critic does not affect handoffReview", () => {
+  const wf = defaultWf(); wf.documents.critic = null;
+  const r = rounds(wf);
+  assert.deepEqual(lim(byId(parseRounds(r))["handoff-review"]), [2, "loop", 1, "loop"]);
+});
+
+test("AC-19.5.1 rounds --json has a handoff-review row 2/1, distinct from gate-critique", () => {
+  const list = parseRounds(rounds(defaultWf()));
+  const m = byId(list);
+  const h = m["handoff-review"];
+  assert.deepEqual([h.lifecycle, h.stage, h.agent, h.to], [null, null, null, null]);
+  assert.deepEqual(lim(h), [2, "loop", 1, "loop"]);
+  assert.deepEqual(lim(m["gate-critique"]), [2, "default", 1, "default"]);
+  assert.equal(list.at(-1).id, "handoff-review");
+  assert.equal(list.at(-2).id, "gate-critique");
+});
+
+test("AC-19.5.2 the handoff review variables change only its row (process environment)", () => {
+  const before = byId(parseRounds(rounds(defaultWf())));
+  const after_ = byId(parseRounds(rounds(defaultWf(), { AI_DLC_HANDOFF_REVIEW_MAX_ROUNDS: "4", AI_DLC_HANDOFF_REVIEW_MAX_FAILURES: "3" })));
+  assert.deepEqual(lim(after_["handoff-review"]), [4, "env", 3, "env"]);
+  for (const id of Object.keys(before)) if (id !== "handoff-review") assert.deepEqual(after_[id], before[id], id);
+});
+
+test("AC-19.5.2 the handoff review variables are read from settings env too, highest first", () => {
+  const dir = project({ local: { env: { AI_DLC_HANDOFF_REVIEW_MAX_ROUNDS: "5" } }, shared: { env: { AI_DLC_HANDOFF_REVIEW_MAX_ROUNDS: "4", AI_DLC_HANDOFF_REVIEW_MAX_FAILURES: 2 } } });
+  const r = roundsIn(dir, { AI_DLC_HANDOFF_REVIEW_MAX_ROUNDS: "3" });
+  const m = byId(parseRounds(r));
+  assert.deepEqual(lim(m["handoff-review"]), [5, "settings.local.json", 2, "settings.json"]);
+  assert.deepEqual(lim(m["gate-critique"]), [2, "default", 1, "default"]);
+  assert.equal(r.err, "");
+});
+
+test("AC-19.5.2 AI_DLC_CRITIQUE_* moves gate-critique and the critique loops, never handoff-review", () => {
+  const m = byId(parseRounds(rounds(defaultWf(), { AI_DLC_CRITIQUE_MAX_ROUNDS: "6", AI_DLC_CRITIQUE_MAX_FAILURES: "4" })));
+  assert.deepEqual(lim(m["gate-critique"]), [6, "env", 4, "env"]);
+  assert.deepEqual(lim(m["AAWH/critique"]), [6, "env", 4, "env"]);
+  assert.deepEqual(lim(m["handoff-review"]), [2, "loop", 1, "loop"]);
+});
+
+test("a handoff review pair that breaks maxFailures < maxRounds is warned about once and falls back to the file", () => {
+  const r = rounds(defaultWf(), { AI_DLC_HANDOFF_REVIEW_MAX_FAILURES: "2" });
+  assert.deepEqual(lim(byId(parseRounds(r))["handoff-review"]), [2, "loop", 1, "loop"]);
+  assert.match(r.err, /^warning: AI_DLC_HANDOFF_REVIEW_MAX_FAILURES=2 \(env\) ignored on handoff-review: maxFailures must stay below maxRounds; using workflow\.json$/m);
+  assert.equal((r.err.match(/AI_DLC_HANDOFF_REVIEW/g) ?? []).length, 1);
+});
+
+test("an invalid handoff review variable is warned about and the next level is used", () => {
+  const r = rounds(defaultWf(), { AI_DLC_HANDOFF_REVIEW_MAX_ROUNDS: "007" });
+  assert.deepEqual(lim(byId(parseRounds(r))["handoff-review"]), [2, "loop", 1, "loop"]);
+  assert.match(r.err, invalidWarning("AI_DLC_HANDOFF_REVIEW_MAX_ROUNDS", 1));
+});
+
+test("show prints the handoff review limits in its summary line", () => {
+  const r = cli(["show", "--file", write(defaultWf()), "--plugin", PLUGIN], { env: { AI_DLC_HANDOFF_REVIEW_MAX_ROUNDS: "3" } });
+  assert.equal(r.code, 0, r.out + r.err);
+  assert.match(r.out, /Gate critique: x2 f1 · Handoff review: x3 f1 · Review axes/);
+  assert.match(r.out, /## AAWH . Agent Artifact Work, harness \(focused, harness variant\)/);
 });

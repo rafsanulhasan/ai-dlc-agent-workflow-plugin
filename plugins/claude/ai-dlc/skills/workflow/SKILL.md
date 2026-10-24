@@ -16,7 +16,7 @@ A repository's AI-DLC workflow lives in `.ai-dlc/workflow.json`. The orchestrato
 
 The **workflow gate** guards the file: `.claude/hooks/check-workflow.mjs` ([templates/check-workflow.mjs](templates/check-workflow.mjs)), run by a Claude `Stop` hook in `.claude/settings.json` and its Copilot twin `.github/hooks/ai-dlc-workflow-gate.json`. When `.ai-dlc/` has uncommitted changes, it runs `node .ai-dlc/workflow.mjs validate` and blocks finishing while that fails. It blocks **once per stop cycle**, like the test gates: if the agent stops again right after a block, the hook lets it through, so the gate catches mistakes but does not make an invalid file impossible — `validate` in CI or review does. It is a project hook installed with the files; the plugin ships no hooks. `AI_DLC_WORKFLOW_GATE=false` pauses it.
 
-**Boris Cherny** (`agent-manager`) owns changes to the workflow file, like every agent artifact, and each change is reviewed before it is done (the `AAW` lifecycle, [references/aaw-review.md](references/aaw-review.md)): docs by **Linus Torvalds** (`brutal-critique`), code by **Kent Beck** (`sqa-engineer`) then **Robert C. Martin** (`code-reviewer`); developers may also run `/ai-dlc:workflow …` themselves. **Scott Hanselman** (`orchestrator`) only reads it.
+**Boris Cherny** (`agent-manager`) owns changes to the workflow file, like every agent artifact, and each change is reviewed before it is done (the `AAWH` and `AAWP` lifecycles, [references/aaw-review.md](references/aaw-review.md)): docs by **Linus Torvalds** (`brutal-critique`), code by **Kent Beck** (`sqa-engineer`) then **Robert C. Martin** (`code-reviewer`); developers may also run `/ai-dlc:workflow …` themselves. **Scott Hanselman** (`orchestrator`) only reads it.
 
 > Agent names are the defaults; a name chosen at `/ai-dlc:init` (the agent's `persona-name` memory, roster in the orchestrator's `project_team-roster`) takes precedence.
 
@@ -46,13 +46,14 @@ Every stage `loop`, and `clarify`, has two limits:
 
 A failing verdict is whatever the loop's `on` names; the `on` text is the rule. In the default file, for example:
 
-- `AAW` critique loop: a REVISE verdict, or Majors on a PASS, from **Linus Torvalds** (`brutal-critique`).
-- `AAW` test loop: a test that fails because the code is wrong, from **Kent Beck** (`sqa-engineer`).
-- `AAW` code-review loop: a Blocker or a Warning from **Robert C. Martin** (`code-reviewer`).
+- `AAWH` and `AAWP` critique loops: a REVISE verdict, or Majors on a PASS, from **Linus Torvalds** (`brutal-critique`).
+- `AAWP` test loop: a test that fails because the code is wrong, from **Kent Beck** (`sqa-engineer`).
+- `AAWP` code-review loop: a Blocker or a Warning from **Robert C. Martin** (`code-reviewer`).
+- `AAWP` lld loop: a challenge to the design from the low-level design (Refine), from **Zoran Horvat** (`system-engineer`); file-only, like every loop of an agent that is not a reviewer.
 - `FDLC`, `BFLC` and `TLC` code-review loops: Blockers only, so a Warning there is not a failing verdict; the `RLC` one adds a behaviour change.
 - `clarify`: a round that ends with the question still open.
 
-The loop stops at the failing verdict that takes the count past `maxFailures`: with `maxRounds` 3 and `maxFailures` 1, a first failure is fixed in round 2, and a second failure stops the loop with round 3 unused. The rule is `maxRounds` ≥ `maxFailures` + 1 (the same as `maxFailures` < `maxRounds`): `maxFailures` 1 needs `maxRounds` 2 or more, and `maxRounds` 1 allows only `maxFailures` 0. A file value that breaks this rule fails `validate`. Each step has its own pair: the `AAW` review loops need not match.
+The loop stops at the failing verdict that takes the count past `maxFailures`: with `maxRounds` 3 and `maxFailures` 1, a first failure is fixed in round 2, and a second failure stops the loop with round 3 unused. The rule is `maxRounds` ≥ `maxFailures` + 1 (the same as `maxFailures` < `maxRounds`): `maxFailures` 1 needs `maxRounds` 2 or more, and `maxRounds` 1 allows only `maxFailures` 0. A file value that breaks this rule fails `validate`. Each step has its own pair: the `AAWH` and `AAWP` review loops need not match.
 
 A variable overrides a property on **every** loop whose stage agent is that reviewer, in every lifecycle (the critique pair also sets gate critique, *Gate critique*):
 
@@ -83,7 +84,7 @@ Each property is resolved on its own, the first valid value winning:
 - **Invalid value:** ignored, with one warning on stderr naming the variable and its file (or `environment`); resolution falls through to the next level. A settings file that does not parse is skipped with one warning naming it. Neither ever fails `validate` or changes an exit code.
 - **Combined check:** when the resolved values would make a loop's `maxFailures` ≥ its `maxRounds`, the variables applied to that loop are ignored there, with a warning naming each and its source, and the loop's file values are used.
 
-`node .ai-dlc/workflow.mjs rounds` is the source of truth: it prints, per loop, for `clarify` and for `gate-critique`, the lifecycle and stage, the agent, where work returns to, and `maxRounds` and `maxFailures` with the source of each (`settings.local.json`, `settings.json`, `env`, `loop` — for `clarify`, the `clarify` object — or `default`); `--json` for scripts.
+`node .ai-dlc/workflow.mjs rounds` is the source of truth: it prints, per loop, for `clarify`, for `gate-critique` and for `handoff-review`, the lifecycle and stage, the agent, where work returns to, and `maxRounds` and `maxFailures` with the source of each (`settings.local.json`, `settings.json`, `env`, `loop` — for `clarify`, the `clarify` object — or `default`); `--json` for scripts.
 
 ### Gate critique
 
@@ -93,8 +94,17 @@ Every stage marked `critique` gets a critique of its documents: `documents.write
 - **Values:** only the critique pair, `AI_DLC_CRITIQUE_MAX_ROUNDS` and `AI_DLC_CRITIQUE_MAX_FAILURES`, read through the same three levels with the same valid-value rule, warnings and combined check as a loop (levels 1–3 above); otherwise the default, 2 rounds and 1 failure. When the combined check drops the variables, the default applies.
 - **Sources:** the same names as for a loop, with `default` in place of `loop`.
 - **Where to read it:** `rounds --json` lists it as the row with id `gate-critique` (`lifecycle`, `stage` and `to` are `null`, `agent` is `brutal-critique`), and `show` prints it beside the `clarify` line. The orchestrator reads it from `rounds --json`, like every other limit.
-- **Independent of `AAW`:** the `AAW` critique loop is a stage loop with its own file value; the same variables apply to both, but each resolves on its own, and the combined check can drop a variable on one and not on the other.
+- **Independent of `AAWH` and `AAWP`:** their critique loops are stage loops with their own file values; the same variables apply to all of them, but each resolves on its own, and the combined check can drop a variable on one and not on the other.
 - With `documents.critic: null` there is no gate critique, and the row is not used.
+
+### Handoff review
+
+**Linus Torvalds** (`brutal-critique`) reviews each handoff record of the lifecycles `handoffReview.lifecycles` names (default `AAWH`, `AAWP`) before its receiver starts: PASS, or REVISE back to the record's writer. The reviewer is always `brutal-critique`, so the file has no reviewer key.
+
+- **File values:** `handoffReview.maxRounds` and `handoffReview.maxFailures` (omitted: 2 and 1, as on a loop; `maxFailures` below `maxRounds`). `handoffReview` is a required top-level key; **upgrade** adds it.
+- **Variables:** its own pair, `AI_DLC_HANDOFF_REVIEW_MAX_ROUNDS` and `AI_DLC_HANDOFF_REVIEW_MAX_FAILURES`, read through levels 1–3 with the same valid-value rule, warnings and combined check as a loop. The `AI_DLC_CRITIQUE_*` pair never applies to it, so gate critique, the critique loops and the handoff review change independently.
+- **Where to read it:** `rounds --json` lists it as the row with id `handoff-review` (`lifecycle`, `stage`, `agent` and `to` are `null`), and `show` prints it beside the `Gate critique` line.
+- `documents.critic: null` does not switch it off.
 
 ### Raising the limits for a run
 
@@ -111,9 +121,9 @@ When a step stops with findings open, the human may raise its limits instead of 
 The file cannot change these; `validate` rejects the attempts it can detect.
 
 - Boris Cherny (`agent-manager`) alone changes agents, skills, hooks, rules, commands, agent memory and this workflow file, and `agent-artifact work` always routes to it. `orchestrator` and `agent-manager` cannot be disabled.
-- Every agent-artifact change is reviewed, in bounded loops. The lifecycle that `routing.byType["Agent Artifact"]` names (default `AAW`) starts with `agent-manager` and has `brutal-critique` (docs), `sqa-engineer` and then `code-reviewer` (code) stages that loop back to it, each with its own round and failure limits (*Loop limits*). `brutal-critique`, `sqa-engineer` and `code-reviewer` cannot be disabled, and `documents.critic: null` does not remove these reviews. Change kinds, rounds, findings, and exactly what `validate` enforces and what it cannot: [references/aaw-review.md](references/aaw-review.md). A missing `routing.byType["Agent Artifact"]` or lifecycle, or an `AAW` from before these rules, fails `validate`: run **upgrade**.
+- Every agent-artifact change is reviewed, in bounded loops. `routing.byType["Agent Artifact"]` lists its lifecycles, one per variant (default `AAWH`, harness, and `AAWP`, plugin / mod). Each is guarded by role: no `software-engineer` stage, an `agent-manager` stage that builds the change, a start at `product-owner`, `software-architect` or `agent-manager`, and a `brutal-critique` stage (docs) that loops back to `agent-manager`; the plugin variant adds `sqa-engineer` and then `code-reviewer` (code) stages that loop back to it and design stages (`software-architect`, `system-engineer`) before it. Each review loop has its own round and failure limits (*Loop limits*). `brutal-critique`, `sqa-engineer` and `code-reviewer` cannot be disabled, and `documents.critic: null` does not remove these reviews. Change kinds, rounds, findings, and exactly what `validate` enforces and what it cannot: [references/aaw-review.md](references/aaw-review.md). A missing `routing.byType["Agent Artifact"]`, a missing `handoffReview`, or the single `AAW` routing of older plugins fails `validate`: run **upgrade**.
 - A change to `agent-manager`'s own definition, or to a skill it owns (`agent-management`, `skill-management`, `hook-management`, `rules-management`, `command-management`, `harness-sync`, `workflow`, `plugin-management`), is made by a freshly spawned `agent-manager`, never by the running instance.
-- Trust, but verify: every hand-off, `AAW` included, gets a handoff record that its receiver verifies (never its writer), whatever the gate approver, and every agent's hand-back is stored verbatim beside it, in the run's folder (`artifacts.handoffs`: `{LIFECYCLE}-{YYYYMMDD}-{feature-slug}/`, files `{step}[.{sub}][.l{loop}]-{from-agent}-to-{to-agent}.handoff.md` and `.handback.md`; `handoff` skill). `AAW` has no gates: its run state records the rounds and verdicts.
+- Trust, but verify: every hand-off, `AAWH` and `AAWP` included, gets a handoff record that its receiver verifies (never its writer), whatever the gate approver, and every agent's hand-back is stored verbatim beside it, in the run's folder (`artifacts.handoffs`: `{LIFECYCLE}-{YYYYMMDD}-{feature-slug}/`, files `{step}[.{sub}][.l{loop}[.{round}]][.{n}][.h{round}]-{from-agent}-to-{to-agent}.handoff.md` and `.handback.md`; `handoff` skill). `AAWH` and `AAWP` have no gates: the run state records the rounds and verdicts.
 - The test gate hooks and the workflow gate installed by `init` stay in force.
 - The orchestrator only delegates, and a stage owner never does another agent's job.
 
@@ -178,7 +188,7 @@ The file cannot change these; `validate` rejects the attempts it can detect.
 
 ### Merging into an existing file
 
-`merge` adds every key the project file lacks, taken from the template, and never overwrites or deletes a value, even one that differs from the template (an `AAW` `maxRounds` of 1, a gate with `approver: "none"`). Arrays (`axes`, `skills`, `produces`, `after`, `disabled`) are kept as they are. Stages are matched by `id`: a missing stage is added in template order, a missing lifecycle is added, and stages or lifecycles only the project has are kept. A key the project removed on purpose comes back, so read the `--dry-run` list with the developer. New keys go at the end of their object; the file is written in the template's layout and then validated. A limit `merge` adds keeps `maxFailures` < `maxRounds` (**upgrade** step 3). A file that still holds `review.maxRounds` fails that validation, so remove the key first (**upgrade** step 2), in **install** too.
+`merge` adds every key the project file lacks, taken from the template, and never overwrites or deletes a value, even one that differs from the template (an `AAWP` `maxRounds` of 1, a gate with `approver: "none"`). Arrays (`axes`, `skills`, `produces`, `after`, `disabled`) are kept as they are. Stages are matched by `id`: a missing stage is added in template order, a missing lifecycle is added, and stages or lifecycles only the project has are kept. A key the project removed on purpose comes back, so read the `--dry-run` list with the developer. New keys go at the end of their object; the file is written in the template's layout and then validated. A limit `merge` adds keeps `maxFailures` < `maxRounds` (**upgrade** step 3). A file that still holds `review.maxRounds` fails that validation, so remove the key first (**upgrade** step 2), in **install** too.
 
 ## Mode: reset
 
@@ -189,4 +199,4 @@ The file cannot change these; `validate` rejects the attempts it can detect.
 
 ## Report
 
-List each file written, the `validate` result, the catalog line (`<plugin> <version> · N agents · N skills`), the diagram of every changed lifecycle, and the commands developers run themselves: `node .ai-dlc/workflow.mjs show|validate|rounds`. End with the changed paths, each marked `code` or `docs`, and the intent of the change, one line each, so the right reviewers can be spawned (`AAW`).
+List each file written, the `validate` result, the catalog line (`<plugin> <version> · N agents · N skills`), the diagram of every changed lifecycle, and the commands developers run themselves: `node .ai-dlc/workflow.mjs show|validate|rounds`. End with the changed paths, each marked `code` or `docs`, and the intent of the change, one line each, so the right reviewers can be spawned (`AAWH`, `AAWP`).
