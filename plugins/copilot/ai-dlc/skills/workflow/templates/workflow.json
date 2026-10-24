@@ -432,19 +432,36 @@
         }
       ]
     },
-    "AAW": {
-      "name": "Agent Artifact Work",
+    "AAWH": {
+      "name": "Agent Artifact Work, harness",
       "kind": "focused",
-      "pickWhen": "The request changes agents, skills, hooks, rules / instructions, commands / prompts, agent memory or the workflow file (agent-artifact work)",
-      "exitArtifact": "The changed agent artifacts, their platform checks green, a PASS from brutal-critique on the docs, and passing tests and a clean code review on the code",
-      "note": "No work breakdown and no gates. Like every lifecycle it writes a handoff record before each hand-off and stores every hand-back verbatim in the run's folder (artifacts.handoffs); the run state records each round and links them, and all of it is committed when the run closes. Change kinds (code or docs), what a round is and which findings start one: the workflow skill's references/aaw-review.md. Each review loop has its own maxRounds and maxFailures; the AI_DLC_*_MAX_ROUNDS and AI_DLC_*_MAX_FAILURES variables (Claude Code settings env, or the process environment) override them per reviewer, and `node .ai-dlc/workflow.mjs rounds` prints the values in effect. When a loop stops with Blockers open, the human decides whether to fix them or stop. A change to agent-manager's own definition, or to a skill it owns, is made by a freshly spawned agent-manager, never by a running instance.",
+      "variant": "harness",
+      "pickWhen": "Agent-artifact work whose change set is docs only, under the harness folders (routing.agentArtifact.harnessPaths: agents, skills, rules, instructions, commands, prompts, the workflow file, AGENTS.md); any code, or any path in pluginPaths, runs AAWP",
+      "exitArtifact": "The changed agent artifacts, their platform checks green, and a PASS from brutal-critique on the docs",
+      "note": "No work breakdown, no gates and no software-engineer stage. It writes a handoff record before each hand-off and stores every hand-back verbatim in the run's folder (artifacts.handoffs). The rest both agent-artifact variants share (which variant runs, change kinds, rounds, findings, review limits and their variables, the self-change rule): the workflow skill's references/aaw-review.md, *Both variants*. Harness variant: product-owner states the intent, agent-manager changes, brutal-critique critiques the docs; no code review, so a code path or an unmatched path in the change set stops the run and the human decides (references/aaw-review.md, *Rounds*).",
       "stages": [
+        {
+          "id": "intent",
+          "agent": "product-owner",
+          "produces": ["The intent of the change and its scope, in writing"],
+          "after": [],
+          "note": "States what the change is for and what it covers, so agent-manager and the reviewers work to one intent; no work breakdown and no gate."
+        },
         {
           "id": "change",
           "agent": "agent-manager",
           "produces": ["The changed paths, each marked code or docs", "The intent of the change", "The checks run and their results"],
-          "after": [],
+          "after": ["intent"],
           "note": "Uses the management skill for each artifact kind; ends with the twin or build checks (harness-sync --check, or the plugin build --check). It runs each check itself and quotes the command and its real output in its hand-back; the orchestrator checks that the hand-back quotes them and never re-runs them."
+        },
+        {
+          "id": "docs",
+          "agent": "documentation-writer",
+          "skills": ["write-documentation"],
+          "when": "the change set changes documentation",
+          "produces": ["Updated READMEs or user guides, or no change"],
+          "after": ["change"],
+          "note": "Runs on the Docs update request in agent-manager's hand-back, with the status from the run state (the documentation rule, docs-status); only documentation-writer writes documentation."
         },
         {
           "id": "critique",
@@ -459,6 +476,51 @@
             "maxFailures": 1
           },
           "note": "Reviews the docs paths against the intent, using the skill-management writing guide; read-only."
+        }
+      ]
+    },
+    "AAWP": {
+      "name": "Agent Artifact Work, plugin / mod",
+      "kind": "focused",
+      "variant": "plugin",
+      "pickWhen": "Agent-artifact work whose change set holds any code (scripts, hook registrations, CI) or any path in routing.agentArtifact.pluginPaths (plugins, tools, tests): a plugin or mod change",
+      "exitArtifact": "A design and low-level design, the changed agent artifacts with their platform checks green, passing tests and a clean code review on the code, and a PASS from brutal-critique on the docs",
+      "note": "No work breakdown, no gates and no software-engineer stage. It writes a handoff record before each hand-off and stores every hand-back verbatim in the run's folder (artifacts.handoffs). The rest both agent-artifact variants share (which variant runs, change kinds, rounds, findings, review limits and their variables, the self-change rule): the workflow skill's references/aaw-review.md, *Both variants*. Plugin / mod variant: product-owner states the intent, software-architect and system-engineer design it, agent-manager changes, sqa-engineer tests and code-reviewer reviews the code, brutal-critique critiques the docs.",
+      "stages": [
+        {
+          "id": "intent",
+          "agent": "product-owner",
+          "produces": ["The intent of the change and its scope, in writing"],
+          "after": [],
+          "note": "States what the change is for and what it covers, so agent-manager and the reviewers work to one intent; no work breakdown and no gate."
+        },
+        {
+          "id": "design",
+          "agent": "software-architect",
+          "skills": ["architecture-design"],
+          "produces": ["A short design and any ADR the change needs"],
+          "after": ["intent"]
+        },
+        {
+          "id": "lld",
+          "agent": "system-engineer",
+          "skills": ["system-design"],
+          "produces": ["The low-level design: modules, functions, test seams"],
+          "after": ["design"],
+          "loop": {
+            "to": "design",
+            "on": "A challenge to the design from the low-level design (Refine): the architect revises",
+            "maxRounds": 2,
+            "maxFailures": 1
+          },
+          "note": "agent-manager asks system-engineer about the low-level design while it builds (Align) with a clarify request, not a stage loop."
+        },
+        {
+          "id": "change",
+          "agent": "agent-manager",
+          "produces": ["The changed paths, each marked code or docs", "The intent of the change", "The checks run and their results"],
+          "after": ["lld"],
+          "note": "Uses the management skill for each artifact kind; ends with the twin or build checks (harness-sync --check, or the plugin build --check). It runs each check itself and quotes the command and its real output in its hand-back; the orchestrator checks that the hand-back quotes them and never re-runs them."
         },
         {
           "id": "test",
@@ -487,6 +549,29 @@
             "maxFailures": 1
           },
           "note": "Reviews the code paths and the new tests against the intent (standards axis); read-only."
+        },
+        {
+          "id": "docs",
+          "agent": "documentation-writer",
+          "skills": ["write-documentation"],
+          "when": "the change set changes documentation",
+          "produces": ["Updated READMEs or user guides, or no change"],
+          "after": ["change"],
+          "note": "Runs on the Docs update request in agent-manager's hand-back, with the status from the run state (the documentation rule, docs-status); only documentation-writer writes documentation."
+        },
+        {
+          "id": "critique",
+          "agent": "brutal-critique",
+          "when": "the change set contains docs",
+          "produces": ["Critique of the docs in the change set with a PASS / REVISE verdict"],
+          "after": ["change"],
+          "loop": {
+            "to": "change",
+            "on": "A REVISE verdict, or Majors on a PASS: the critique goes back to agent-manager with the same changed paths and intent",
+            "maxRounds": 2,
+            "maxFailures": 1
+          },
+          "note": "Reviews the docs paths against the intent, using the skill-management writing guide; read-only."
         }
       ]
     },
@@ -528,7 +613,11 @@
       "Testing": "TLC",
       "Review": "CRLC",
       "Release": "Release",
-      "Agent Artifact": "AAW"
+      "Agent Artifact": ["AAWH", "AAWP"]
+    },
+    "agentArtifact": {
+      "harnessPaths": [".claude/agents/**", ".claude/skills/**", ".claude/rules/**", ".claude/commands/**", ".github/agents/**", ".github/skills/**", ".github/instructions/**", ".github/prompts/**", ".ai-dlc/workflow.json", "AGENTS.md"],
+      "pluginPaths": ["plugins/**", "tools/**", "tests/**"]
     },
     "handOff": {
       "agent-artifact work": "agent-manager",
@@ -576,6 +665,11 @@
         { "agent": "system-engineer", "about": "low-level design, patterns, UI design, interfaces" },
         { "agent": "requirement-analyst", "about": "the meaning of an AC in the spec" }
       ],
+      "agent-manager": [
+        { "agent": "system-engineer", "about": "the low-level design of a plugin / mod change while it builds it (Align)" },
+        { "agent": "software-architect", "about": "the design and ADR intent of a plugin / mod change" },
+        { "agent": "product-owner", "about": "the intent and scope of the change" }
+      ],
       "sqa-engineer": [
         { "agent": "software-engineer", "about": "implementation details and the test cases the change implies" },
         { "agent": "product-owner", "about": "acceptance criteria and intended behaviour" },
@@ -605,6 +699,11 @@
   },
   "review": {
     "axes": ["standards", "spec"]
+  },
+  "handoffReview": {
+    "lifecycles": ["AAWH", "AAWP"],
+    "maxRounds": 2,
+    "maxFailures": 1
   },
   "artifacts": {
     "backlog": "docs/backlog/backlog.md",
