@@ -444,7 +444,7 @@
           "agent": "agent-manager",
           "produces": ["The changed paths, each marked code or docs", "The intent of the change", "The checks run and their results"],
           "after": [],
-          "note": "Uses the management skill for each artifact kind; ends with the twin or build checks (harness-sync --check, or the plugin build --check). The orchestrator re-runs those checks before any review."
+          "note": "Uses the management skill for each artifact kind; ends with the twin or build checks (harness-sync --check, or the plugin build --check). It runs each check itself and quotes the command and its real output in its hand-back; the orchestrator checks that the hand-back quotes them and never re-runs them."
         },
         {
           "id": "critique",
