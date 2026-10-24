@@ -220,8 +220,8 @@ const MSG = {
   "orchestrator": /"orchestrator" cannot be disabled \(fixed guardrail\)/,
   "agent-manager": /"agent-manager" cannot be disabled \(fixed guardrail\)/,
   "brutal-critique": /"brutal-critique" cannot be disabled \(fixed guardrail: it critiques the docs of every agent-artifact change\)/,
-  "sqa-engineer": /"sqa-engineer" cannot be disabled \(fixed guardrail: it tests the code of every agent-artifact change\)/,
-  "code-reviewer": /"code-reviewer" cannot be disabled \(fixed guardrail: it reviews the code of every agent-artifact change\)/,
+  "sqa-engineer": /"sqa-engineer" cannot be disabled \(fixed guardrail: it tests the code of every plugin-variant change\)/,
+  "code-reviewer": /"code-reviewer" cannot be disabled \(fixed guardrail: it reviews the code of every plugin-variant change\)/,
 };
 for (const [agent, re] of Object.entries(MSG)) {
   test(`disabling ${agent} fails with its guardrail message`, () => {
@@ -891,10 +891,12 @@ for (const [agent, [ROUNDS, FAILURES]] of Object.entries(PAIRS)) {
     const r = rounds(wf, { [ROUNDS]: "6", [FAILURES]: "3" });
     const list = parseRounds(r);
     assert.equal(r.err, "");
-    const mine = list.filter((l) => l.agent === agent);
+    // handoff-review names brutal-critique as its reviewer but has variables of its own (AC-19.5.2).
+    const ownedBy = (l) => l.agent === agent && l.id !== "handoff-review";
+    const mine = list.filter(ownedBy);
     assert.ok(mine.length >= 1, `the template has a ${agent} loop`);
     for (const l of list) {
-      if (l.agent === agent) assert.deepEqual(lim(l), [6, "env", 3, "env"], l.id);
+      if (ownedBy(l)) assert.deepEqual(lim(l), [6, "env", 3, "env"], l.id);
       else assert.deepEqual(lim(l), lim(before[l.id]), l.id);
     }
   });
@@ -1670,6 +1672,15 @@ test("G6 a listed lifecycle without a variant fails", () => {
   assert.match(r.out, /error: lifecycles\.AAWH\.variant: must be "harness" or "plugin" for a lifecycle named in routing\.byType\["Agent Artifact"\]/);
 });
 
+test("G6 a listed lifecycle without a variant gives one error, not a second plugin-count error", () => {
+  const wf = defaultWf(); delete wf.lifecycles.AAWP.variant;
+  const r = validate(wf);
+  assert.equal(r.code, 1, r.out);
+  assert.match(r.out, /error: lifecycles\.AAWP\.variant: must be "harness" or "plugin"/);
+  assert.doesNotMatch(r.out, /needs exactly one variant "plugin" lifecycle/);
+  assert.equal(errorLines(r).length, 1, r.out);
+});
+
 test("G6 a variant value other than harness or plugin fails, listed or not", () => {
   const wf = defaultWf(); wf.lifecycles.TLC.variant = "mod";
   const r = validate(wf);
@@ -1677,9 +1688,15 @@ test("G6 a variant value other than harness or plugin fails, listed or not", () 
   assert.match(r.out, /error: lifecycles\.TLC\.variant: variant must be "harness" or "plugin"/);
 });
 
-test("G6 a variant on a lifecycle that is not listed is allowed", () => {
+test("G6 a variant on a lifecycle that is not listed is allowed, with a warning that it is ignored", () => {
   const wf = defaultWf(); wf.lifecycles.TLC.variant = "harness";
-  assert.equal(validate(wf).code, 0);
+  const r = validate(wf);
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /warning: lifecycles\.TLC\.variant: ignored: TLC is not listed in routing\.byType\["Agent Artifact"\]/);
+});
+
+test("G6 the default workflow has no ignored-variant warning", () => {
+  assert.doesNotMatch(validate(defaultWf()).out, /variant: ignored/);
 });
 
 test("G6 the list needs exactly one plugin variant (none, or two, fail)", () => {
@@ -1793,7 +1810,7 @@ test("AC-19.5.1 rounds --json has a handoff-review row 2/1, distinct from gate-c
   const list = parseRounds(rounds(defaultWf()));
   const m = byId(list);
   const h = m["handoff-review"];
-  assert.deepEqual([h.lifecycle, h.stage, h.agent, h.to], [null, null, null, null]);
+  assert.deepEqual([h.lifecycle, h.stage, h.agent, h.to], [null, null, "brutal-critique", null]);
   assert.deepEqual(lim(h), [2, "loop", 1, "loop"]);
   assert.deepEqual(lim(m["gate-critique"]), [2, "default", 1, "default"]);
   assert.equal(list.at(-1).id, "handoff-review");

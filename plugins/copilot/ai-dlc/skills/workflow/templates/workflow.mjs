@@ -143,8 +143,8 @@ const UNDISABLEABLE = {
   "orchestrator": "",
   "agent-manager": "",
   "brutal-critique": ": it critiques the docs of every agent-artifact change",
-  "sqa-engineer": ": it tests the code of every agent-artifact change",
-  "code-reviewer": ": it reviews the code of every agent-artifact change",
+  "sqa-engineer": ": it tests the code of every plugin-variant change",
+  "code-reviewer": ": it reviews the code of every plugin-variant change",
 };
 // Agent-artifact review stages: the only `when` each may carry, and why it must loop back to agent-manager.
 // The harness variant needs brutal-critique; the plugin variant needs all three (guards G4 and G5).
@@ -392,6 +392,10 @@ function validate(wf, catalog) {
     }
     // The lifecycles agent-artifact work runs: guards G1 to G6 (the rules: the workflow skill's references/aaw-review.md).
     if (isObj(r.byType)) for (const code of checkAgentArtifact(r.byType["Agent Artifact"], lifecycles, err)) guardVariant(code, lifecycles[code], err);
+    // A variant only means something on a lifecycle the agent-artifact list names; elsewhere it is ignored.
+    const aaList = isObj(r.byType) && Array.isArray(r.byType["Agent Artifact"]) ? r.byType["Agent Artifact"] : [];
+    for (const [code, lc] of Object.entries(lifecycles))
+      if (isObj(lc) && VARIANTS.includes(lc.variant) && !aaList.includes(code)) wrn(`lifecycles.${code}.variant`, `ignored: ${code} is not listed in ${AA_KEY}`);
     if (!isStrArr(r.routeImmediately)) err("routing.routeImmediately", "must be an array of request types");
     else for (const d of dupes(r.routeImmediately)) err("routing.routeImmediately", `"${d}" is listed twice`);
   } else if ("routing" in wf) err("routing", "must be an object");
@@ -483,9 +487,11 @@ function checkAgentArtifact(aaw, lifecycles, err) {
     if (!Array.isArray(lifecycles[x].stages)) { err(AA_KEY, `"${x}" must be a lifecycle with stages, not segments`); return false; }
     return true;
   });
-  for (const x of named) if (!("variant" in lifecycles[x])) err(`lifecycles.${x}.variant`, `must be "harness" or "plugin" for a lifecycle named in ${AA_KEY}`);
+  const unvaried = named.filter((x) => !VARIANTS.includes(lifecycles[x].variant));
+  for (const x of unvaried) if (!("variant" in lifecycles[x])) err(`lifecycles.${x}.variant`, `must be "harness" or "plugin" for a lifecycle named in ${AA_KEY}`);
   const count = (v) => named.filter((x) => lifecycles[x].variant === v).length;
-  if (count("plugin") !== 1) err(AA_KEY, `needs exactly one variant "plugin" lifecycle (found ${count("plugin")})`);
+  // A listed lifecycle without a valid variant already has its error; the count would only repeat the cause.
+  if (!unvaried.length && count("plugin") !== 1) err(AA_KEY, `needs exactly one variant "plugin" lifecycle (found ${count("plugin")})`);
   if (count("harness") > 1) err(AA_KEY, `may name at most one variant "harness" lifecycle (found ${count("harness")})`);
   return named.filter((x) => lifecycles[x].stages.length && lifecycles[x].stages.every(isObj));
 }
@@ -785,7 +791,7 @@ function rounds(wf) {
     maxRounds: g.maxRounds.value, maxRoundsSource: g.maxRounds.source, maxFailures: g.maxFailures.value, maxFailuresSource: g.maxFailures.source });
   if (isObj(wf.handoffReview)) {
     const hr = handoffReviewLimits(wf, HANDOFF_REVIEW);
-    list.push({ id: HANDOFF_REVIEW, lifecycle: null, stage: null, agent: null, to: null,
+    list.push({ id: HANDOFF_REVIEW, lifecycle: null, stage: null, agent: "brutal-critique", to: null,
       maxRounds: hr.maxRounds.value, maxRoundsSource: hr.maxRounds.source, maxFailures: hr.maxFailures.value, maxFailuresSource: hr.maxFailures.source });
   }
   return list;
