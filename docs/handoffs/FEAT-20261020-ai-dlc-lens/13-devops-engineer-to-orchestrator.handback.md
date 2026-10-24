@@ -86,3 +86,7 @@ handoff 13-orchestrator-to-devops-engineer.handoff.md: passed — the run folder
 **One thing to check:** I wrote the deferred-items list from the Features table in `run.v1.md` (8.6 step charts, reviews of 8.4 to 8.6, the scope pass) and from the marketplace text, not from a dedicated deferred-items record. Correct the PR if the human has other deferred items in mind.
 
 Orchestrator check: `git status -sb` level with origin; `506e74f` signed (G). Verification: passed. The deferred list came from a stale Features row (orchestrator's), so a correction was sent as Addendum B.
+
+---
+Hand-back after Addendum B (summary of the verbatim report, kept in the session): passed — PR #24 description corrected (root 8 built and reviewed through 2026-10-24; deferred: split stepCharts, step-chart module; open: scope pass and second G1 if listed, G2–G4 and release go / no-go, manual VS Code checks). Commit `fefb2c4` (signed G, 3 files: run.v1.md and the two step-13 records, Opus 5.5 trailer). Checks: build `--check` up to date; workflow valid. Push `506e74f..fefb2c4` fast-forward; branch level with origin.
+Orchestrator check: `git status -sb` level with origin; fefb2c4 signed (G). Verification: passed.

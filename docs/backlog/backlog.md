@@ -94,3 +94,57 @@ Source: `docs/handoffs/FEAT-20261020-ai-dlc-lens/00b-approved-plan-2026-10-22.md
 **Acceptance Criteria.** Each item's ACs are its stories' ACs in `docs/product/ai-dlc-lens/stories.md`, by the Stories column (story to AC range: US-1 AC-1.1 to 1.5, US-2 AC-2.1 to 2.8, US-3 AC-3.1 to 3.10, US-4 AC-4.1 to 4.6, US-5 AC-5.1 to 5.6, US-6 AC-6.1 to 6.8, US-7 AC-7.1 to 7.11, US-8 AC-8.1 to 8.8, US-9 AC-9.1 to 9.7, US-10 AC-10.1 to 10.6, US-11 AC-11.1 to 11.9, US-12 AC-12.1 to 12.11, US-13 AC-13.1 to 13.8, US-14 AC-14.1 to 14.11, US-15 AC-15.1 to 15.6, US-16 AC-16.1 to 16.3, US-17 AC-17.1 to 17.6, US-18 AC-18.1 to 18.3, US-19 AC-19.1 to 19.4, US-20 AC-20.1, US-21 AC-21.1 to 21.4). Items without stories:
 - 003: each open question has a cited answer. 004: stories carry numbered ACs and G1 is approved. 005: spec frozen, lens plugin location decided, each spike result cited or listed as an open question with its fallback, G2 approved. 006: tasks cover 007-029, no cut line, a re-estimate of the whole plan with the critical path marked, G3 approved. 025: zero Blockers on both axes. 026: go / no-go recorded.
 - 027, 029: a written result in the run folder (what draws, what does not, the fallback), checked by the human in VS Code 2.1.299 or later; the scratch mod is deleted and touches none of the files the fold merge blocks. 028: a written result (works / does not, mechanism, fallback), recorded in the run folder.
+
+---
+
+## FEAT-20261020-ai-dlc-lens, scope v2 — tier 1 breakdown (roots 16-20) and roots 21-28
+
+Source: `docs/product/active/work-breakdown-tier-1-sprint-1.md` (product-manager, 2026-10-24), plan `docs/handoffs/FEAT-20261020-ai-dlc-lens/00c-approved-plan-2026-10-24.md`, brief `docs/product/active/brief-tier-1-sprint-1.md`. Per-feature briefs and tags: `docs/product/active/<epic>/sprint-1/<feature>/tasks.md` (tier 1) and `docs/product/backlog/<epic>/<feature>/item.md` (roots 21-28). ITEM-030 to ITEM-066 share Added 2026-10-24, Status Backlog, Milestone **Unplanned** (decided by the product-owner), Lifecycle AAW, and the run's override chain (00c): system-engineer ↔ agent-manager, sqa-engineer, code-reviewer ×2, documentation-writer ↔ brutal-critique. Epics: `session-continuity-and-cache-visibility` (SC), `multi-agent-workflow-foundations` (MW), `ai-dlc-lens` (LENS). Tags are module / submodule / feature. ACs: the plan's *Tier 1 requirements* bullets by root, mapped in section 5 of the breakdown; the stories carry the final ids. Triage: RA ready-for-agent, RA* ready-for-agent once its needs-info blockers settle, NI needs-info (design at G2 or an open question). Every build item starts after G3; "G2" in Blocked by means a design decision frozen at G2. No Size column: sizes are set in the G3 task plan. Sprint 1 = 2026-10-20 to 2026-10-27; roots 16-19 are in sprint 1, root 20 is stretch, roots 21-28 are backlog-only.
+
+| ID | Epic | Root.task | Item | Type | Pri | Triage | Blocked by | Tags |
+|---|---|---|---|---|---|---|---|---|
+| 030 | SC | 16.1 | Failing tests per branch first, then "title number wins" numbering | Bug | P1 | RA | G3 | ai-dlc / auto-handoff / handing-off |
+| 031 | SC | 16.2 | `ATTRIBUTION.md` and `auto-handoff.schema.json` text | Bug | P1 | RA | 030 | ai-dlc / auto-handoff / handing-off |
+| 032 | SC | 17.1 | Per-TTL cache state, main loop | Bug | P1 | RA | G3 | ai-dlc / cache-keepalive / statusline; integration-1 |
+| 033 | SC | 17.2 | Status line shows per-track state and a reason, never a bare `off`; regression test | Bug | P1 | RA | 032 | ai-dlc / cache-keepalive / statusline; integration-1 |
+| 034 | SC | 17.3 | Subagent writes feed per-TTL state; 5m arms from them; subagent pings (a fallback is a human decision, G1 Q34, default: the AC stands; if the G2 spike proves it impossible, it returns to the human) | Feature | P1 | NI | 032 | ai-dlc / cache-keepalive / statusline; integration-1 |
+| 035 | SC | 17.4 | 1h ping counter advances per ping (stuck at 0/9) | Bug | P1 | NI | 14.1.17 | ai-dlc / cache-keepalive / statusline; integration-1 |
+| 036 | SC | 17.5 | User explanation of cache semantics (docs, documentation-writer) | Feature | P2 | RA* | 033, 034 | ai-dlc / cache-keepalive / statusline; integration-1 |
+| 037 | MW | 18.1 | Optional taxonomy declaration, schema, `validate` | Feature | P1 | NI | G2 | ai-dlc / multi-agent-workflow / workflow-design |
+| 038 | MW | 18.2 | `module`, `submodule`, `feature`, `integrations[]` keys; reject undeclared ids | Feature | P1 | NI | 037 | ai-dlc / multi-agent-workflow / handoff |
+| 039 | MW | 18.3 | Run discovery at any depth; unique run ids | Feature | P1 | NI | G2 | ai-dlc / multi-agent-workflow / handoff; integration-2 |
+| 040 | MW | 18.4 | `pickRun` filter by module | Feature | P2 | RA* | 038, 039 | ai-dlc / auto-handoff / handing-off |
+| 041 | MW | 18.5 | Machine-readable session column in the Stages table | Feature | P1 | NI | 039, G2 | ai-dlc / multi-agent-workflow / handoff; integration-2 |
+| 042 | MW | 18.6 | task-triage and product-planning rows carry the tags; missing = needs-info | Feature | P2 | RA* | 038 | ai-dlc / multi-agent-workflow / workflow-design |
+| 043 | MW | 18.7 | Moved folders leave `merged-from-<old>.md` | Feature | P2 | RA* | 039 | ai-dlc / multi-agent-workflow / handoff |
+| 044 | MW | 18.8 | This repository's taxonomy as the first declaration; tag current run-state versions, backlog items, tree files | Feature | P1 | NI | 037, 038 | ai-dlc / multi-agent-workflow / workflow-design |
+| 065 | MW | 18.9 | Link fields between run, backlog item, task and session ids | Feature | P2 | NI | 038, 041 | ai-dlc / multi-agent-workflow / handoff; integration-2 |
+| 066 | MW | 18.10 | Prioritised backlog items create run states in priority order | Feature | P2 | NI | 065, 042 | ai-dlc / multi-agent-workflow / handoff |
+| 045 | MW | 19.1 | Prefactor: relax validator guards and schema for PO/SA-first AAW; no software-engineer | Feature | P1 | NI | G2 | ai-dlc / multi-agent-workflow / workflow-design |
+| 046 | MW | 19.2 | AAW variant (a) harness: PO ↔ AM ↔ DW + BC | Feature | P1 | NI | 045 | ai-dlc / multi-agent-workflow / workflow-design |
+| 047 | MW | 19.3 | AAW variant (b) plugin/mod: PO ↔ SA ↔ SE ↔ AM ↔ SQA ↔ CR, DW + BC | Feature | P1 | NI | 045 | ai-dlc / multi-agent-workflow / workflow-design |
+| 048 | MW | 19.4 | Variant selection from the change set; orchestrator hard rule; routing; tests per signal | Feature | P1 | NI | 046, 047 | ai-dlc / multi-agent-workflow / workflow-design |
+| 049 | MW | 19.5 | Records per mode: BC reviews handoffs, sender verifies in team mode; N.1 slots | Feature | P1 | NI | 047, 050 | ai-dlc / multi-agent-workflow / handoff |
+| 050 | MW | 19.6 | Per-handoff BC review loop: own limits and env variables in `rounds --json` | Feature | P1 | NI | 045 | ai-dlc / multi-agent-workflow / loop-design |
+| 051 | MW | 19.7 | Subagent fallback, Copilot, consumer upgrade path | Feature | P1 | NI | 048, 049 | ai-dlc / multi-agent-workflow / workflow-design |
+| 052 | LENS | 20.1 | Spike: fence replacement inside a reply, or render beneath it (human checks in VS Code) | Feature | P2 | RA | G1 | ai-dlc-lens / diagramming / diagramming-mods |
+| 053 | LENS | 20.2 | Mermaid fences render offline | Feature | P2 | NI | 052, G2 | ai-dlc-lens / diagramming / diagramming-mods |
+| 054 | LENS | 20.3 | LaTeX math via bundled MathJax | Feature | P2 | NI | 053 | ai-dlc-lens / diagramming / diagramming-mods |
+| 055 | LENS | 20.4 | PlantUML with a local Java + jar | Feature | P2 | NI | 053 | ai-dlc-lens / diagramming / diagramming-mods |
+| 056 | LENS | 20.5 | `THIRD_PARTY_NOTICES.md` and `ATTRIBUTION.md` entries; lens checks pass | Feature | P2 | RA* | 053, 054, 055 | ai-dlc-lens / diagramming / diagramming-mods |
+| 057 | MW | 21 | Agile skill and product tree; migrate this repository | Feature | P1 | NI | 18 (037, 038, 039) | ai-dlc / multi-agent-workflow / agile-product-tree |
+| 058 | LENS | 22 | Cache lab and Context lab; takes the lens cost fixes from root 17 | Feature | P2 | NI | 17 (032, 033, 034) | ai-dlc-lens / cache-context-lab / cache-lab; integration-2 |
+| 059 | MW | 23 | New default AI-DLC phases, auto/manual switch, one run state per wave | Feature | P1 | NI | 18, 19, 21 | ai-dlc / multi-agent-workflow / default-phases |
+| 060 | LENS | 24 | Lens workflow grouping by epic, sprint, feature, module; per-wave accordions; session charts | Feature | P1 | NI | 16, 18, 21, 23 | ai-dlc-lens / run-views / workflow-grouping; integration-2 |
+| 061 | LENS | 25 | Lens: auto mode shown as an anomaly | Feature | P2 | NI | 23 | ai-dlc-lens / run-views / auto-mode-anomaly; integration-2 |
+| 062 | LENS | 26 | Lens review submodule: changed-files panel, approve / reject / skip, line comments | Feature | P2 | NI | 23, 14.1.7 | ai-dlc-lens / review / changed-files-panel; integration-2 |
+| 063 | LENS | 27 | VS Code runs launcher (button, popup, side panel) or the approved fallback | Feature | P2 | NI | 24, 14.1.7 | ai-dlc-lens / runs-launcher / vscode-launcher; integration-2 |
+| 064 | SC | 28 | Integration fixes from the 14.1.5 audit (2 bugs, 8 risks, 6 enhancements) and the 14.1.4 VS Code status table; hook-side tier 2 after 16 and 17; each lens-side finding with the lens root that edits the same file (22 tier 2, 24 tier 3, 27 tier 4); detail in `docs/product/backlog/session-continuity-and-cache-visibility/integration-fixes/item.md` | Feature | P2 | NI | 14.1.5, G1, 16, 17; lens-side also 22, 24, 27 | ai-dlc / cache-keepalive / integration-fixes; integration-1, integration-2 |
+
+**Waves.** After G1: 052. Wave 2 design: G2, then G3 (task plan). Build, tier 1, after G3: 3.1 {030, 032, 035 (once 14.1.17 lands), 037, 039, 045, 053} · 3.2 {031, 033, 034, 038, 041, 043, 046, 047, 050, 054, 055} · 3.3 {036, 040, 042, 044, 048, 049, 065} · 3.4 {051, 056, 066}. Tiers 2-4 start per item when their blockers pass review: tier 2 {057, 058, 059, 064 hook-side}, tier 3 {060, 061, 062}, tier 4 {063, 064 lens-side}.
+
+Waves give start order; merges follow the group order. **Merge groups** (one item at a time): KA hooks/auto-handoff + hooks/keepalive; WF workflow.mjs/schema/template; HS handoff skill; RUN run.ts/lens.ts parsing; LENS lens register.tsx (order: 20, 22, 24, 25, 26, 27).
+
+**Tier-order corrections to the plan:** 23 also after 21; 24 also after 23; 26 also after 14.1.7; 28 hook-side moves to tier 2.
+
+**Out-of-scope check:** `docs/backlog/out-of-scope/` does not exist; no prior rejection matched. No P0 items.

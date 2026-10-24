@@ -1,0 +1,1 @@
+- [Team mode without SendMessage](project_team-mode-no-sendmessage.md) — teammates may lack SendMessage/shell; poll the run folder, report via hand-back

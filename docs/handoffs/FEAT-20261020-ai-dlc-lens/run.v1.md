@@ -6,7 +6,7 @@ previous: run.md (renamed 2026-10-24)
 status: active
 lifecycle: AI-DLC
 mode: subagent
-current-stage: commits pushed (506e74f); PR #24 description correction
+current-stage: waiting for the human (manual lens checks, then G2–G4 and release)
 owner: orchestrator
 session: 5bbdde00-5281-4870-a2a6-8f779f16e87b (continued after automatic handoff)
 branch: feat/ai-dlc-lens
@@ -430,3 +430,7 @@ Docs status: markers stay *in progress*. Under the docs-status rule the status c
 devops-engineer commits this run folder (this file included), updates PR #24 and pushes. After that the run waits for the human: the lens's next gates (G2 frozen spec, G3 task plan, G4 review) and the release. The deferred items are recorded above: split stepCharts; a step-chart module.
 | 13 | run-folder commit, PR #24, push | devops-engineer | done (passed: 506e74f signed, 304 files; push 652a716..506e74f fast-forward; PR #24 description rewritten). Correction asked: its deferred list came from a stale Features row (reviews of 8.4–8.6 are done) | 13-devops-engineer-to-orchestrator.handback.md |
 | 13.l1.1 | PR #24 description correction + commit of this run-state update | devops-engineer | in-progress | 13-orchestrator-to-devops-engineer.handoff.md (Addendum B) |
+| 13.l1.1 | PR #24 description correction + run-state commit | devops-engineer | done (passed: fefb2c4 signed, pushed fast-forward) | 13-devops-engineer-to-orchestrator.handback.md |
+
+## Next action (2026-10-24, after the push)
+The build work of this session is committed and pushed (16 commits, last fefb2c4); PR #24 is up to date. The run waits for the human: the lens's manual VS Code checks (MANUAL-CHECKS.md G31–G41), then gates G2 (frozen spec), G3 (task plan), G4 (review) and the release go / no-go. This last update and the step-13 hand-back addendum are committed at the next gate.
