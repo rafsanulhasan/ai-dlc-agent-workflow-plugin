@@ -1,0 +1,1 @@
+- [Wave 2 tier 1 design](project_wave2-tier1-design.md) — ADR-0001..0005 (AAW variants, guards, taxonomy file, tag tree scan, offline lens renderer); next ADR 0006; bc lessons
