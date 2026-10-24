@@ -1,0 +1,15 @@
+{
+  "name": "ai-dlc-lens",
+  "displayName": "AI-DLC Lens",
+  "version": "0.1.0",
+  "description": "Claude Code only: a live view of an AI-DLC run. The workflow pane draws each feature root of a run (its top-level step) as its own flowchart of agents (persona, model, role, status), highest step first, every sub-step under its parent step, with hand-off and agent panels that show the records, tool calls, background tasks, tokens, context window and cost; a one-line card in the chat opens it and draws one chart per task. Settings in .ai-dlc/lens.json.",
+  "author": {
+    "name": "Rafsanul Hasan",
+    "url": "https://github.com/rafsanulhasan"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/rafsanulhasan/ai-dlc-agent-workflow-plugin",
+  "repository": "https://github.com/rafsanulhasan/ai-dlc-agent-workflow-plugin",
+  "keywords": ["ai-dlc", "claude-code", "mod", "workflow", "observability"],
+  "types": "./types/index.d.ts"
+}

@@ -22,5 +22,9 @@ jobs:
         run: npx -y @anthropic-ai/claude-code plugin validate --strict ./plugins/claude/ai-dlc
       - name: Test the Claude plugin's hooks module (auto-handoff and keep-alive)
         run: npx -y @anthropic-ai/claude-code plugin test ./plugins/claude/ai-dlc
+      - name: Validate the ai-dlc-lens plugin (Claude Code only; the Copilot build skips it)
+        run: npx -y @anthropic-ai/claude-code plugin validate --strict ./plugins/claude/ai-dlc-lens
+      - name: Test the ai-dlc-lens plugin's hooks module
+        run: npx -y @anthropic-ai/claude-code plugin test ./plugins/claude/ai-dlc-lens
       - name: Validate Claude marketplace
         run: npx -y @anthropic-ai/claude-code plugin validate --strict .

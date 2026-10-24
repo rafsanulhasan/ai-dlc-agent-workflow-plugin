@@ -19,9 +19,9 @@ Skill("ai-dlc:plugin-management", args: "release <version>")      // bump, rebui
 
 ```
 <repo>/
-├─ .claude-plugin/marketplace.json        Claude marketplace (lists plugins/claude/<name>)
-├─ .github/plugin/marketplace.json        Copilot marketplace (lists plugins/copilot/<name>)
-├─ .github/workflows/validate.yml         CI: build --check + node --test + sync-harness --check + both strict validations + plugin test
+├─ .claude-plugin/marketplace.json        Claude marketplace (lists plugins/claude/<name>, Claude-only plugins included)
+├─ .github/plugin/marketplace.json        Copilot marketplace (lists plugins/copilot/<name>; never a Claude-only plugin)
+├─ .github/workflows/validate.yml         CI: build --check + node --test + sync-harness --check + strict validations + plugin test, per plugin (§9)
 ├─ plugins/
 │  ├─ claude/<name>/                      SOURCE OF TRUTH
 │  │  ├─ .claude-plugin/plugin.json
@@ -33,12 +33,19 @@ Skill("ai-dlc:plugin-management", args: "release <version>")      // bump, rebui
 │  │     ├─ hooks.json                    `hooks` that must run in EVERY project; `modules`
 │  │     ├─ <module>/                     a Claude-only hooks module (mod), its tests, LICENSE, ATTRIBUTION.md
 │  │     └─ <folder>/                     optional sibling code the module imports and registers (own tests, LICENSE, ATTRIBUTION.md)
+│  ├─ claude/<other>/                     a Claude-only plugin (ai-dlc: ai-dlc-lens, one hooks module): listed in
+│  │                                      tools/claude-only-plugins.json and in .claude-plugin/marketplace.json only;
+│  │                                      never projected to Copilot
 │  └─ copilot/<name>/                     GENERATED — never hand-edit
 ├─ tools/build-copilot.mjs                the projection (copy of templates/build-copilot.mjs)
-├─ tools/validate.mjs                     local validation: harness sync, then both strict validations
+├─ tools/validate.mjs                     local validation: harness sync, then a strict validation of the plugin,
+│                                         of each Claude-only plugin and of the marketplace
 ├─ tools/templates/                       sources for generated files (e.g. AGENTS.template.md)
 ├─ tools/overlays/non-claude/skills/      skills only non-Claude plugins ship (e.g. scratchpad)
-├─ tools/claude-only-skills.json          plugin skills the build leaves out of Copilot (ai-dlc: cache-keepalive, cache-keepalive-install, -merge, -configure)
+├─ tools/claude-only-skills.json          plugin skills the build leaves out of Copilot (ai-dlc: cache-keepalive,
+│                                         cache-keepalive-configure, -install, -merge; lens, lens-configure,
+│                                         lens-gate, lens-init, lens-keepalive, lens-kit)
+├─ tools/claude-only-plugins.json         plugins the build never projects (ai-dlc: ai-dlc-lens)
 ├─ tests/                                 repo tests (node:test + node:assert only) — never shipped
 ├─ .claude/                               the plugin repo's own dev setup — never shipped (§8)
 ├─ LICENSE                                the one license text; the build copies it into both plugins
@@ -88,21 +95,22 @@ Copy `${CLAUDE_SKILL_DIR}/templates/build-copilot.mjs` to `tools/build-copilot.m
 | `agents/<a>.md` | `agents/<a>.agent.md` with a platform note; tools mapped `Read`→`read`, `Write`/`Edit`→`edit`, `Glob`/`Grep`→`search`, `Bash`→`execute`, `Agent`→`agent`, `WebFetch`/`WebSearch`→`web`, `TodoWrite`→`todo`; Claude-only tools dropped; `mcp__*` kept |
 | `skills/**` | copied; `<name>:` and `${CLAUDE_SKILL_DIR}/` stripped in Markdown |
 | `skills/<s>/` listed in `tools/claude-only-skills.json` | left out of Copilot; a name with no `skills/<s>/SKILL.md` fails the build |
+| `plugins/claude/<other>/` listed in `tools/claude-only-plugins.json` | nothing: the folder is ignored and `--plugin <other>` is refused; a name with no `plugins/claude/<other>/` folder, or a `plugins/copilot/<other>/` folder, fails the build |
 | `tools/overlays/non-claude/skills/**` | added to `skills/` the same way; a name shared with a Claude plugin skill fails the build |
 | `scripts/**` | copied verbatim |
 | `hooks/hooks.json` (optional) | `hooks.json` in Copilot's `version: 1` format (`Stop`→`agentStop`, …); its `modules` and the module folders are left out (Claude-only) |
 | manifest | generated `plugin.json` + `GENERATED.md` |
 | root `LICENSE` (optional) | `LICENSE`, the same text |
 
-It also writes **generated sources** into the Claude plugin when their inputs exist (an `AGENTS.md` template built from `tools/templates/AGENTS.template.md` + the **Scott Hanselman** (`orchestrator`) persona; `CLAUDE.md` and `copilot-instructions.md` templates rendered from the platform variants of `tools/templates/instructions.template.md`; the copy of itself in this skill; the **Commands list**, written from the skills' frontmatter between `<!-- <name>:commands:begin -->` and `<!-- <name>:commands:end -->` in the plugin README, the repository `README.md` and `docs/plugins.md`, with Claude-only commands marked; `LICENSE`, copied from the repository's root `LICENSE`, because an installed plugin is only its own folder). Edit only the root `LICENSE`: the build rewrites the copies in both plugins. It fails when the managed-block markers in these generated templates are unbalanced, nested or duplicated, or differ between the two platform renders, and it keeps the `<name>:` prefix inside `<!-- … -->` markers when it strips namespaces, so both platforms write the same markers. **Non-Claude overlay skills** stand in for something Claude Code has built in (the `scratchpad` skill replaces Claude's per-session scratchpad). They live outside the Claude plugin so it never ships them; a future build for another provider (Codex, …) reads the same folder. **Claude-only skills** are the reverse: plugin skills that work only in Claude Code (`cache-keepalive` gives the hooks module's command its name; `cache-keepalive-install`, `-merge` and `-configure` manage keep-alive's settings) are listed in `tools/claude-only-skills.json`, and Copilot gets none of their files. Skills listed in `tools/project-skills.json` are also mirrored into the repo's own `.claude/skills/<name>/` for repo-local use. `--check` exits 1 when the Copilot tree or any generated source is stale — that is what CI and the Stop hook run. When the build warns `no Copilot alias for tool "X"`, add `X` to `ALIAS` or `DROP`.
+It also writes **generated sources** into the Claude plugin when their inputs exist (an `AGENTS.md` template built from `tools/templates/AGENTS.template.md` + the **Scott Hanselman** (`orchestrator`) persona; `CLAUDE.md` and `copilot-instructions.md` templates rendered from the platform variants of `tools/templates/instructions.template.md`; the copy of itself in this skill; the **Commands list**, written from the skills' frontmatter between `<!-- <name>:commands:begin -->` and `<!-- <name>:commands:end -->` in the plugin README, the repository `README.md` and `docs/plugins.md`, with Claude-only commands marked; `LICENSE`, copied from the repository's root `LICENSE`, because an installed plugin is only its own folder). Edit only the root `LICENSE`: the build rewrites the copies in both plugins. It fails when the managed-block markers in these generated templates are unbalanced, nested or duplicated, or differ between the two platform renders, and it keeps the `<name>:` prefix inside `<!-- … -->` markers when it strips namespaces, so both platforms write the same markers. **Non-Claude overlay skills** stand in for something Claude Code has built in (the `scratchpad` skill replaces Claude's per-session scratchpad). They live outside the Claude plugin so it never ships them; a future build for another provider (Codex, …) reads the same folder. **Claude-only skills** are the reverse: plugin skills that work only in Claude Code (`cache-keepalive` gives the hooks module's command its name; `cache-keepalive-install`, `-merge` and `-configure` manage keep-alive's settings; `lens`, `lens-init`, `lens-configure`, `lens-kit`, `lens-keepalive` and `lens-gate` name the commands of the ai-dlc-lens plugin) are listed in `tools/claude-only-skills.json`, and Copilot gets none of their files. **Claude-only plugins** go one step further: a whole plugin that works only in Claude Code (ai-dlc-lens, which is one hooks module) is listed in `tools/claude-only-plugins.json`. The build ignores its folder under `plugins/claude/` (so `--plugin` is not needed to pick the projected one), refuses it as `--plugin`, and fails when it has a `plugins/copilot/` folder; it is listed in `.claude-plugin/marketplace.json` only, never in `.github/plugin/marketplace.json`. Skills listed in `tools/project-skills.json` are also mirrored into the repo's own `.claude/skills/<name>/` for repo-local use. `--check` exits 1 when the Copilot tree or any generated source is stale — that is what CI and the Stop hook run. When the build warns `no Copilot alias for tool "X"`, add `X` to `ALIAS` or `DROP`.
 
 ## 7. Change workflow (every change)
 
 1. Edit only `plugins/claude/<name>/` (or `tools/templates/` for generated sources).
 2. `node tools/build-copilot.mjs`, then `node tools/build-copilot.mjs --check`. Remove empty folders the build leaves under `plugins/copilot/` after a rename or delete.
 3. When a script with tests in `tests/` changed (the `workflow` skill's `workflow.mjs`, the build), or a test did: `node --test "tests/**/*.test.mjs"`, with the glob quoted. `node --test tests/` fails (seen on Node 24), and bare `node --test` can also pick up the hooks module's TypeScript tests. When a hooks module or its tests changed: `npx @anthropic-ai/claude-code plugin test ./plugins/claude/<name>`.
-4. When a manifest changed, or an agent or skill was added, renamed or removed: `npx @anthropic-ai/claude-code plugin validate --strict ./plugins/claude/<name>` and `npx @anthropic-ai/claude-code plugin validate --strict .` In ai-dlc, `node tools/validate.mjs` runs the harness sync, then both, and exits 1 when any step fails.
-5. Update every reference to a renamed or removed agent/skill (`grep -rn '<old-name>' plugins/claude README.md`), then the README tables.
+4. When a manifest changed, or an agent or skill was added, renamed or removed: `npx @anthropic-ai/claude-code plugin validate --strict ./plugins/claude/<name>` and `npx @anthropic-ai/claude-code plugin validate --strict .` In ai-dlc, `node tools/validate.mjs` runs the harness sync, then the plugin's validation, one `plugin validate --strict ./plugins/claude/<other>` for each plugin in `tools/claude-only-plugins.json` whose folder exists, and the marketplace's, and exits 1 when any step fails. After changing a Claude-only plugin, also run `npx @anthropic-ai/claude-code plugin validate --strict ./plugins/claude/<other>` and, when it has a hooks module, `npx @anthropic-ai/claude-code plugin test ./plugins/claude/<other>`.
+5. Update every reference to a renamed or removed agent/skill in the plugin's agents, skills and templates (`grep -rn '<old-name>' plugins/claude`). Documentation is not yours to edit (the documentation rule, `docs-status`): for references in READMEs and `docs/` (`grep -rn '<old-name>' README.md docs`), and for the README agent and skill tables, put a *Docs update* request for **Daniele Procida** (`documentation-writer`) in your hand-back — each document and section, the status from the run state, and what changed. The Commands regions between the `<name>:commands` markers are written by the build; leave them to it.
 6. Prefer deleting a retired agent or skill outright in plugin scope (git keeps history); in project scope, deprecate instead.
 
 ## 8. The plugin repository's own `.claude/` (dogfooding)
@@ -122,19 +130,19 @@ The repo runs the plugin it builds — it keeps **no local copies** of agents, s
 - `.claude/scripts/sync-harness.mjs` (the `harness-sync` skill's script) + `.claude/hooks/sync-harness-on-stop.mjs` — the sync script, and a hook script local to this repository that runs it (consumer repositories get no sync hook; they sync by hand with `/ai-dlc:harness-sync`). It syncs the repo's own `.claude/` ↔ `.github/` twins (rules ↔ instructions, mirrored project skills, hooks) and never blocks: it always exits 0, never answers with a `decision`, and reports in a system message only when it wrote something or failed.
 - `.claude/hooks/check-copilot-stale.mjs` — runs `build-copilot.mjs --check` and blocks finishing while anything generated is stale (with the `stop_hook_active` loop guard).
 - `.claude/hooks/stop-sync-then-check.mjs` + one `Stop` hook in `.claude/settings.json` — runs `sync-harness-on-stop.mjs`, then `check-copilot-stale.mjs`, in that order, and answers with the check's decision (the sync's system message, if any, is kept). They are one command because Claude Code runs the hooks of one event in parallel, and the staleness check reads the `.claude/skills/` mirrors that the sync can rewrite from their `.github/skills/` twins. `.claude/hooks/check-workflow.mjs` stays a separate `Stop` hook: it reads only `.ai-dlc/`, which the sync never writes. The Copilot twin of the combined hook is in `.github/hooks/synced-from-claude.json`, written by the sync.
-- `tools/validate.mjs` — the local validation command: runs the harness sync, then both `plugin validate --strict` commands, and exits 1 when any step fails (`--check` only checks the sync, as CI does); listed in `CLAUDE.md` *Commands* and `.claude/rules/plugin-development.md`.
+- `tools/validate.mjs` — the local validation command: runs the harness sync, then `plugin validate --strict` for the plugin, for each plugin in `tools/claude-only-plugins.json` (ai-dlc-lens) and for the marketplace, every step even after a failure, and exits 1 when any step fails (`--check` only checks the sync, as CI does); listed in `CLAUDE.md` *Commands* and `.claude/rules/plugin-development.md`.
 - `.claude/settings.json` permissions for `node tools/build-copilot.mjs[ --check]` and both `plugin validate` commands; no stack-specific permissions the repo does not use.
 
 ## 9. CI — `.github/workflows/validate.yml`
 
-On push and pull request: checkout, `actions/setup-node` (22), `node tools/build-copilot.mjs --check`, `node --test "tests/**/*.test.mjs"`, `node .claude/scripts/sync-harness.mjs --check` before the validations, `plugin validate --strict ./plugins/claude/<name>`, `plugin test ./plugins/claude/<name>` when the plugin has a hooks module, then `plugin validate --strict .`. CI never writes: the sync step only checks, and fails when a twin is pending; in this repository the local Stop hook and `tools/validate.mjs` are what sync.
+On push and pull request: checkout, `actions/setup-node` (22), `node tools/build-copilot.mjs --check`, `node --test "tests/**/*.test.mjs"`, `node .claude/scripts/sync-harness.mjs --check` before the validations, `plugin validate --strict ./plugins/claude/<name>`, `plugin test ./plugins/claude/<name>` when the plugin has a hooks module, the same pair for each Claude-only plugin (ai-dlc: `plugin validate --strict ./plugins/claude/ai-dlc-lens` and `plugin test ./plugins/claude/ai-dlc-lens`), then `plugin validate --strict .`. CI never writes: the sync step only checks, and fails when a twin is pending; in this repository the local Stop hook and `tools/validate.mjs` are what sync.
 
 ## 10. Release
 
 1. Bump `version` in the Claude `plugin.json` and the Copilot marketplace entry (SemVer).
 2. Rebuild, `--check`, both validations.
 3. Commit, tag `v<version>`, push. Users update with `/plugin marketplace update <marketplace>` (Claude) or `copilot plugin update` (Copilot).
-4. README install section: Claude `/plugin marketplace add <owner>/<repo>` + `/plugin install <name>@<marketplace>`; Copilot `copilot plugin marketplace add <owner>/<repo>` + `copilot plugin install <name>@<marketplace>`.
+4. When the install steps or the version the READMEs show changed, put a *Docs update* request for `documentation-writer` in your hand-back for the README install section (the status from the run state, what changed). The install commands it documents: Claude `/plugin marketplace add <owner>/<repo>` + `/plugin install <name>@<marketplace>`; Copilot `copilot plugin marketplace add <owner>/<repo>` + `copilot plugin install <name>@<marketplace>`.
 
 ## Checklist for `create`
 
@@ -144,4 +152,4 @@ On push and pull request: checkout, `actions/setup-node` (22), `node tools/build
 - [ ] Both strict validations pass.
 - [ ] `validate.yml` CI from §9.
 - [ ] Repo `.claude/` dev setup from §8 (sync hook and the stale check), plugin installed locally.
-- [ ] README: what it is, the agent table, install for both platforms, the develop loop.
+- [ ] *Docs update* request for `documentation-writer` in the hand-back: the plugin README, the status from the run state, and what it must cover — what it is, the agent table, install for both platforms, the develop loop. You write no README content yourself; the build fills only the Commands region.
