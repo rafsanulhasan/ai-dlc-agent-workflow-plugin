@@ -404,3 +404,163 @@ Made by Rafsanul Hasan, 2026-10-23 (run AAW-20261023-keepalive-cleanup-sync):
   `keepWarmFor` recomputes its `maxPings` even when the keep-warm time is
   unchanged, overwriting a lower hand-set limit, and that naming `maxPings`
   in the same change keeps it. No code in this folder changed.
+
+Made by Rafsanul Hasan, 2026-10-23 (run AAW-20261023-lens-plugin-from-spike, step 1.3; spike 028's
+provider, `spike028-ka`, moved into this folder):
+
+- **Published state.** `keepalive.ts` publishes the tracks as the `$.state`
+  value `{ plugin: 'ai-dlc', key: 'keepalive' }`: `{ enabled, updatedAt,
+  sessionId, tracks }`, each track with `name`, `running`, `armedAt`,
+  `warmUntil`, `nextPingAt`, `pingEvery`, `keepWarmMs`, `pings`, `cap` and
+  `line`. `render` publishes on every status change, and `turn.start`, the
+  Stop with keep-alive turned off and `session.end` publish too, whether or
+  not the status line is shown. Writes are chained so they land in order; a
+  failed write goes to the debug log only. To say when the next ping is due,
+  a track keeps `nextPingAt` (set by `arm`, which now takes the time the timer
+  is set, cleared by `stopTrack`) and `keep`, the keep-warm time last worked
+  out for it. After a ping, the track is re-armed before the render, after
+  one more `$.clock.now()` and generation check. No ping, limit or stop
+  decision changed.
+- **Contract.** New `../../types/index.d.ts` declares
+  `PluginState['ai-dlc'].keepalive`; `ai-dlc`'s `plugin.json` gains
+  `"types": "./types/index.d.ts"`. Neither reaches the Copilot plugin (the
+  build's manifest is an allow-list, and `types/` is not copied).
+- **README.** New section *State for other plugins*.
+- **Tests.** `tests/keepalive.test.ts`: the test engine records each
+  `state.set` of that value; new block *the published state (read by
+  ai-dlc-lens)*, seven tests (arming, a ping, a stopped track, a new turn and
+  the session ending, status line off, keep-alive off, nothing published
+  without background work).
+
+Made by Rafsanul Hasan, 2026-10-23 (run FEAT-20261020-ai-dlc-lens, work item 28, step 28.1; from
+code review 21.1):
+
+- **The published keep-warm time is the one in force.** `keepalive.ts`: a
+  track's `keep` was set only at arming and at each ping, so a stopped or
+  reset track went on publishing the last `/ai-dlc:cache-keepalive`
+  override's `keepWarmMs` (and the `cap` it lifted) after that override was
+  cleared or its session ended, and a track never armed published its
+  setting even while an override stood. New `refreshKeep` re-reads the
+  keep-warm time of every track that is not running, the one its next arming
+  would take, at `turn.start`, at `session.end` and after the command sets or
+  clears an override, then publishes. `stopTrack` is unchanged: `arm` calls
+  it before every arming. A running track is left alone: its tick reads the
+  time again before each ping, and a change made while it runs takes effect
+  at that ping (README), so it publishes the new time then. A track armed
+  while `refreshKeep` waits on the store is left alone (its generation moved
+  on); a store that cannot be read publishes the setting and says so in the
+  debug log. `keepWarm` gains `{ session: false }`: this session's override
+  is left out and nothing is warned, the time an ended session leaves in
+  force. A session's override still outlives its turns; only the end of the
+  session drops it from what is published. No ping, limit or stop decision
+  changed.
+- **Tests.** `tests/keepalive.test.ts`: the test engine answers `state.get`
+  of that value with the last write; new block *the published keep-warm
+  time*, nine tests (re-arming after a ping and after a second Stop, a track
+  stopped while the override stands, a clear while stopped, a new turn with a
+  session override and on a track never armed, a new turn reading a machine
+  override, the session ending, an override set while a track runs, a reader
+  plugin's `$.state.get`, a store that cannot be read).
+
+Made by Rafsanul Hasan, 2026-10-23 (run FEAT-20261020-ai-dlc-lens, work item 28, step 28.1.l1; the
+human's answer to 28.1's open questions, "re-read each turn"):
+
+- **Settings re-read at every new turn.** `keepalive.ts`: `turn.start` now
+  reads the settings again (`load` with `atTurn`: the env of
+  `.claude/settings.local.json` and `.claude/settings.json` and
+  `.ai-dlc/cache-keepalive.json`, with the same precedence and trust rules
+  as at a Stop) before `refreshKeep` re-reads the overrides, then publishes.
+  A fresh session publishes its real settings from its first turn, and a
+  machine override another session changed is published at this session's
+  next turn. Nothing is read while the session is idle (no polling). At a
+  turn, a settings file that is not valid JSON or not an object, or a read
+  that fails, keeps the settings last read (the defaults when none was read
+  yet) and goes to the debug log; nothing is warned in the transcript, and
+  the other problems (an invalid value, a setting skipped in an untrusted
+  folder) are left to the next Stop or command, which warn as before. A
+  Stop or command still reads as before. A running track is untouched: no
+  track runs during a turn. No ping, limit or stop decision changed.
+- **Tests.** `tests/keepalive.test.ts`: the test engine returns its
+  `files`, takes a shared `storeMap` and counts `fs.read` and `store.get`
+  calls; new block *settings re-read at each new turn*, six tests (a fresh
+  session's first turn, also after a file changes; keep-alive turned off in
+  a file; a machine override written by another session, published at the
+  next turn and not before; a broken file at a turn; a broken file at the
+  first turn; nothing read or published while idle).
+
+Made by Rafsanul Hasan, 2026-10-23 (run FEAT-20261020-ai-dlc-lens, work item 28, step 28.1.l2; the
+human's answer to 28.1.l1's open questions, "cache it"):
+
+- **The turn read reads only what changed.** `keepalive.ts`: `load` with
+  `atTurn` now reads through a turn cache. Each settings file
+  (`.claude/settings.local.json`, `.claude/settings.json`,
+  `.ai-dlc/cache-keepalive.json`) is stat-ed at every turn and read again
+  only when its size or modified time changed (a missing file that stays
+  missing is not read again). The repository root and the trust target come
+  from git once per working directory: they are dropped when the session's
+  working directory changes, at `session.end` and at every full read, so a
+  turn is never behind the last full read, which runs git itself; nothing
+  cheaper than the `rev-parse` signals a `git init` or a moved worktree.
+  Claude Code's trust answer is kept with the size and modified time of
+  `~/.claude.json`, stat-ed at each turn that needs it (only when a
+  trust-gated setting differs from its default) and read again when it
+  changed, because trust fails closed and a trust withdrawn there must count
+  at the next turn. A Stop and `/ai-dlc:cache-keepalive` read every file,
+  run git and ask trust in full as before, with their warnings and
+  fall-through unchanged. An unchanged broken file still keeps the settings
+  last read and logs at every turn. Two edits in one modified-time tick that
+  leave the size the same go unseen until the next full read. The machine
+  override is still read from the store at every turn (`refreshKeep`).
+- **Tests.** `tests/keepalive.test.ts`: the test engine answers `fs.stat`
+  (size, and a modified time that moves at each write a test makes through
+  `files`, exposed as `mtimes`), records each `fs.read` and `fs.stat` path
+  and takes a `cwd` that can move; new block *the turn read reads only what
+  changed*, ten tests (an unchanged file read once over three turns and git
+  run once; a size change; a modified-time change at the same size; an edit
+  keeping both, seen at the next Stop; a file created and deleted; an
+  unchanged broken file, read once and logged at each turn; a Stop and the
+  command reading in full and the next turn running git once again; a
+  changed working directory; the trust answer reused, then withdrawn in
+  `~/.claude.json`; a new session after `session.end`).
+
+Made by Rafsanul Hasan, 2026-10-23 (run FEAT-20261020-ai-dlc-lens, work item 28, step 28.1.l3; code
+review round 1, hand-backs 28.4 and 28.5):
+
+- **A file that stats but cannot be read is not absent.** `keepalive.ts`:
+  at a turn, `cachedRead` no longer caches a failed read of a path that
+  stats as a file (a lock or a transient error while an editor saves it);
+  it throws, so `load` counts it as a failure and the turn keeps the
+  settings last read, logging to the debug log only, as for a broken file.
+  The next turn reads it again. `turnTrust` does the same for
+  `~/.claude.json`, instead of caching the fail-closed answer. A path that
+  stats as a folder still reads as absent; a full read (a Stop, the
+  command) is unchanged.
+- **The keep-warm time published after a full read is the one in force.**
+  The Stop (each branch: keep-alive off, overage, and the tracks that do not
+  arm), the command and `showSeedCache` call `refreshKeep` after `load`, and
+  the command and `showSeedCache` publish.
+- **A track that stops re-reads its keep-warm time.** `end()` (expired, kept
+  warm, missed, the ping limit, an error) is async and calls `refreshKeep`
+  before it renders; so do the spend limit, the Stop's "work done", the
+  Stop's and `session.measure`'s overage stops, and `stopForHandoff`, which
+  answers at once and re-reads in the background (`republishKeep`, which
+  publishes only when no track was stopped or armed meanwhile).
+- **One source for a running track's `pingEvery` and limit.** `arm` keeps the
+  settings it took on the track (`cfg`); the published state and the status
+  line of a running track use them (`cfgOf`), so they match what its tick
+  uses until it arms again. The line is written after `arm`.
+- **Smaller fixes.** `publish` ends its chain with a second catch, so a
+  failing debug log cannot stop every later write. `turnRoot` and the trust
+  target keep git's answer only in the turn cache they asked for, through a
+  local, after the await. A comment at `turnTrust`'s getter says why
+  `trustGate` uses the cached answer. The command's reply to a duration or
+  `clear` says, for a running track, that it takes the new time at its next
+  ping.
+- **Tests.** `tests/keepalive.test.ts`: the test engine takes `failRead` (paths
+  that stat but fail to read) and `failStateSets`; new block *[28.1.l3]
+  review fixes*, twelve tests (a settings file and `~/.claude.json` that
+  cannot be read at a turn; `trustGate` using the turn cache; the time
+  published after a Stop, a Stop with keep-alive off and the ping command;
+  an override cleared while a track runs, then the track expiring, missing
+  and the work done; the command reply with and without a running track; a
+  running track's `pingEvery`; a failed state write).
