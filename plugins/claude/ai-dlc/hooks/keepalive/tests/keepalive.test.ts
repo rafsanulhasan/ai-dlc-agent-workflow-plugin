@@ -5,6 +5,7 @@ import { formatDuration, parseCommandArgs, parseDuration } from '../duration.ts'
 import { NULL_IN_FILE, SETTINGS, TRUST_GATED, check, defaults, differsFromDefault, gatedDiffering, parsePrices, readMult, resolveSettings } from '../settings.ts'
 import type { Level } from '../settings.ts'
 import { pingCap, pingsWithin, seedLineOf, splitFromTranscript, splitOf } from '../keepalive.ts'
+import { hhmm } from '../cache-state.ts'
 import { PREVIEW_CHARS, SETTINGS as HANDOFF_SETTINGS, previewValue } from '../../auto-handoff/config.ts'
 
 // Keep-alive, folded in from the vendored cache-keepalive mod (../ATTRIBUTION.md).
@@ -23,7 +24,8 @@ type Opts = {
   forkOutput?: number
   store?: Record<string, unknown>
   session?: string | (() => string)
-  cacheRead?: number
+  // A function when a test changes the cache's state between pings
+  cacheRead?: number | (() => number)
   // [1h, 5m] tokens of the session's last cache write, as its transcript shows; null: no write seen
   split?: [number, number] | null
   files?: Record<string, string>
@@ -54,7 +56,7 @@ function engine(on: On, o: Opts = {}) {
   const seen = { statuses: [] as (string | undefined)[], forks: 0, logs: [] as string[], prompts: [] as string[], compacts: 0, runs: [] as string[][], states: [] as Published[], reads: 0, storeGets: 0, readPaths: [] as string[], stats: [] as string[] }
   let now = START
   let timers: { due: number; resolve: () => void }[] = []
-  const cacheRead = o.cacheRead ?? 1_000_000
+  const cacheReadOf = () => (typeof o.cacheRead === 'function' ? o.cacheRead() : o.cacheRead) ?? 1_000_000
   const split = o.split === undefined ? [1_000, 0] : o.split
   const disk: Record<string, string> = {
     ...(split ? { [TRANSCRIPT]: [row(0, 0), row(split[0], split[1]), row(0, 0)].join('\n') } : {}),
@@ -99,7 +101,7 @@ function engine(on: On, o: Opts = {}) {
   on('session.usage', () => ({ value: { context: { tokens: 1_000_000, window: 1_000_000, percent: 100 }, rateLimits: o.rateLimits ?? [] } }) as never)
   on('session.model', () => ({ value: 'claude-opus-5-5' }) as never)
   on('session.cwd', () => ({ value: typeof o.cwd === 'function' ? o.cwd() : o.cwd ?? ROOT }) as never)
-  on('model.fork', (_, e) => (seen.forks++, seen.prompts.push(e.prompt), { value: { isAnswered: true, text: 'ok', usage: { input_tokens: 10, output_tokens: o.forkOutput ?? 1, cache_read_input_tokens: cacheRead, cache_creation_input_tokens: cacheRead === 1_000_000 ? 0 : 1_000_000 } } }) as never)
+  on('model.fork', (_, e) => { const cacheRead = cacheReadOf(); return (seen.forks++, seen.prompts.push(e.prompt), { value: { isAnswered: true, text: 'ok', usage: { input_tokens: 10, output_tokens: o.forkOutput ?? 1, cache_read_input_tokens: cacheRead, cache_creation_input_tokens: cacheRead === 1_000_000 ? 0 : 1_000_000 } } }) as never })
   on('ui.status', (_, e) => (seen.statuses.push(e.text), { value: undefined }) as never)
   // The state keep-alive publishes for other plugins (ai-dlc-lens): each write, in order.
   let stateSetFailures = o.failStateSets ?? 0
@@ -401,8 +403,15 @@ describe('the cache split', () => {
   })
 
   test('the transcript gives the last main-conversation write, skipping subagent rows and rows with no write', () => {
-    expect(splitFromTranscript([row(7, 0), row(0, 9), row(0, 0), row(3, 3, true), 'not json "cache_creation"'].join('\n'))).toEqual({ '1h': 0, '5m': 9 })
+    expect(splitFromTranscript([row(7, 0), row(0, 9), row(0, 0), row(3, 3, true), 'not json "cache_creation"'].join('\n'))).toEqual({ split: { '1h': 0, '5m': 9 } })
     expect(splitFromTranscript(row(0, 0))).toBeUndefined()
+  })
+
+  // T17.1: the row's timestamp is when the cache was written (LLD 2, seedMain)
+  test('the transcript split carries the matching row\'s timestamp when it has one', () => {
+    const stamped = (h: number, m: number, iso: string) => JSON.stringify({ ...JSON.parse(row(h, m)), timestamp: iso })
+    expect(splitFromTranscript([stamped(0, 9, '2026-10-07T11:58:00.000Z'), stamped(0, 0, '2026-10-07T11:59:00.000Z')].join('\n'))).toEqual({ split: { '1h': 0, '5m': 9 }, at: START - 2 * MIN })
+    expect(splitFromTranscript(stamped(0, 9, 'not a date'))).toEqual({ split: { '1h': 0, '5m': 9 } })
   })
 
   // transcriptSplit: a transcript over $.fs.read's 4 MiB cap is read through `tail -c`.
@@ -1748,5 +1757,191 @@ describe('[28.1.l3] review fixes', () => {
     expect(seen.logs.some(l => l.startsWith('keepalive: state not published'))).toBe(true)
     await turn($, 't-2')
     expect(seen.states).toHaveLength(1)
+  })
+})
+
+// T17.1 (ITEM-032): the cache ledger replaces the single last split as the arming input (spec D1, D5;
+// LLD 2 and 3). The rendered text is unchanged until T17.2; these tests read the arming and the
+// published warmUntil, which now come from the ledger's main entry of the track's TTL.
+describe('[T17.1] the cache ledger arms the tracks', () => {
+  const keepOf = (seen: { states: Published[] }, n: '1h' | '5m') => seen.states.at(-1)?.tracks.find(t => t.name === n)
+  // A main-conversation response's usage: h tokens written for 1 hour, m for 5 minutes, `read` read.
+  const usageOf = (h: number, m: number, read = 0) => ({
+    input_tokens: 1, output_tokens: 1, cache_read_input_tokens: read, cache_creation_input_tokens: h + m,
+    cache_creation: { ephemeral_1h_input_tokens: h, ephemeral_5m_input_tokens: m },
+  })
+  // One main-conversation model request whose response reports `usage`. Index 0, so the automatic
+  // handoff's pre-request check does not run; the usage reaches keep-alive as at any request.
+  function responder(on: On) {
+    const queue: unknown[] = []
+    on('turn.step', async function* (_$, e) {
+      const usage = queue.shift() as never
+      yield { kind: 'stop', stopReason: 'end_turn', usage }
+      return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'end_turn', usage }
+    })
+    return async ($: Parameters<TestBody>[0], usage: unknown) => {
+      queue.push(usage)
+      for await (const _ of $.turn.step({ turnId: 't1', index: 0, model: 'claude-opus-5-5', messageCount: 1 } as never)) { /* drain */ }
+      await settle()
+    }
+  }
+
+  test('AC-17.1.1 a main 5m write at 10:00 arms the 5m track at 10:01 warm until 10:05, from the ledger', async ($, on) => {
+    const { seen, clock, line } = engine(on)
+    const respond = responder(on)
+    await respond($, usageOf(0, 2_000))
+    await clock.fire(1)
+    await $.classic.Stop(stop())
+    await settle()
+    expect(line('5m')).toMatch(/^keepalive 5m: armed, 1 task\(s\), /)
+    expect(keepOf(seen, '5m')).toMatchObject({ running: true, armedAt: START + MIN, warmUntil: START + 5 * MIN })
+    // No 1h write was seen: the transcript is not read, so its 1h write does not arm the 1h track
+    expect(line('1h')).toBe('keepalive 1h: off')
+  })
+
+  test('AC-17.1.3 a later 1h write does not switch the 5m track off', async ($, on) => {
+    const { seen, clock, line } = engine(on)
+    const respond = responder(on)
+    await respond($, usageOf(0, 2_000))
+    await clock.fire(2)
+    await respond($, usageOf(3_000, 0, 1_500))
+    await clock.fire(1)
+    await $.classic.Stop(stop())
+    await settle()
+    expect(line('5m')).toMatch(/^keepalive 5m: armed/)
+    expect(line('1h')).toMatch(/^keepalive 1h: armed/)
+    expect(keepOf(seen, '5m')).toMatchObject({ running: true, warmUntil: START + 5 * MIN })
+    expect(keepOf(seen, '1h')).toMatchObject({ running: true, warmUntil: START + 62 * MIN })
+  })
+
+  test('AC-17.1.4 a main 5m write at 10:00 with no later write or read does not arm at 10:06', async ($, on) => {
+    const { seen, clock, line } = engine(on)
+    const respond = responder(on)
+    await respond($, usageOf(0, 2_000))
+    await clock.fire(6)
+    await $.classic.Stop(stop())
+    await settle()
+    expect(line('5m')).toBe('keepalive 5m: off')
+    expect(keepOf(seen, '5m')).toMatchObject({ running: false, warmUntil: 0 })
+    await clock.fire(60)
+    expect(seen.forks).toBe(0)
+  })
+
+  test('AC-17.1.5 a 5m hit at 10:04 refreshes the 5m entry: armed at 10:06 warm until 10:09', async ($, on) => {
+    const { seen, clock } = engine(on)
+    const respond = responder(on)
+    await respond($, usageOf(0, 2_000))
+    await clock.fire(4)
+    await respond($, usageOf(0, 0, 1_500))
+    await clock.fire(2)
+    await $.classic.Stop(stop())
+    await settle()
+    expect(keepOf(seen, '5m')).toMatchObject({ running: true, warmUntil: START + 9 * MIN })
+  })
+
+  test('AC-17.1.5 a read never moves the 1h entry: armed at 10:06 warm until 11:00', async ($, on) => {
+    const { seen, clock } = engine(on)
+    const respond = responder(on)
+    await respond($, usageOf(3_000, 0))
+    await clock.fire(4)
+    await respond($, usageOf(0, 0, 1_500))
+    await clock.fire(2)
+    await $.classic.Stop(stop())
+    await settle()
+    expect(keepOf(seen, '1h')).toMatchObject({ running: true, warmUntil: START + 60 * MIN })
+  })
+
+  test('D1 landed ping: a landed 5m ping moves the 5m entry, so the next Stop arms from it', async ($, on) => {
+    const { seen, clock } = engine(on)
+    const respond = responder(on)
+    await respond($, usageOf(0, 2_000))
+    await $.classic.Stop(stop())
+    await clock.fire(3)
+    expect(seen.forks).toBe(1)
+    await clock.fire(1)
+    await $.classic.Stop(stop())
+    await settle()
+    // The ping landed at 10:03: warm until 10:08, not 10:09 (the Stop's time plus 5m, as before)
+    expect(keepOf(seen, '5m')).toMatchObject({ running: true, armedAt: START + 4 * MIN, warmUntil: START + 8 * MIN })
+  })
+
+  test('the transcript seeds main from the row\'s time: an expired 5m write does not arm, the 1h one arms until its own time', async ($, on) => {
+    const rowAt = JSON.stringify({ ...JSON.parse(row(1_000, 2_000)), timestamp: new Date(START - 10 * MIN).toISOString() })
+    const { seen, line } = engine(on, { files: { [TRANSCRIPT]: rowAt } })
+    await $.classic.Stop(stop())
+    await settle()
+    expect(line('5m')).toBe('keepalive 5m: off')
+    expect(line('1h')).toMatch(/^keepalive 1h: armed/)
+    expect(keepOf(seen, '1h')).toMatchObject({ running: true, warmUntil: START + 50 * MIN })
+  })
+
+  test('a turn start keeps the ledger; the session ending clears it', async ($, on) => {
+    const { seen, line } = engine(on, { split: null })
+    const respond = responder(on)
+    await respond($, usageOf(0, 2_000))
+    await $.turn.start({ turnId: 't-2' } as never)
+    await $.classic.Stop(stop())
+    await settle()
+    expect(line('5m')).toMatch(/^keepalive 5m: armed/)
+    await $.session.end({ sessionId: 's-1' } as never)
+    await $.classic.Stop(stop())
+    await settle()
+    expect(line('5m')).toBe('keepalive 5m: off (no cache write seen yet, so the cache lifetime is unknown)')
+    expect(keepOf(seen, '5m')).toMatchObject({ running: false })
+  })
+
+  // Gap found by mutation (17.3): nothing proved the ping is told which track it served. A warm 1h
+  // entry makes an ordinary read unattributable, so only a landed 5m ping (observePing) moves the 5m entry.
+  test('D1 landed ping: the 5m ping is recorded as a landed ping even when a warm 1h entry hides an ordinary read', async ($, on) => {
+    const { seen, clock } = engine(on)
+    const respond = responder(on)
+    await respond($, usageOf(3_000, 2_000))
+    await $.classic.Stop(stop())
+    await clock.fire(3)
+    expect(seen.forks).toBe(1)
+    await clock.fire(1)
+    await $.classic.Stop(stop())
+    await settle()
+    expect(keepOf(seen, '5m')).toMatchObject({ running: true, warmUntil: START + 8 * MIN })
+    expect(keepOf(seen, '1h')).toMatchObject({ running: true, warmUntil: START + 60 * MIN })
+  })
+
+  // LLD 3.1 / 3.4, `Track.pingWarmUntil` (clarify round 1, T17.1; behaviour 3 of the 17.2 hand-back).
+  // Pings that wrote no 1h tokens never move the ledger's 1h entry (the cache part stays ledger-only),
+  // but a landed ping proves the cache warm for arming: the next Stop re-arms the 1h track until the
+  // last ping's time plus an hour, so it is not ended as expired at its first tick. A miss clears it.
+  test("LLD 3.4 arming after landed pings (Track.pingWarmUntil): a 1h track re-armed after landed pings with no 1h write arms until the last ping plus an hour; after a miss it does not; the ledger's 1h entry, which the cache part shows, does not move", async ($, on) => {
+    let cacheRead = 1_000_000
+    const { seen, clock, line } = engine(on, { cacheRead: () => cacheRead })
+    const respond = responder(on)
+    await respond($, usageOf(3_000, 0))
+    await $.classic.Stop(stop())
+    await clock.fire(50)
+    expect(seen.forks).toBe(1)
+    expect(keepOf(seen, '1h')).toMatchObject({ running: true, warmUntil: START + 110 * MIN })
+    await clock.fire(1)
+    await $.classic.Stop(stop())
+    await settle()
+    // Re-armed from the landed ping, not from the first write's START + 60
+    expect(keepOf(seen, '1h')).toMatchObject({ running: true, armedAt: START + 51 * MIN, warmUntil: START + 110 * MIN })
+    // The line carries no cache part yet (T17.2): the keep-alive part follows `keepalive 1h: ` directly
+    expect(line('1h')).toMatch(new RegExp(`^keepalive 1h: armed, 1 task\\(s\\), warm until ${hhmm(START + 110 * MIN)}, ping 0/`))
+    // Its first tick pings instead of ending the track as expired
+    await clock.fire(50)
+    expect(seen.forks).toBe(2)
+    expect(line('1h')).not.toBe('keepalive 1h: expired, stopped')
+    expect(keepOf(seen, '1h')).toMatchObject({ running: true, warmUntil: START + 161 * MIN })
+    // A miss: the cache is gone, so the next Stop arms from the ledger alone. Its 1h entry is still the
+    // first write's START + 60 (the pings never moved it), so nothing arms; had the pings moved it, or
+    // the miss left pingWarmUntil (START + 161), the track would arm at START + 152
+    cacheRead = 0
+    await clock.fire(50)
+    expect(seen.forks).toBe(3)
+    expect(line('1h')).toBe('keepalive 1h: missed, stopped')
+    await clock.fire(1)
+    await $.classic.Stop(stop())
+    await settle()
+    expect(keepOf(seen, '1h')).toMatchObject({ running: false, warmUntil: 0 })
+    expect(seen.forks).toBe(3)
   })
 })

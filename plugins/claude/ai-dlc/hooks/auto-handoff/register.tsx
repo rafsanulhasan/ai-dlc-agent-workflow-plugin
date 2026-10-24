@@ -916,7 +916,9 @@ export const register: Register = (on) => {
     // any tool output that landed while it streamed (core runs tools before the stream ends).
     if (!e.agentId && r.usage) {
       unmeasured = unmeasured - before + r.usage.output_tokens
-      noteUsage(r.usage) // keep-alive's tracks follow the 1h/5m split of the cache writes
+      // Keep-alive's cache ledger: until when each cache is warm. A failure is logged, never thrown.
+      const usage = r.usage
+      await orLog($, 'keepalive usage', () => noteUsage($, usage))
     }
     // The seed turn's first request is the fresh session's true starting size. Measuring at
     // the end of that turn instead let a busy first turn (47k to 129k of reads) set
@@ -928,7 +930,7 @@ export const register: Register = (on) => {
         input: r.usage.input_tokens,
         read: r.usage.cache_read_input_tokens,
         written: r.usage.cache_creation_input_tokens,
-        split: creationSplit(r.usage) ?? await transcriptSplit($, transcriptPath ? expand(transcriptPath, await homeDir($) ?? '') : undefined),
+        split: creationSplit(r.usage) ?? (await transcriptSplit($, transcriptPath ? expand(transcriptPath, await homeDir($) ?? '') : undefined))?.split,
       }
       await log($, `floor session=${seededSession} tokens=${floor} (seed turn's first request) ${seedCacheFields(cache)}`)
       showHandedOff($, floor, cache)

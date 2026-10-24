@@ -564,3 +564,48 @@ review round 1, hand-backs 28.4 and 28.5):
   an override cleared while a track runs, then the track expiring, missing
   and the work done; the command reply with and without a running track; a
   running track's `pingEvery`; a failed state write).
+
+Made by Rafsanul Hasan, 2026-10-25 (run FEAT-20261020-ai-dlc-lens, feature root 17, step 17.2,
+task T17.1 / ITEM-032; spec and LLD `keepalive-cache-status`):
+
+- **The cache ledger.** New file `cache-state.ts`, pure and engine-free: one
+  entry per source (`main` or a subagent's id) and cache lifetime, each
+  saying until when that cache is warm (`observe`, `observePing`,
+  `seedMain`, `cacheView`, `armUntil` for main, `isEmpty`), and the line
+  pieces `hhmm` (the former `until`), `reasonText`, `cachePart` and
+  `lineOf`. A read refreshes the 5m entry only when it can only be a 5m read
+  (the 5m entry is warm, the response wrote no 1h tokens, no 1h entry is
+  warm) and never moves a 1h entry; a landed 5m ping refreshes the 5m entry
+  whatever else exists, a landed 1h ping moves the 1h entry only when it
+  wrote 1h tokens.
+- **The ledger replaces the last split.** `keepalive.ts`: `lastSplit` is
+  gone. `noteUsage($, usage)` records each main-conversation response at the
+  clock's time; each ping's usage is recorded too. At a Stop, a track arms
+  only from a warm main entry of its lifetime, warm until that entry's time,
+  so a later 1h write no longer switches the 5m track off, and an expired
+  cache no longer arms. With no usage seen, the transcript's last write
+  seeds main from its row's `timestamp` (`splitFromTranscript` and
+  `transcriptSplit` now return `{ split, at? }`). The ledger is cleared at
+  `session.end` and before a handoff, not at a turn start.
+- **`Track.part`.** A track keeps the text after `keepalive <track>: `; the
+  line is built when shown (`lineFor`). The rendered and published text is
+  unchanged: the cache part joins the line with T17.2.
+- **`../auto-handoff/register.tsx`.** Awaits `noteUsage($, usage)` for main
+  usage only, as before, through `orLog`; the seed line reads `.split`.
+- **Tests.** New `tests/cache-state.test.ts` (the pure table: AC-17.1.1,
+  17.1.3, 17.1.4, 17.1.5, 17.3.4, the landed ping, the transcript seed, D2a,
+  the reason texts). `tests/keepalive.test.ts`: the transcript split with
+  its row time, and a block *[T17.1] the cache ledger arms the tracks* (the
+  same ACs at a Stop with background tasks, through `turn.step` usage and
+  the mock clock).
+- **Arming after landed pings** (clarify round 1, step 17.2.l1.1; LLD 3.1
+  and 3.4). A track keeps `pingWarmUntil`, its last landed ping's time
+  plus its ttl. A Stop arms the track until the later of the ledger's
+  time and `pingWarmUntil` while that is still ahead, so a 1h track whose
+  landed pings wrote no 1h tokens is no longer ended as expired at its
+  first tick after the next Stop. The ledger and the cache part do not
+  read it. It is cleared when the track ends as expired, missed or with
+  an error, at `session.end` and before a handoff. The test pinned as
+  *[pending LLD clarify]* now checks the new rule, under a name that
+  cites the LLD; the test engine's `cacheRead` may be a function, so a
+  test can miss a ping after earlier pings landed.

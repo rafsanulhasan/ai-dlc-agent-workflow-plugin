@@ -315,8 +315,9 @@ Made by Rafsanul Hasan, 2026-10-22 (run `AAW-20261022-fold-cache-keepalive`):
   usage when it carries `cache_creation`, else from the new session's
   transcript. `config.ts` gained `creationSplit`, `SeedCache`,
   `seedCacheFields` and `seedCacheLine`. Every main-conversation response's
-  usage is also handed to keep-alive (`noteUsage`), whose tracks follow the
-  split. The header comment of `register.tsx` records why the handoff keeps
+  usage is also handed to keep-alive (`noteUsage`), whose tracks then
+  followed the split (since 2026-10-25, T17.1 below, it records the usage in
+  keep-alive's cache ledger instead). The header comment of `register.tsx` records why the handoff keeps
   the shared prefix stable (same model and effort; the brief and the seed as
   messages only).
 - **Tests.** `tests/auto-handoff.test.tsx` adds: the keep-alive timers stopped
@@ -525,3 +526,20 @@ Made by Rafsanul Hasan, 2026-10-24 (FEAT-20261020-ai-dlc-lens, step 11.19):
   readable run handed off; the rejected-names note is logged once across two
   handoffs; `run.md` beside a version is logged. The `fs.list` double is typed
   with the host's `FsEntry['kind']` instead of `as never`.
+
+Made by Rafsanul Hasan, 2026-10-25 (run FEAT-20261020-ai-dlc-lens, feature
+root 17, step 17.2, task T17.1 / ITEM-032; see `../keepalive/ATTRIBUTION.md`,
+same date):
+
+- **Keep-alive's cache ledger.** `register.tsx` hands each main-conversation
+  response's usage to keep-alive as before (subagent usage still not), now as
+  `await orLog($, 'keepalive usage', () => noteUsage($, usage))`: `noteUsage`
+  takes `$` and records the usage in keep-alive's cache ledger at the clock's
+  time, and a failure is logged, never thrown into the handoff path.
+- **The seed line's split.** `transcriptSplit` now returns `{ split, at? }`,
+  so the seed turn's `floor` line and handed-off panel read its `.split`
+  (`transcriptSplit(...)?.split`); what they show is unchanged.
+- **Tests.** `tests/auto-handoff.test.tsx`: the handoff clears the keep-alive
+  cache ledger, so the new session's Stop with a transcript that shows no
+  cache write reports `keepalive 5m: off (no cache write seen yet, ...)`
+  (a gap found by mutation testing, step 17.3).

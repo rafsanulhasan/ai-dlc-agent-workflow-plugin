@@ -112,7 +112,7 @@ The examples E1 to E7 of the stories are exactly `lineOf` over these pieces (E6,
 ### 3.1 State
 
 - New module variable `ledger: Ledger = emptyLedger()` replaces `lastSplit` (lines 64-65). `noteUsage` and the transcript fallback feed it; it is cleared where `lastSplit` is cleared: `session.end` (line 721) and `stopForHandoff` (line 603). A turn start never clears it (AC-17.2.3).
-- `Track` gains `mainPings: boolean` (3.8, set at arming: true when armed from a warm main entry). `transcriptSplit` and `splitFromTranscript` return `{ split, at? }` (`at` = the matching row's `timestamp`, parsed, when it has one); their other callers (`register.tsx` seed cache, line 891) read `.split`.
+- `Track` gains `pingWarmUntil: number` (0 = none): set to `now + cfg.ttl` at every landed ping of the track (beside `t.warmUntil`, `keepalive.ts:549`), read **only** by the arming decision at Stop (3.4: `until` is the later of the ledger's arming time and `pingWarmUntil` while it is in the future, so a 1h track whose landed pings carried no 1h write is not ended as `expired` by the next Stop) and never by `cacheView`/`cachePart`, which stay ledger-only (spec D1, OQ2). It is cleared (set to 0) when the track ends as `expired`, `missed` or `error` (the cache is gone or unknown), at `session.end` and in `stopForHandoff`; it survives `turn.start` and a `ping limit`/`kept warm` end (the cache is still warm). `Track` also gains `mainPings: boolean` (3.8, set at arming: true when armed from a warm main entry). `transcriptSplit` and `splitFromTranscript` return `{ split, at? }` (`at` = the matching row's `timestamp`, parsed, when it has one); their other callers (`register.tsx` seed cache, line 891) read `.split`.
 - `Track.line: string` is replaced by `Track.part: string`, the keep-alive part. `newTrack` starts with `part = reasonText({ noWrite: name })` (it was `off`, which a bare-`off` check would now reject).
 - `until` (lines 113-116) moves to `cache-state.ts` as `hhmm`; `keepalive.ts` imports it.
 - `life: Lifetimes` is `{ '5m': settings.fiveMinute.ttl, '1h': settings.oneHour.ttl }`, read when observing.
@@ -158,7 +158,7 @@ for each track:
    stopTrack(t)
    disabled                      -> part = reasonText('disabled')                  (unchanged text)
    isEmpty(ledger) [both TTLs]   -> part = reasonText('noSplit')                   (unchanged text)
-   until = armUntil(ledger, n, now, { agents: agentsArm })
+   until = max(armUntil(ledger, n, now, { agents: agentsArm }), t.pingWarmUntil > now ? t.pingWarmUntil : undefined)   // a landed ping proves warmth for arming (clarify round 1, T17.1); the display stays ledger-only
    until !== undefined           -> armedTime = now; pings = 0; warmUntil = until; keep = ...; arm(...); part = runningText(t, keep, `armed, ${tasks} task(s), `)
    onlyAgentsWarm(ledger, n, now)-> part = reasonText('onlySubagents'); t.warmUntil = 0   (AC-17.3.8: no arm, no main ping)
    isEmpty(ledger, n)            -> part = reasonText({ noWrite: n }); t.warmUntil = 0
@@ -240,6 +240,7 @@ Seams (spec): the pure table in a new `tests/cache-state.test.ts` (alongside `ke
 | AC-17.2.2 | no-tasks branch renders | `AC-17.2.2 (red today) a warm 5m cache with no tasks renders E1, not off and not absent` |
 | AC-17.2.3 | ledger kept at turn start | `AC-17.2.3 a turn start after E3 keeps the cache part` |
 | AC-17.3.1 **CONDITIONAL** (034.c, 034.a, `pingSubagents` on) | `armUntil(…, { agents: true })` | `AC-17.3.1 with pingSubagents on and 034.b built, a subagent-only 5m write arms the 5m track and the round pings only the agents` (stub `AgentPinger`; no `model.fork`) |
+| arming after landed pings (clarify, T17.1) | `Track.pingWarmUntil` | `D1 arming: after landed 1h pings with no 1h write, a new Stop re-arms the 1h track (not expired, stopped); after a miss it does not; the cache part still shows the ledger time` (keep-alive test: fork usage with no 1h write, `clock.fire` to the first ping, a second turn and Stop; assert `armed` and the cache part unchanged) |
 | landed ping (spec rev 3) | `observePing` | `D1 landed ping: a landed 5m ping refreshes the 5m entry whatever other entries exist; a landed 1h ping without a 1h write leaves the 1h entry` (pure table, plus a keep-alive test: 5m track, `clock.fire(3)`, the line's cache part moves to `main warm until` + 5m) |
 | AC-17.3.8 | `onlyAgentsWarm`, `armUntil` main-only | `AC-17.3.8 a subagent-only warm cache with pingSubagents off: no arm, no model.fork, line is subagents warm until 10:07; off (only subagent caches; subagent pings off)` |
 | D2a | `observe` unknown marker, `subagentsUnknown` | `AC-17.1.2 (D2a) a subagent write without a split shows subagents: split unknown on both tracks and arms nothing` (pure and keep-alive) |

@@ -2345,6 +2345,24 @@ describe('the handoff and the prompt cache', () => {
     expect(forks).toBe(0)
   })
 
+  // Gap found by mutation (17.3): the handoff's reset of the cache ledger had no test. The harness loads
+  // its own copy of the module, so this goes through the real handoff. The Stop before it seeds the ledger
+  // from the old transcript; after the /clear a Stop whose transcript shows no write must find none.
+  test('the handoff clears the keep-alive cache ledger: the new session\'s Stop finds no cache write', async ($, on) => {
+    const calls = engine(on, { tokens: 165_000, files: { '/home/test/old.jsonl': cacheRow(0, 2_000) } })
+    const statuses: (string | undefined)[] = []
+    on('ui.status', async (_$, e) => (statuses.push(e.text), { value: undefined }) as never)
+    on('classic.Stop', async () => ({}) as never)
+    await $.classic.Stop({ background_tasks: [KA_TASK], transcript_path: '/home/test/old.jsonl' } as never)
+    expect(statuses.at(-1)).toContain('keepalive 5m: armed')
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    await $.classic.SessionStart({ source: 'clear' })
+    await settle(() => calls.seeded.length > 0)
+    await $.classic.Stop({ background_tasks: [KA_TASK], transcript_path: '/home/test/none.jsonl' } as never)
+    expect(statuses.at(-1)?.split('\n')).toContain('keepalive 5m: off (no cache write seen yet, so the cache lifetime is unknown)')
+  })
+
   test('no ping is armed while a handoff is under way', async ($, on) => {
     const calls = engine(on, { tokens: 165_000, files: { '/home/test/old.jsonl': cacheRow(1_000, 0) } })
     const statuses: (string | undefined)[] = []

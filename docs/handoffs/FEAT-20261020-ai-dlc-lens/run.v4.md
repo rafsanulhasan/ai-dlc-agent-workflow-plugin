@@ -6,12 +6,12 @@ previous: run.v3.md
 status: active
 lifecycle: AI-DLC (AAW plugin/mod chain override; build by agent-manager)
 mode: subagent for the build chains (sequential; orchestrator writes and verifies the records)
-current-stage: Wave 3 Build, sprint 1 Commit: chain A (T16.1) and WF-1 in parallel
+current-stage: Wave 3 Build, T17.1 (ITEM-032) committed; next chain A T17.2 (ITEM-033)
 owner: orchestrator
-session: 599f511f-ceae-4288-babb-06a85ef91e3c
+session: 37788079-a467-459c-9605-3c9fb66627e9 (took over from 599f511f via manual session handoff, 2026-10-25; same version kept)
 branch: feat/ai-dlc-lens (feat/wf-1 merged at 734b33d)
-commit: 734b33d
-last-record: 17.2.l1.1-agent-manager-to-orchestrator.handback.md
+commit: 6f8cef4
+last-record: 17.2.l2.1-agent-manager-to-orchestrator.handback.md
 updated: 2026-10-25
 wave: 3 (Build)
 ---
@@ -42,7 +42,8 @@ Mode choice for the build: subagents. Each chain is a fixed sequence (agent-mana
 | 17.2 | build T17.1 (ITEM-032) cache ledger | agent-manager | subagent | done (passed: red 10 → green 587/0; 744/0; checks quoted; 3 behaviour changes flagged) | 599f511f | — | `17.2-orchestrator-to-agent-manager.handoff.md` | `17.2-agent-manager-to-orchestrator.handback.md` | 2026-10-25 |
 | 17.3 | tests T17.1 (traceability, ≥8 mutations, pin flagged behaviour 3) | sqa-engineer | subagent | done (passed: 20/20 mutations; 4 tests added; 591/0) | 599f511f | — | `17.3-orchestrator-to-sqa-engineer.handoff.md` | `17.3-sqa-engineer-to-orchestrator.handback.md` | 2026-10-25 |
 | 17.2.l1.1 | T17.1 addendum: arm from max(ledger, pingWarmUntil); flip pinned test | agent-manager | subagent | done (passed: red→green; 591/0, 744/0) | 599f511f | — | `17.2.l1.1-orchestrator-to-agent-manager.handoff.md` | `17.2.l1.1-agent-manager-to-orchestrator.handback.md` | 2026-10-25 |
-| 17.4.1 / 17.4.2 | code review T17.1 + addendum (conventions, intent) | code-reviewer ×2 | subagent | pending (records not yet written) | — | — | — | — | — |
+| 17.4.1 / 17.4.2 | code review T17.1 + addendum (conventions, intent) | code-reviewer ×2 | subagent | done · both APPROVE; standards 0B/1W/4S (W: auto-handoff ATTRIBUTION), spec 0B/0W/2S; follow-ups: T17.2 reason helpers + ITEM-034 agent shapes landed early, hasMain guard | 37788079 | — | `17.4.1-orchestrator-to-code-reviewer.handoff.md`, `17.4.2-orchestrator-to-code-reviewer.handoff.md` | `17.4.1-code-reviewer-to-orchestrator.handback.md`, `17.4.2-code-reviewer-to-orchestrator.handback.md` | 2026-10-25 |
+| 17.2.l2.1 | fix round 1 / 2 (code-review loop): auto-handoff ATTRIBUTION, ping-start comment, LF; tsc typecheck | agent-manager | subagent | done (passed: ATTRIBUTION entry + fix, comment, LF; 591/0, build --check clean, tsc pre-existing only). Code-review loop closed in round 1; orchestrator checked the one-entry ATTRIBUTION diff (no separate critique) | 37788079 | — | `17.2.l2.1-orchestrator-to-agent-manager.handoff.md` | `17.2.l2.1-agent-manager-to-orchestrator.handback.md` | 2026-10-25 |
 | 19.6 | post-merge checks on 734b33d | agent-manager | subagent | done (passed: 7 checks green at 734b33d) | 599f511f | — | `19.6-orchestrator-to-agent-manager.handoff.md` | `19.6-agent-manager-to-orchestrator.handback.md` | 2026-10-25 |
 | 16.4.l1.1 / 16.4.l1.2 | code review T16.2 (conventions, intent) | code-reviewer ×2 | subagent | done · both APPROVE (7 Suggestions → follow-ups) | 599f511f | — | `16.4.l1.1-…`, `16.4.l1.2-orchestrator-to-code-reviewer.handoff.md` | `16.4.l1.1-…`, `16.4.l1.2-code-reviewer-to-orchestrator.handback.md` | 2026-10-25 |
 | 16.5 | critique T16.2 docs, round 1 / 2 | brutal-critique | subagent | done · PASS r1 (4 Minors → follow-ups) | 599f511f | — | `16.5-orchestrator-to-brutal-critique.handoff.md` | `16.5-brutal-critique-to-orchestrator.handback.md` | 2026-10-24 |
@@ -95,8 +96,8 @@ Note: the first spawn of 16.2 was stopped before it changed anything, because it
 - The stale worktree `.worktrees/agent-a62622e4974e96bd0` (branch `worktree-agent-a62622e4974e96bd0`, 8e80b61) is left for the human to inspect or remove.
 
 ## Next action
-Session 599f511f stopped near 800k tokens (auto-handoff lost to a plugin reload); a manual session handoff is at .scratch/FEAT-20261020-ai-dlc-lens/session-20261025-handoff.md.
-1. Write 17.4.1 / 17.4.2 handoffs (code review T17.1 + addendum, both axes; uncommitted diff in hooks/keepalive, auto-handoff/register.tsx, tests; new cache-state.ts) and spawn two code-reviewers.
-2. On approval, commit T17.1 (with docs/specs/keepalive-cache-status.lld.md clarify revision and agent-manager memory).
-3. Chain A: T17.2 (ITEM-033) → ping the human for 034.c after it merges → T17.4 (ITEM-035).
-4. Follow-ups and housekeeping listed above.
+T17.1 (ITEM-032) reviewed (both axes APPROVE), fixed (17.2.l2.1) and committed by session 37788079.
+1. Chain A: T17.2 (ITEM-033), the status-line reasons. Its brief carries the follow-ups: the early reason helpers in cache-state.ts (Reason, reasonText, cachePart, sourceText) get their production caller and keep their tests; the hasMain guard (keepalive.ts:705) if it touches that code.
+2. After T17.2 merges, ping the human to watch the live 034.c check; then T17.4 (ITEM-035).
+3. ITEM-034 (stretch) inherits the early D2a agent shapes in cache-state.ts.
+4. Housekeeping: the .worktrees/wf-1 folder (permission), the merged branch feat/wf-1, the stale .worktrees/agent-a62622e4974e96bd0.

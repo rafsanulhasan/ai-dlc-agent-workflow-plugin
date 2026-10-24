@@ -8,12 +8,15 @@ import type { TrustTarget } from '../auto-handoff/config.ts'
 import { homeDir, log, readRaw, repoRoot, trustGate, trustTarget } from '../auto-handoff/io.ts'
 import type { TrustCache } from '../auto-handoff/io.ts'
 import type { KeepaliveState, KeepaliveTrackState } from '../../types/index.d.ts'
+import { armUntil, emptyLedger, hhmm, isEmpty, lineOf, observe, observePing, seedMain } from './cache-state.ts'
+import type { Ledger, Lifetimes } from './cache-state.ts'
 
 // Keep-alive, folded into the ai-dlc hooks module from the vendored cache-keepalive mod (see
 // ../ATTRIBUTION.md, "cache-keepalive"). When Claude ends a turn while background tasks still run, it
 // pings the prompt cache so the cache is still warm when the task's notification wakes the session.
 // Two tracks, one per cache lifetime: the 1-hour track and the 5-minute track. Which ones run comes
-// from the 1h/5m split of the session's last cache write, never from an assumption.
+// from the cache ledger (./cache-state.ts): per source and lifetime, until when each cache is warm, as
+// the session's responses and pings show it, never from an assumption.
 // ../auto-handoff/register.tsx calls registerKeepalive; the files, git, trust and the log come from
 // ../auto-handoff/io.ts. This file reads no environment variable: its settings come from settings
 // files, never the process environment.
@@ -47,9 +50,14 @@ export type Split = Record<TrackName, number>
 // (publish), not used to decide. cfg: the track's settings as the armed timer took them (arm), the
 // one source of a running track's published pingEvery and ping limit, so they match what its tick
 // uses even when a full read changes the settings meanwhile; a track not running publishes the
-// settings now read, the ones its next arming takes.
-type Track = { name: TrackName; key: TrackKey; timer?: Timer; generation: number; armedTime: number; warmUntil: number; pings: number; line: string; nextPingAt: number | null; keep?: Keep; cfg?: TrackSettings }
-const newTrack = (name: TrackName, key: TrackKey): Track => ({ name, key, generation: 0, armedTime: 0, warmUntil: 0, pings: 0, line: `keepalive ${name}: off`, nextPingAt: null })
+// settings now read, the ones its next arming takes. part: the keep-alive part of the track's line,
+// the text after `keepalive <track>: `; the line itself is built when it is shown (lineFor).
+// pingWarmUntil (0 = none): the last landed ping's time plus the track's ttl. Read only when a Stop
+// arms the track (LLD 3.4), never by the cache part, which stays the ledger's: a landed 1h ping that
+// wrote no 1h tokens leaves the ledger's 1h entry, yet proves the cache warm. Cleared when the cache
+// is gone or unknown (expired, missed, an error), at session.end and before a handoff.
+type Track = { name: TrackName; key: TrackKey; timer?: Timer; generation: number; armedTime: number; warmUntil: number; pingWarmUntil: number; pings: number; part: string; nextPingAt: number | null; keep?: Keep; cfg?: TrackSettings }
+const newTrack = (name: TrackName, key: TrackKey): Track => ({ name, key, generation: 0, armedTime: 0, warmUntil: 0, pingWarmUntil: 0, pings: 0, part: 'off', nextPingAt: null })
 
 // Module variables survive /clear, which is why every timer is stopped before one (stopForHandoff)
 // and at session.end.
@@ -61,8 +69,11 @@ let compacting = false
 let spent = 0
 let budget = 0
 let context = 0
-// The split of the last cache write this session made, from a response's usage or its transcript.
-let lastSplit: Split | undefined
+// Until when each cache of this session is warm, per source and lifetime (./cache-state.ts), from the
+// responses' usage, the pings and, when no usage was seen, the transcript. Cleared at session.end and
+// before a handoff; a new turn keeps it.
+let ledger: Ledger = emptyLedger()
+const life = (): Lifetimes => ({ '5m': settings.fiveMinute.ttl, '1h': settings.oneHour.ttl })
 // After an automatic handoff, what the seeded session's first request read from the cache, shown
 // under the track lines until the next turn starts (showSeedCache).
 let seedLine: string | undefined
@@ -74,30 +85,35 @@ export function splitOf(usage: unknown): Split | undefined {
   return split && split['1h'] + split['5m'] > 0 ? split : undefined
 }
 
-/** The split of the last main-conversation response in a transcript (JSON lines) that wrote to the cache. */
-export function splitFromTranscript(jsonl: string): Split | undefined {
+/** A transcript's last cache write: its split and, when the row has a timestamp, when it was written. */
+export type TranscriptSplit = { split: Split; at?: number }
+
+/** The split of the last main-conversation response in a transcript (JSON lines) that wrote to the
+ * cache, with the time of that row (`at`, from its `timestamp`) when it has one. */
+export function splitFromTranscript(jsonl: string): TranscriptSplit | undefined {
   const lines = jsonl.split('\n')
   for (let i = lines.length - 1; i >= 0; i--) {
     const line = lines[i]!
     if (!line.includes('"cache_creation"')) continue
     try {
-      const o = JSON.parse(line) as { isSidechain?: boolean; message?: { usage?: unknown } }
+      const o = JSON.parse(line) as { isSidechain?: boolean; timestamp?: unknown; message?: { usage?: unknown } }
       if (o.isSidechain === true) continue
       const split = splitOf(o.message?.usage)
-      if (split) return split
+      if (!split) continue
+      const at = typeof o.timestamp === 'string' ? Date.parse(o.timestamp) : NaN
+      return Number.isFinite(at) ? { split, at } : { split }
     } catch {}
   }
   return undefined
 }
 
-/** Records the split of a main-conversation response, when its usage carries one. */
-export function noteUsage(usage: unknown): void {
-  const split = splitOf(usage)
-  if (split) lastSplit = split
+/** Records one main-conversation response in the cache ledger (./cache-state.ts, observe). */
+export async function noteUsage($: EngineInterface, usage: unknown): Promise<void> {
+  observe(ledger, { at: await $.clock.now(), usage }, life())
 }
 
 /** The split from the transcript file: read whole, else its last TAIL_BYTES through `tail`. */
-export async function transcriptSplit($: EngineInterface, path: string | undefined): Promise<Split | undefined> {
+export async function transcriptSplit($: EngineInterface, path: string | undefined): Promise<TranscriptSplit | undefined> {
   if (!path) return undefined
   const whole = await readRaw($, path)
   if (whole !== undefined) return splitFromTranscript(whole)
@@ -107,12 +123,6 @@ export async function transcriptSplit($: EngineInterface, path: string | undefin
   } catch {
     return undefined
   }
-}
-
-// The status names the expiry so a line left on screen past it reads as stale
-function until(ms: number) {
-  const d = new Date(ms)
-  return `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
 const anyRunning = () => TRACKS.some(([n]) => tracks[n].timer !== undefined)
@@ -133,7 +143,7 @@ function stopAll(line?: string) {
     const t = tracks[n]
     const was = t.timer !== undefined
     stopTrack(t)
-    if (line && was) t.line = `keepalive ${n}: ${line}`
+    if (line && was) t.part = line
   }
 }
 
@@ -143,6 +153,10 @@ function stopAll(line?: string) {
 const STATE = { plugin: 'ai-dlc', key: 'keepalive' } as const
 // Writes go out one after another, in the order the snapshots were taken.
 let publishing: Promise<unknown> = Promise.resolve()
+
+// The line a track shows. The cache part (the ledger's view) joins it in T17.2; until then the line
+// is the keep-alive part alone, as it always was.
+const lineFor = (t: Track) => lineOf(t.name, undefined, t.part)
 
 /** The tracks as published: their status, with the next ping, the keep-warm time and the ping limit. */
 function trackStates(): KeepaliveTrackState[] {
@@ -160,7 +174,7 @@ function trackStates(): KeepaliveTrackState[] {
       keepWarmMs: keep.ms,
       pings: t.pings,
       cap: pingCap(cfg.maxPings, cfg.pingEvery, keep),
-      line: t.line,
+      line: lineFor(t),
     }
   })
 }
@@ -181,7 +195,7 @@ function publish($: EngineInterface) {
 function render($: EngineInterface) {
   publish($)
   if (!settings.enabled || !settings.status) return $.ui.status(undefined)
-  $.ui.status([...TRACKS.map(([n]) => tracks[n].line), ...(seedLine ? [seedLine] : [])].join('\n'))
+  $.ui.status([...TRACKS.map(([n]) => lineFor(tracks[n])), ...(seedLine ? [seedLine] : [])].join('\n'))
 }
 
 async function warn($: EngineInterface, line: string) {
@@ -441,7 +455,11 @@ const inOverage = (limits: { percentUsed: number }[]) => limits.some(l => l.perc
 type Usage = { input_tokens: number; output_tokens: number; cache_read_input_tokens: number; cache_creation_input_tokens: number }
 const cost = (u: Usage, r: number) => r * u.cache_read_input_tokens + u.input_tokens + settings.writeMult * u.cache_creation_input_tokens + settings.outputMult * u.output_tokens
 
-async function ping($: EngineInterface) {
+// A ping of the main conversation at `at`. Its usage goes into the ledger: as a landed ping of the
+// track `ttl` when it hit the cache (observePing), else as any response (observe), which is also how
+// the command's ping, which keeps no track, is recorded.
+// `at` is the ping's start, taken before the fork, so a warm-until recorded from it errs early.
+async function ping($: EngineInterface, at: number, ttl?: TrackName) {
   const r = await $.model.fork({ prompt: settings.pingPrompt })
   if (!('usage' in r)) return { ok: false, line: `no ping: ${r.reason}` }
   const u = r.usage
@@ -449,7 +467,10 @@ async function ping($: EngineInterface) {
   const hit = u.cache_read_input_tokens / Math.max(context, 1)
   spent += cost(u, readMult(settings.readPrice, await $.session.model()))
   const of = Number.isFinite(budget) ? `of ${Math.round(budget)}` : '(no spend limit)'
-  return { ok: hit > settings.hitThreshold, line: `cache read ${u.cache_read_input_tokens}/${context} (${Math.round(hit * 100)}%), spent ${Math.round(spent)} ${of} token-equivalents` }
+  const ok = hit > settings.hitThreshold
+  if (ok && ttl) observePing(ledger, { at, ttl, usage: u }, life())
+  else observe(ledger, { at, usage: u }, life())
+  return { ok, line: `cache read ${u.cache_read_input_tokens}/${context} (${Math.round(hit * 100)}%), spent ${Math.round(spent)} ${of} token-equivalents` }
 }
 
 // Compacting pays when its own cost plus re-caching the summary is below re-caching the whole context
@@ -502,14 +523,14 @@ export const pingCap = (maxPings: number, pingEvery: number, keep: { ms: number;
 
 // Written right after arm(), so cfgOf gives the settings the armed timer took
 const pingsOf = (t: Track, keep: Keep) => { const cfg = cfgOf(t); return `ping ${t.pings}/${pingCap(cfg.maxPings, cfg.pingEvery, keep)}` }
-const runningLine = (t: Track, keep: Keep, lead = '') =>
-  `keepalive ${t.name}: ${lead}warm until ${until(t.warmUntil)}, ${pingsOf(t, keep)}, keep warm ${formatDuration(keep.ms)}, stop by ${until(t.armedTime + keep.ms)}`
+const runningText = (t: Track, keep: Keep, lead = '') =>
+  `${lead}warm until ${hhmm(t.warmUntil)}, ${pingsOf(t, keep)}, keep warm ${formatDuration(keep.ms)}, stop by ${hhmm(t.armedTime + keep.ms)}`
 
 // A track stopping on its own (expired, kept warm, missed, its ping limit, an error): its keep-warm
 // time is re-read before the state is published (refreshKeep). Never throws.
 async function end($: EngineInterface, t: Track, text: string) {
   stopTrack(t)
-  t.line = `keepalive ${t.name}: ${text}`
+  t.part = text
   await refreshKeep($)
   render($)
 }
@@ -532,7 +553,7 @@ function arm($: EngineInterface, t: Track, from: number) {
       // A timer that fires late (the machine slept) finds the cache gone, and a ping would only re-write it
       const now = await $.clock.now()
       if (t.generation !== armedAt) return
-      if (now >= t.warmUntil) return await end($, t, 'expired, stopped')
+      if (now >= t.warmUntil) { t.pingWarmUntil = 0; return await end($, t, 'expired, stopped') }
       const keep = await keepWarm($, t.key)
       if (t.generation !== armedAt) return
       t.keep = keep
@@ -540,31 +561,33 @@ function arm($: EngineInterface, t: Track, from: number) {
       // keep-warm time, the last one included (20 on the 5m track's hour; human decision D1). Counted
       // on that schedule, not the clock, so the seconds each ping takes never cost the last one.
       // A duration spent before the first ping needed none: the cache's own lifetime covered it.
-      if ((t.pings + 1) * cfg.pingEvery > keep.ms) return await end($, t, `${t.pings ? 'kept warm' : 'no ping needed for'} ${formatDuration(keep.ms)}, stopped, warm until ${until(t.warmUntil)}`)
+      if ((t.pings + 1) * cfg.pingEvery > keep.ms) return await end($, t, `${t.pings ? 'kept warm' : 'no ping needed for'} ${formatDuration(keep.ms)}, stopped, warm until ${hhmm(t.warmUntil)}`)
 
-      const { ok, line } = await ping($)
+      const { ok, line } = await ping($, now, t.name)
       if (t.generation !== armedAt) return
       $.ui.log(`keepalive ${t.name}: ${line}`, { to: 'debug' })
-      if (!ok) return await end($, t, 'missed, stopped')
+      if (!ok) { t.pingWarmUntil = 0; return await end($, t, 'missed, stopped') }
       t.warmUntil = now + cfg.ttl
+      t.pingWarmUntil = t.warmUntil
       t.pings++
       // Awaited, so a failure in it lands in the catch below
       if (spent >= budget) return await spendLimit($, t)
       // The ping limit stops the track only when the keep-warm time would allow another ping; when it
       // does not, the next tick ends the track as "kept warm", as without a limit.
       const cap = pingCap(cfg.maxPings, cfg.pingEvery, keep)
-      if (t.pings >= cap && (t.pings + 1) * cfg.pingEvery <= keep.ms) return await end($, t, `ping limit ${cap} reached, stopped, warm until ${until(t.warmUntil)}`)
+      if (t.pings >= cap && (t.pings + 1) * cfg.pingEvery <= keep.ms) return await end($, t, `ping limit ${cap} reached, stopped, warm until ${hhmm(t.warmUntil)}`)
       const at = await $.clock.now()
       if (t.generation !== armedAt) return
       // Armed before the line and the render, so both speak for the settings the new timer took
       // (cfgOf) and the state shows the next ping
       arm($, t, at)
-      t.line = runningLine(t, keep)
+      t.part = runningText(t, keep)
       render($)
     } catch (err) {
       // Logged even when the track was stopped meanwhile (the spend limit stops it before it fails)
       $.ui.log(`keepalive ${t.name}: ${err instanceof Error ? err.message : String(err)}`, { to: 'debug' })
       if (t.generation !== armedAt) return
+      t.pingWarmUntil = 0
       await end($, t, 'error, stopped')
     }
   })
@@ -576,7 +599,7 @@ async function spendLimit($: EngineInterface, t: Track) {
     const other = tracks[n]
     if (other !== t && other.timer === undefined) continue // off, or already stopped for its own reason
     stopTrack(other)
-    other.line = `keepalive ${n}: spend limit reached, stopped, warm until ${until(other.warmUntil)}`
+    other.part = `spend limit reached, stopped, warm until ${hhmm(other.warmUntil)}`
   }
   await refreshKeep($)
   // The tracks are already stopped, so a store that cannot be read stops here too, and says so
@@ -587,11 +610,11 @@ async function spendLimit($: EngineInterface, t: Track) {
     $.ui.log(`keepalive: could not tell whether compacting pays (${err instanceof Error ? err.message : String(err)}); not compacting`, { to: 'debug' })
   }
   if (!pays) return render($)
-  t.line = `keepalive ${t.name}: compacting`
+  t.part = 'compacting'
   render($)
   const result = await compact($)
   $.ui.log(`keepalive: ${result}`, { to: 'debug' })
-  t.line = `keepalive ${t.name}: ${result.split(' (')[0]}`
+  t.part = result.split(' (')[0]!
   render($)
 }
 
@@ -600,7 +623,8 @@ async function spendLimit($: EngineInterface, t: Track) {
 export function stopForHandoff($: EngineInterface): boolean {
   const was = anyRunning()
   stopAll('handed off, stopped')
-  lastSplit = undefined
+  ledger = emptyLedger()
+  for (const [n] of TRACKS) tracks[n].pingWarmUntil = 0
   if (was) {
     render($)
     void republishKeep($)
@@ -632,7 +656,7 @@ export function registerKeepalive(on: Parameters<Register>[0], deps: KeepaliveDe
   on('turn.start', async ($, e, next) => {
     stopAll()
     seedLine = undefined
-    for (const [n] of TRACKS) tracks[n].line = `keepalive ${n}: off`
+    for (const [n] of TRACKS) tracks[n].part = 'off'
     // The settings and the overrides are read again at every new turn, and only then: a fresh session
     // publishes its real settings from its first turn, and a machine override another session changed
     // is published at this session's next turn. Nothing is read while the session is idle. A file is
@@ -672,28 +696,38 @@ export function registerKeepalive(on: Parameters<Register>[0], deps: KeepaliveDe
       const { context: ctx, rateLimits } = await $.session.usage()
       if (inOverage(rateLimits)) {
         stopAll()
-        for (const [n] of TRACKS) tracks[n].line = `keepalive ${n}: off in overage`
+        for (const [n] of TRACKS) tracks[n].part = 'off in overage'
         await refreshKeep($)
         render($)
         return next(e)
       }
-      const split = lastSplit ?? await transcriptSplit($, e.transcript_path)
-      if (split) lastSplit = split
       const now = await $.clock.now()
+      // No usage seen yet: the transcript's last write seeds main, from the time of its row
+      if (!ledger.main['5m'] && !ledger.main['1h']) {
+        const r = await transcriptSplit($, e.transcript_path)
+        if (r) seedMain(ledger, r.split, r.at ?? now, now, life())
+      }
       spent = 0
       budget = settings.budgetMultiplier > 0 ? settings.budgetMultiplier * (ctx.tokens ?? 0) : Infinity
       for (const [n, key] of TRACKS) {
         const t = tracks[n]
         stopTrack(t)
-        if (!settings[key].enabled) { t.line = `keepalive ${n}: off (disabled)`; continue }
-        if (!split) { t.line = `keepalive ${n}: off (no cache write seen yet, so the cache lifetime is unknown)`; continue }
-        if (split[n] <= 0) { t.line = `keepalive ${n}: off`; t.warmUntil = 0; continue }
+        if (!settings[key].enabled) { t.part = 'off (disabled)'; continue }
+        if (isEmpty(ledger)) { t.part = 'off (no cache write seen yet, so the cache lifetime is unknown)'; continue }
+        // A track arms from a warm main cache of its lifetime, warm until that cache's own time
+        // (spec D5), or from its own last landed ping, warm until that ping's time plus the ttl, when
+        // that is later and still ahead (LLD 3.4); the cache part stays the ledger's. The reasons for
+        // `off` come with T17.2.
+        const fromPing = t.pingWarmUntil > now ? t.pingWarmUntil : undefined
+        const fromLedger = armUntil(ledger, n, now)
+        const warm = fromLedger === undefined ? fromPing : fromPing === undefined ? fromLedger : Math.max(fromLedger, fromPing)
+        if (warm === undefined) { t.part = 'off'; t.warmUntil = 0; continue }
         t.armedTime = now
         t.pings = 0
-        t.warmUntil = now + settings[key].ttl
+        t.warmUntil = warm
         t.keep = await keepWarm($, key)
         arm($, t, now)
-        t.line = runningLine(t, t.keep, `armed, ${tasks} task(s), `)
+        t.part = runningText(t, t.keep, `armed, ${tasks} task(s), `)
       }
       // The tracks that did not arm (off, disabled, no split): the time the full read left in force
       await refreshKeep($)
@@ -718,7 +752,7 @@ export function registerKeepalive(on: Parameters<Register>[0], deps: KeepaliveDe
   // nothing of its spend, its context or its warnings carries over. Module variables survive /clear.
   on('session.end', async ($, e, next) => {
     stopAll()
-    lastSplit = undefined
+    ledger = emptyLedger()
     seedLine = undefined
     spent = 0
     budget = 0
@@ -727,7 +761,7 @@ export function registerKeepalive(on: Parameters<Register>[0], deps: KeepaliveDe
     // A new session reads every settings file, and asks git and trust, again at its first turn
     turnCache = { files: new Map() }
     // Each session warns about a setting problem once
-    for (const [n] of TRACKS) tracks[n].line = `keepalive ${n}: off`
+    for (const [n] of TRACKS) { tracks[n].part = 'off'; tracks[n].pingWarmUntil = 0 }
     // The ended session's own override reaches no other session: the machine's override or the
     // setting is what stays in force
     await refreshKeep($, { session: false })
@@ -767,7 +801,7 @@ export function registerKeepalive(on: Parameters<Register>[0], deps: KeepaliveDe
     if (!settings.enabled) return { text: `keepalive: off (enabled=false, ${sources.enabled ?? 'default'}); nothing pinged` }
     const { context: ctx } = await $.session.usage()
     if (!budget) budget = settings.budgetMultiplier > 0 ? settings.budgetMultiplier * (ctx.tokens ?? 0) : Infinity
-    const { ok, line } = await ping($)
+    const { ok, line } = await ping($, await $.clock.now())
     return { text: `${ok ? 'HIT' : 'MISS'}: ${line}; ${await keepLines($)}` }
   })
 }
