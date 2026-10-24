@@ -6,6 +6,10 @@
 //   node tools/build-copilot.mjs --check            exit 1 if anything generated is stale (CI)
 //   node tools/build-copilot.mjs --plugin <name>    pick the plugin when plugins/claude/ holds several
 //
+// Plugins listed in tools/claude-only-plugins.json (Claude Code only, such as a plugin that is one hooks
+// module) are never projected: their folders under plugins/claude/ are ignored, --plugin refuses them, and
+// the build fails when one has a folder under plugins/copilot/.
+//
 // Never hand-edit plugins/copilot/** — change plugins/claude/** and rebuild.
 //
 // Optional generated sources, written into the Claude plugin so both plugins ship them:
@@ -38,8 +42,21 @@ import { fileURLToPath } from "node:url";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const CHECK = process.argv.includes("--check");
 const pluginArg = process.argv.indexOf("--plugin");
-const claudePlugins = fs.readdirSync(path.join(ROOT, "plugins", "claude"), { withFileTypes: true })
+const claudeDirs = fs.readdirSync(path.join(ROOT, "plugins", "claude"), { withFileTypes: true })
   .filter((e) => e.isDirectory()).map((e) => e.name);
+const CLAUDE_ONLY_PLUGINS = path.join(ROOT, "tools", "claude-only-plugins.json");
+const claudeOnlyPlugins = fs.existsSync(CLAUDE_ONLY_PLUGINS) ? JSON.parse(fs.readFileSync(CLAUDE_ONLY_PLUGINS, "utf8")) : [];
+if (!Array.isArray(claudeOnlyPlugins) || claudeOnlyPlugins.some((n) => typeof n !== "string" || n === "")) {
+  throw new Error("tools/claude-only-plugins.json: must be an array of plugin folder names");
+}
+for (const name of claudeOnlyPlugins) {
+  if (!claudeDirs.includes(name)) throw new Error(`tools/claude-only-plugins.json: no plugin folder plugins/claude/${name}`);
+  if (fs.existsSync(path.join(ROOT, "plugins", "copilot", name))) throw new Error(`plugins/copilot/${name} exists, but ${name} is Claude-only (tools/claude-only-plugins.json): delete it`);
+}
+if (pluginArg > -1 && claudeOnlyPlugins.includes(process.argv[pluginArg + 1])) {
+  throw new Error(`${process.argv[pluginArg + 1]} is Claude-only (tools/claude-only-plugins.json): it has no Copilot plugin`);
+}
+const claudePlugins = claudeDirs.filter((name) => !claudeOnlyPlugins.includes(name));
 const PLUGIN = pluginArg > -1 ? process.argv[pluginArg + 1]
   : claudePlugins.length === 1 ? claudePlugins[0] : null;
 if (!PLUGIN || !claudePlugins.includes(PLUGIN)) {

@@ -1,6 +1,6 @@
 # The ai-dlc plugins
 
-This repository ships the **ai-dlc** plugin, an agentic engineering team that runs the AI-DLC (AI-driven development lifecycle), on two platforms:
+This repository ships the **ai-dlc** plugin, an agentic engineering team that runs the AI-DLC (AI-driven development lifecycle), on two platforms, and a second, Claude-only plugin, **ai-dlc-lens** (*in progress*, see below):
 
 | | Claude Code | GitHub Copilot CLI / VS Code |
 |---|---|---|
@@ -13,7 +13,9 @@ This repository ships the **ai-dlc** plugin, an agentic engineering team that ru
 | Agent id | `ai-dlc:<name>` | `<name>` |
 | Skill call | `/ai-dlc:<name>` | the `<name>` skill |
 
-Both marketplaces are named `ai-dlc-agent-workflow`, and both list one plugin, `ai-dlc`, at version **1.0.0-preview1** (unreleased preview). The two plugins carry the same 15 agents and 60 skills; the Copilot plugin adds `scratchpad`. Only the platform wiring differs.
+Both marketplaces are named `ai-dlc-agent-workflow`. The Claude marketplace lists two plugins, `ai-dlc` at version **1.0.0-preview1** (unreleased preview) and the Claude-only `ai-dlc-lens`; the Copilot marketplace lists `ai-dlc` only. The Claude `ai-dlc` plugin has 15 agents and 73 skills; the Copilot plugin has the same 15 agents and 64 skills: it leaves out the 10 Claude-only skills and adds `scratchpad`. Only the platform wiring differs.
+
+**`ai-dlc-lens` (in progress).** A Claude Code mod that draws an AI-DLC run while it happens (a workflow view, agent and hand-off panels, a chat card, anomaly markers). It is built in the run `FEAT-20261020-ai-dlc-lens`, its reviews are still open, and it is listed in `.claude-plugin/marketplace.json` only; the Copilot build ignores it (`tools/claude-only-plugins.json`). Its reference is the [plugin README](../plugins/claude/ai-dlc-lens/README.md) and the lens section of the [root README](../README.md); its commands are the `lens*` skills of `ai-dlc`, listed under *Commands*.
 
 The lifecycle, agents and gates are language-agnostic. Two stacks are supported:
 
@@ -54,6 +56,7 @@ You can also install the plugin directly, without the marketplace: `copilot plug
    - `docs/backlog/backlog.md` and the empty `docs/` folders the lifecycles write to: `specs/`, `architecture/decisions/`, `architecture/narratives/`, `plans/`, `handoffs/`, `product/`.
    - `.ai-dlc/workflow.json`, the team's workflow, with `workflow.schema.json`, the `workflow.mjs` CLI and `catalog.json` (generated from the installed plugin: its version, agent IDs and skill names), installed from the `workflow` skill, plus the workflow gate hook (see *Hooks and rules*). The orchestrator follows the workflow instead of the plugin default (see *Customising the workflow*). An existing `workflow.json` is kept; `/ai-dlc:workflow upgrade` brings in a newer default and regenerates the catalog.
    - The worktree root and the scratch root, installed by `workspace-folders`: recorded in `AGENTS.md`, `CLAUDE.md` and `.github/copilot-instructions.md`, added to `.gitignore`, and a Claude `WorktreeCreate` / `WorktreeRemove` hook pair that creates worktrees under the root. Run `/ai-dlc:workspace-folders` to change them later.
+   - The documentation rule, in every repository whatever its stack, installed by `docs-rules`: `.claude/rules/docs-status.md` with an identical `.github/instructions/docs-status.instructions.md` twin. It binds every agent in every lifecycle and workflow (see *Hooks and rules*).
    - **.NET repositories only** (detected from a `.sln`, `.slnx` or `.csproj` file):
      - The C# coding-style, GlobalUsings and testing rules, installed by `dotnet-rules`.
      - The `dotnet test` gate hook, installed by `dotnet-test-gate`.
@@ -67,7 +70,7 @@ You can also install the plugin directly, without the marketplace: `copilot plug
    2. It gets a work breakdown from `product-manager`.
    3. It picks a lifecycle, or a single agent, for each work item.
    4. It confirms the plan with you.
-   5. It runs the work and stops at each human gate. Each run has a folder, `docs/handoffs/{LIFECYCLE}-{YYYYMMDD}-{feature-slug}/`. Before every spawn it writes the brief as a handoff record (`3-orchestrator-to-software-engineer.handoff.md`) and updates the run state, `run.md`; it stores each agent's hand-back (the report it returned) verbatim with the same step code (`3-software-engineer-to-orchestrator.handback.md`) the moment the agent returns, before checking it; it commits them at each gate and when the run closes; after a crash, a dropped connection or a lost context, the next session offers to resume each unfinished run from its recorded next action, re-verifying the last record first. In a Claude Code agent team the teammates write the records between themselves.
+   5. It runs the work and stops at each human gate. Each run has a folder, `docs/handoffs/{LIFECYCLE}-{YYYYMMDD}-{feature-slug}/`. Before every spawn it writes the brief as a handoff record (`1.3-orchestrator-to-software-engineer.handoff.md`: each feature is one root step, here 1, and every hand-off for it, follow-ups included, is a sub-step of its phase: `N.1` planning, `N.2` implementation, `N.3` testing, `N.4` code review with `N.4.1` and `N.4.2` for the two review axes, `N.5` documentation; a loop is `l<k>` and its rounds are sub-numbers after it, as in `1.3.l1.2`; only a new feature takes the next free top-level number) and updates the run state, one file per session (`run.v1.md`; the next session that writes it adds a version, `run.v1.1.md` or `run.v2.md`, and the highest version is current; a run from before versions keeps a `run.md`); it stores each agent's hand-back (the report it returned) verbatim with the same step code (`1.3-software-engineer-to-orchestrator.handback.md`) the moment the agent returns, before checking it; it commits them at each gate and when the run closes; after a crash, a dropped connection or a lost context, the next session offers to resume each unfinished run from its recorded next action, re-verifying the last record first. In a Claude Code agent team the teammates write the records between themselves.
 
 The orchestrator has to be the **main** agent: it is the lead that talks to you and runs the whole team, and subagent nesting is limited (on Claude Code to `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH` levels, default 3 from v2.1.219, `1` to turn it off; GitHub Copilot does not document nested spawning, so the plugin assumes only the main agent spawns there; running the orchestrator as a subagent is not tested). Invoking it from inside another agent is not supported.
 
@@ -164,9 +167,9 @@ Every skill is also a slash command: `/ai-dlc:<name>` in Claude Code, or the `<n
 | Research | `research` | research-assistant |
 | Team management | `agent-management`, `skill-management`, `hook-management`, `rules-management`, `command-management`, `harness-sync`, `workflow`, `plugin-management`, `manage-memory` | agent-manager (all agents use `manage-memory`); the orchestrator reads `workflow` |
 | Workspace (Copilot only) | `scratchpad` | every agent on Copilot, before its first temporary file (Claude Code has a built-in scratchpad, so the Claude plugin does not ship it) |
-| Project setup | `init`, `workspace-folders`, `dotnet-rules`, `dotnet-test-gate`, `node-rules`, `node-test-gate` | the user |
+| Project setup | `init`, `workspace-folders`, `docs-rules`, `dotnet-rules`, `dotnet-test-gate`, `node-rules`, `node-test-gate` | the user |
 
-`init`, `workspace-folders`, `dotnet-rules`, `dotnet-test-gate`, `node-rules` and `node-test-gate` are **user-invocable only**: they set `disable-model-invocation: true`. `init` reads these skills' `SKILL.md` files and follows them, rather than calling them. Run `/ai-dlc:workspace-folders`, `/ai-dlc:dotnet-test-gate`, `/ai-dlc:dotnet-rules`, `/ai-dlc:node-test-gate` or `/ai-dlc:node-rules` yourself to add, repair or remove them later.
+`init`, `workspace-folders`, `docs-rules`, `dotnet-rules`, `dotnet-test-gate`, `node-rules` and `node-test-gate` are **user-invocable only**: they set `disable-model-invocation: true`. `init` reads these skills' `SKILL.md` files and follows them, rather than calling them. Run `/ai-dlc:workspace-folders`, `/ai-dlc:docs-rules`, `/ai-dlc:dotnet-test-gate`, `/ai-dlc:dotnet-rules`, `/ai-dlc:node-test-gate` or `/ai-dlc:node-rules` yourself to add, repair or remove them later.
 
 ### Which agent uses which skill
 
@@ -219,6 +222,7 @@ The **lifecycle agents** own a stage and hand an artifact on: James Montemagno (
 | `skill-management` | Role | Boris Cherny (`agent-manager`); Linus Torvalds (`brutal-critique`) reads its writing guide for agent and skill files; every other agent asks Boris Cherny (`agent-manager`) for skill changes |
 | `init` | Init-only | The user (`/ai-dlc:init`); no agent |
 | `workspace-folders` | Init-only | Followed by `init` in every repository, or run by the user to change the worktree or scratch root; no agent |
+| `docs-rules` | Init-only | Followed by `init` in every repository, or run by the user to add, repair or update the documentation rule; no agent (the rule it installs binds every agent) |
 | `dotnet-rules`, `dotnet-test-gate` | Init-only | Followed by `init` in .NET repositories, or run by the user; no agent |
 | `node-rules`, `node-test-gate` | Init-only | Followed by `init` in JS / TS repositories, or run by the user; no agent |
 
@@ -250,6 +254,7 @@ Every skill of the plugin is a command. In Claude Code, type `/ai-dlc:<name>`; i
 | `/ai-dlc:csharp-mutation-testing` | — | Runs and interprets Stryker.NET mutation testing for C# projects — installing the tool, configuring stryker-config.json, running full, incremental (--since) and baseline runs, and triaging surviving mutants into real test gaps vs … |
 | `/ai-dlc:csharp-unit-testing` | — | Comprehensive guidance for writing C# unit tests using TUnit, TUnit.Mocks, Bogus, and TUnit.Assertions.Should with project conventions |
 | `/ai-dlc:design-test-cases` | — | Structured test case design skill for software projects. |
+| `/ai-dlc:docs-rules` | — | Installs the AI-DLC documentation rule (docs-status) into the current repository, for every stack. |
 | `/ai-dlc:dotnet-rules` | — | Installs the AI-DLC .NET rules into the current repository: C# coding style, the GlobalUsings convention and the dotnet test / dotnet stryker testing gates, as Claude rules (.claude/rules) with identical GitHub Copilot instruction twins … |
 | `/ai-dlc:dotnet-test-gate` | — | Installs the AI-DLC .NET test gate into the current repository: a Claude Code Stop hook and a GitHub Copilot agentStop hook that block the agent from finishing while `dotnet test` fails after runtime changes. |
 | `/ai-dlc:fix-bug` | — | Structured bug investigation workflow for software projects. |
@@ -264,7 +269,14 @@ Every skill of the plugin is a command. In Claude Code, type `/ai-dlc:<name>`; i
 | `/ai-dlc:k6-load-testing` | — | Invoke this skill when the task is to validate that the system sustains its SLOs at **realistic production throughput over time** — including endurance (soak) testing for memory leaks, connection pool exhaustion, and GC pressure. |
 | `/ai-dlc:k6-performance-testing` | — | Invoke this skill when the task is to validate that a system meets its SLOs under **normal operating conditions** — expected concurrency and throughput levels. |
 | `/ai-dlc:k6-stress-testing` | — | Invoke this skill when the task is to validate system behaviour **beyond normal capacity** — to observe how it degrades and whether it recovers. |
+| `/ai-dlc:lens` | — | Opens the AI-DLC lens pane, a live view of the run: the flowchart of agents, the main loop's thinking and gathered context, and the lens settings in force (needs the ai-dlc-lens plugin). **Claude Code only.** |
+| `/ai-dlc:lens-configure` | `[<key> [<value>\|--unset]]` | Shows the lens settings, each with its value, where it comes from and its env name, or sets or unsets one in .ai-dlc/lens.json (needs the ai-dlc-lens plugin). **Claude Code only.** |
+| `/ai-dlc:lens-gate` | `[on\|off]` | Lens anomaly detection (blocked runs and steps, gates waiting or rejected, loops out of rounds, failed or stuck agents, failed hand-backs): on\|off turns it on or off; bare, it lists them (needs the ai-dlc-lens plugin). **Claude Code only.** |
+| `/ai-dlc:lens-init` | `[--force]` | Writes the lens settings file .ai-dlc/lens.json with every default, and its schema .ai-dlc/lens.schema.json (needs the ai-dlc-lens plugin). **Claude Code only.** |
+| `/ai-dlc:lens-keepalive` | `[on\|off]` | Shows or hides the lens's Cache keep-alive section (how long keep-alive kept the cache warm per track, what cache reads saved), then reports those figures (needs the ai-dlc-lens plugin; on by default). **Claude Code only.** |
+| `/ai-dlc:lens-kit` | — | Opens the lens kit pane: the manual checks K1 to K5 of the lens (resize across the dock boundary, Svg animation, pane buttons, transcript cards; K5 superseded: see /ai-dlc:lens-gate) (needs the ai-dlc-lens plugin). **Claude Code only.** |
 | `/ai-dlc:manage-memory` | — | Manages persistent file-based memory for all agents in .claude/agent-memory/&lt;folder>/ (ai-dlc-&lt;agent> for plugin agents), committed with the repository. |
+| `/ai-dlc:model-metadata` | — | Installs the AI-DLC model metadata hook into the current repository: .ai-dlc/model-metadata.json with its schema, holding every Anthropic model's prices (input, output, 5-minute and 1-hour cache writes, cache reads, batch, fast mode, … |
 | `/ai-dlc:node-rules` | — | Installs the AI-DLC JavaScript / TypeScript rules into the current repository: coding style (strict TypeScript, no any, ESM, naming), module and import boundaries, async and error handling, and the test / Stryker testing gates, as Claude … |
 | `/ai-dlc:node-test-gate` | — | Installs the AI-DLC JavaScript / TypeScript test gate into the current repository: a Claude Code Stop hook and a GitHub Copilot agentStop hook that block the agent from finishing while the repository's test command fails after runtime … |
 | `/ai-dlc:npm-package-deployment` | — | Structured workflow for publishing JavaScript/TypeScript packages to the npm registry. |
@@ -302,7 +314,7 @@ Every skill of the plugin is a command. In Claude Code, type `/ai-dlc:<name>`; i
 
 ## Hooks and rules
 
-The plugin ships **no rules and no settings hooks**; its only hooks are its Claude Code hooks module (the automatic handoff and keep-alive). A plugin settings hook would run in every project that enables the plugin, and stack-specific checks do not belong everywhere. Instead, `init` installs them only into repositories of the matching stack, and the workflow gate in every repository. `init` installs no sync hook: in a consumer repository, run `/ai-dlc:harness-sync [args]`, a plugin command only you invoke, which runs `node .claude/scripts/sync-harness.mjs`, a two-way sync of agents, skills, commands / prompts, rules / instructions and hooks between `.claude/` and `.github/` (`--check` only reports). Only this plugin repository syncs automatically, in its own `Stop` hook.
+The plugin ships **no rules and no settings hooks**; its only hooks are its Claude Code hooks module (the automatic handoff and keep-alive). A plugin settings hook would run in every project that enables the plugin, and stack-specific checks do not belong everywhere. Instead, `init` installs them only into repositories of the matching stack, and the workflow gate and the documentation rule in every repository. `init` installs no sync hook: in a consumer repository, run `/ai-dlc:harness-sync [args]`, a plugin command only you invoke, which runs `node .claude/scripts/sync-harness.mjs`, a two-way sync of agents, skills, commands / prompts, rules / instructions and hooks between `.claude/` and `.github/` (`--check` only reports). Only this plugin repository syncs automatically, in its own `Stop` hook.
 
 - **`workspace-folders`** (every stack) installs `.claude/hooks/worktree-create.mjs` and `worktree-remove.mjs` with `WorktreeCreate` / `WorktreeRemove` entries in `.claude/settings.json`, so Claude Code creates its worktrees under the configured worktree root instead of `.claude/worktrees/`. Copilot has no worktree location setting; it follows the `AGENTS.md` instruction.
 
@@ -320,6 +332,12 @@ The plugin ships **no rules and no settings hooks**; its only hooks are its Clau
   - `AI_DLC_ENFORCE_TESTS=false` is set.
 
   It runs `AI_DLC_TEST_TARGET` if that is set. Otherwise it runs a `*.Testing.slnx` or `*.Tests.sln` at the repository root. It needs PowerShell 7 (`pwsh`).
+- **`docs-rules`** (every stack) installs the documentation rule `docs-status`, as `.claude/rules/docs-status.md` with an identical `.github/instructions/docs-status.instructions.md` twin (no `paths` / `applyTo: "**"`, so every session loads it). The rule binds every agent in every lifecycle and workflow, custom ones included:
+  - Documentation is a closed list: READMEs, user guides and other pages that say what the project does or will do, release notes and changelogs. Lifecycle artifacts (backlog, stories, specs, ADRs, narratives, task plans, run records, reviews and critiques, even under `docs/`), agent artifacts, agent memory and build-generated text are not documentation, and the rule does not cover them.
+  - Only `documentation-writer` writes or updates documentation, status markers included.
+  - Every other agent owns its work, not the documents about it. When its work changes what the documentation should say, it puts a *Docs update* request in its hand-back, naming the documents, the status and what changed; the orchestrator routes it to `documentation-writer` as a stage of the same run, and runs that stage again, without a new request, each time the status changes.
+  - Status markers: *planned* (accepted, and its building stage has not started), *in progress* (from the moment the building stage starts until the run's last review or gate stage is `done`, fix rounds included; describe only what exists), none once that stage is `done` or the run closes `done`. The status is read from the run's current run state (the highest `run.v<major>[.<minor>].md`; older versions never give the status; `run.md` for a run from before versions), and from the backlog only for work no run records; never guessed.
+  - When `.ai-dlc/workflow.json` moves the handoff folder or the backlog, `docs-rules` writes those paths into the rule.
 - **`dotnet-rules`** installs the C# coding-style, GlobalUsings and testing rules. Each rule goes in two places with identical content:
   - `.claude/rules/*.md` for Claude Code.
   - `.github/instructions/*.instructions.md` for Copilot.
@@ -333,7 +351,7 @@ The plugin ships **no rules and no settings hooks**; its only hooks are its Clau
 | Claude source | Copilot output |
 |---|---|
 | `agents/<a>.md` | `agents/<a>.agent.md` with a platform note. Tools are mapped (see below). Claude-only tools are dropped. `mcp__*` tools are kept. Agents marked `status: deprecated` are skipped |
-| `skills/**` | Copied, with the `ai-dlc:` namespace and the `${CLAUDE_SKILL_DIR}/` prefix stripped from Markdown. Skills listed in [`tools/claude-only-skills.json`](../tools/claude-only-skills.json) (currently `cache-keepalive`, which names the hooks module's command, and `cache-keepalive-install`, `cache-keepalive-merge` and `cache-keepalive-configure`, which manage keep-alive's settings) are left out; a name there that is not a plugin skill fails the build |
+| `skills/**` | Copied, with the `ai-dlc:` namespace and the `${CLAUDE_SKILL_DIR}/` prefix stripped from Markdown. Skills listed in [`tools/claude-only-skills.json`](../tools/claude-only-skills.json) (currently `cache-keepalive`, which names the hooks module's command, `cache-keepalive-install`, `cache-keepalive-merge` and `cache-keepalive-configure`, which manage keep-alive's settings, and the six `lens*` skills that name the ai-dlc-lens commands: `lens`, `lens-init`, `lens-configure`, `lens-kit`, `lens-keepalive` and `lens-gate`) are left out; a name there that is not a plugin skill fails the build |
 | `tools/overlays/non-claude/skills/**` | Added to `skills/` the same way (Copilot only, e.g. `scratchpad`); a name shared with a Claude skill fails the build |
 | `scripts/**` | Copied verbatim |
 | `hooks/hooks.json` (none today) | `hooks.json` in Copilot's `version: 1` format (`Stop` → `agentStop`) |

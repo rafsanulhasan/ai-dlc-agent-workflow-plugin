@@ -75,5 +75,5 @@ Attach the `.nupkg` and `.snupkg` artifacts to the GitHub Release if useful for 
 ## Pitfalls
 
 - **Forgotten `--skip-duplicate`**: retry runs fail when re-pushing matching `.snupkg`.
-- **No rollback plan**: document the unlist procedure on nuget.org in the workflow README.
+- **No rollback plan**: have **Daniele Procida** (`documentation-writer`) document the unlist procedure on nuget.org in the workflow README (a *Docs update* request in the hand-back).
 - Migrating from manual `dotnet nuget push` to tag-driven deploys: keep the manual command out of contributor docs once the workflow publishes.

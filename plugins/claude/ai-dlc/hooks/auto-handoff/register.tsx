@@ -7,7 +7,7 @@ import { isSpinning, panelTree } from './panel.tsx'
 import type { Line, Panel } from './panel.tsx'
 import { BRIEF_DIR, CAPABILITIES_FILE, DEFAULTS, LAST_RESORT_INSTRUCTIONS, MODULE_DIR, REPO_CONFIG, SEED_PREFIX, SESSION_TEMPLATE, TEMPLATES, TRUST_GATED, baseName, contextLine, creationSplit, expand, k, linkify, repoConfig, resolveConfig, seedCacheFields, seedCacheLine, sessionName, settingsEnv, short, transcriptTitle, hostFields, windowFields, windowInfo } from './config.ts'
 import type { Config, HostWindow, Level, SeedCache, TemplateKey, WindowInfo } from './config.ts'
-import { ENDED, assembleSessionHandoff, handoffsRoot, inRepo, openRecords, parseRunState, pickRun, scratchRoot, sessionHandoffPath, withNextAction } from './run.ts'
+import { ENDED, assembleSessionHandoff, currentRunStateFile, handoffsRoot, inRepo, openRecords, parseRunState, pickRun, runStateNote, scratchRoot, sessionHandoffPath, withNextAction } from './run.ts'
 import type { RunState, RunTarget } from './run.ts'
 import { noteUsage, registerKeepalive, showSeedCache, stopForHandoff, transcriptSplit } from '../keepalive/keepalive.ts'
 import { git, homeDir, log, orLog, readRaw, readText, repoRoot, trustGate } from './io.ts'
@@ -17,7 +17,7 @@ import { git, homeDir, log, orLog, readRaw, readText, repoRoot, trustGate } from
 // wrapper pipes the session and owns the context limit (DISABLE_AUTO_COMPACT), the mod only logs.
 // Part of the ai-dlc plugin: when the repository has an active AI-DLC run on the current branch,
 // the brief is the `handoff` skill's session handoff, written to the run's scratch folder, and the
-// run's run.md points at it before the /clear (run.ts). Without one, the brief is the mod's own.
+// run's current run state points at it before the /clear (run.ts). Without one, the brief is the mod's own.
 // While the run this chain claimed stays active, the chain goes on past maxConsecutiveHandoffs; it
 // ends when the run is done, blocked or abandoned. Each session of a chain is named
 // "<prefix>: <original name> (Session N)".
@@ -48,7 +48,7 @@ const LOG = `~/${BRIEF_DIR}/auto-handoff.log`
 // briefPath: the brief in BRIEF_DIR, which keeps the chain, the viewer and the status line working.
 // seedPath: what the fresh session is told to read; the session handoff when a run is active.
 // baseName: the chain's original session name, carried down so names never nest.
-type Pending = { oldSession: string; briefPath: string; seedPath: string; run?: { id: string; runMd: string }; tokens: number; chain: string; link: string; problem?: string; baseName: string }
+type Pending = { oldSession: string; briefPath: string; seedPath: string; run?: { id: string; runState: string }; tokens: number; chain: string; link: string; problem?: string; baseName: string }
 
 // Module variables survive /clear; $.state does not.
 let pending: Pending | undefined
@@ -272,7 +272,7 @@ async function viewer($: EngineInterface, briefDir: string, pagesDir: string, se
 type Lookup = { run?: RunTarget; owned: boolean; ended?: RunState }
 
 // The tool gate asks canHandOff on every call past the threshold, and parallel calls arrive together.
-// One lookup (git, then every run.md) serves them for LOOKUP_TTL_MS, shared while it is still running;
+// One lookup (git, then every run state) serves them for LOOKUP_TTL_MS, shared while it is still running;
 // the cache is also dropped at each turn end, typed prompt and session start, so a changed run state
 // is seen at the next turn. runLookup never rejects, so a cached promise cannot hold an error.
 const LOOKUP_TTL_MS = 2_000
@@ -284,6 +284,10 @@ function cachedLookup($: EngineInterface, sessionId: string): Promise<Lookup> {
   lookupCache = { sessionId, at: now, look }
   return look
 }
+
+// Run folders whose odd run-state names (run.ts, runStateNote) were already logged: once per folder
+// and note for the life of the module, not at every lookup.
+const notedFolders = new Set<string>()
 
 // The AI-DLC runs on the current branch, as they matter to this session. Never throws: with no run
 // the handoff goes on as the mod's own brief, under the loop guard.
@@ -297,10 +301,27 @@ async function runLookup($: EngineInterface, sessionId: string, at: Date): Promi
     const handoffs = handoffsRoot(await readText($, `${root}/.ai-dlc/workflow.json`))
     let entries: { name: string; kind: string }[]
     try { entries = await $.fs.list(inRepo(root, handoffs)) } catch { return { owned: false } }
-    // Each run.md is read in parallel: the status that rules a run out is only in its front matter.
-    const states = await Promise.all(entries.filter(e => e.kind !== 'file').map(async e => {
-      const text = await readText($, `${inRepo(root, handoffs)}/${e.name}/run.md`)
-      return text ? parseRunState(text, `${handoffs}/${e.name}`) : undefined
+    // Each run folder's current run state (run.ts, currentRunStateFile: the highest
+    // run.v<major>[.<minor>].md, else a run.md from before versions) is read in parallel: the status
+    // that rules a run out is only in its front matter.
+    const files = new Map<string, string>()
+    // Run folders are directories and run states files; a link (kind `other`) is neither, at both levels.
+    const states = await Promise.all(entries.filter(e => e.kind === 'dir').map(async e => {
+      const folder = `${handoffs}/${e.name}`
+      let names: string[]
+      try { names = (await $.fs.list(inRepo(root, folder))).filter(f => f.kind === 'file').map(f => f.name) } catch { return undefined }
+      const note = runStateNote(names)
+      const line = note && `run state names ${folder}: ${note}`
+      if (line && !notedFolders.has(line)) {
+        notedFolders.add(line)
+        await log($, line)
+      }
+      const file = currentRunStateFile(names)
+      if (!file) return undefined
+      const text = await readText($, `${inRepo(root, folder)}/${file}`)
+      const state = text ? parseRunState(text, folder) : undefined
+      if (state) files.set(folder, `${folder}/${file}`)
+      return state
     }))
     const runs = states.filter((s): s is RunState => s !== undefined)
     const lineageIds = await ancestors($, sessionId)
@@ -314,7 +335,7 @@ async function runLookup($: EngineInterface, sessionId: string, at: Date): Promi
     const owned = (session !== '' && chain.has(session)) || run.id === claimed
     const scratch = scratchRoot(await readText($, `${root}/AGENTS.md`))
     const commit = await git($, ['-C', root, 'rev-parse', '--short', 'HEAD'])
-    return { run: { ...run, root, runMd: `${run.folder}/run.md`, sessionHandoff: sessionHandoffPath(scratch, run, at), branchName, commit }, owned, ended }
+    return { run: { ...run, root, runState: files.get(run.folder)!, sessionHandoff: sessionHandoffPath(scratch, run, at), branchName, commit }, owned, ended }
   } catch (err) {
     await log($, `run lookup error session=${sessionId} ${String(err)}`)
     return { owned: false }
@@ -475,26 +496,29 @@ async function composeBrief($: EngineInterface, sessionId: string, tokens: numbe
   return { brief, problem, transcript, cwd }
 }
 
-// The run's session handoff, then run.md pointing at it, both before the /clear: a session that
-// dies between here and the seed still leaves the run resumable from run.md. The session handoff
-// goes first so run.md never points at a file that was not written; when a later step fails, the
+// The run's session handoff, then the run's current run state pointing at it, both before the
+// /clear: a session that dies between here and the seed still leaves the run resumable from its run
+// state. The *Next action* is written into the version the lookup read, never a new one: a handoff
+// chain is one session (handoff skill, *Run state*, Versions). The session handoff goes first so the
+// run state never points at a file that was not written; when a later step fails, the
 // log names the step and the session handoff left behind (gitignored scratch, harmless), and the
 // answer is undefined, so the seed names the brief instead.
 async function writeRunHandoff($: EngineInterface, run: RunTarget, brief: string, sessionId: string, tokens: number, at: Date): Promise<{ seedPath: string; run: NonNullable<Pending['run']> } | undefined> {
   const handoffPath = inRepo(run.root, run.sessionHandoff)
-  const runMdPath = inRepo(run.root, run.runMd)
+  const statePath = inRepo(run.root, run.runState)
+  const file = run.runState.slice(run.runState.lastIndexOf('/') + 1)
   let step = 'write session handoff'
   try {
     await $.fs.write(handoffPath, brief)
-    step = 'read run.md'
-    const state = await $.fs.read(runMdPath)
-    if (typeof state !== 'string') throw new Error(`${run.runMd} unreadable`)
-    step = 'write run.md'
-    await $.fs.write(runMdPath, withNextAction(state, { stage: run.stage, sessionHandoff: run.sessionHandoff, oldSession: sessionId, tokens: k(tokens), at }))
-    await log($, `session handoff written ${handoffPath}; ${run.runMd} next action updated`)
-    return { seedPath: handoffPath, run: { id: run.id, runMd: run.runMd } }
+    step = `read ${file}`
+    const state = await $.fs.read(statePath)
+    if (typeof state !== 'string') throw new Error(`${run.runState} unreadable`)
+    step = `write ${file}`
+    await $.fs.write(statePath, withNextAction(state, { stage: run.stage, sessionHandoff: run.sessionHandoff, oldSession: sessionId, tokens: k(tokens), at }))
+    await log($, `session handoff written ${handoffPath}; ${run.runState} next action updated`)
+    return { seedPath: handoffPath, run: { id: run.id, runState: run.runState } }
   } catch (err) {
-    const left = step === 'write session handoff' ? '' : `; ${handoffPath} written but not linked from run.md`
+    const left = step === 'write session handoff' ? '' : `; ${handoffPath} written but not linked from ${run.runState}`
     await log($, `session handoff failed run=${run.id} step="${step}" ${String(err)}${left}; seeding the brief instead`)
     return undefined
   }
@@ -513,7 +537,7 @@ function queueClear($: EngineInterface, briefPath: string) {
 // The open records of the run, each checked on disk (run.ts, openRecords). The session handoff is
 // the file being written, so it counts as there.
 async function recordsOf($: EngineInterface, run: RunTarget) {
-  const state = await readRaw($, inRepo(run.root, run.runMd))
+  const state = await readRaw($, inRepo(run.root, run.runState))
   if (state === undefined) return undefined
   return Promise.all(openRecords(state, run, run.sessionHandoff).map(async r => ({
     ...r,
@@ -974,7 +998,7 @@ export const register: Register = (on) => {
       lineage = { from: p.oldSession, chain: p.chain, depth: prior !== undefined ? prior + 1 : undefined, baseName: p.baseName }
       await $.store.set(`lineage:${newSession}`, lineage)
       // The run the chain hands off: the new session may carry it on before the resumed
-      // orchestrator writes its own id into run.md (run.ts, pickRun).
+      // orchestrator writes its own id into the run state (run.ts, pickRun).
       if (p.run) await $.store.set(`chainRun:${newSession}`, p.run.id)
       // The new session's name, set through the SessionStart answer: no session.start fires after /clear.
       if (cfg.renameSessions && lineage.depth !== undefined) {
@@ -998,7 +1022,7 @@ export const register: Register = (on) => {
       // and the session handoff's list of the open records.
       const copy = p.link ? ` (readable copy: ${p.link})` : ''
       const read = p.run
-        ? `Read the session handoff at ${p.seedPath} before doing anything else${copy} and follow its Instructions section. It continues AI-DLC run ${p.run.id}: resume the run from its run state ${p.run.runMd}, whose Next action points to the session handoff, and read the open records its Handoff records section lists.`
+        ? `Read the session handoff at ${p.seedPath} before doing anything else${copy} and follow its Instructions section. It continues AI-DLC run ${p.run.id}: resume the run from its run state ${p.run.runState}, whose Next action points to the session handoff, and read the open records its Handoff records section lists.`
         : `Read the brief at ${p.briefPath} before doing anything else${copy} and follow its Instructions section.`
       const text = `${SEED_PREFIX} ${short(p.oldSession)}. The previous session hit its context limit and was cleared. ${read} Open your first reply with the line "↪ Handoff from session ${short(p.oldSession)}".`
       $.prompt.submit({ text }).catch((err: unknown) => {

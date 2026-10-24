@@ -29,7 +29,8 @@ type Opts = {
   files?: Record<string, string>
   rateLimits?: { percentUsed: number }[]
   trusted?: boolean
-  cwd?: string
+  // The session's working directory; a function when a test moves it between turns
+  cwd?: string | (() => string)
   env?: Record<string, string>
   // The transcript is over $.fs.read's cap: reading it whole fails, so the module turns to `tail`
   tooBig?: boolean
@@ -37,26 +38,43 @@ type Opts = {
   tail?: string[] | number | 'missing'
   // A store key whose read fails, as an unreadable store would
   failStoreGet?: string
+  // The store itself, shared with the test: what another session writes to it lands here
+  storeMap?: Map<string, unknown>
+  // Paths that stat as a file but whose read fails, as a file locked while an editor saves it (28.1.l3);
+  // shared with the test, which adds and removes paths between turns
+  failRead?: Set<string>
+  // How many of the first state writes fail (28.1.l3)
+  failStateSets?: number
 }
 
 // Stands in for the engine: a 1M-token context, cache hits on every fork unless cacheRead says
 // otherwise, the transcript at TRANSCRIPT, and the repository at ROOT with `files` in it. The clock
 // moves only on `fire(minutes)`, and every timer due by then fires at that time, as after a sleep.
 function engine(on: On, o: Opts = {}) {
-  const seen = { statuses: [] as (string | undefined)[], forks: 0, logs: [] as string[], prompts: [] as string[], compacts: 0, runs: [] as string[][] }
+  const seen = { statuses: [] as (string | undefined)[], forks: 0, logs: [] as string[], prompts: [] as string[], compacts: 0, runs: [] as string[][], states: [] as Published[], reads: 0, storeGets: 0, readPaths: [] as string[], stats: [] as string[] }
   let now = START
   let timers: { due: number; resolve: () => void }[] = []
   const cacheRead = o.cacheRead ?? 1_000_000
   const split = o.split === undefined ? [1_000, 0] : o.split
-  const files: Record<string, string> = {
+  const disk: Record<string, string> = {
     ...(split ? { [TRANSCRIPT]: [row(0, 0), row(split[0], split[1]), row(0, 0)].join('\n') } : {}),
     ...(o.trusted ? { '/home/test/.claude.json': JSON.stringify({ projects: { [ROOT]: { hasTrustDialogAccepted: true } } }) } : {}),
     ...(o.files ?? {}),
   }
+  // Each file's modified time, as $.fs.stat answers it: START at first, then a later tick at each
+  // write or delete a test makes through `files`, as a real file system would. A test sets one here
+  // to fake an edit that keeps the modified time.
+  const mtimes: Record<string, number> = {}
+  let tick = START
+  const files = new Proxy(disk, {
+    set(t, p, v) { t[p as string] = v; mtimes[p as string] = ++tick; return true },
+    deleteProperty(t, p) { delete t[p as string]; mtimes[p as string] = ++tick; return true },
+  })
   mock.env(on, { HOME: '/home/test', ...(o.env ?? {}) })
-  if (o.failStoreGet) {
-    const mem = new Map(Object.entries(o.store ?? {}))
+  if (o.failStoreGet || o.storeMap) {
+    const mem = o.storeMap ?? new Map(Object.entries(o.store ?? {}))
     on('store.get', (_, e) => {
+      seen.storeGets++
       // A hook that throws is skipped; { deny } rejects the caller's promise, as a failed read would
       if (e.key === o.failStoreGet) return { deny: `store unreadable: ${e.key}` } as never
       return { value: mem.get(e.key) } as never
@@ -80,16 +98,39 @@ function engine(on: On, o: Opts = {}) {
   on('session.end', (_, e) => ({ sessionId: e.sessionId }) as never)
   on('session.usage', () => ({ value: { context: { tokens: 1_000_000, window: 1_000_000, percent: 100 }, rateLimits: o.rateLimits ?? [] } }) as never)
   on('session.model', () => ({ value: 'claude-opus-5-5' }) as never)
-  on('session.cwd', () => ({ value: o.cwd ?? ROOT }) as never)
+  on('session.cwd', () => ({ value: typeof o.cwd === 'function' ? o.cwd() : o.cwd ?? ROOT }) as never)
   on('model.fork', (_, e) => (seen.forks++, seen.prompts.push(e.prompt), { value: { isAnswered: true, text: 'ok', usage: { input_tokens: 10, output_tokens: o.forkOutput ?? 1, cache_read_input_tokens: cacheRead, cache_creation_input_tokens: cacheRead === 1_000_000 ? 0 : 1_000_000 } } }) as never)
   on('ui.status', (_, e) => (seen.statuses.push(e.text), { value: undefined }) as never)
+  // The state keep-alive publishes for other plugins (ai-dlc-lens): each write, in order.
+  let stateSetFailures = o.failStateSets ?? 0
+  on('state.set', (_, e) => {
+    if (stateSetFailures > 0) { stateSetFailures--; return { deny: 'state store unavailable' } as never }
+    const w = e as unknown as { plugin: string; key: string; value: Published }
+    if (w.plugin === 'ai-dlc' && w.key === 'keepalive') seen.states.push(w.value)
+    return { value: { isSet: true, version: seen.states.length } } as never
+  })
+  // What a reader such as ai-dlc-lens gets from $.state.get: the last value written.
+  on('state.get', (_, e) => {
+    const r = e as unknown as { plugin: string; key: string }
+    return { value: r.plugin === 'ai-dlc' && r.key === 'keepalive' ? { value: seen.states.at(-1), version: seen.states.length } : { value: undefined, version: 0 } } as never
+  })
   on('ui.log', (_, e) => (seen.logs.push(e.text), { value: undefined }) as never)
   on('session.id', () => ({ value: typeof o.session === 'function' ? o.session() : o.session ?? 's-1' }) as never)
   on('fs.read', (_, e) => {
+    seen.reads++
     const path = e.path.replace(/^[A-Za-z]:/, '').replace(/\\/g, '/')
     if (o.tooBig && path === TRANSCRIPT) throw new Error(`EFBIG ${e.path} is over the 4 MiB read cap`)
+    seen.readPaths.push(path)
+    if (o.failRead?.has(path)) throw new Error(`EBUSY ${e.path} is locked`)
     if (files[path] === undefined) throw new Error(`ENOENT ${e.path}`)
     return { value: files[path] } as never
+  })
+  // Size and modified time of a file in `files`; a missing one rejects, as ENOENT does
+  on('fs.stat', (_, e) => {
+    const path = e.path.replace(/^[A-Za-z]:/, '').replace(/\\/g, '/')
+    seen.stats.push(path)
+    if (files[path] === undefined) throw new Error(`ENOENT ${e.path}`)
+    return { value: { kind: 'file', size: files[path].length, mtimeMs: mtimes[path] ?? START, isLink: false } } as never
   })
   on('fs.write', () => ({ value: undefined }) as never)
   on('process.run', (_, e) => {
@@ -107,8 +148,19 @@ function engine(on: On, o: Opts = {}) {
   on('command.run', (_, e) => ({ text: `unanswered: ${e.command}` }) as never)
   const status = () => seen.statuses.at(-1)
   const line = (track: '1h' | '5m') => status()?.split('\n').find(l => l.startsWith(`keepalive ${track}:`))
-  return { seen, clock, status, line }
+  // `files` is the engine's file system: a test changes a file between turns by writing to it
+  return { seen, clock, status, line, files, mtimes }
 }
+
+// What keep-alive publishes under $.state { plugin: 'ai-dlc', key: 'keepalive' } (../../../types/index.d.ts).
+type Published = {
+  enabled: boolean
+  updatedAt: number
+  sessionId: string
+  tracks: { name: string; running: boolean; armedAt: number; warmUntil: number; nextPingAt: number | null; pingEvery: number; keepWarmMs: number; pings: number; cap: number; line: string }[]
+}
+// The writes go out one after another after the hook returns: let them land before reading.
+const settle = async () => { for (let i = 0; i < 2000; i++) await Promise.resolve() }
 
 const stop = (tasks = [task]) => ({ background_tasks: tasks, transcript_path: TRANSCRIPT }) as never
 
@@ -727,6 +779,468 @@ describe('keep-alive', () => {
   })
 })
 
+describe('the published state (read by ai-dlc-lens)', () => {
+  const last = (seen: { states: Published[] }) => seen.states.at(-1)
+  const track = (s: Published | undefined, n: '1h' | '5m') => s?.tracks.find(t => t.name === n)
+
+  test('arming publishes the running track with its next ping, keep-warm time and ping limit', async ($, on) => {
+    const { seen } = engine(on)
+    await $.classic.Stop(stop())
+    await settle()
+    const s = last(seen)
+    expect(s?.enabled).toBe(true)
+    expect(s?.sessionId).toBe('s-1')
+    expect(s?.updatedAt).toBe(START)
+    expect(s?.tracks.map(t => t.name)).toEqual(['1h', '5m'])
+    expect(track(s, '1h')).toEqual({ name: '1h', running: true, armedAt: START, warmUntil: START + 60 * MIN, nextPingAt: START + 50 * MIN, pingEvery: 50 * MIN, keepWarmMs: 8 * 60 * MIN, pings: 0, cap: 9, line: expect.stringMatching(/^keepalive 1h: armed, 1 task\(s\), /) })
+    expect(track(s, '5m')).toMatchObject({ running: false, nextPingAt: null, pings: 0, line: 'keepalive 5m: off' })
+  })
+
+  test('each ping publishes the count, the new "warm until" and the next ping', async ($, on) => {
+    const { seen, clock } = engine(on, { split: [0, 4_000] })
+    await $.classic.Stop(stop())
+    await clock.fire(3)
+    await settle()
+    expect(track(last(seen), '5m')).toMatchObject({ running: true, pings: 1, cap: 20, pingEvery: 3 * MIN, keepWarmMs: 60 * MIN, warmUntil: START + 8 * MIN, nextPingAt: START + 6 * MIN, line: expect.stringContaining('ping 1/20') })
+    expect(last(seen)?.updatedAt).toBe(START + 3 * MIN)
+  })
+
+  test('a stopped track is published as not running, with no next ping', async ($, on) => {
+    const { seen, clock, line } = engine(on)
+    await $.classic.Stop(stop())
+    await runChain(clock, seen, () => line('1h'), 50)
+    await settle()
+    expect(track(last(seen), '1h')).toMatchObject({ running: false, nextPingAt: null, pings: 9, line: expect.stringMatching(/^keepalive 1h: kept warm 8h, stopped/) })
+  })
+
+  test('a new turn and the session ending publish every track off', async ($, on) => {
+    const { seen } = engine(on, { split: [5, 5] })
+    await $.classic.Stop(stop())
+    await settle()
+    expect(last(seen)?.tracks.every(t => t.running)).toBe(true)
+    await $.turn.start({ turnId: 't-2' } as never)
+    await settle()
+    expect(last(seen)?.tracks.map(t => [t.running, t.nextPingAt, t.line])).toEqual([[false, null, 'keepalive 1h: off'], [false, null, 'keepalive 5m: off']])
+    await $.classic.Stop(stop())
+    await settle()
+    expect(last(seen)?.tracks.every(t => t.running)).toBe(true)
+    await $.session.end({ reason: 'clear', sessionId: 's-1' } as never)
+    await settle()
+    expect(last(seen)?.tracks.some(t => t.running)).toBe(false)
+  })
+
+  test('with the status line off the state is still published', async ($, on) => {
+    const { seen, status } = engine(on, { files: { [`${ROOT}/.claude/settings.local.json`]: JSON.stringify({ env: { AI_DLC_KEEPALIVE_STATUS: 'off' } }) } })
+    await $.classic.Stop(stop())
+    await settle()
+    expect(status()).toBeUndefined()
+    expect(track(last(seen), '1h')?.running).toBe(true)
+  })
+
+  test('keep-alive turned off publishes enabled false and nothing running', async ($, on) => {
+    const { seen } = engine(on, { files: { [`${ROOT}/.claude/settings.local.json`]: JSON.stringify({ env: { AI_DLC_KEEPALIVE_ENABLED: 'false' } }) } })
+    await $.classic.Stop(stop())
+    await settle()
+    expect(last(seen)?.enabled).toBe(false)
+    expect(last(seen)?.tracks.some(t => t.running)).toBe(false)
+  })
+
+  test('a Stop with no background task and nothing armed publishes nothing', async ($, on) => {
+    const { seen } = engine(on)
+    await $.classic.Stop(stop([]))
+    await settle()
+    expect(seen.states).toHaveLength(0)
+  })
+})
+
+// keepWarmMs is the keep-warm time in force at every moment (code review 21.1, work item 28): the time
+// the running track uses, else the one its next arming would take.
+describe('the published keep-warm time', () => {
+  const last = (seen: { states: Published[] }) => seen.states.at(-1)
+  const keepOf = (seen: { states: Published[] }, n: '1h' | '5m') => last(seen)?.tracks.find(t => t.name === n)
+  const H = 60 * MIN
+
+  test('re-arming keeps the override: after each ping and after a second Stop, not the default (19.l1)', async ($, on) => {
+    const { seen, clock } = engine(on)
+    await keepalive($, '1d --track 1h')
+    await $.classic.Stop(stop())
+    await settle()
+    expect(keepOf(seen, '1h')).toMatchObject({ running: true, keepWarmMs: 24 * H, cap: 28 })
+    await clock.fire(50)
+    await settle()
+    expect(keepOf(seen, '1h')).toMatchObject({ running: true, pings: 1, keepWarmMs: 24 * H, cap: 28 })
+    await $.classic.Stop(stop())
+    await settle()
+    expect(keepOf(seen, '1h')).toMatchObject({ running: true, pings: 0, keepWarmMs: 24 * H, cap: 28 })
+  })
+
+  test('a track that stopped while the override stands still publishes the override: it is the time in force', async ($, on) => {
+    const { seen, clock, line } = engine(on)
+    await keepalive($, '2h --track 1h')
+    await $.classic.Stop(stop())
+    expect(await runChain(clock, seen, () => line('1h'), 50)).toBe(2)
+    await settle()
+    expect(keepOf(seen, '1h')).toMatchObject({ running: false, keepWarmMs: 2 * H, line: expect.stringMatching(/^keepalive 1h: kept warm 2h, stopped/) })
+  })
+
+  test('clearing the override of a stopped track publishes the setting at once', async ($, on) => {
+    const { seen } = engine(on)
+    await keepalive($, '1d --track 1h')
+    await $.classic.Stop(stop())
+    await $.classic.Stop(stop([]))
+    await settle()
+    expect(keepOf(seen, '1h')).toMatchObject({ running: false, keepWarmMs: 24 * H, cap: 28, line: 'keepalive 1h: work done, stopped' })
+    await keepalive($, 'clear')
+    await settle()
+    expect(keepOf(seen, '1h')).toMatchObject({ running: false, keepWarmMs: 8 * H, cap: 9 })
+    expect(keepOf(seen, '5m')).toMatchObject({ keepWarmMs: H, cap: 20 })
+  })
+
+  test('a session override survives a new turn, on a track never armed too; the next Stop arms with it', async ($, on) => {
+    const { seen, line } = engine(on)
+    await keepalive($, '1d')
+    await $.classic.Stop(stop())
+    await $.turn.start({ turnId: 't-2' } as never)
+    await settle()
+    expect(keepOf(seen, '1h')).toMatchObject({ running: false, keepWarmMs: 24 * H, cap: 28, line: 'keepalive 1h: off' })
+    // The 5m track never ran this session (split [1000, 0]): its time in force is the override as well
+    expect(keepOf(seen, '5m')).toMatchObject({ running: false, keepWarmMs: 24 * H, cap: 480 })
+    await $.classic.Stop(stop())
+    expect(line('1h')).toContain('keep warm 1d')
+  })
+
+  test('a new turn picks up an override no arming has read yet', async ($, on) => {
+    const { seen } = engine(on, { store: { 'keepalive:keepWarmFor:machine:1h': 3 * H } })
+    await $.turn.start({ turnId: 't-1' } as never)
+    await settle()
+    expect(keepOf(seen, '1h')).toMatchObject({ keepWarmMs: 3 * H })
+    expect(keepOf(seen, '5m')).toMatchObject({ keepWarmMs: H })
+  })
+
+  test('the session ending drops its own override and keeps the machine one', async ($, on) => {
+    const { seen } = engine(on, { split: [5, 5], store: { 'keepalive:keepWarmFor:sessions:1h': [['s-1', 24 * H]], 'keepalive:keepWarmFor:machine:5m': 20 * MIN } })
+    await $.classic.Stop(stop())
+    await settle()
+    expect([keepOf(seen, '1h')?.keepWarmMs, keepOf(seen, '5m')?.keepWarmMs]).toEqual([24 * H, 20 * MIN])
+    await $.session.end({ reason: 'clear', sessionId: 's-1' } as never)
+    await settle()
+    expect(keepOf(seen, '1h')).toMatchObject({ running: false, keepWarmMs: 8 * H, cap: 9 })
+    expect(keepOf(seen, '5m')).toMatchObject({ running: false, keepWarmMs: 20 * MIN })
+  })
+
+  test('an override set while a track runs is published at its next ping, when it takes effect', async ($, on) => {
+    const { seen, clock } = engine(on)
+    await $.classic.Stop(stop())
+    await keepalive($, '2h --track 1h')
+    await settle()
+    expect(keepOf(seen, '1h')).toMatchObject({ running: true, keepWarmMs: 8 * H })
+    await clock.fire(50)
+    await settle()
+    expect(keepOf(seen, '1h')).toMatchObject({ running: true, pings: 1, keepWarmMs: 2 * H })
+  })
+
+  // Reads as ai-dlc-lens does: another plugin's $.state.get. Self-contained: an inline plugin's
+  // register is loaded on its own.
+  const reader = {
+    name: 'keepalive-reader',
+    register(on: Parameters<import('claude-code').Register>[0]) {
+      on('command.run', { command: 'read-keepalive' }, async ($: any) => {
+        const { value } = await $.state.get({ plugin: 'ai-dlc', key: 'keepalive' })
+        return { text: String(value?.tracks?.find((t: { name: string }) => t.name === '1h')?.keepWarmMs) }
+      })
+    },
+  }
+
+  test('a reader of the state (ai-dlc-lens) sees the time in force through $.state.get', { plugins: [reader] }, async ($, on) => {
+    engine(on)
+    const read = async () => Number((await $.command.run({ command: 'read-keepalive', args: '' } as never)).text)
+    await keepalive($, '1d')
+    await $.classic.Stop(stop())
+    await settle()
+    expect(await read()).toBe(24 * H)
+    await keepalive($, 'clear')
+    await $.turn.start({ turnId: 't-2' } as never)
+    await settle()
+    expect(await read()).toBe(8 * H)
+  })
+
+  test('a store that cannot be read at a new turn publishes the setting and says so in the debug log', async ($, on) => {
+    const { seen } = engine(on, { failStoreGet: 'keepalive:keepWarmFor:machine:1h' })
+    await $.turn.start({ turnId: 't-1' } as never)
+    await settle()
+    expect(keepOf(seen, '1h')).toMatchObject({ keepWarmMs: 8 * H, cap: 9 })
+    expect(seen.logs.some(l => l.startsWith('keepalive 1h: keep-warm time not re-read'))).toBe(true)
+  })
+})
+
+// The settings and the /ai-dlc:cache-keepalive overrides are read again at every new turn, and only
+// then (human decision, work item 28, step 28.1.l1).
+describe('settings re-read at each new turn', () => {
+  const H = 60 * MIN
+  const keepOf = (seen: { states: Published[] }, n: '1h' | '5m') => seen.states.at(-1)?.tracks.find(t => t.name === n)
+  const LOCAL = `${ROOT}/.claude/settings.local.json`
+  const REPO = `${ROOT}/.ai-dlc/cache-keepalive.json`
+  const local1h = (v: string) => JSON.stringify({ env: { AI_DLC_KEEPALIVE_1H_KEEP_WARM_FOR: v } })
+
+  test('a fresh session publishes its file settings at its first turn, before any Stop or command', async ($, on) => {
+    const { seen, files } = engine(on, { trusted: true, files: { [LOCAL]: local1h('3h'), [REPO]: JSON.stringify({ fiveMinute: { keepWarmFor: '30m' } }) } })
+    await $.turn.start({ turnId: 't-1' } as never)
+    await settle()
+    expect(keepOf(seen, '1h')).toMatchObject({ running: false, keepWarmMs: 3 * H, cap: 9 })
+    expect(keepOf(seen, '5m')).toMatchObject({ running: false, keepWarmMs: 30 * MIN, cap: 20 })
+    // A settings file changed between turns is read at the next one
+    files[LOCAL] = local1h('5h')
+    await $.turn.start({ turnId: 't-2' } as never)
+    await settle()
+    expect(keepOf(seen, '1h')).toMatchObject({ keepWarmMs: 5 * H })
+  })
+
+  test('keep-alive turned off in a settings file is published at the first turn', async ($, on) => {
+    const { seen } = engine(on, { files: { [LOCAL]: JSON.stringify({ env: { AI_DLC_KEEPALIVE_ENABLED: 'false' } }) } })
+    await $.turn.start({ turnId: 't-1' } as never)
+    await settle()
+    expect(seen.states.at(-1)).toMatchObject({ enabled: false })
+  })
+
+  test('a machine override another session writes is published at this session\'s next turn, not before', async ($, on) => {
+    const store = new Map<string, unknown>()
+    const { seen, clock } = engine(on, { storeMap: store })
+    await $.turn.start({ turnId: 't-1' } as never)
+    await settle()
+    expect(keepOf(seen, '1h')).toMatchObject({ keepWarmMs: 8 * H })
+    // Another session runs /ai-dlc:cache-keepalive 3h --machine: only the shared store changes here
+    store.set('keepalive:keepWarmFor:machine:1h', 3 * H)
+    const published = seen.states.length
+    await clock.fire(60)
+    await settle()
+    expect(seen.states).toHaveLength(published)
+    await $.turn.start({ turnId: 't-2' } as never)
+    await settle()
+    expect(keepOf(seen, '1h')).toMatchObject({ keepWarmMs: 3 * H, cap: 9 })
+    store.delete('keepalive:keepWarmFor:machine:1h')
+    await $.turn.start({ turnId: 't-3' } as never)
+    await settle()
+    expect(keepOf(seen, '1h')).toMatchObject({ keepWarmMs: 8 * H })
+  })
+
+  test('a broken settings file at a new turn keeps the settings last read, logs to the debug log and warns nothing', async ($, on) => {
+    const { seen, files, line } = engine(on, { files: { [LOCAL]: local1h('3h') } })
+    await $.turn.start({ turnId: 't-1' } as never)
+    await settle()
+    expect(keepOf(seen, '1h')).toMatchObject({ keepWarmMs: 3 * H })
+    files[LOCAL] = '{ "env": { "AI_DLC_KEEPALIVE_1H_KEEP_WARM_FOR": '
+    await $.turn.start({ turnId: 't-2' } as never)
+    await settle()
+    expect(keepOf(seen, '1h')).toMatchObject({ keepWarmMs: 3 * H })
+    expect(seen.logs).toContain('keepalive: settings not re-read at the new turn: .claude/settings.local.json is not valid JSON (comments allowed); its env is skipped; keeping the settings last read')
+    expect(seen.logs).not.toContain('keepalive: .claude/settings.local.json is not valid JSON (comments allowed); its env is skipped')
+    // The next Stop reads as before: the broken file is skipped with a warning and the next level applies
+    await $.classic.Stop(stop())
+    expect(seen.logs).toContain('keepalive: .claude/settings.local.json is not valid JSON (comments allowed); its env is skipped')
+    expect(line('1h')).toContain('keep warm 8h')
+  })
+
+  test('a broken settings file at the first turn keeps the defaults', async ($, on) => {
+    const { seen } = engine(on, { files: { [LOCAL]: 'not json' } })
+    await $.turn.start({ turnId: 't-1' } as never)
+    await settle()
+    expect(keepOf(seen, '1h')).toMatchObject({ keepWarmMs: 8 * H, cap: 9 })
+    expect(seen.logs.some(l => l.startsWith('keepalive: settings not re-read at the new turn: .claude/settings.local.json'))).toBe(true)
+  })
+
+  test('nothing is read or published while the session is idle', async ($, on) => {
+    const { seen, clock } = engine(on, { storeMap: new Map(), files: { [LOCAL]: local1h('3h') } })
+    await $.turn.start({ turnId: 't-1' } as never)
+    await settle()
+    const before = { states: seen.states.length, reads: seen.reads, runs: seen.runs.length, gets: seen.storeGets }
+    expect(before.reads).toBeGreaterThan(0)
+    await clock.fire(600)
+    await settle()
+    expect({ states: seen.states.length, reads: seen.reads, runs: seen.runs.length, gets: seen.storeGets }).toEqual(before)
+  })
+})
+
+// The read at a new turn reads a settings file again only when its size or modified time changed,
+// and runs git only when the working directory changed; a Stop and the command still read in full
+// (human decision, work item 28, step 28.1.l2).
+describe('the turn read reads only what changed', () => {
+  const H = 60 * MIN
+  const keepOf = (seen: { states: Published[] }, n: '1h' | '5m') => seen.states.at(-1)?.tracks.find(t => t.name === n)
+  const LOCAL = `${ROOT}/.claude/settings.local.json`
+  const REPO = `${ROOT}/.ai-dlc/cache-keepalive.json`
+  const CLAUDE_JSON = '/home/test/.claude.json'
+  const local1h = (v: string) => JSON.stringify({ env: { AI_DLC_KEEPALIVE_1H_KEEP_WARM_FOR: v } })
+  const readsOf = (seen: { readPaths: string[] }, path: string) => seen.readPaths.filter(p => p === path).length
+  const gitRuns = (seen: { runs: string[][] }) => seen.runs.filter(r => r[0] === 'git').length
+  const turn = async ($: Parameters<TestBody>[0], id: string) => { await $.turn.start({ turnId: id } as never); await settle() }
+
+  test('an unchanged settings file is not read again at the next turns, and git runs once', async ($, on) => {
+    const { seen } = engine(on, { files: { [LOCAL]: local1h('3h') } })
+    await turn($, 't-1')
+    expect(readsOf(seen, LOCAL)).toBe(1)
+    const git = gitRuns(seen)
+    expect(git).toBe(1)
+    await turn($, 't-2')
+    await turn($, 't-3')
+    expect(readsOf(seen, LOCAL)).toBe(1)
+    expect(gitRuns(seen)).toBe(git)
+    // Each turn still checks the file: one stat per settings file per turn
+    expect(seen.stats.filter(p => p === LOCAL)).toHaveLength(3)
+    expect(keepOf(seen, '1h')).toMatchObject({ keepWarmMs: 3 * H })
+  })
+
+  test('a file whose size changed is read again at the next turn', async ($, on) => {
+    const { seen, files } = engine(on, { files: { [LOCAL]: local1h('3h') } })
+    await turn($, 't-1')
+    files[LOCAL] = local1h('10h')
+    await turn($, 't-2')
+    expect(readsOf(seen, LOCAL)).toBe(2)
+    expect(keepOf(seen, '1h')).toMatchObject({ keepWarmMs: 10 * H })
+  })
+
+  test('a file whose modified time changed, its size the same, is read again at the next turn', async ($, on) => {
+    const { seen, files } = engine(on, { files: { [LOCAL]: local1h('3h') } })
+    await turn($, 't-1')
+    files[LOCAL] = local1h('5h')
+    expect(files[LOCAL].length).toBe(local1h('3h').length)
+    await turn($, 't-2')
+    expect(readsOf(seen, LOCAL)).toBe(2)
+    expect(keepOf(seen, '1h')).toMatchObject({ keepWarmMs: 5 * H })
+  })
+
+  test('an edit that keeps both the size and the modified time goes unseen until the next Stop', async ($, on) => {
+    const { seen, files, mtimes, line } = engine(on, { files: { [LOCAL]: local1h('3h') } })
+    await turn($, 't-1')
+    const before = mtimes[LOCAL]
+    files[LOCAL] = local1h('5h')
+    if (before === undefined) delete mtimes[LOCAL]
+    else mtimes[LOCAL] = before
+    await turn($, 't-2')
+    expect(readsOf(seen, LOCAL)).toBe(1)
+    expect(keepOf(seen, '1h')).toMatchObject({ keepWarmMs: 3 * H })
+    await $.classic.Stop(stop())
+    expect(line('1h')).toContain('keep warm 5h')
+  })
+
+  test('a file created or deleted between turns is seen at the next turn', async ($, on) => {
+    const { seen, files } = engine(on)
+    await turn($, 't-1')
+    expect(keepOf(seen, '1h')).toMatchObject({ keepWarmMs: 8 * H })
+    // A missing file that stays missing is not read again
+    await turn($, 't-2')
+    expect(readsOf(seen, LOCAL)).toBe(1)
+    files[LOCAL] = local1h('3h')
+    await turn($, 't-3')
+    expect(keepOf(seen, '1h')).toMatchObject({ keepWarmMs: 3 * H })
+    delete files[LOCAL]
+    await turn($, 't-4')
+    expect(keepOf(seen, '1h')).toMatchObject({ keepWarmMs: 8 * H })
+  })
+
+  test('an unchanged broken file is not read again, and still keeps the settings last read and logs at each turn', async ($, on) => {
+    const { seen, files } = engine(on, { files: { [LOCAL]: local1h('3h') } })
+    await turn($, 't-1')
+    files[LOCAL] = '{ "env": '
+    const logged = () => seen.logs.filter(l => l.startsWith('keepalive: settings not re-read at the new turn: .claude/settings.local.json is not valid JSON')).length
+    await turn($, 't-2')
+    await turn($, 't-3')
+    expect(readsOf(seen, LOCAL)).toBe(2)
+    expect(logged()).toBe(2)
+    expect(keepOf(seen, '1h')).toMatchObject({ keepWarmMs: 3 * H })
+    expect(seen.logs).not.toContain('keepalive: .claude/settings.local.json is not valid JSON (comments allowed); its env is skipped')
+  })
+
+  test('a Stop and the command still read every file and run git, and the turn after a full read runs git again', async ($, on) => {
+    const { seen, line } = engine(on, { files: { [LOCAL]: local1h('3h') } })
+    await turn($, 't-1')
+    await turn($, 't-2')
+    expect(readsOf(seen, LOCAL)).toBe(1)
+    const git = gitRuns(seen)
+    await $.classic.Stop(stop())
+    expect(readsOf(seen, LOCAL)).toBe(2)
+    expect(gitRuns(seen)).toBeGreaterThan(git)
+    expect(line('1h')).toContain('keep warm 3h')
+    await keepalive($)
+    expect(readsOf(seen, LOCAL)).toBe(3)
+    const afterFull = gitRuns(seen)
+    await turn($, 't-3')
+    // git again, once, since the full read dropped its answer; the unchanged file is not read again
+    expect(gitRuns(seen)).toBe(afterFull + 1)
+    expect(readsOf(seen, LOCAL)).toBe(3)
+    await turn($, 't-4')
+    expect(gitRuns(seen)).toBe(afterFull + 1)
+  })
+
+  test('a working directory that changed runs git again at the next turn', async ($, on) => {
+    let cwd = ROOT
+    const { seen } = engine(on, { cwd: () => cwd })
+    await turn($, 't-1')
+    await turn($, 't-2')
+    const git = gitRuns(seen)
+    cwd = `${ROOT}/src`
+    await turn($, 't-3')
+    expect(gitRuns(seen)).toBe(git + 1)
+  })
+
+  test('the trust answer is reused while ~/.claude.json is unchanged, and a trust withdrawn there counts at the next turn', async ($, on) => {
+    const { seen, files } = engine(on, { trusted: true, files: { [REPO]: JSON.stringify({ fiveMinute: { keepWarmFor: '30m' } }) } })
+    await turn($, 't-1')
+    expect(keepOf(seen, '5m')).toMatchObject({ keepWarmMs: 30 * MIN })
+    expect(readsOf(seen, CLAUDE_JSON)).toBe(1)
+    const git = gitRuns(seen)
+    await turn($, 't-2')
+    expect(readsOf(seen, CLAUDE_JSON)).toBe(1)
+    expect(gitRuns(seen)).toBe(git)
+    expect(keepOf(seen, '5m')).toMatchObject({ keepWarmMs: 30 * MIN })
+    files[CLAUDE_JSON] = JSON.stringify({ projects: { [ROOT]: { hasTrustDialogAccepted: false } } })
+    await turn($, 't-3')
+    expect(readsOf(seen, CLAUDE_JSON)).toBe(2)
+    expect(keepOf(seen, '5m')).toMatchObject({ keepWarmMs: 1 * H })
+  })
+
+  test('a new session reads every file and asks git again at its first turn', async ($, on) => {
+    const { seen } = engine(on, { files: { [LOCAL]: local1h('3h') } })
+    await turn($, 't-1')
+    const git = gitRuns(seen)
+    await $.session.end({ reason: 'clear', sessionId: 's-1' } as never)
+    await turn($, 't-2')
+    expect(readsOf(seen, LOCAL)).toBe(2)
+    expect(gitRuns(seen)).toBe(git + 1)
+  })
+
+  // [28.3] README: the published pingEvery follows the settings files from the first turn, and
+  // Claude Code's trust record is read only when a trust-gated setting differs from its default.
+  test('[28.3] the published pingEvery follows a settings file at the first turn and when it changes', async ($, on) => {
+    const { seen, files } = engine(on, { files: { [LOCAL]: JSON.stringify({ env: { AI_DLC_KEEPALIVE_1H_PING_EVERY: '40m' } }) } })
+    await turn($, 't-1')
+    expect(keepOf(seen, '1h')).toMatchObject({ pingEvery: 40 * MIN })
+    files[LOCAL] = JSON.stringify({ env: { AI_DLC_KEEPALIVE_1H_PING_EVERY: '30m' } })
+    await turn($, 't-2')
+    expect(keepOf(seen, '1h')).toMatchObject({ pingEvery: 30 * MIN })
+  })
+
+  test('[28.3] ~/.claude.json is not read at a turn while no trust-gated setting differs from its default', async ($, on) => {
+    const { seen } = engine(on, { trusted: true, files: { [LOCAL]: local1h('3h') } })
+    await turn($, 't-1')
+    await turn($, 't-2')
+    expect(keepOf(seen, '1h')).toMatchObject({ keepWarmMs: 3 * H })
+    expect(readsOf(seen, CLAUDE_JSON)).toBe(0)
+  })
+
+  test('[28.3] a broken repository file at a turn keeps the last good values, and fixing it is read at the next turn', async ($, on) => {
+    const { seen, files } = engine(on, { trusted: true, files: { [REPO]: JSON.stringify({ fiveMinute: { keepWarmFor: '30m' } }) } })
+    await turn($, 't-1')
+    expect(keepOf(seen, '5m')).toMatchObject({ keepWarmMs: 30 * MIN })
+    files[REPO] = '{ "fiveMinute": '
+    await turn($, 't-2')
+    expect(keepOf(seen, '5m')).toMatchObject({ keepWarmMs: 30 * MIN })
+    expect(seen.logs.some(l => l.startsWith('keepalive: settings not re-read at the new turn: .ai-dlc/cache-keepalive.json'))).toBe(true)
+    files[REPO] = JSON.stringify({ fiveMinute: { keepWarmFor: '45m' } })
+    await turn($, 't-3')
+    expect(keepOf(seen, '5m')).toMatchObject({ keepWarmMs: 45 * MIN })
+  })
+})
+
 describe('/ai-dlc:cache-keepalive', () => {
   test('the command is ai-dlc:cache-keepalive; neither a bare keepalive nor the former ai-dlc:keepalive is answered', async ($, on) => {
     engine(on)
@@ -1070,4 +1584,169 @@ describe('trust gate, every gated key', () => {
       expect(await g.probe(ctx($, on, e))).toBe(g.ta)
     })
   }
+})
+
+// Code review round 1 of work item 28 (28.4, 28.5), fixed in 28.1.l3.
+describe('[28.1.l3] review fixes', () => {
+  const H = 60 * MIN
+  const LOCAL = `${ROOT}/.claude/settings.local.json`
+  const SETTINGS_JSON = `${ROOT}/.claude/settings.json`
+  const REPO = `${ROOT}/.ai-dlc/cache-keepalive.json`
+  const CLAUDE_JSON = '/home/test/.claude.json'
+  const keepOf = (seen: { states: Published[] }, n: '1h' | '5m') => seen.states.at(-1)?.tracks.find(t => t.name === n)
+  const readsOf = (seen: { readPaths: string[] }, path: string) => seen.readPaths.filter(p => p === path).length
+  const turn = async ($: Parameters<TestBody>[0], id: string) => { await $.turn.start({ turnId: id } as never); await settle() }
+  const env = (vars: Record<string, string>) => JSON.stringify({ env: vars })
+
+  // Warning: a file that stats but cannot be read is not absent (28.4 W1, 28.5 W2)
+  test('a settings file that stats but cannot be read at a turn keeps the last good values, is not cached, and is read again', async ($, on) => {
+    const failRead = new Set<string>()
+    const { seen, files } = engine(on, { failRead, files: { [LOCAL]: env({ AI_DLC_KEEPALIVE_1H_KEEP_WARM_FOR: '3h' }) } })
+    await turn($, 't-1')
+    expect(keepOf(seen, '1h')).toMatchObject({ keepWarmMs: 3 * H })
+    files[LOCAL] = env({ AI_DLC_KEEPALIVE_1H_KEEP_WARM_FOR: '5h' })
+    failRead.add(LOCAL)
+    await turn($, 't-2')
+    expect(keepOf(seen, '1h')).toMatchObject({ keepWarmMs: 3 * H })
+    expect(seen.logs.some(l => l.startsWith('keepalive: settings not re-read at the new turn: settings files unreadable') && l.includes(`${LOCAL} exists but could not be read`))).toBe(true)
+    // Not cached as absent: the next turn tries the read again, and still keeps the last good values
+    await turn($, 't-3')
+    expect(readsOf(seen, LOCAL)).toBe(3)
+    expect(keepOf(seen, '1h')).toMatchObject({ keepWarmMs: 3 * H })
+    failRead.delete(LOCAL)
+    await turn($, 't-4')
+    expect(keepOf(seen, '1h')).toMatchObject({ keepWarmMs: 5 * H })
+    // Nothing is warned in the transcript at a turn: every keep-alive line is the debug one
+    expect(seen.logs.filter(l => l.startsWith('keepalive: ') && !l.startsWith('keepalive: settings not re-read'))).toEqual([])
+  })
+
+  test('~/.claude.json that stats but cannot be read at a turn keeps the last good values instead of failing closed, and is read again', async ($, on) => {
+    const failRead = new Set<string>()
+    const { seen, files } = engine(on, { trusted: true, failRead, files: { [REPO]: JSON.stringify({ fiveMinute: { keepWarmFor: '30m' } }) } })
+    await turn($, 't-1')
+    expect(keepOf(seen, '5m')).toMatchObject({ keepWarmMs: 30 * MIN })
+    // Rewritten (its size changes) and locked while it is saved
+    files[CLAUDE_JSON] = JSON.stringify({ projects: { [ROOT]: { hasTrustDialogAccepted: true } }, numStartups: 2 })
+    failRead.add(CLAUDE_JSON)
+    await turn($, 't-2')
+    expect(keepOf(seen, '5m')).toMatchObject({ keepWarmMs: 30 * MIN })
+    expect(seen.logs.some(l => l.includes(`${CLAUDE_JSON} exists but could not be read`))).toBe(true)
+    failRead.delete(CLAUDE_JSON)
+    await turn($, 't-3')
+    expect(readsOf(seen, CLAUDE_JSON)).toBe(3)
+    expect(keepOf(seen, '5m')).toMatchObject({ keepWarmMs: 30 * MIN })
+  })
+
+  // Suggestion: trustGate goes through the turn's TrustCache (28.4 S4)
+  test('trustGate asks the turn cache: two gated sources read ~/.claude.json once, and an unchanged one is not read at the next turn', async ($, on) => {
+    const { seen } = engine(on, { trusted: true, files: { [SETTINGS_JSON]: env({ AI_DLC_KEEPALIVE_1H_KEEP_WARM_FOR: '3h' }), [REPO]: JSON.stringify({ fiveMinute: { keepWarmFor: '30m' } }) } })
+    await turn($, 't-1')
+    expect([keepOf(seen, '1h')?.keepWarmMs, keepOf(seen, '5m')?.keepWarmMs]).toEqual([3 * H, 30 * MIN])
+    expect(readsOf(seen, CLAUDE_JSON)).toBe(1)
+    await turn($, 't-2')
+    expect(readsOf(seen, CLAUDE_JSON)).toBe(1)
+  })
+
+  // Warning: the time published after a full read is the one in force (28.4 W4, 28.5 W1, 28.5 S2)
+  test('a Stop publishes the keep-warm time its full read leaves in force on a track that does not arm', async ($, on) => {
+    const { seen, files } = engine(on, { files: { [LOCAL]: env({ AI_DLC_KEEPALIVE_5M_KEEP_WARM_FOR: '30m' }) } })
+    await turn($, 't-1')
+    expect(keepOf(seen, '5m')).toMatchObject({ keepWarmMs: 30 * MIN })
+    files[LOCAL] = env({ AI_DLC_KEEPALIVE_5M_KEEP_WARM_FOR: '45m' })
+    // A 1h cache: only the 1h track arms
+    await $.classic.Stop(stop())
+    await settle()
+    expect(keepOf(seen, '1h')).toMatchObject({ running: true })
+    expect(keepOf(seen, '5m')).toMatchObject({ running: false, keepWarmMs: 45 * MIN })
+  })
+
+  test('a Stop with keep-alive turned off publishes the keep-warm time its full read leaves in force', async ($, on) => {
+    const { seen, files } = engine(on, { files: { [LOCAL]: env({ AI_DLC_KEEPALIVE_5M_KEEP_WARM_FOR: '30m' }) } })
+    await turn($, 't-1')
+    files[LOCAL] = env({ AI_DLC_KEEPALIVE_ENABLED: 'false', AI_DLC_KEEPALIVE_5M_KEEP_WARM_FOR: '45m' })
+    await $.classic.Stop(stop())
+    await settle()
+    expect(seen.states.at(-1)?.enabled).toBe(false)
+    expect(keepOf(seen, '5m')).toMatchObject({ running: false, keepWarmMs: 45 * MIN })
+  })
+
+  test('the ping command publishes the keep-warm time its full read leaves in force', async ($, on) => {
+    const { seen, files } = engine(on, { files: { [LOCAL]: env({ AI_DLC_KEEPALIVE_5M_KEEP_WARM_FOR: '30m' }) } })
+    await turn($, 't-1')
+    files[LOCAL] = env({ AI_DLC_KEEPALIVE_5M_KEEP_WARM_FOR: '45m' })
+    await keepalive($)
+    await settle()
+    expect(keepOf(seen, '5m')).toMatchObject({ running: false, keepWarmMs: 45 * MIN })
+  })
+
+  // Warning: a track that stops on its own re-reads its keep-warm time (28.4 W3)
+  test('an override cleared while a track runs is published when the track expires', async ($, on) => {
+    const { seen, clock } = engine(on)
+    await keepalive($, '2h --track 1h')
+    await $.classic.Stop(stop())
+    const reply = await keepalive($, 'clear --track 1h')
+    await settle()
+    expect(reply.text).toContain('; the running 1h track takes it at its next ping')
+    expect(keepOf(seen, '1h')).toMatchObject({ running: true, keepWarmMs: 2 * H })
+    // The timer fires after the cache's hour: expired, stopped
+    await clock.fire(70)
+    await settle()
+    expect(keepOf(seen, '1h')).toMatchObject({ running: false, keepWarmMs: 8 * H, cap: 9, line: 'keepalive 1h: expired, stopped' })
+  })
+
+  test('an override cleared while a track runs is published when the track misses', async ($, on) => {
+    const { seen, clock } = engine(on, { cacheRead: 0 })
+    await keepalive($, '1d --track 1h')
+    await $.classic.Stop(stop())
+    await settle()
+    expect(keepOf(seen, '1h')).toMatchObject({ running: true, keepWarmMs: 24 * H, cap: 28 })
+    await keepalive($, 'clear')
+    await clock.fire(50)
+    await settle()
+    expect(keepOf(seen, '1h')).toMatchObject({ running: false, keepWarmMs: 8 * H, cap: 9, line: 'keepalive 1h: missed, stopped' })
+  })
+
+  test('an override cleared while a track runs is published when the work is done', async ($, on) => {
+    const { seen } = engine(on)
+    await keepalive($, '1d --track 1h')
+    await $.classic.Stop(stop())
+    await keepalive($, 'clear')
+    await $.classic.Stop(stop([]))
+    await settle()
+    expect(keepOf(seen, '1h')).toMatchObject({ running: false, keepWarmMs: 8 * H, cap: 9, line: 'keepalive 1h: work done, stopped' })
+  })
+
+  test('the command reply says nothing about a next ping when the track named is not running', async ($, on) => {
+    engine(on)
+    const reply = await keepalive($, '2h --track 1h')
+    expect(reply.text).not.toContain('next ping')
+  })
+
+  // Suggestion: one source for a running track's pingEvery and limit (28.4 S1)
+  test('a running track publishes the pingEvery its timer took; a settings change counts from its next arming', async ($, on) => {
+    const { seen, clock, files, line } = engine(on)
+    await $.classic.Stop(stop())
+    files[LOCAL] = env({ AI_DLC_KEEPALIVE_1H_PING_EVERY: '40m' })
+    // The command's full read takes the new interval, but the armed timer still runs on 50 minutes
+    await keepalive($)
+    await settle()
+    expect(keepOf(seen, '1h')).toMatchObject({ running: true, pingEvery: 50 * MIN, nextPingAt: START + 50 * MIN, cap: 9 })
+    await clock.fire(50)
+    await settle()
+    expect(keepOf(seen, '1h')).toMatchObject({ running: true, pings: 1, pingEvery: 40 * MIN, nextPingAt: START + 90 * MIN, cap: 9 })
+    expect(line('1h')).toContain('ping 1/9')
+  })
+
+  // Suggestion 28.4 S2: publish ends its chain with a second catch, so a $.ui.log that throws in the
+  // first one cannot leave the chain rejected. The harness cannot make $.ui.log throw (it returns
+  // void, and a hook that throws or denies is skipped), so this pins the outcome the catch exists for:
+  // a failed write is logged and the next write still lands.
+  test('a state write that fails is logged and does not stop the next writes', async ($, on) => {
+    const { seen } = engine(on, { failStateSets: 1 })
+    await turn($, 't-1')
+    expect(seen.states).toHaveLength(0)
+    expect(seen.logs.some(l => l.startsWith('keepalive: state not published'))).toBe(true)
+    await turn($, 't-2')
+    expect(seen.states).toHaveLength(1)
+  })
 })

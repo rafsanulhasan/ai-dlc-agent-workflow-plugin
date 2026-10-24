@@ -8,16 +8,28 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { run, steps } from "../tools/validate.mjs";
+import { claudeOnlyPlugins, run, steps } from "../tools/validate.mjs";
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
-test("the steps: the harness sync first, then the plugin, then the marketplace", () => {
+test("the steps: the harness sync first, then the plugin, then the Claude-only plugins, then the marketplace", () => {
   const list = steps();
-  assert.deepEqual(list.map((s) => s.name), ["harness sync", "validate the Claude plugin", "validate the marketplace"]);
+  assert.deepEqual(list.map((s) => s.name), ["harness sync", "validate the Claude plugin", "validate the ai-dlc-lens plugin", "validate the marketplace"]);
   assert.deepEqual(list[0].args, [path.join(REPO, ".claude", "scripts", "sync-harness.mjs")]);
   assert.deepEqual(list[1].args.slice(-3), ["validate", "--strict", "./plugins/claude/ai-dlc"]);
-  assert.deepEqual(list[2].args.slice(-3), ["validate", "--strict", "."]);
+  assert.deepEqual(list[2].args.slice(-3), ["validate", "--strict", "./plugins/claude/ai-dlc-lens"]);
+  assert.deepEqual(list[3].args.slice(-3), ["validate", "--strict", "."]);
+});
+
+test("a Claude-only plugin is validated only when it is listed and its folder exists", () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "validate-"));
+  try {
+    fs.mkdirSync(path.join(tmp, "tools"));
+    fs.writeFileSync(path.join(tmp, "tools", "claude-only-plugins.json"), JSON.stringify(["lensy", "gone"]));
+    fs.mkdirSync(path.join(tmp, "plugins", "claude", "lensy"), { recursive: true });
+    assert.deepEqual(claudeOnlyPlugins(tmp), ["lensy"]);
+    assert.deepEqual(steps({ root: tmp }).map((s) => s.name), ["validate the Claude plugin", "validate the lensy plugin", "validate the marketplace"]);
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
 });
 
 test("--check only checks the harness sync, as CI does", () => {
@@ -38,14 +50,14 @@ test("every step runs even after a failure, and any failure exits 1", () => {
   const logs = [];
   const spawn = (command, args) => { calls.push(args.at(-1)); return { status: args.at(-1) === "./plugins/claude/ai-dlc" ? 1 : 0 }; };
   const r = run(steps(), { spawn, log: (s) => logs.push(s) });
-  assert.equal(calls.length, 3);
+  assert.equal(calls.length, 4);
   assert.deepEqual(r, { failed: ["validate the Claude plugin"], code: 1 });
   assert.ok(logs.includes("validate: 1 step(s) failed: validate the Claude plugin"));
   const ok = run(steps(), { spawn: () => ({ status: 0 }), log: () => {} });
   assert.deepEqual(ok, { failed: [], code: 0 });
   const missing = run(steps(), { spawn: () => ({ status: null, error: new Error("ENOENT") }), log: () => {} });
   assert.equal(missing.code, 1);
-  assert.equal(missing.failed.length, 3);
+  assert.equal(missing.failed.length, 4);
 });
 
 test("CI runs the harness sync check before the two plugin validations", () => {

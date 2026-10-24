@@ -14,6 +14,13 @@
       "description": "Agentic engineering team running the AI-DLC lifecycles with artifact handoffs and hard quality gates. .NET is the first supported stack.",
       "category": "development",
       "license": "MIT"
+    },
+    {
+      "name": "ai-dlc-lens",
+      "source": "./plugins/claude/ai-dlc-lens",
+      "description": "Claude Code only: a live view of an AI-DLC run, with a workflow pane that draws each workflow and task as a flowchart of agents and opens panels for each agent and hand-off. Work in progress: not released until its run passes G1 to G3.",
+      "category": "development",
+      "license": "MIT"
     }
   ]
 }

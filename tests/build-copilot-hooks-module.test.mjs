@@ -167,7 +167,12 @@ test("thresholdPercent is a 1..100 integer defaulting to 80 in the schema, with 
 test("the cache-keepalive mod is folded into ai-dlc: no mod folder, marketplace entry or CI loop is left", () => {
   assert.ok(!fs.existsSync(path.join(REPO, "plugins", "claude-mods")), "plugins/claude-mods/ should be gone");
   const market = JSON.parse(fs.readFileSync(path.join(REPO, ".claude-plugin", "marketplace.json"), "utf8"));
-  assert.deepEqual(market.plugins.map((p) => p.name), ["ai-dlc"]);
+  // ai-dlc first, then only the Claude-only plugins of tools/claude-only-plugins.json (ai-dlc-lens,
+  // AAW-20261023-lens-plugin-from-spike); any other entry, such as a stray mod, fails.
+  const claudeOnlyPlugins = JSON.parse(fs.readFileSync(path.join(REPO, "tools", "claude-only-plugins.json"), "utf8"));
+  const names = market.plugins.map((p) => p.name);
+  assert.equal(names[0], "ai-dlc");
+  assert.deepEqual(names.slice(1).filter((n) => !claudeOnlyPlugins.includes(n)), [], "marketplace entries that are neither ai-dlc nor a listed Claude-only plugin");
   const ci = fs.readFileSync(path.join(REPO, ".github", "workflows", "validate.yml"), "utf8");
   assert.ok(!ci.includes("claude-mods"), "the CI loop over vendored mods should be gone");
   const keepalive = path.join(REPO, "plugins", "claude", "ai-dlc", "hooks", "keepalive");
@@ -221,8 +226,20 @@ test("a name in tools/claude-only-skills.json that is not a plugin skill fails t
   assert.match(r.stderr, /tools\/claude-only-skills\.json: no plugin skill "nope"/);
 });
 
-test("this repository's keep-alive skills are Claude-only: listed, and absent from the Copilot plugin", () => {
-  const names = ["cache-keepalive", "cache-keepalive-configure", "cache-keepalive-install", "cache-keepalive-merge"];
+test("this repository's keep-alive and lens skills are Claude-only: listed, and absent from the Copilot plugin", () => {
+  const names = [
+    "cache-keepalive",
+    "cache-keepalive-configure",
+    "cache-keepalive-install",
+    "cache-keepalive-merge",
+    // The ai-dlc-lens commands (/ai-dlc:lens*), answered by the Claude-only ai-dlc-lens plugin's hooks module.
+    "lens",
+    "lens-configure",
+    "lens-gate",
+    "lens-init",
+    "lens-keepalive",
+    "lens-kit",
+  ];
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(REPO, "tools", "claude-only-skills.json"), "utf8")), names);
   for (const name of names) {
     assert.ok(fs.existsSync(path.join(REPO, "plugins", "claude", "ai-dlc", "skills", name, "SKILL.md")), name);

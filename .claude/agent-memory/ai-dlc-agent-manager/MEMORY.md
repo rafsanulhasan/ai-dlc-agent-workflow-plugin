@@ -2,7 +2,7 @@
 - [Third-party adaptations](feedback_third-party-adaptations.md) — attribution lines, trademark-free naming, own voice when merging community skills
 - [Policy skill single source](feedback_policy-skill-single-source.md) — cross-stack policy in one skill; stack skills keep mechanics + one-line pointer
 - [Workflow roster sync](project_workflow-roster-sync.md) — workflow.mjs validates against generated catalog.json; default workflow.json still hand-tracks ai-dlc prose
-- [Handoff naming](project_handoff-naming.md) — run folder + step-coded handoff/handback names; writer by orchestration mode (2026-10-21)
+- [Handoff naming](project_handoff-naming.md) — phase sub-roots N.1–N.5, loops l<k> with rounds; writer by mode (2026-10-24)
 - [Agent memory tracked](project_agent-memory-tracked.md) — memory committed everywhere since 2026-10-21; one folder per agent, `ai-dlc-<agent>`
 - [Handoff gaps](project_handoff-gaps.md) — deferred: O5 session matching, stale run data, Copilot nesting, main-agent rule untested
 - [Bash heredoc backslashes](feedback_bash-heredoc-backslashes.md) — heredocs mangle escapes; Python writes CRLF unless newline='
@@ -11,3 +11,10 @@
 - [.ai-dlc copy test](project_ai-dlc-copy-test.md) — handoff-naming test fails until repo .ai-dlc/ is resynced after a template change
 - [Hooks module typecheck](reference_hooks-module-typecheck.md) — plugin test skips types; tsc recipe with bundled engine types; Claude-only skills on Copilot
 - [Harness-sync command](project_harness-sync-command.md) — no consumer sync hook; user-only command runs the script; agents run it directly
+- [Plugin test harness quirks](reference_plugin-test-harness-quirks.md) — hover beside props, turn.step answers, no pane placement API
+- [Model metadata hook](project_model-metadata-hook.md) — why: never estimate, interval 0, per-user stamp, all-or-nothing API, no git hook
+- [Root AGENTS.md render](project_root-agents-md-render.md) — root AGENTS.md hand-filled from init template; re-render after orchestrator body changes
+- [Claude-only plugins](project_claude-only-plugins.md) — ai-dlc-lens beside ai-dlc; tools/claude-only-plugins.json drives build skip, validate, CI
+- [Docs by documentation-writer](feedback_docs-written-by-documentation-writer.md) — never edit READMEs/docs pages; hand back a Docs update request
+- [Lens workflow identity](project_lens-workflow-identity.md) — a run is one workflow, one chart; parent:/merged-from join the parent; 8 per row
+- [Versioned run state](project_versioned-run-state.md) — run.v<major>[.<minor>].md per session; minor pair = direction; plain continuation = next minor (11.18)

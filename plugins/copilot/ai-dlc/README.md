@@ -21,7 +21,7 @@ copilot plugin install ai-dlc@ai-dlc-agent-workflow
 
 ## Start
 
-1. Run `/init` once in a repository. It scaffolds `AGENTS.md`, the per-platform instructions, the team's workflow and the `docs/` folders, and installs the rules and test gate of each stack it finds.
+1. Run `/init` once in a repository. It scaffolds `AGENTS.md`, the per-platform instructions, the team's workflow and the `docs/` folders, and installs the documentation rule (`docs-status`, every repository) and the rules and test gate of each stack it finds.
 2. Talk to the orchestrator: `init` makes it the session's main agent in Claude Code; in GitHub Copilot, select the `orchestrator` custom agent.
 
 ## Commands
@@ -52,6 +52,7 @@ Every skill of the plugin is a command: type `/<name>`. The commands marked Clau
 | `/csharp-mutation-testing` | — | Runs and interprets Stryker.NET mutation testing for C# projects — installing the tool, configuring stryker-config.json, running full, incremental (--since) and baseline runs, and triaging surviving mutants into real test gaps vs … |
 | `/csharp-unit-testing` | — | Comprehensive guidance for writing C# unit tests using TUnit, TUnit.Mocks, Bogus, and TUnit.Assertions.Should with project conventions |
 | `/design-test-cases` | — | Structured test case design skill for software projects. |
+| `/docs-rules` | — | Installs the AI-DLC documentation rule (docs-status) into the current repository, for every stack. |
 | `/dotnet-rules` | — | Installs the AI-DLC .NET rules into the current repository: C# coding style, the GlobalUsings convention and the dotnet test / dotnet stryker testing gates, as Claude rules (.claude/rules) with identical GitHub Copilot instruction twins … |
 | `/dotnet-test-gate` | — | Installs the AI-DLC .NET test gate into the current repository: a Claude Code Stop hook and a GitHub Copilot agentStop hook that block the agent from finishing while `dotnet test` fails after runtime changes. |
 | `/fix-bug` | — | Structured bug investigation workflow for software projects. |
@@ -66,7 +67,14 @@ Every skill of the plugin is a command: type `/<name>`. The commands marked Clau
 | `/k6-load-testing` | — | Invoke this skill when the task is to validate that the system sustains its SLOs at **realistic production throughput over time** — including endurance (soak) testing for memory leaks, connection pool exhaustion, and GC pressure. |
 | `/k6-performance-testing` | — | Invoke this skill when the task is to validate that a system meets its SLOs under **normal operating conditions** — expected concurrency and throughput levels. |
 | `/k6-stress-testing` | — | Invoke this skill when the task is to validate system behaviour **beyond normal capacity** — to observe how it degrades and whether it recovers. |
+| `/lens` | — | Opens the AI-DLC lens pane, a live view of the run: the flowchart of agents, the main loop's thinking and gathered context, and the lens settings in force (needs the ai-dlc-lens plugin). **Not available in GitHub Copilot** (Claude Code only). |
+| `/lens-configure` | `[<key> [<value>\|--unset]]` | Shows the lens settings, each with its value, where it comes from and its env name, or sets or unsets one in .ai-dlc/lens.json (needs the ai-dlc-lens plugin). **Not available in GitHub Copilot** (Claude Code only). |
+| `/lens-gate` | `[on\|off]` | Lens anomaly detection (blocked runs and steps, gates waiting or rejected, loops out of rounds, failed or stuck agents, failed hand-backs): on\|off turns it on or off; bare, it lists them (needs the ai-dlc-lens plugin). **Not available in GitHub Copilot** (Claude Code only). |
+| `/lens-init` | `[--force]` | Writes the lens settings file .ai-dlc/lens.json with every default, and its schema .ai-dlc/lens.schema.json (needs the ai-dlc-lens plugin). **Not available in GitHub Copilot** (Claude Code only). |
+| `/lens-keepalive` | `[on\|off]` | Shows or hides the lens's Cache keep-alive section (how long keep-alive kept the cache warm per track, what cache reads saved), then reports those figures (needs the ai-dlc-lens plugin; on by default). **Not available in GitHub Copilot** (Claude Code only). |
+| `/lens-kit` | — | Opens the lens kit pane: the manual checks K1 to K5 of the lens (resize across the dock boundary, Svg animation, pane buttons, transcript cards; K5 superseded: see /lens-gate) (needs the ai-dlc-lens plugin). **Not available in GitHub Copilot** (Claude Code only). |
 | `/manage-memory` | — | Manages persistent file-based memory for all agents in .claude/agent-memory/&lt;folder>/ (ai-dlc-&lt;agent> for plugin agents), committed with the repository. |
+| `/model-metadata` | — | Installs the AI-DLC model metadata hook into the current repository: .ai-dlc/model-metadata.json with its schema, holding every Anthropic model's prices (input, output, 5-minute and 1-hour cache writes, cache reads, batch, fast mode, … |
 | `/node-rules` | — | Installs the AI-DLC JavaScript / TypeScript rules into the current repository: coding style (strict TypeScript, no any, ESM, naming), module and import boundaries, async and error handling, and the test / Stryker testing gates, as Claude … |
 | `/node-test-gate` | — | Installs the AI-DLC JavaScript / TypeScript test gate into the current repository: a Claude Code Stop hook and a GitHub Copilot agentStop hook that block the agent from finishing while the repository's test command fails after runtime … |
 | `/npm-package-deployment` | — | Structured workflow for publishing JavaScript/TypeScript packages to the npm registry. |

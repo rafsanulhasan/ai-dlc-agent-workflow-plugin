@@ -27,7 +27,8 @@ Identify which README.md files need to be created or updated:
 2. Glob `src/**/`, `tests/**/`, `samples/**/` to identify project and module directories without README.md files
 3. Check `docs/architecture/decisions/` for new or updated ADRs since last documentation pass
 4. Check `docs/backlog/backlog.md` for recently completed items that affect public APIs or behavior
-5. Produce a scope list: `[create | update] <path>/README.md — <reason>`
+5. Read the status of each feature in scope from the run that builds it: the *Stages* table and `status` of its current run state (default `docs/handoffs/<run>/`: the highest `run.v<version>.md`, or `run.md` in a run from before versions). The backlog item's `Status` counts only for work no run records. A *Docs update* request names the status; check it against the run state anyway. The run state always wins.
+6. Produce a scope list: `[create | update] <path>/README.md — <reason> — <planned | in progress | done>`
 
 ---
 
@@ -81,6 +82,7 @@ Rules:
 - Use relative links for cross-references within the repo
 - Never expose internal implementation details not reflected in the public API
 - Keep README.md files in sync with actual code structure — no aspirational documentation
+- Status markers (the documentation rule, `docs-status`, installed by `init`): *planned* for accepted work whose building stage has not started, in the future tense; *in progress* from the moment the building stage starts until the run's last review or gate stage (never the release or its go / no-go gate) is `done` (a done build with reviews pending, or a fix round, stays *in progress*), describing only what exists and what is not done yet; no marker once that last review or gate stage is `done` or the run closes `done`, described as it is. Never call something planned while an agent builds it or its reviews are pending, and never describe planned or in-progress behaviour as if it shipped. Cancelled work is not described. Use the document's existing marker form; with none, `(planned)` or `(in progress)` after the heading
 
 ---
 
@@ -93,7 +95,8 @@ After drafting, verify each README.md:
 3. All configurable options found in source code appear in the Configuration section
 4. No broken relative links
 5. Fenced code blocks compile against the current public API (verify method names and types match source)
-6. Flag any undocumented public APIs as TODOs for the documentation-writer agent memory
+6. Every status marker matches the run state (the backlog only for work no run records); a feature keeps *in progress* while any review or gate stage of its run is open, and has no marker left once the last one is `done`
+7. Flag any undocumented public APIs as TODOs for the documentation-writer agent memory
 
 ---
 

@@ -49,7 +49,9 @@ For complex requests (multiple types, or more than one agent needed), break the 
 
 If even the batches cannot stay green alone, keep the sequence on a shared integration branch and add a final integrate-and-verify item that every batch blocks; green is promised only there.
 
-For simple requests (one type, one agent, no dependencies): return a single-item breakdown.
+For simple requests (one type, one agent, no dependencies) the orchestrator does not ask for a breakdown; if one is asked for anyway, return a single-item breakdown.
+
+**Item numbers are step numbers.** Number the items from the first item's number in the orchestrator's brief, consecutively: each item's `WI-n` is its step in the run (the `handoff` skill, *Naming*), separate from its backlog `ITEM-NNN`. Each feature is one root step: a new feature's items are top-level numbers (`5`, `6`), while an item that follows up a feature the run already has keeps that feature's root (`8`) and runs in the next loop of each phase it needs, as the brief says. When the request joins an open run, blocking edges may point at that run's earlier steps.
 
 **Check the breakdown** before moving on: is the granularity right (no item too large for one session, none too thin to verify)? Does every blocking edge gate real work? Should any items merge or split? Raise unresolved doubts as open questions for the human; the orchestrator confirms the plan with them.
 
@@ -119,7 +121,7 @@ P0 bug and security fixes are never held — flag them `route-immediately`.
 
 ## Step 7 — Record
 
-Add new items to `docs/backlog/backlog.md` with `Skill("product-planning", args: "add-item ...")`, including each item's blocking edges, triage state and brief or triage notes (agent-artifact work is never added — it goes straight to **Boris Cherny** (`agent-manager`)). When you reject a feature, update `docs/backlog/out-of-scope/` as described in [references/out-of-scope.md](references/out-of-scope.md).
+Add new items to `docs/backlog/backlog.md` with `Skill("product-planning", args: "add-item ...")`, including each item's blocking edges, triage state and brief or triage notes; backlog ids stay `ITEM-NNN` in one sequence, and an item that belongs to an earlier feature's backlog item names it in **Parent** (`product-planning`, *Item Format*) (agent-artifact work is never added — it goes straight to **Boris Cherny** (`agent-manager`)). When you reject a feature, update `docs/backlog/out-of-scope/` as described in [references/out-of-scope.md](references/out-of-scope.md).
 
 ## Output
 
@@ -127,6 +129,7 @@ Return to the orchestrator (text only):
 
 ```
 ## Work Breakdown: <one-line request summary>
+Run: <joins <run id> as a new feature | joins <run id> as a follow-up under step F | new run> — items numbered from N; this breakdown is a planning hand-off of the first item, N.1; for a follow-up it is a hand-off in F's planning loop (F.1.l<k>), and each item keeps F as its number, or takes a new root when it is a new feature
 
 | ID | Backlog item | Type | Severity | Priority | Triage state | Description | Depends On (blocked by) | Parallel With | Needs research |
 |---|---|---|---|---|---|---|---|---|---|

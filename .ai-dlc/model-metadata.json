@@ -1,0 +1,593 @@
+{
+  "$schema": "./model-metadata.schema.json",
+  "version": 1,
+  "currency": "USD",
+  "unit": "MTok",
+  "source": "https://platform.claude.com/docs/en/about-claude/pricing",
+  "sources": {
+    "pricing": "https://platform.claude.com/docs/en/about-claude/pricing",
+    "models": "https://platform.claude.com/docs/en/models/overview",
+    "deprecations": "https://platform.claude.com/docs/en/about-claude/model-deprecations"
+  },
+  "fetchedAt": "2026-10-23T03:06:17.477Z",
+  "longContextThresholdTokensOverride": null,
+  "models": [
+    {
+      "id": "claude-fable-5-1",
+      "aliases": [],
+      "name": "Claude Fable 5.1",
+      "status": "active",
+      "note": null,
+      "contextWindow": 1000000,
+      "longContextWindow": null,
+      "maxInputTokens": null,
+      "maxOutputTokens": 128000,
+      "pricing": {
+        "input": 10,
+        "cacheWrite5m": 12.5,
+        "cacheWrite1h": 20,
+        "cacheRead": 0.25,
+        "output": 50,
+        "batchInput": 5,
+        "batchOutput": 25,
+        "fastInput": null,
+        "fastOutput": null
+      },
+      "longContextPricing": null,
+      "sources": {
+        "pricing": "https://platform.claude.com/docs/en/about-claude/pricing",
+        "metadata": "https://platform.claude.com/docs/en/models/fable-5-1/overview",
+        "modelsApi": []
+      }
+    },
+    {
+      "id": "claude-mythos-5-1",
+      "aliases": [],
+      "name": "Claude Mythos 5.1",
+      "status": "active",
+      "note": "limited availability",
+      "contextWindow": 1000000,
+      "longContextWindow": null,
+      "maxInputTokens": null,
+      "maxOutputTokens": 128000,
+      "pricing": {
+        "input": 10,
+        "cacheWrite5m": 12.5,
+        "cacheWrite1h": 20,
+        "cacheRead": 0.25,
+        "output": 50,
+        "batchInput": 5,
+        "batchOutput": 25,
+        "fastInput": null,
+        "fastOutput": null
+      },
+      "longContextPricing": null,
+      "sources": {
+        "pricing": "https://platform.claude.com/docs/en/about-claude/pricing",
+        "metadata": "https://platform.claude.com/docs/en/models/mythos-5-1/overview",
+        "modelsApi": []
+      }
+    },
+    {
+      "id": "claude-fable-5",
+      "aliases": [],
+      "name": "Claude Fable 5",
+      "status": "active",
+      "note": null,
+      "contextWindow": 1000000,
+      "longContextWindow": null,
+      "maxInputTokens": null,
+      "maxOutputTokens": 128000,
+      "pricing": {
+        "input": 10,
+        "cacheWrite5m": 12.5,
+        "cacheWrite1h": 20,
+        "cacheRead": 1,
+        "output": 50,
+        "batchInput": 5,
+        "batchOutput": 25,
+        "fastInput": null,
+        "fastOutput": null
+      },
+      "longContextPricing": null,
+      "sources": {
+        "pricing": "https://platform.claude.com/docs/en/about-claude/pricing",
+        "metadata": "https://platform.claude.com/docs/en/models/fable-5/overview",
+        "modelsApi": []
+      }
+    },
+    {
+      "id": "claude-mythos-5",
+      "aliases": [],
+      "name": "Claude Mythos 5",
+      "status": "active",
+      "note": "limited availability",
+      "contextWindow": 1000000,
+      "longContextWindow": null,
+      "maxInputTokens": null,
+      "maxOutputTokens": 128000,
+      "pricing": {
+        "input": 10,
+        "cacheWrite5m": 12.5,
+        "cacheWrite1h": 20,
+        "cacheRead": 1,
+        "output": 50,
+        "batchInput": 5,
+        "batchOutput": 25,
+        "fastInput": null,
+        "fastOutput": null
+      },
+      "longContextPricing": null,
+      "sources": {
+        "pricing": "https://platform.claude.com/docs/en/about-claude/pricing",
+        "metadata": "https://platform.claude.com/docs/en/models/mythos-5/overview",
+        "modelsApi": []
+      }
+    },
+    {
+      "id": "claude-opus-5-5",
+      "aliases": [],
+      "name": "Claude Opus 5.5",
+      "status": "active",
+      "note": null,
+      "contextWindow": 1000000,
+      "longContextWindow": null,
+      "maxInputTokens": null,
+      "maxOutputTokens": 128000,
+      "pricing": {
+        "input": 4,
+        "cacheWrite5m": 5,
+        "cacheWrite1h": 8,
+        "cacheRead": 0.2,
+        "output": 20,
+        "batchInput": 2,
+        "batchOutput": 10,
+        "fastInput": 8,
+        "fastOutput": 40
+      },
+      "longContextPricing": null,
+      "sources": {
+        "pricing": "https://platform.claude.com/docs/en/about-claude/pricing",
+        "metadata": "https://platform.claude.com/docs/en/models/opus-5-5/overview",
+        "modelsApi": []
+      }
+    },
+    {
+      "id": "claude-opus-5",
+      "aliases": [],
+      "name": "Claude Opus 5",
+      "status": "active",
+      "note": null,
+      "contextWindow": 1000000,
+      "longContextWindow": null,
+      "maxInputTokens": null,
+      "maxOutputTokens": 128000,
+      "pricing": {
+        "input": 5,
+        "cacheWrite5m": 6.25,
+        "cacheWrite1h": 10,
+        "cacheRead": 0.5,
+        "output": 25,
+        "batchInput": 2.5,
+        "batchOutput": 12.5,
+        "fastInput": 10,
+        "fastOutput": 50
+      },
+      "longContextPricing": null,
+      "sources": {
+        "pricing": "https://platform.claude.com/docs/en/about-claude/pricing",
+        "metadata": "https://platform.claude.com/docs/en/models/opus-5/overview",
+        "modelsApi": []
+      }
+    },
+    {
+      "id": "claude-opus-4-8",
+      "aliases": [],
+      "name": "Claude Opus 4.8",
+      "status": "active",
+      "note": null,
+      "contextWindow": 1000000,
+      "longContextWindow": null,
+      "maxInputTokens": null,
+      "maxOutputTokens": 128000,
+      "pricing": {
+        "input": 5,
+        "cacheWrite5m": 6.25,
+        "cacheWrite1h": 10,
+        "cacheRead": 0.5,
+        "output": 25,
+        "batchInput": 2.5,
+        "batchOutput": 12.5,
+        "fastInput": 10,
+        "fastOutput": 50
+      },
+      "longContextPricing": null,
+      "sources": {
+        "pricing": "https://platform.claude.com/docs/en/about-claude/pricing",
+        "metadata": "https://platform.claude.com/docs/en/models/opus-4-8/overview",
+        "modelsApi": []
+      }
+    },
+    {
+      "id": "claude-opus-4-7",
+      "aliases": [],
+      "name": "Claude Opus 4.7",
+      "status": "active",
+      "note": null,
+      "contextWindow": 1000000,
+      "longContextWindow": null,
+      "maxInputTokens": null,
+      "maxOutputTokens": 128000,
+      "pricing": {
+        "input": 5,
+        "cacheWrite5m": 6.25,
+        "cacheWrite1h": 10,
+        "cacheRead": 0.5,
+        "output": 25,
+        "batchInput": 2.5,
+        "batchOutput": 12.5,
+        "fastInput": null,
+        "fastOutput": null
+      },
+      "longContextPricing": null,
+      "sources": {
+        "pricing": "https://platform.claude.com/docs/en/about-claude/pricing",
+        "metadata": "https://platform.claude.com/docs/en/models/opus-4-7/overview",
+        "modelsApi": []
+      }
+    },
+    {
+      "id": "claude-opus-4-6",
+      "aliases": [],
+      "name": "Claude Opus 4.6",
+      "status": "active",
+      "note": null,
+      "contextWindow": 1000000,
+      "longContextWindow": null,
+      "maxInputTokens": null,
+      "maxOutputTokens": 128000,
+      "pricing": {
+        "input": 5,
+        "cacheWrite5m": 6.25,
+        "cacheWrite1h": 10,
+        "cacheRead": 0.5,
+        "output": 25,
+        "batchInput": 2.5,
+        "batchOutput": 12.5,
+        "fastInput": null,
+        "fastOutput": null
+      },
+      "longContextPricing": null,
+      "sources": {
+        "pricing": "https://platform.claude.com/docs/en/about-claude/pricing",
+        "metadata": "https://platform.claude.com/docs/en/models/opus-4-6/overview",
+        "modelsApi": []
+      }
+    },
+    {
+      "id": "claude-opus-4-5-20251101",
+      "aliases": [
+        "claude-opus-4-5"
+      ],
+      "name": "Claude Opus 4.5",
+      "status": "active",
+      "note": null,
+      "contextWindow": 200000,
+      "longContextWindow": null,
+      "maxInputTokens": null,
+      "maxOutputTokens": 64000,
+      "pricing": {
+        "input": 5,
+        "cacheWrite5m": 6.25,
+        "cacheWrite1h": 10,
+        "cacheRead": 0.5,
+        "output": 25,
+        "batchInput": 2.5,
+        "batchOutput": 12.5,
+        "fastInput": null,
+        "fastOutput": null
+      },
+      "longContextPricing": null,
+      "sources": {
+        "pricing": "https://platform.claude.com/docs/en/about-claude/pricing",
+        "metadata": "https://platform.claude.com/docs/en/models/opus-4-5/overview",
+        "modelsApi": []
+      }
+    },
+    {
+      "id": "claude-opus-4-1-20250805",
+      "aliases": [
+        "claude-opus-4-1"
+      ],
+      "name": "Claude Opus 4.1",
+      "status": "retired",
+      "note": "retired, except on Bedrock and Claude Models on Google Cloud (Google managed)",
+      "contextWindow": null,
+      "longContextWindow": null,
+      "maxInputTokens": null,
+      "maxOutputTokens": null,
+      "pricing": {
+        "input": 15,
+        "cacheWrite5m": 18.75,
+        "cacheWrite1h": 30,
+        "cacheRead": 1.5,
+        "output": 75,
+        "batchInput": 7.5,
+        "batchOutput": 37.5,
+        "fastInput": null,
+        "fastOutput": null
+      },
+      "longContextPricing": null,
+      "sources": {
+        "pricing": "https://platform.claude.com/docs/en/about-claude/pricing",
+        "metadata": null,
+        "modelsApi": []
+      }
+    },
+    {
+      "id": "claude-opus-4-20250514",
+      "aliases": [],
+      "name": "Claude Opus 4",
+      "status": "retired",
+      "note": "retired, except on Claude Models on Google Cloud (Google managed)",
+      "contextWindow": null,
+      "longContextWindow": null,
+      "maxInputTokens": null,
+      "maxOutputTokens": null,
+      "pricing": {
+        "input": 15,
+        "cacheWrite5m": 18.75,
+        "cacheWrite1h": 30,
+        "cacheRead": 1.5,
+        "output": 75,
+        "batchInput": 7.5,
+        "batchOutput": 37.5,
+        "fastInput": null,
+        "fastOutput": null
+      },
+      "longContextPricing": null,
+      "sources": {
+        "pricing": "https://platform.claude.com/docs/en/about-claude/pricing",
+        "metadata": null,
+        "modelsApi": []
+      }
+    },
+    {
+      "id": "claude-sonnet-5-5",
+      "aliases": [],
+      "name": "Claude Sonnet 5.5",
+      "status": "active",
+      "note": null,
+      "contextWindow": 1000000,
+      "longContextWindow": null,
+      "maxInputTokens": null,
+      "maxOutputTokens": 128000,
+      "pricing": {
+        "input": 2,
+        "cacheWrite5m": 2.5,
+        "cacheWrite1h": 4,
+        "cacheRead": 0.1,
+        "output": 10,
+        "batchInput": 1,
+        "batchOutput": 5,
+        "fastInput": null,
+        "fastOutput": null
+      },
+      "longContextPricing": null,
+      "sources": {
+        "pricing": "https://platform.claude.com/docs/en/about-claude/pricing",
+        "metadata": "https://platform.claude.com/docs/en/models/sonnet-5-5/overview",
+        "modelsApi": []
+      }
+    },
+    {
+      "id": "claude-sonnet-5",
+      "aliases": [],
+      "name": "Claude Sonnet 5",
+      "status": "active",
+      "note": null,
+      "contextWindow": 1000000,
+      "longContextWindow": null,
+      "maxInputTokens": null,
+      "maxOutputTokens": 128000,
+      "pricing": {
+        "input": 2,
+        "cacheWrite5m": 2.5,
+        "cacheWrite1h": 4,
+        "cacheRead": 0.2,
+        "output": 10,
+        "batchInput": 1,
+        "batchOutput": 5,
+        "fastInput": null,
+        "fastOutput": null
+      },
+      "longContextPricing": null,
+      "sources": {
+        "pricing": "https://platform.claude.com/docs/en/about-claude/pricing",
+        "metadata": "https://platform.claude.com/docs/en/models/sonnet-5/overview",
+        "modelsApi": []
+      }
+    },
+    {
+      "id": "claude-sonnet-4-6",
+      "aliases": [],
+      "name": "Claude Sonnet 4.6",
+      "status": "active",
+      "note": null,
+      "contextWindow": 1000000,
+      "longContextWindow": null,
+      "maxInputTokens": null,
+      "maxOutputTokens": 128000,
+      "pricing": {
+        "input": 3,
+        "cacheWrite5m": 3.75,
+        "cacheWrite1h": 6,
+        "cacheRead": 0.3,
+        "output": 15,
+        "batchInput": 1.5,
+        "batchOutput": 7.5,
+        "fastInput": null,
+        "fastOutput": null
+      },
+      "longContextPricing": null,
+      "sources": {
+        "pricing": "https://platform.claude.com/docs/en/about-claude/pricing",
+        "metadata": "https://platform.claude.com/docs/en/models/sonnet-4-6/overview",
+        "modelsApi": []
+      }
+    },
+    {
+      "id": "claude-sonnet-4-5-20250929",
+      "aliases": [
+        "claude-sonnet-4-5"
+      ],
+      "name": "Claude Sonnet 4.5",
+      "status": "deprecated",
+      "note": null,
+      "contextWindow": 200000,
+      "longContextWindow": null,
+      "maxInputTokens": null,
+      "maxOutputTokens": 64000,
+      "pricing": {
+        "input": 3,
+        "cacheWrite5m": 3.75,
+        "cacheWrite1h": 6,
+        "cacheRead": 0.3,
+        "output": 15,
+        "batchInput": 1.5,
+        "batchOutput": 7.5,
+        "fastInput": null,
+        "fastOutput": null
+      },
+      "longContextPricing": null,
+      "sources": {
+        "pricing": "https://platform.claude.com/docs/en/about-claude/pricing",
+        "metadata": "https://platform.claude.com/docs/en/models/sonnet-4-5/overview",
+        "modelsApi": []
+      }
+    },
+    {
+      "id": "claude-sonnet-4-20250514",
+      "aliases": [],
+      "name": "Claude Sonnet 4",
+      "status": "retired",
+      "note": "retired, except on Bedrock and Claude Models on Google Cloud (Google managed)",
+      "contextWindow": null,
+      "longContextWindow": null,
+      "maxInputTokens": null,
+      "maxOutputTokens": null,
+      "pricing": {
+        "input": 3,
+        "cacheWrite5m": 3.75,
+        "cacheWrite1h": 6,
+        "cacheRead": 0.3,
+        "output": 15,
+        "batchInput": 1.5,
+        "batchOutput": 7.5,
+        "fastInput": null,
+        "fastOutput": null
+      },
+      "longContextPricing": null,
+      "sources": {
+        "pricing": "https://platform.claude.com/docs/en/about-claude/pricing",
+        "metadata": null,
+        "modelsApi": []
+      }
+    },
+    {
+      "id": "claude-haiku-5-5",
+      "aliases": [],
+      "name": "Claude Haiku 5.5",
+      "status": "active",
+      "note": null,
+      "contextWindow": 1000000,
+      "longContextWindow": null,
+      "maxInputTokens": null,
+      "maxOutputTokens": 128000,
+      "pricing": {
+        "input": 0.1,
+        "cacheWrite5m": 0.125,
+        "cacheWrite1h": 0.2,
+        "cacheRead": 0.01,
+        "output": 0.5,
+        "batchInput": 0.05,
+        "batchOutput": 0.25,
+        "fastInput": null,
+        "fastOutput": null
+      },
+      "longContextPricing": {
+        "thresholdTokens": 100000,
+        "input": 0.5,
+        "cacheWrite5m": 0.625,
+        "cacheWrite1h": 1,
+        "cacheRead": 0.05,
+        "output": 2.5,
+        "batchInput": 0.25,
+        "batchOutput": 1.25
+      },
+      "sources": {
+        "pricing": "https://platform.claude.com/docs/en/about-claude/pricing",
+        "metadata": "https://platform.claude.com/docs/en/models/haiku-5-5/overview",
+        "modelsApi": []
+      }
+    },
+    {
+      "id": "claude-haiku-4-5-20251001",
+      "aliases": [
+        "claude-haiku-4-5"
+      ],
+      "name": "Claude Haiku 4.5",
+      "status": "active",
+      "note": null,
+      "contextWindow": 200000,
+      "longContextWindow": null,
+      "maxInputTokens": null,
+      "maxOutputTokens": 64000,
+      "pricing": {
+        "input": 1,
+        "cacheWrite5m": 1.25,
+        "cacheWrite1h": 2,
+        "cacheRead": 0.1,
+        "output": 5,
+        "batchInput": 0.5,
+        "batchOutput": 2.5,
+        "fastInput": null,
+        "fastOutput": null
+      },
+      "longContextPricing": null,
+      "sources": {
+        "pricing": "https://platform.claude.com/docs/en/about-claude/pricing",
+        "metadata": "https://platform.claude.com/docs/en/models/haiku-4-5/overview",
+        "modelsApi": []
+      }
+    },
+    {
+      "id": "claude-3-5-haiku-20241022",
+      "aliases": [],
+      "name": "Claude Haiku 3.5",
+      "status": "retired",
+      "note": "retired, except on Claude Models on Google Cloud (Google managed)",
+      "contextWindow": null,
+      "longContextWindow": null,
+      "maxInputTokens": null,
+      "maxOutputTokens": null,
+      "pricing": {
+        "input": 0.8,
+        "cacheWrite5m": 1,
+        "cacheWrite1h": 1.6,
+        "cacheRead": 0.08,
+        "output": 4,
+        "batchInput": 0.4,
+        "batchOutput": 2,
+        "fastInput": null,
+        "fastOutput": null
+      },
+      "longContextPricing": null,
+      "sources": {
+        "pricing": "https://platform.claude.com/docs/en/about-claude/pricing",
+        "metadata": null,
+        "modelsApi": []
+      }
+    }
+  ]
+}

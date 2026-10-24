@@ -7,7 +7,9 @@
 // Steps, in order; every step runs, and the script exits 1 when any of them failed:
 //   1. node .claude/scripts/sync-harness.mjs [--check]   .claude/ <-> .github/ twins (skipped when the script is absent)
 //   2. npx -y @anthropic-ai/claude-code plugin validate --strict ./plugins/claude/ai-dlc
-//   3. npx -y @anthropic-ai/claude-code plugin validate --strict .
+//   3. npx -y @anthropic-ai/claude-code plugin validate --strict ./plugins/claude/<name>, for each Claude-only
+//      plugin listed in tools/claude-only-plugins.json (ai-dlc-lens) whose folder exists
+//   4. npx -y @anthropic-ai/claude-code plugin validate --strict .
 // CI (.github/workflows/validate.yml) runs the same commands as separate steps, the sync with --check.
 
 import { spawnSync } from "node:child_process";
@@ -17,6 +19,13 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
+/** The Claude-only plugins of tools/claude-only-plugins.json that have a folder under plugins/claude/. */
+export function claudeOnlyPlugins(root = ROOT) {
+  const list = path.join(root, "tools", "claude-only-plugins.json");
+  if (!fs.existsSync(list)) return [];
+  return JSON.parse(fs.readFileSync(list, "utf8")).filter((name) => fs.existsSync(path.join(root, "plugins", "claude", name)));
+}
+
 /** The steps to run: { name, command, args }. `check`: only check the harness sync. */
 export function steps({ check = false, root = ROOT } = {}) {
   const out = [];
@@ -25,6 +34,9 @@ export function steps({ check = false, root = ROOT } = {}) {
   // npx is a .cmd script on Windows, which spawn runs only through cmd.exe; no shell option is used.
   const npx = (args) => process.platform === "win32" ? { command: "cmd.exe", args: ["/d", "/c", "npx", ...args] } : { command: "npx", args };
   out.push({ name: "validate the Claude plugin", ...npx(["-y", "@anthropic-ai/claude-code", "plugin", "validate", "--strict", "./plugins/claude/ai-dlc"]) });
+  for (const name of claudeOnlyPlugins(root)) {
+    out.push({ name: `validate the ${name} plugin`, ...npx(["-y", "@anthropic-ai/claude-code", "plugin", "validate", "--strict", `./plugins/claude/${name}`]) });
+  }
   out.push({ name: "validate the marketplace", ...npx(["-y", "@anthropic-ai/claude-code", "plugin", "validate", "--strict", "."]) });
   return out;
 }

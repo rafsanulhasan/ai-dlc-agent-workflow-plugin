@@ -2,10 +2,12 @@ import type { EngineInterface, Register, Timer } from 'claude-code'
 import { TRACK_NAMES, formatDuration, parseCommandArgs } from './duration.ts'
 import type { Scope, TrackName } from './duration.ts'
 import { defaults, gatedDiffering, readMult, resolveSettings } from './settings.ts'
-import type { Level, Settings, TrackKey } from './settings.ts'
-import { creationSplit, k, repoConfig, settingsEnv } from '../auto-handoff/config.ts'
-import { log, readRaw, repoRoot, trustGate } from '../auto-handoff/io.ts'
+import type { Level, Settings, TrackKey, TrackSettings } from './settings.ts'
+import { creationSplit, k, repoConfig, settingsEnv, trustOf } from '../auto-handoff/config.ts'
+import type { TrustTarget } from '../auto-handoff/config.ts'
+import { homeDir, log, readRaw, repoRoot, trustGate, trustTarget } from '../auto-handoff/io.ts'
 import type { TrustCache } from '../auto-handoff/io.ts'
+import type { KeepaliveState, KeepaliveTrackState } from '../../types/index.d.ts'
 
 // Keep-alive, folded into the ai-dlc hooks module from the vendored cache-keepalive mod (see
 // ../ATTRIBUTION.md, "cache-keepalive"). When Claude ends a turn while background tasks still run, it
@@ -39,8 +41,15 @@ export type KeepaliveDeps = { handingOff: () => boolean }
 /** Tokens written to the cache for the 1-hour and the 5-minute lifetime. */
 export type Split = Record<TrackName, number>
 
-type Track = { name: TrackName; key: TrackKey; timer?: Timer; generation: number; armedTime: number; warmUntil: number; pings: number; line: string }
-const newTrack = (name: TrackName, key: TrackKey): Track => ({ name, key, generation: 0, armedTime: 0, warmUntil: 0, pings: 0, line: `keepalive ${name}: off` })
+// nextPingAt: when the armed timer fires (null when none is armed); keep: the keep-warm time in force
+// for the track, worked out at arming and at each ping, and re-read while the track is not running
+// (refreshKeep); undefined means the track's setting. Both are published in the track's state
+// (publish), not used to decide. cfg: the track's settings as the armed timer took them (arm), the
+// one source of a running track's published pingEvery and ping limit, so they match what its tick
+// uses even when a full read changes the settings meanwhile; a track not running publishes the
+// settings now read, the ones its next arming takes.
+type Track = { name: TrackName; key: TrackKey; timer?: Timer; generation: number; armedTime: number; warmUntil: number; pings: number; line: string; nextPingAt: number | null; keep?: Keep; cfg?: TrackSettings }
+const newTrack = (name: TrackName, key: TrackKey): Track => ({ name, key, generation: 0, armedTime: 0, warmUntil: 0, pings: 0, line: `keepalive ${name}: off`, nextPingAt: null })
 
 // Module variables survive /clear, which is why every timer is stopped before one (stopForHandoff)
 // and at session.end.
@@ -108,11 +117,15 @@ function until(ms: number) {
 
 const anyRunning = () => TRACKS.some(([n]) => tracks[n].timer !== undefined)
 
+// The settings a track's state and status line speak for (see Track, cfg).
+const cfgOf = (t: Track): TrackSettings => (t.timer !== undefined && t.cfg) || settings[t.key]
+
 function stopTrack(t: Track) {
   // Bumping the generation also stops a ping already in flight from rearming
   t.generation++
   t.timer?.cancel()
   t.timer = undefined
+  t.nextPingAt = null
 }
 
 function stopAll(line?: string) {
@@ -124,7 +137,49 @@ function stopAll(line?: string) {
   }
 }
 
+// The state other plugins read (ai-dlc-lens, read-only): $.state { plugin: 'ai-dlc', key: 'keepalive' },
+// its contract in ../../types/index.d.ts (plugin.json `types`). Written each time the status lines
+// change, whether or not the status line is shown, so a reader sees what the lines say.
+const STATE = { plugin: 'ai-dlc', key: 'keepalive' } as const
+// Writes go out one after another, in the order the snapshots were taken.
+let publishing: Promise<unknown> = Promise.resolve()
+
+/** The tracks as published: their status, with the next ping, the keep-warm time and the ping limit. */
+function trackStates(): KeepaliveTrackState[] {
+  return TRACKS.map(([n]) => {
+    const t = tracks[n]
+    const cfg = cfgOf(t)
+    const keep = t.keep ?? { ms: cfg.keepWarmFor }
+    return {
+      name: n,
+      running: t.timer !== undefined,
+      armedAt: t.armedTime,
+      warmUntil: t.warmUntil,
+      nextPingAt: t.timer !== undefined ? t.nextPingAt : null,
+      pingEvery: cfg.pingEvery,
+      keepWarmMs: keep.ms,
+      pings: t.pings,
+      cap: pingCap(cfg.maxPings, cfg.pingEvery, keep),
+      line: t.line,
+    }
+  })
+}
+
+// Never throws and never waits: a failed write only goes to the debug log. The last catch keeps the
+// chain resolved when that log call fails too, so one failure never stops every later write.
+function publish($: EngineInterface) {
+  const snapshot = { enabled: settings.enabled, tracks: trackStates() }
+  publishing = publishing
+    .then(async () => {
+      const value: KeepaliveState = { ...snapshot, updatedAt: await $.clock.now(), sessionId: await $.session.id() }
+      await $.state.set(STATE, value)
+    })
+    .catch(err => $.ui.log(`keepalive: state not published (${err instanceof Error ? err.message : String(err)})`, { to: 'debug' }))
+    .catch(() => {})
+}
+
 function render($: EngineInterface) {
+  publish($)
   if (!settings.enabled || !settings.status) return $.ui.status(undefined)
   $.ui.status([...TRACKS.map(([n]) => tracks[n].line), ...(seedLine ? [seedLine] : [])].join('\n'))
 }
@@ -139,6 +194,109 @@ async function warn($: EngineInterface, line: string) {
 // Where a person sets a trust-gated setting instead: the sources a cloned repository cannot write.
 const GATED_INSTEAD = `set them in the env of .claude/settings.local.json instead (a keep-warm time also with /${COMMAND})`
 
+// The turn cache: what the read at a new turn (load with atTurn) keeps between turns, so a turn reads
+// only what changed. A Stop and the command never use it.
+// - files: each settings file's text with its size and modified time ('missing' when it does not
+//   stat); a file is read again only when that changes. Two edits in one modified-time tick that
+//   leave the size the same go unseen until the next full read.
+// - cwd, root, target: git's answers (the repository root, and what trust is keyed on) for the
+//   session's working directory. Dropped when that directory changes, at session.end and at every
+//   full read (forgetGit), so a turn never runs git while the directory stays, and is never behind
+//   the last full read, which runs git itself. Not watched otherwise: a git init or a moved worktree
+//   has no cheaper signal than the rev-parse it would replace.
+// - trust: Claude Code's trust answer, kept with the size and modified time of ~/.claude.json, which
+//   is stat-ed at every turn that needs the answer and read again when it changed. Trust fails
+//   closed and gates the committed sources, so a trust withdrawn in that file must count at the next
+//   turn. Still asked only when a trust-gated setting differs from its default (trustGate).
+type Seen = { sig: string; text: string | undefined }
+type TrustAnswer = { trusted: boolean; why: string }
+let turnCache: { files: Map<string, Seen>; cwd?: string; root?: string; target?: TrustTarget; trust?: { sig: string; answer: TrustAnswer } } = { files: new Map() }
+
+const forgetGit = () => { turnCache = { files: turnCache.files } }
+
+// A file's size and modified time, 'missing' when it does not stat (missing, or unreadable).
+async function sigOf($: EngineInterface, path: string): Promise<string> {
+  try {
+    const s = await $.fs.stat(path)
+    return `${s.kind}:${s.size}:${s.mtimeMs}`
+  } catch {
+    return 'missing'
+  }
+}
+
+// A file that stats as a file but whose read fails (a lock or a transient error while an editor saves
+// it) is not absent: the read at a turn counts it as a failure, so the turn keeps the settings last read.
+const unreadable = (path: string) => new Error(`${path} exists but could not be read`)
+
+// readRaw, but only when the file's size or modified time changed since the turn cache last read it.
+// Throws, caching nothing, when a file that stats as a file cannot be read: its next turn reads it
+// again. A path that stats as something else (a folder) reads as absent, as at a full read.
+async function cachedRead($: EngineInterface, path: string): Promise<string | undefined> {
+  const sig = await sigOf($, path)
+  const was = turnCache.files.get(path)
+  if (was && was.sig === sig) return was.text
+  const text = await readRaw($, path)
+  if (text === undefined && sig.startsWith('file:')) {
+    turnCache.files.delete(path)
+    throw unreadable(path)
+  }
+  // A file that does not stat but reads is not kept: next turn reads it again
+  if (sig === 'missing' && text !== undefined) turnCache.files.delete(path)
+  else turnCache.files.set(path, { sig, text })
+  return text
+}
+
+// The repository root for the turn read: git runs again only when the working directory changed.
+// The answer is kept only in the cache it was asked for: a full read (forgetGit) or a new working
+// directory that replaced the cache while git ran must make the next turn ask again.
+async function turnRoot($: EngineInterface): Promise<string> {
+  const cwd = (await $.session.cwd()).replace(/\\/g, '/')
+  if (turnCache.cwd !== cwd) turnCache = { files: turnCache.files, cwd }
+  if (turnCache.root !== undefined) return turnCache.root
+  const cache = turnCache
+  const root = await repoRoot($)
+  if (turnCache === cache) cache.root = root
+  return root
+}
+
+// The trust answer for the turn read, as a TrustCache whose answer trustGate asks for only when a
+// gated setting differs from its default (io.ts): reused while the trust target and ~/.claude.json
+// are unchanged, else worked out again as folderTrust does. A ~/.claude.json that stats as a file but
+// cannot be read rejects the answer, caching nothing: the turn counts it as a failure and keeps the
+// settings last read (load), and the next turn reads the file again.
+function turnTrust($: EngineInterface): TrustCache {
+  let result: Promise<TrustAnswer> | undefined
+  const answer = async (): Promise<TrustAnswer> => {
+    const home = await homeDir($)
+    const path = home ? `${home}/.claude.json` : undefined
+    let target = turnCache.target
+    if (target === undefined) {
+      const cache = turnCache
+      target = await trustTarget($)
+      // As in turnRoot: kept only in the cache it was asked for
+      if (turnCache === cache) cache.target = target
+    }
+    const sig = path ? await sigOf($, path) : 'missing'
+    if (turnCache.trust?.sig === sig) return turnCache.trust.answer
+    const text = path ? await readRaw($, path) : undefined
+    if (path && text === undefined && sig.startsWith('file:')) {
+      turnCache.trust = undefined
+      throw unreadable(path)
+    }
+    const fresh = trustOf(text, target)
+    // Kept only when the file stat-ed: a file that cannot be stat-ed is asked again at every turn
+    turnCache.trust = sig === 'missing' ? undefined : { sig, answer: fresh }
+    return fresh
+  }
+  // trustGate (io.ts) asks `cache.result ??= folderTrust($)`. This getter always answers a promise,
+  // so at a turn folderTrust is never called and the cached answer above is the one used; the test
+  // "trustGate asks the turn cache" fails if trustGate stops going through cache.result.
+  return {
+    get result() { return result ??= answer() },
+    set result(v) { result = v },
+  }
+}
+
 // Reads every level and resolves each setting, highest first: `env` of .claude/settings.local.json,
 // `env` of .claude/settings.json, .ai-dlc/cache-keepalive.json, the default (settings.ts). Keep-alive
 // has no /config rows, and the process environment is not read. The two committed sources, the env
@@ -147,28 +305,48 @@ const GATED_INSTEAD = `set them in the env of .claude/settings.local.json instea
 // default is skipped with a warning and the next level applies (one equal to its default changes
 // nothing, so it applies quietly: settings.ts, gatedDiffering). Never throws: on an error, the
 // defaults apply.
-async function load($: EngineInterface) {
+// `atTurn`: the read at a new turn (turn.start), so a fresh session publishes its real settings from
+// its first turn. Same levels, precedence and trust, but a settings file that cannot be parsed, or a
+// read that fails, keeps the settings last read instead (the defaults when none was read yet) and
+// says so in the debug log. Nothing is warned in the transcript: the next Stop or command reads and
+// warns as above. It reads through the turn cache below: only what changed since the last turn.
+async function load($: EngineInterface, { atTurn = false } = {}) {
   const problems: string[] = []
+  // The problems that mean a file was not read: its JSON, its shape, or the read itself
+  const failures: string[] = []
+  const fail = (line: string) => { problems.push(line); failures.push(line) }
   const levels: Level[] = []
-  const trust: TrustCache = {}
+  // A full read (a Stop, the command) runs git and reads every file itself, and drops the cached git
+  // and trust answers, so the next turn asks git again: a turn's answer is never older than the last
+  // full read. The cached files need no dropping: their size and modified time say when they changed.
+  if (!atTurn) forgetGit()
+  const trust: TrustCache = atTurn ? turnTrust($) : {}
+  const read = atTurn ? (path: string) => cachedRead($, path) : (path: string) => readRaw($, path)
   try {
-    const root = await repoRoot($)
+    const root = atTurn ? await turnRoot($) : await repoRoot($)
     for (const where of ['.claude/settings.local.json', '.claude/settings.json']) {
-      const { env, problem } = settingsEnv(await readRaw($, `${root}/${where}`))
-      if (problem) problems.push(`${where} ${problem}`)
+      const { env, problem } = settingsEnv(await read(`${root}/${where}`))
+      if (problem) fail(`${where} ${problem}`)
       if (!env) continue
       const values = where === '.claude/settings.json' ? await trustGate($, env, gatedDiffering(env, 'env'), `the env of ${where}`, GATED_INSTEAD, problems, trust) : env
       levels.push({ where, by: 'env', values })
     }
-    const repo = repoConfig(await readRaw($, `${root}/${REPO_FILE}`))
-    if (repo.problem) problems.push(`${REPO_FILE} ${repo.problem}`)
+    const repo = repoConfig(await read(`${root}/${REPO_FILE}`))
+    if (repo.problem) fail(`${REPO_FILE} ${repo.problem}`)
     if (repo.values) levels.push({ where: REPO_FILE, by: 'json', values: await trustGate($, repo.values, gatedDiffering(repo.values, 'json'), REPO_FILE, GATED_INSTEAD, problems, trust) })
   } catch (err) {
-    problems.push(`settings files unreadable (${String(err)}); using the defaults`)
+    fail(atTurn ? `settings files unreadable (${String(err)})` : `settings files unreadable (${String(err)}); using the defaults`)
+  }
+  if (atTurn && failures.length) {
+    for (const line of failures) $.ui.log(`keepalive: settings not re-read at the new turn: ${line}; keeping the settings last read`, { to: 'debug' })
+    return
   }
   const r = resolveSettings(levels)
   settings = r.settings
   sources = r.sources
+  // At a turn, the other problems (an invalid value, a setting skipped in an untrusted folder) are left
+  // to the next Stop or command, which warns about each once a session
+  if (atTurn) return
   for (const line of [...problems, ...r.warnings]) await warn($, line)
 }
 
@@ -182,20 +360,59 @@ async function sessionOverrides($: EngineInterface, n: TrackName): Promise<[stri
 
 // The keep-warm time of a track: this session's override, the machine's, then the track's setting.
 // An override shorter than minDuration (set before minDuration was raised) is ignored with a warning.
-async function keepWarm($: EngineInterface, key: TrackKey): Promise<Keep> {
+// `session: false` leaves this session's override out and warns about nothing: the time a session
+// that has ended leaves in force (session.end), which its own override no longer reaches.
+async function keepWarm($: EngineInterface, key: TrackKey, { session = true } = {}): Promise<Keep> {
   const n = TRACKS.find(([, k]) => k === key)![0]
-  const id = await $.session.id()
-  const own = (await sessionOverrides($, n)).find(([s]) => s === id)
-  if (own) {
-    if (own[1] >= settings.minDuration) return { ms: own[1], from: `this session, /${COMMAND}`, override: true }
-    await warn($, `the /${COMMAND} override of the ${n} track for this session (${formatDuration(own[1])}) is shorter than minDuration (${formatDuration(settings.minDuration)}); ignored`)
+  if (session) {
+    const id = await $.session.id()
+    const own = (await sessionOverrides($, n)).find(([s]) => s === id)
+    if (own) {
+      if (own[1] >= settings.minDuration) return { ms: own[1], from: `this session, /${COMMAND}`, override: true }
+      await warn($, `the /${COMMAND} override of the ${n} track for this session (${formatDuration(own[1])}) is shorter than minDuration (${formatDuration(settings.minDuration)}); ignored`)
+    }
   }
   const machine = await $.store.get(machineKey(n))
   if (typeof machine === 'number' && machine > 0) {
     if (machine >= settings.minDuration) return { ms: machine, from: `this machine, /${COMMAND}`, override: true }
-    await warn($, `the /${COMMAND} override of the ${n} track for this machine (${formatDuration(machine)}) is shorter than minDuration (${formatDuration(settings.minDuration)}); ignored`)
+    if (session) await warn($, `the /${COMMAND} override of the ${n} track for this machine (${formatDuration(machine)}) is shorter than minDuration (${formatDuration(settings.minDuration)}); ignored`)
   }
   return { ms: settings[key].keepWarmFor, from: sources[`${key}.keepWarmFor`] ?? 'default' }
+}
+
+// Re-reads the keep-warm time of every track that is not running, so the state it publishes says the
+// time now in force: the one the track's next arming would take. Called where a track is reset (a
+// new turn, the session ending), where the overrides change (/ai-dlc:cache-keepalive), after every
+// full read of the settings (a Stop, the command, the seed line), and wherever a track stops, on its
+// own or not (end, the spend limit, work done, overage, a handoff), so an override set or cleared
+// while it ran counts the moment it stops. Never here for a running track: its tick reads the time
+// again before each ping, and a change made while it runs takes effect at that ping (README), so
+// until then the time it armed with is the one in force.
+// Not in stopTrack: arm() calls it before every arming. A track armed while this waits on the store
+// is left alone (its generation moved on). Never throws: a store that cannot be read leaves the
+// track's setting in force, as keepWarm's last level, and says so in the debug log.
+async function refreshKeep($: EngineInterface, opts: { session?: boolean } = {}) {
+  for (const [n, key] of TRACKS) {
+    const t = tracks[n]
+    if (t.timer !== undefined) continue
+    const g = t.generation
+    let keep: Keep | undefined
+    try {
+      keep = await keepWarm($, key, opts)
+    } catch (err) {
+      $.ui.log(`keepalive ${n}: keep-warm time not re-read (${err instanceof Error ? err.message : String(err)}); publishing the setting`, { to: 'debug' })
+    }
+    if (t.generation === g && t.timer === undefined) t.keep = keep
+  }
+}
+
+// For a stop that cannot wait on the store (stopForHandoff answers at once): re-reads in the
+// background, then publishes, unless a track was stopped or armed meanwhile (a new turn or the
+// session ending), since that path re-reads and publishes for itself.
+async function republishKeep($: EngineInterface) {
+  const gens = TRACKS.map(([n]) => tracks[n].generation)
+  await refreshKeep($)
+  if (TRACKS.every(([n], i) => tracks[n].generation === gens[i])) publish($)
 }
 
 // Sets (ms) or clears (undefined) the override of each track named, in the scope given.
@@ -283,23 +500,30 @@ export const pingsWithin = (keepMs: number, pingEvery: number) => Math.floor(kee
 export const pingCap = (maxPings: number, pingEvery: number, keep: { ms: number; override?: boolean }) =>
   keep.override ? Math.max(maxPings, pingsWithin(keep.ms, pingEvery)) : maxPings
 
-const pingsOf = (t: Track, keep: Keep) => `ping ${t.pings}/${pingCap(settings[t.key].maxPings, settings[t.key].pingEvery, keep)}`
+// Written right after arm(), so cfgOf gives the settings the armed timer took
+const pingsOf = (t: Track, keep: Keep) => { const cfg = cfgOf(t); return `ping ${t.pings}/${pingCap(cfg.maxPings, cfg.pingEvery, keep)}` }
 const runningLine = (t: Track, keep: Keep, lead = '') =>
   `keepalive ${t.name}: ${lead}warm until ${until(t.warmUntil)}, ${pingsOf(t, keep)}, keep warm ${formatDuration(keep.ms)}, stop by ${until(t.armedTime + keep.ms)}`
 
-function end($: EngineInterface, t: Track, text: string) {
+// A track stopping on its own (expired, kept warm, missed, its ping limit, an error): its keep-warm
+// time is re-read before the state is published (refreshKeep). Never throws.
+async function end($: EngineInterface, t: Track, text: string) {
   stopTrack(t)
   t.line = `keepalive ${t.name}: ${text}`
+  await refreshKeep($)
   render($)
 }
 
 // One track's pings: each tick checks, in order, a timer that fired after the cache expired, the
 // track's keep-warm time, then pings; a miss stops the track, a hit moves "warm until" on, and the
 // track's ping limit or the shared spend limit stops it after that ping.
-function arm($: EngineInterface, t: Track) {
+// `from` is the time the timer is set, so the published state can say when the next ping is due.
+function arm($: EngineInterface, t: Track, from: number) {
   stopTrack(t)
   const armedAt = t.generation
   const cfg = settings[t.key]
+  t.cfg = cfg
+  t.nextPingAt = from + cfg.pingEvery
   t.timer = $.clock.after(cfg.pingEvery, async () => {
     // A timer stopped since it was set must not touch the track: another may be armed by now
     if (t.generation !== armedAt) return
@@ -308,19 +532,20 @@ function arm($: EngineInterface, t: Track) {
       // A timer that fires late (the machine slept) finds the cache gone, and a ping would only re-write it
       const now = await $.clock.now()
       if (t.generation !== armedAt) return
-      if (now >= t.warmUntil) return end($, t, 'expired, stopped')
+      if (now >= t.warmUntil) return await end($, t, 'expired, stopped')
       const keep = await keepWarm($, t.key)
       if (t.generation !== armedAt) return
+      t.keep = keep
       // The n-th ping is due n × pingEvery after the turn ended, and goes out when that is within the
       // keep-warm time, the last one included (20 on the 5m track's hour; human decision D1). Counted
       // on that schedule, not the clock, so the seconds each ping takes never cost the last one.
       // A duration spent before the first ping needed none: the cache's own lifetime covered it.
-      if ((t.pings + 1) * cfg.pingEvery > keep.ms) return end($, t, `${t.pings ? 'kept warm' : 'no ping needed for'} ${formatDuration(keep.ms)}, stopped, warm until ${until(t.warmUntil)}`)
+      if ((t.pings + 1) * cfg.pingEvery > keep.ms) return await end($, t, `${t.pings ? 'kept warm' : 'no ping needed for'} ${formatDuration(keep.ms)}, stopped, warm until ${until(t.warmUntil)}`)
 
       const { ok, line } = await ping($)
       if (t.generation !== armedAt) return
       $.ui.log(`keepalive ${t.name}: ${line}`, { to: 'debug' })
-      if (!ok) return end($, t, 'missed, stopped')
+      if (!ok) return await end($, t, 'missed, stopped')
       t.warmUntil = now + cfg.ttl
       t.pings++
       // Awaited, so a failure in it lands in the catch below
@@ -328,15 +553,19 @@ function arm($: EngineInterface, t: Track) {
       // The ping limit stops the track only when the keep-warm time would allow another ping; when it
       // does not, the next tick ends the track as "kept warm", as without a limit.
       const cap = pingCap(cfg.maxPings, cfg.pingEvery, keep)
-      if (t.pings >= cap && (t.pings + 1) * cfg.pingEvery <= keep.ms) return end($, t, `ping limit ${cap} reached, stopped, warm until ${until(t.warmUntil)}`)
+      if (t.pings >= cap && (t.pings + 1) * cfg.pingEvery <= keep.ms) return await end($, t, `ping limit ${cap} reached, stopped, warm until ${until(t.warmUntil)}`)
+      const at = await $.clock.now()
+      if (t.generation !== armedAt) return
+      // Armed before the line and the render, so both speak for the settings the new timer took
+      // (cfgOf) and the state shows the next ping
+      arm($, t, at)
       t.line = runningLine(t, keep)
       render($)
-      return arm($, t)
     } catch (err) {
       // Logged even when the track was stopped meanwhile (the spend limit stops it before it fails)
       $.ui.log(`keepalive ${t.name}: ${err instanceof Error ? err.message : String(err)}`, { to: 'debug' })
       if (t.generation !== armedAt) return
-      end($, t, 'error, stopped')
+      await end($, t, 'error, stopped')
     }
   })
 }
@@ -349,6 +578,7 @@ async function spendLimit($: EngineInterface, t: Track) {
     stopTrack(other)
     other.line = `keepalive ${n}: spend limit reached, stopped, warm until ${until(other.warmUntil)}`
   }
+  await refreshKeep($)
   // The tracks are already stopped, so a store that cannot be read stops here too, and says so
   let pays = false
   try {
@@ -371,7 +601,10 @@ export function stopForHandoff($: EngineInterface): boolean {
   const was = anyRunning()
   stopAll('handed off, stopped')
   lastSplit = undefined
-  if (was) render($)
+  if (was) {
+    render($)
+    void republishKeep($)
+  }
   return was
 }
 
@@ -385,6 +618,9 @@ export const seedLineOf = (read: number) => read > 0 ? `keepalive seed: cache hi
 export async function showSeedCache($: EngineInterface, cache: { read: number }): Promise<void> {
   seedLine = seedLineOf(cache.read)
   await load($)
+  // A full read: publish the keep-warm time it leaves in force (no track runs during a turn)
+  await refreshKeep($)
+  publish($)
   if (!settings.enabled || !settings.status) return
   // No track runs during a turn (turn.start stops them), so the line stands alone until the turn's
   // Stop arms one; render() then shows it under the track lines.
@@ -397,6 +633,19 @@ export function registerKeepalive(on: Parameters<Register>[0], deps: KeepaliveDe
     stopAll()
     seedLine = undefined
     for (const [n] of TRACKS) tracks[n].line = `keepalive ${n}: off`
+    // The settings and the overrides are read again at every new turn, and only then: a fresh session
+    // publishes its real settings from its first turn, and a machine override another session changed
+    // is published at this session's next turn. Nothing is read while the session is idle. A file is
+    // read again only when it changed, and git only when the working directory did (the turn cache).
+    try {
+      await load($, { atTurn: true })
+    } catch (err) {
+      $.ui.log(`keepalive: settings not re-read at the new turn (${err instanceof Error ? err.message : String(err)}); keeping the settings last read`, { to: 'debug' })
+    }
+    // A session's override outlives its turns (it is kept per session in the store), so the time
+    // re-read here is still that override until it is cleared or the session ends
+    await refreshKeep($)
+    publish($)
     if (!compacting) $.ui.status(undefined)
     return next(e)
   })
@@ -407,12 +656,16 @@ export function registerKeepalive(on: Parameters<Register>[0], deps: KeepaliveDe
       if (compacting || deps.handingOff()) return next(e)
       const tasks = e.background_tasks?.length ?? 0
       if (!tasks) {
-        if (anyRunning()) { stopAll('work done, stopped'); render($) }
+        if (anyRunning()) { stopAll('work done, stopped'); await refreshKeep($); render($) }
         return next(e)
       }
       await load($)
+      // A full read can change the keep-warm time of a track that will not arm below: each branch
+      // re-reads it once the tracks are stopped (refreshKeep skips a running track)
       if (!settings.enabled) {
         stopAll()
+        await refreshKeep($)
+        publish($)
         $.ui.status(undefined)
         return next(e)
       }
@@ -420,6 +673,7 @@ export function registerKeepalive(on: Parameters<Register>[0], deps: KeepaliveDe
       if (inOverage(rateLimits)) {
         stopAll()
         for (const [n] of TRACKS) tracks[n].line = `keepalive ${n}: off in overage`
+        await refreshKeep($)
         render($)
         return next(e)
       }
@@ -437,9 +691,12 @@ export function registerKeepalive(on: Parameters<Register>[0], deps: KeepaliveDe
         t.armedTime = now
         t.pings = 0
         t.warmUntil = now + settings[key].ttl
-        t.line = runningLine(t, await keepWarm($, key), `armed, ${tasks} task(s), `)
-        arm($, t)
+        t.keep = await keepWarm($, key)
+        arm($, t, now)
+        t.line = runningLine(t, t.keep, `armed, ${tasks} task(s), `)
       }
+      // The tracks that did not arm (off, disabled, no split): the time the full read left in force
+      await refreshKeep($)
       render($)
     } catch (err) {
       await log($, `keepalive: Stop error ${String(err)}`)
@@ -451,6 +708,7 @@ export function registerKeepalive(on: Parameters<Register>[0], deps: KeepaliveDe
   on('session.measure', async ($, e, next) => {
     if (anyRunning() && e.changed.includes('rateLimits') && inOverage(e.rateLimits)) {
       stopAll('overage, stopped')
+      await refreshKeep($)
       render($)
     }
     return next(e)
@@ -466,9 +724,15 @@ export function registerKeepalive(on: Parameters<Register>[0], deps: KeepaliveDe
     budget = 0
     context = 0
     compacting = false
+    // A new session reads every settings file, and asks git and trust, again at its first turn
+    turnCache = { files: new Map() }
     // Each session warns about a setting problem once
-    warned.clear()
     for (const [n] of TRACKS) tracks[n].line = `keepalive ${n}: off`
+    // The ended session's own override reaches no other session: the machine's override or the
+    // setting is what stays in force
+    await refreshKeep($, { session: false })
+    warned.clear()
+    publish($)
     $.ui.status(undefined)
     return next(e)
   })
@@ -478,6 +742,9 @@ export function registerKeepalive(on: Parameters<Register>[0], deps: KeepaliveDe
   // or the one --session / --machine names.
   on('command.run', { command: COMMAND }, async ($, e) => {
     await load($)
+    // A full read: publish the keep-warm time, pingEvery and limit it leaves in force
+    await refreshKeep($)
+    publish($)
     const args = parseCommandArgs(e.args ?? '', settings.scope, settings.minDuration)
     if (args.kind === 'usage') {
       const every = TRACKS.map(([n, key]) => `the ${n} track every ${formatDuration(settings[key].pingEvery)}`).join(' and ')
@@ -485,10 +752,17 @@ export function registerKeepalive(on: Parameters<Register>[0], deps: KeepaliveDe
     }
     if (args.kind !== 'ping') {
       await setKeepWarm($, args.scope, args.kind === 'set' ? args.ms : undefined, args.tracks)
+      await refreshKeep($)
+      publish($)
       const where = args.scope === 'machine' ? 'every session on this machine' : 'this session'
       const which = args.tracks.length === TRACK_NAMES.length ? 'both tracks' : `the ${args.tracks[0]} track`
       const what = args.kind === 'set' ? `set to ${formatDuration(args.ms)} on ${which} for ${where}` : `override cleared on ${which} for ${where}`
-      return { text: `keepalive: keep-warm ${what}; now ${await keepLines($)}` }
+      // A running track keeps the time it armed with until its next ping, which reads it again
+      const running = args.tracks.filter(n => tracks[n].timer !== undefined)
+      const later = running.length === 0 ? '' : running.length === 1
+        ? `; the running ${running[0]} track takes it at its next ping`
+        : '; the running tracks take it at their next ping'
+      return { text: `keepalive: keep-warm ${what}; now ${await keepLines($)}${later}` }
     }
     if (!settings.enabled) return { text: `keepalive: off (enabled=false, ${sources.enabled ?? 'default'}); nothing pinged` }
     const { context: ctx } = await $.session.usage()

@@ -418,3 +418,98 @@ Made by Rafsanul Hasan, 2026-10-23 (same run, review follow-up):
   check moved to `../keepalive/tests/keepalive.test.ts`, which now checks both
   settings tables, so `claude plugin test` holds one such check. No code in
   this folder changed.
+
+Made by Rafsanul Hasan, 2026-10-24 (FEAT-20261020-ai-dlc-lens, step 11.6):
+
+- **Versioned run states.** The `handoff` skill keeps a run's state as
+  `run.v1.md`, `run.v2.md`… (one per session; the highest `N` is current; a
+  folder from before versions keeps a `run.md`). `run.ts`: new
+  `currentRunStateFile(names)` picks the highest `run.v<N>.md`, compared as
+  numbers, else `run.md`; `RunTarget.runMd` is renamed `runState`;
+  `openRecords`, `parseStages` and `withNextAction` take the run state's
+  text as `state`; `recordsSection` takes the run-state path and names it in
+  its text instead of `run.md`. `register.tsx`: the run lookup lists each run
+  folder and reads only its current run state; the automatic handoff writes
+  *Next action* into that same file and never a new version; the step names
+  and log lines name the actual file.
+- **Tests.** `tests/run.test.ts`: `currentRunStateFile` (highest numeric `N`,
+  `run.v10.md` over `run.v9.md`, a legacy `run.md`, names that are not run
+  states, an empty folder), and a `run.v<N>.md` in a *Stages* cell never
+  counted as a handoff record. `tests/auto-handoff.test.tsx`: a versioned run
+  read and updated in place with no new version, `run.v10.md` over
+  `run.v9.md`, a `done` newest version ending the run over an older `active`
+  one, and a failed write naming the versioned file.
+- **Tests, round 2 (11.8).** `tests/auto-handoff.test.tsx` and `tests/run.test.ts`: a version beside a stray `run.md`, near-named files and sub-folder files never the run state, the takeover guard on a version another session wrote, only `updated` and *Next action* changed; the test engine's `fs.list` mock reports folders as `dir`, as the engine does.
+
+Made by Rafsanul Hasan, 2026-10-24 (FEAT-20261020-ai-dlc-lens, step 11.12):
+
+- **Minor and major run-state versions.** A change of direction now writes a
+  minor pair (`run.v1.1.md`, `run.v1.2.md`) and a new request scope the next
+  major (`run.v2.md`). `run.ts`: `currentRunStateFile` accepts
+  `run.v<major>.md` and `run.v<major>.<minor>.md` and picks the highest by
+  major, then minor, each compared as a number (a bare major counts as minor
+  0: `run.v2.md` over `run.v1.2.md` over `run.v1.1.md` over `run.v1.md`;
+  `run.v1.10.md` over `run.v1.9.md`). Each part is a whole number from 1 with
+  no leading zero, so `run.v0.md`, `run.v01.md`, `run.v1.0.md` and
+  `run.v1.01.md` are not run states and no two names can mean the same
+  version. Comments in `run.ts` and `register.tsx` name the new shape.
+- **Tests.** `tests/run.test.ts`: the minor pair, a new major over the old
+  one's minors, numeric minors, a minor version over a stray `run.md`,
+  near-names (`run.v1.md.bak`, `run.v1..2.md`, `run.v1.2.3.md` and others),
+  zero and zero-padded parts rejected, and a minor version in a *Stages* cell
+  never taken for a handoff record. `tests/auto-handoff.test.tsx`: `v1.2` read
+  and updated with `v1.1` and `v1` untouched, `v2` over `v1.10` and `v1.9`, a
+  `done` minor ending the run over its active bare major, and zero-padded
+  names never outranking `run.v1.md`.
+
+Made by Rafsanul Hasan, 2026-10-24 (FEAT-20261020-ai-dlc-lens, step 11.14):
+
+- **Round codes.** The `handoff` skill now numbers a loop's rounds after it
+  (`1.3.l1.1`, `1.4.l1.1.2`, a loop inside a loop `8.2.l1.1.l1.2`). `run.ts`:
+  one step-code pattern, `CODE`, shared by `pairOf` and `stepOf`, accepts
+  numbers, then any number of `.l<k>` loops each followed by its numbers, so
+  `last-record`'s pair and the header's step are found for round records;
+  the codes of earlier rules (`3.1.l2`, `01`) still match. `stepOf` also reads
+  a name with a folder.
+- **Open work of an open row.** A *Stages* row is now a sub-root listing all
+  its records, rounds included, oldest first. `openInRow` keeps, of an open
+  row, every record of its latest pass (`passOf`: a loop's code up to its
+  round number, else the sub-root; the pass of the last handoff the row
+  names) and every earlier handoff whose hand-back the row does not name; a
+  record with no step code is kept. Notes name the record's own code and the
+  row's step (`step 1.3.l1.1 in 1.3`), and the *Handoff records* text says
+  what an open stage lists.
+- **Tests.** `tests/run.test.ts` (*round codes (11.14)*): `stepOf`, `pairOf`
+  and `passOf` on round, nested-loop, pre-cut-off and old codes and on
+  near-codes; `openInRow` on a testing row with a done first pass, a nested
+  spawn, a done round and an unanswered handoff, on a first pass with two
+  axes, and on names with no code; `openRecords` with a round `last-record`,
+  and a done row. `tests/auto-handoff.test.tsx`: a round `last-record` in a
+  run state with *Sessions* and *Agents* columns lists the round first and
+  leaves the done first pass and the done row out.
+
+- **Tests, round 3 (11.15).** `tests/run.test.ts` (*round codes: gaps*): `openInRow` with Handoff and Handback in either column order, empty cells, bare names, a nested spawn under a round, two loops in one row, a `-to-human` handoff (pinned as it behaves today), `passOf` on earlier-rule codes, and run-state versions above 9 in both parts. No code changed.
+
+Made by Rafsanul Hasan, 2026-10-24 (FEAT-20261020-ai-dlc-lens, step 11.19):
+
+- **Handoffs to the human.** The human ruled on 11.14's open question (a):
+  a `-to-human` handoff inside a sub-root row is not unanswered work, since
+  the human answers it and no hand-back record follows. `openInRow` no longer
+  keeps such a handoff from an earlier pass; one in the row's latest pass is
+  still listed with that pass. Whole-run gate rows are unchanged.
+- **Run-state names in the log.** `run.ts`: `runStateNote` names what is odd
+  about a run folder's names: version-like names (`run.v….md`) none of which
+  is valid, or a `run.md` beside versions (the highest version is read).
+  `register.tsx` logs it once per folder and note. `VERSION_NAME` carries a
+  comment that it must stay the same as `RUN_VERSION` in the ai-dlc-lens
+  plugin's `hooks/lens.ts`.
+- **One kind predicate.** The run lookup takes run folders with
+  `kind === 'dir'` and run states with `kind === 'file'`; a link (`other`) is
+  neither, at both levels (before, a link counted as a folder and as a file).
+- **Tests.** `tests/run.test.ts`: the earlier-pass `-to-human` test flipped
+  to the new behaviour, a near-name (`-to-humanizer`, `human-to-`) still
+  kept, and `runStateNote`. `tests/auto-handoff.test.tsx`: an unreadable run
+  folder (new `failList` option of the fake engine) is skipped and the
+  readable run handed off; the rejected-names note is logged once across two
+  handoffs; `run.md` beside a version is logged. The `fs.list` double is typed
+  with the host's `FsEntry['kind']` instead of `as never`.

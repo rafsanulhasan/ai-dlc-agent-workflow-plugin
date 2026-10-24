@@ -22,5 +22,6 @@
     "tdd",
     "mutation-testing",
     "spec-driven-development"
-  ]
+  ],
+  "types": "./types/index.d.ts"
 }
