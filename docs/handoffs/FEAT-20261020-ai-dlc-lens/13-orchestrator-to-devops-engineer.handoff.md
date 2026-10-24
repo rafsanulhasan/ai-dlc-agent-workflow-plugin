@@ -50,3 +50,11 @@ State: your commit C8 did land after your report, as `295a337`. It is signed (`%
    - `chore(handoffs): …`: the run folder, `run.v1.md` with all its step records and `phase-renames-2026-10-24.json` (the human: "commit the run state separately with its steps"). Add your hand-back records for step 13 too, once the orchestrator has written them; it will tell you.
 4. Run the checks before each commit as the record says, and the full test set before the last one.
 5. Then update PR #24 and push (fast-forward only).
+
+## Addendum B (orchestrator, 2026-10-24, after the push)
+The PR #24 description's deferred list came from a stale *Features* row in run.v1.md; the orchestrator has corrected it. Fix the description:
+- Root 8: built and reviewed through 2026-10-24. That covers the tests, the docs critique (PASS) and code review on both axes (approved), including the per-code rename source. Remove "reviews of 8.4 to 8.6 pending".
+- Deferred, from the reviews: splitting the lens's `stepCharts` by phase, and moving the step-chart logic into its own module.
+- Open: the scope pass and second G1 if the run still lists them; G2, G3 and G4 and the release go / no-go; the manual VS Code checks (`plugins/claude/ai-dlc-lens/MANUAL-CHECKS.md`).
+
+Then commit the run folder's changes since 506e74f (run.v1.md and the step-13 records) as `chore(handoffs): …` with the Opus 5.5 trailer, and push with a fast-forward only. The orchestrator stores your hand-back after this push; that last record is committed at the run's next gate, not now.

@@ -65,3 +65,24 @@ handoff 13-orchestrator-to-devops-engineer.handoff.md: passed — Addendum A ite
 **Next, once you send me the step-13 hand-back record:** stage the run folder plus that record, check, commit `chore(handoffs)`, then update the PR #24 description with `gh` (`https://github.com/rafsanulhasan/ai-dlc-agent-workflow-plugin/pull/24`, open on this branch; `gh` is logged in as `rafsanulhasan`) and do a fast-forward push. The PR description will cover each feature root, the deferred items and the open gates G2 to G4 and release.
 
 Orchestrator check: `git log` shows the 7 commits with these hashes, all `%G?` = G, all 7 with the Opus 5.5 trailer; `git status` shows only the run folder uncommitted. Verification: passed.
+
+---
+Hand-back after the run-folder commit (verbatim):
+
+handoff 13-orchestrator-to-devops-engineer.handoff.md: passed — the run folder is committed, the branch is pushed with a fast-forward, and the PR #24 description is updated.
+
+**Run-folder commit:** `506e74f`, signed (`G`), `chore(handoffs): run state and step records of FEAT-20261020-ai-dlc-lens`, with the Opus 5.5 trailer. It has 304 files and includes `13-devops-engineer-to-orchestrator.handback.md`, `run.v1.md` and `phase-renames-2026-10-24.json`. The working tree is clean afterwards (0 paths pending).
+
+**Checks before the commit** (on the staged state, same tree as the final one since only the run folder changed):
+- `node tools/build-copilot.mjs --check` printed `Copilot plugin and generated sources are up to date.`
+- `node .ai-dlc/workflow.mjs validate` printed `.ai-dlc\workflow.json: valid`.
+- `node tools/validate.mjs` printed `validate: every step passed`.
+- The full test set ran in my previous report, on the same code tree: `node --test "tests/**/*.test.mjs"` gave 697 tests, 695 pass, 0 fail, 2 skipped; `plugin test` gave 530 pass for `ai-dlc` and 301 pass for `ai-dlc-lens`. I did not re-run it, because no code changed in this commit.
+
+**Push:** `git fetch` first, then `git merge-base --is-ancestor origin/feat/ai-dlc-lens HEAD` confirmed a fast-forward. `git push origin feat/ai-dlc-lens` printed `652a716..506e74f  feat/ai-dlc-lens -> feat/ai-dlc-lens`. `git status -sb` now shows the branch level with `origin/feat/ai-dlc-lens`. 15 commits were pushed. No force, no `--no-verify`.
+
+**PR #24:** https://github.com/rafsanulhasan/ai-dlc-agent-workflow-plugin/pull/24 (open). The description is rewritten from `gh pr edit 24 --body-file`. The title is now "feat(lens): ai-dlc-lens: G1 package and the build so far (feature roots 8 to 12)", down from "G1 package (brief, stories, backlog, run records)". The new body: Summary; one bullet per feature root with its commit (8 `2ee5543`, 9 `e462bff`, 10 `6a7d876`, 11 `b6c1589`, 12 `e7a47a6`; memory `3897214`, model-metadata `27aafd6`, run folder `506e74f`); placement note; deferred and open (root 8 in progress with 8.6 step charts and reviews of 8.4 to 8.6 pending; scope pass and second G1; G2, G3, G4 and release go / no-go; manual VS Code checks); checks; the Claude Code line.
+
+**One thing to check:** I wrote the deferred-items list from the Features table in `run.v1.md` (8.6 step charts, reviews of 8.4 to 8.6, the scope pass) and from the marketplace text, not from a dedicated deferred-items record. Correct the PR if the human has other deferred items in mind.
+
+Orchestrator check: `git status -sb` level with origin; `506e74f` signed (G). Verification: passed. The deferred list came from a stale Features row (orchestrator's), so a correction was sent as Addendum B.

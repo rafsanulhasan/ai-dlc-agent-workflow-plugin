@@ -6,11 +6,11 @@ previous: run.md (renamed 2026-10-24)
 status: active
 lifecycle: AI-DLC
 mode: subagent
-current-stage: step 13 commits done (7); run-folder commit, PR #24 update, push in progress
+current-stage: commits pushed (506e74f); PR #24 description correction
 owner: orchestrator
 session: 5bbdde00-5281-4870-a2a6-8f779f16e87b (continued after automatic handoff)
 branch: feat/ai-dlc-lens
-commit: 27aafd6
+commit: 506e74f
 last-record: 13-devops-engineer-to-orchestrator.handback.md
 updated: 2026-10-24 (resumed)
 ---
@@ -264,10 +264,10 @@ The human (2026-10-24): one flowchart per feature root; "try to find what which 
 | 5 | Spikes 027 / 028 / 029 | 10.2, 12.1–12.3, 13, 14 | done |
 | 6 | Lens feature inventory | 15, 16 | done |
 | 7 | Spike 027 rework rounds 1–6 | 17, 18.1–18.4 | done |
-| 8 | ai-dlc-lens plugin from the spike | 19, 20, 21, 27, 29, 30 | in progress (8.6: step charts; reviews of 8.4–8.6 pending) |
+| 8 | ai-dlc-lens plugin from the spike | 19, 20, 21, 27, 29, 30 | built and reviewed through 2026-10-24 (tests, docs critique PASS, code review both axes approved, incl. the per-code rename source); the lens as a whole waits for G2–G4 and release. Deferred: split stepCharts; a step-chart module |
 | 9 | Orchestrator checks only, never runs checks | 22, 23 | done (critique PASS) |
 | 10 | Docs-status rule | 24, 25 | done (critique PASS) |
-| 11 | Related work joins its parent run; numbering | 26 | done (critique PASS) |
+| 11 | Related work joins its parent run; numbering | 26 | done: phase sub-roots, loops and rounds, major.minor run-state versions, auto-handoff reading them (critique PASS, code review both axes approved) |
 | 12 | Keep-alive publishes the keep-warm time in force | 28 | done (code review approved) |
 
 ### Steps after the renumbering
@@ -428,3 +428,5 @@ Docs status: markers stay *in progress*. Under the docs-status rule the status c
 
 ## Next action (2026-10-24, commits)
 devops-engineer commits this run folder (this file included), updates PR #24 and pushes. After that the run waits for the human: the lens's next gates (G2 frozen spec, G3 task plan, G4 review) and the release. The deferred items are recorded above: split stepCharts; a step-chart module.
+| 13 | run-folder commit, PR #24, push | devops-engineer | done (passed: 506e74f signed, 304 files; push 652a716..506e74f fast-forward; PR #24 description rewritten). Correction asked: its deferred list came from a stale Features row (reviews of 8.4–8.6 are done) | 13-devops-engineer-to-orchestrator.handback.md |
+| 13.l1.1 | PR #24 description correction + commit of this run-state update | devops-engineer | in-progress | 13-orchestrator-to-devops-engineer.handoff.md (Addendum B) |
