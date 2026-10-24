@@ -11,8 +11,8 @@ owner: orchestrator
 session: 599f511f-ceae-4288-babb-06a85ef91e3c
 branch: feat/ai-dlc-lens (feat/wf-1 merged at 734b33d)
 commit: 734b33d
-last-record: 19.6-orchestrator-to-agent-manager.handoff.md
-updated: 2026-10-24
+last-record: 17.2.l1.1-agent-manager-to-orchestrator.handback.md
+updated: 2026-10-25
 wave: 3 (Build)
 ---
 
@@ -39,6 +39,10 @@ Mode choice for the build: subagents. Each chain is a fixed sequence (agent-mana
 | 19.4.l1.2 | code review round 2, both axes, fix diff | code-reviewer | subagent | done · APPROVE r2 (Warning refuted; 2 Suggestions → follow-ups: G4/G5 why-strings "plugin-variant", skip ignored-variant warning on legacy string) | 599f511f | — | `19.4.l1.2-orchestrator-to-code-reviewer.handoff.md` | `19.4.l1.2-code-reviewer-to-orchestrator.handback.md` | 2026-10-24 |
 | 16.2.2 | build T16.2 (ITEM-031) + T16.1 review follow-ups (Warning + Suggestions) | agent-manager | subagent | done (passed: + addendum handoff SKILL.md:464; 560/0, 697/0; checks quoted) | 599f511f | — | `16.2.2-orchestrator-to-agent-manager.handoff.md` | `16.2.2-agent-manager-to-orchestrator.handback.md` | 2026-10-24 |
 | 16.3.2 | tests T16.2 + refactor (no behaviour change, mutations, AC-16.5.3) | sqa-engineer | subagent | done (passed: PASS, equivalence 0 diff, 5/5 mutants, +1 gap test; 560/0, 698/0) | 599f511f | — | `16.3.2-orchestrator-to-sqa-engineer.handoff.md` | `16.3.2-sqa-engineer-to-orchestrator.handback.md` | 2026-10-25 |
+| 17.2 | build T17.1 (ITEM-032) cache ledger | agent-manager | subagent | done (passed: red 10 → green 587/0; 744/0; checks quoted; 3 behaviour changes flagged) | 599f511f | — | `17.2-orchestrator-to-agent-manager.handoff.md` | `17.2-agent-manager-to-orchestrator.handback.md` | 2026-10-25 |
+| 17.3 | tests T17.1 (traceability, ≥8 mutations, pin flagged behaviour 3) | sqa-engineer | subagent | done (passed: 20/20 mutations; 4 tests added; 591/0) | 599f511f | — | `17.3-orchestrator-to-sqa-engineer.handoff.md` | `17.3-sqa-engineer-to-orchestrator.handback.md` | 2026-10-25 |
+| 17.2.l1.1 | T17.1 addendum: arm from max(ledger, pingWarmUntil); flip pinned test | agent-manager | subagent | done (passed: red→green; 591/0, 744/0) | 599f511f | — | `17.2.l1.1-orchestrator-to-agent-manager.handoff.md` | `17.2.l1.1-agent-manager-to-orchestrator.handback.md` | 2026-10-25 |
+| 17.4.1 / 17.4.2 | code review T17.1 + addendum (conventions, intent) | code-reviewer ×2 | subagent | pending (records not yet written) | — | — | — | — | — |
 | 19.6 | post-merge checks on 734b33d | agent-manager | subagent | done (passed: 7 checks green at 734b33d) | 599f511f | — | `19.6-orchestrator-to-agent-manager.handoff.md` | `19.6-agent-manager-to-orchestrator.handback.md` | 2026-10-25 |
 | 16.4.l1.1 / 16.4.l1.2 | code review T16.2 (conventions, intent) | code-reviewer ×2 | subagent | done · both APPROVE (7 Suggestions → follow-ups) | 599f511f | — | `16.4.l1.1-…`, `16.4.l1.2-orchestrator-to-code-reviewer.handoff.md` | `16.4.l1.1-…`, `16.4.l1.2-code-reviewer-to-orchestrator.handback.md` | 2026-10-25 |
 | 16.5 | critique T16.2 docs, round 1 / 2 | brutal-critique | subagent | done · PASS r1 (4 Minors → follow-ups) | 599f511f | — | `16.5-orchestrator-to-brutal-critique.handoff.md` | `16.5-brutal-critique-to-orchestrator.handback.md` | 2026-10-24 |
@@ -55,7 +59,7 @@ Note: the first spawn of 16.2 was stopped before it changed anything, because it
 | Step | Feature | Status |
 |---|---|---|
 | 16 | Bug: auto-handoff session N | done (T16.1 9cc7f84, T16.2 committed with this update; tests, code review and docs critique all passed) |
-| 17 | Keep-alive 5m line, 1h counter, cache explanation | planned (Commit: 032, 033, 035) |
+| 17 | Keep-alive 5m line, 1h counter, cache explanation | in progress (T17.1 building) |
 | 18 | Taxonomy | planned (carry) |
 | 19 | AAW variants | WF-1 done (merged 734b33d, green); 048, 051 carry |
 | 20 | Diagramming | planned (stretch 053.a; rest carry) |
@@ -71,6 +75,7 @@ Note: the first spawn of 16.2 was stopped before it changed anything, because it
 ## Open clarifications
 | # | Asker → upstream | Question | Round | Status |
 |---|---|---|---|---|
+| 17.2-Q1 | agent-manager (via orchestrator) → system-engineer | 1h re-arm at Stop from a stale ledger entry after landed 1h pings with no 1h write; default: arm from max(ledger entry, last landed ping + TTL) | 1 | closed: se accepted the default; LLD revised (Track.pingWarmUntil, arming = max(ledger, pingWarmUntil); display ledger-only). To implement after 17.3 tests finish (sqa mutates keepalive.ts now) |
 | 19.2-Q1 | agent-manager (via orchestrator) → system-engineer | handoffReview maxRounds/maxFailures optional (default 2/1) vs LLD §3 required | 1 | closed: se accepted (optional, default 2/1); LLD §3 revised (docs/specs/aaw-variants.lld.md) |
 
 ## Follow-ups
@@ -90,4 +95,8 @@ Note: the first spawn of 16.2 was stopped before it changed anything, because it
 - The stale worktree `.worktrees/agent-a62622e4974e96bd0` (branch `worktree-agent-a62622e4974e96bd0`, 8e80b61) is left for the human to inspect or remove.
 
 ## Next action
-Chain A continues with T17.1 (ITEM-032), then 033 and 035 (KA order). Ping the human for the 034.c live check after 033 merges (stretch).
+Session 599f511f stopped near 800k tokens (auto-handoff lost to a plugin reload); a manual session handoff is at .scratch/FEAT-20261020-ai-dlc-lens/session-20261025-handoff.md.
+1. Write 17.4.1 / 17.4.2 handoffs (code review T17.1 + addendum, both axes; uncommitted diff in hooks/keepalive, auto-handoff/register.tsx, tests; new cache-state.ts) and spawn two code-reviewers.
+2. On approval, commit T17.1 (with docs/specs/keepalive-cache-status.lld.md clarify revision and agent-manager memory).
+3. Chain A: T17.2 (ITEM-033) → ping the human for 034.c after it merges → T17.4 (ITEM-035).
+4. Follow-ups and housekeeping listed above.
