@@ -9,7 +9,7 @@ import { BRIEF_DIR, CAPABILITIES_FILE, DEFAULTS, LAST_RESORT_INSTRUCTIONS, MODUL
 import type { Config, HostWindow, Level, SeedCache, TemplateKey, WindowInfo } from './config.ts'
 import { ENDED, assembleSessionHandoff, currentRunStateFile, handoffsRoot, inRepo, openRecords, parseRunState, pickRun, runStateNote, scratchRoot, sessionHandoffPath, withNextAction } from './run.ts'
 import type { RunState, RunTarget } from './run.ts'
-import { noteUsage, registerKeepalive, showSeedCache, stopForHandoff, transcriptSplit } from '../keepalive/keepalive.ts'
+import { logAgentUsage, noteUsage, registerKeepalive, showSeedCache, stopForHandoff, transcriptSplit } from '../keepalive/keepalive.ts'
 import { git, homeDir, log, orLog, readRaw, readText, repoRoot, trustGate } from './io.ts'
 
 // At the handoff threshold (thresholdPercent of the context window), Haiku writes a handoff brief, the mod runs /clear, then seeds the
@@ -920,6 +920,9 @@ export const register: Register = (on) => {
       const usage = r.usage
       await orLog($, 'keepalive usage', () => noteUsage($, usage))
     }
+    // ITEM-034.c: a subagent response's usage goes to the debug log only, never to the cache ledger
+    // (T17.3 forwards it to noteUsage, which then logs it itself)
+    if (e.agentId && r.usage) logAgentUsage($, r.usage, e.agentId)
     // The seed turn's first request is the fresh session's true starting size. Measuring at
     // the end of that turn instead let a busy first turn (47k to 129k of reads) set
     // the floor at 129k, with the pre-request check off the whole way.

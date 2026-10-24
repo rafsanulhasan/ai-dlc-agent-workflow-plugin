@@ -4,7 +4,7 @@ import type { On } from 'claude-code'
 import { formatDuration, parseCommandArgs, parseDuration } from '../duration.ts'
 import { NULL_IN_FILE, SETTINGS, TRUST_GATED, check, defaults, differsFromDefault, gatedDiffering, parsePrices, readMult, resolveSettings } from '../settings.ts'
 import type { Level } from '../settings.ts'
-import { pingCap, pingsWithin, seedLineOf, splitFromTranscript, splitOf } from '../keepalive.ts'
+import { pingCap, pingsWithin, seedLineOf, splitFromAgentTranscript, splitFromTranscript, splitOf } from '../keepalive.ts'
 import { hhmm } from '../cache-state.ts'
 import { PREVIEW_CHARS, SETTINGS as HANDOFF_SETTINGS, previewValue } from '../../auto-handoff/config.ts'
 
@@ -55,7 +55,7 @@ type Opts = {
 // otherwise, the transcript at TRANSCRIPT, and the repository at ROOT with `files` in it. The clock
 // moves only on `fire(minutes)`, and every timer due by then fires at that time, as after a sleep.
 function engine(on: On, o: Opts = {}) {
-  const seen = { statuses: [] as (string | undefined)[], forks: 0, logs: [] as string[], prompts: [] as string[], compacts: 0, runs: [] as string[][], states: [] as Published[], reads: 0, storeGets: 0, readPaths: [] as string[], stats: [] as string[] }
+  const seen = { statuses: [] as (string | undefined)[], forks: 0, subagentStops: 0, logs: [] as string[], prompts: [] as string[], compacts: 0, runs: [] as string[][], states: [] as Published[], reads: 0, storeGets: 0, readPaths: [] as string[], stats: [] as string[] }
   let now = START
   let timers: { due: number; resolve: () => void }[] = []
   const cacheReadOf = () => (typeof o.cacheRead === 'function' ? o.cacheRead() : o.cacheRead) ?? 1_000_000
@@ -98,6 +98,7 @@ function engine(on: On, o: Opts = {}) {
     },
   }
   on('classic.Stop', () => ({}) as never)
+  on('classic.SubagentStop', () => (seen.subagentStops++, {}) as never)
   on('turn.start', (_, e) => e as never)
   on('session.end', (_, e) => ({ sessionId: e.sessionId }) as never)
   on('session.usage', () => ({ value: { context: { tokens: 1_000_000, window: 1_000_000, percent: 100 }, rateLimits: o.rateLimits ?? [] } }) as never)
@@ -197,9 +198,10 @@ function responder(on: On) {
     yield { kind: 'stop', stopReason: 'end_turn', usage }
     return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'end_turn', usage }
   })
-  return async ($: Parameters<TestBody>[0], usage: unknown) => {
+  // `agentId`: the response is a subagent's (ITEM-034.c)
+  return async ($: Parameters<TestBody>[0], usage: unknown, agentId?: string) => {
     queue.push(usage)
-    for await (const _ of $.turn.step({ turnId: 't1', index: 0, model: 'claude-opus-5-5', messageCount: 1 } as never)) { /* drain */ }
+    for await (const _ of $.turn.step({ turnId: 't1', index: 0, model: 'claude-opus-5-5', messageCount: 1, ...(agentId ? { agentId } : {}) } as never)) { /* drain */ }
     await settle()
   }
 }
@@ -1924,7 +1926,9 @@ describe('[T17.1] the cache ledger arms the tracks', () => {
   // last ping's time plus an hour, so it is not ended as expired at its first tick. A miss clears it.
   test("LLD 3.4 arming after landed pings (Track.pingWarmUntil): a 1h track re-armed after landed pings with no 1h write arms until the last ping plus an hour; after a miss it does not; the ledger's 1h entry, which the cache part shows, does not move", async ($, on) => {
     let cacheRead = 1_000_000
-    const { part, seen, clock, line } = engine(on, { cacheRead: () => cacheRead })
+    // The missed ping's reply writes with no split, which rev 5 (D2a main) resolves from the transcript at
+    // the next Stop: a transcript with no split row keeps this test on pingWarmUntil alone
+    const { part, seen, clock, line } = engine(on, { cacheRead: () => cacheRead, files: { [TRANSCRIPT]: row(0, 0) } })
     const respond = responder(on)
     await respond($, usageOf(3_000, 0))
     await $.classic.Stop(stop())
@@ -2328,5 +2332,259 @@ describe('[T17.4] every landed ping shows on the line', () => {
     expect(line('1h')).toMatch(/; missed, stopped$/)
     expect(line('1h')).not.toMatch(/ping \d/)
     expect(seen.states.at(-1)?.tracks.find(t => t.name === '1h')).toMatchObject({ running: false, pings: 0 })
+  })
+})
+
+// LLD rev 5, D2a main (17.1.7): a main response that writes to the cache with no 1h/5m split marks the
+// ledger pending; the next Stop reads the transcript once and merges the row's split from the row's own
+// time, never lowering a live entry. No new AC: these are D2a-main cases of AC-17.1.1 and AC-17.1.4.
+describe('[17.2.4] D2a main (rev 5): a main write with no split', () => {
+  // A main response that wrote to the cache but reports no 1h/5m split
+  const noSplit = (written = 2_000) => ({ input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: written })
+  const rowAt = (h: number, m: number, ms?: number) => JSON.stringify({ ...JSON.parse(row(h, m)), ...(ms === undefined ? {} : { timestamp: new Date(ms).toISOString() }) })
+  const transcriptReads = (seen: { readPaths: string[]; runs: string[][] }) => seen.readPaths.filter(p => p === TRANSCRIPT).length + seen.runs.filter(r => r[0] === 'tail').length
+
+  test('AC-17.1.4 (D2a main) after a first main entry, a no-split main write at 10:00 then Stop at 10:03 shows main warm until 10:05, not expired', async ($, on) => {
+    // START is 9:50 here: the first entry (5m, 9:50) has expired by 10:00, the no-split write's time
+    const { line, clock } = engine(on, { files: { [TRANSCRIPT]: rowAt(0, 2_000, START + 10 * MIN) } })
+    const respond = responder(on)
+    await respond($, usageOf(0, 2_000))
+    await clock.fire(10)
+    await respond($, noSplit())
+    await clock.fire(3)
+    await $.classic.Stop(stop([]))
+    await settle()
+    expect(line('5m')).toBe(`keepalive 5m: main warm until ${hhmm(START + 15 * MIN)}; off (no background tasks)`)
+  })
+
+  test('AC-17.1.4 (D2a main) with background tasks the same Stop arms the 5m track until the row\'s time plus 5m', async ($, on) => {
+    const { part, seen, clock } = engine(on, { files: { [TRANSCRIPT]: rowAt(0, 2_000, START + 10 * MIN) } })
+    const respond = responder(on)
+    await respond($, usageOf(0, 2_000))
+    await clock.fire(10)
+    await respond($, noSplit())
+    await clock.fire(3)
+    await $.classic.Stop(stop())
+    await settle()
+    expect(part('5m')).toMatch(/^armed, 1 task\(s\), /)
+    expect(seen.states.at(-1)?.tracks.find(t => t.name === '5m')).toMatchObject({ running: true, warmUntil: START + 15 * MIN })
+  })
+
+  test('AC-17.1.1 (D2a main) the merge never lowers a live entry: an older row leaves a later warm-until', async ($, on) => {
+    const { line, clock } = engine(on, { files: { [TRANSCRIPT]: rowAt(0, 2_000, START - 2 * MIN) } })
+    const respond = responder(on)
+    await respond($, usageOf(0, 2_000))
+    await clock.fire(1)
+    await respond($, noSplit())
+    await clock.fire(1)
+    await $.classic.Stop(stop([]))
+    await settle()
+    // The row says 9:48 + 5m = 9:53; the live entry (9:50 + 5m) stays
+    expect(line('5m')).toBe(`keepalive 5m: main warm until ${hhmm(START + 5 * MIN)}; off (no background tasks)`)
+  })
+
+  test('AC-17.1.1 (D2a main) no split in the transcript either: no entry added, one transcript read, a second Stop reads nothing', async ($, on) => {
+    const { line, seen, clock } = engine(on, { files: { [TRANSCRIPT]: row(0, 0) } })
+    const respond = responder(on)
+    await respond($, usageOf(0, 2_000))
+    await clock.fire(10)
+    await respond($, noSplit())
+    await clock.fire(3)
+    await $.classic.Stop(stop([]))
+    await settle()
+    expect(transcriptReads(seen)).toBe(1)
+    expect(line('5m')).toBe(`keepalive 5m: main expired ${hhmm(START + 5 * MIN)}; off (no background tasks)`)
+    expect(line('1h')).toBe('keepalive 1h: off (no 1h cache write seen)')
+    expect(seen.logs).toContain('keepalive: main write without split, transcript has none')
+    await clock.fire(1)
+    await $.classic.Stop(stop())
+    await settle()
+    expect(transcriptReads(seen)).toBe(1)
+    expect(seen.logs.filter(l => l === 'keepalive: main write without split, transcript has none')).toHaveLength(1)
+  })
+
+  test('AC-17.1.1 (D2a main) a main entry and no pending write: the Stop reads no transcript', async ($, on) => {
+    const { seen, clock } = engine(on, { files: { [TRANSCRIPT]: rowAt(0, 2_000, START) } })
+    const respond = responder(on)
+    await respond($, usageOf(0, 2_000))
+    await clock.fire(1)
+    await $.classic.Stop(stop([]))
+    await $.classic.Stop(stop())
+    await settle()
+    expect(transcriptReads(seen)).toBe(0)
+  })
+
+  test('AC-17.1.1 (D2a main) a ping reply with a write and no split is resolved at the next Stop', async ($, on) => {
+    let cacheRead = 1_000_000
+    // The ping at 10:03 misses: its reply writes 1M tokens with no split. The transcript row at 10:03 has the split.
+    const { line, seen, clock } = engine(on, { split: null, cacheRead: () => cacheRead, files: { [TRANSCRIPT]: rowAt(0, 2_000, START + 3 * MIN) } })
+    const respond = responder(on)
+    await respond($, usageOf(0, 2_000))
+    await $.classic.Stop(stop())
+    cacheRead = 0
+    await clock.fire(3)
+    expect(seen.forks).toBe(1)
+    expect(transcriptReads(seen)).toBe(0)
+    await clock.fire(1)
+    await $.classic.Stop(stop([]))
+    await settle()
+    expect(transcriptReads(seen)).toBe(1)
+    expect(line('5m')).toBe(`keepalive 5m: main warm until ${hhmm(START + 8 * MIN)}; off (no background tasks)`)
+  })
+
+  test('AC-17.1.1 (D2a main) a row with no timestamp uses the response time, not the Stop time', async ($, on) => {
+    const { line, clock } = engine(on, { files: { [TRANSCRIPT]: rowAt(0, 2_000) } })
+    const respond = responder(on)
+    await respond($, usageOf(0, 2_000))
+    await clock.fire(10)
+    await respond($, noSplit())
+    await clock.fire(3)
+    await $.classic.Stop(stop([]))
+    await settle()
+    // The response came at 10:00: warm until 10:05, not the Stop's 10:03 + 5m = 10:08
+    expect(line('5m')).toBe(`keepalive 5m: main warm until ${hhmm(START + 15 * MIN)}; off (no background tasks)`)
+  })
+})
+
+// ITEM-034.c (T17.3c), the observation check (LLD 3.7, rev 6): two debug lines and nothing else. A
+// subagent response's usage and a finished subagent's transcript are logged with whether they carry
+// the 1h/5m split; neither reaches the cache ledger, pings anything or changes a line.
+describe('[17.2.4] ITEM-034.c the observation debug lines', () => {
+  const AGENT_TRANSCRIPT = '/home/test/.claude/projects/p/s-1/subagents/agent-a1.jsonl'
+  const sidechainRow = (h: number, m: number) => row(h, m, true)
+  const agentLogs = (seen: { logs: string[] }) => seen.logs.filter(l => l.startsWith('keepalive: agent usage') || l.startsWith('keepalive: subagent transcript'))
+  // What the ledger shows: both lines and the published caches after a Stop with no task
+  async function ledgerView($: Parameters<TestBody>[0], e: { line: (t: '1h' | '5m') => string | undefined; seen: { states: Published[] } }) {
+    await $.classic.Stop(stop([]))
+    await settle()
+    return { '1h': e.line('1h'), '5m': e.line('5m'), caches: e.seen.states.at(-1)?.tracks.map(t => t.caches) }
+  }
+  function sends(on: On) {
+    const sent = { count: 0 }
+    on('session.send', () => (sent.count++, { value: undefined }) as never)
+    return sent
+  }
+
+  test('AC-17.1.2 (034.c) a subagent response with a split logs split=present and its writes; the ledger is unchanged and nothing is pinged or sent', async ($, on) => {
+    const sent = sends(on)
+    const e = engine(on, { split: null })
+    const respond = responder(on)
+    await respond($, usageOf(0, 2_000))
+    const before = await ledgerView($, e)
+    await respond($, usageOf(3_000, 500), 'a1')
+    expect(agentLogs(e.seen)).toEqual(['keepalive: agent usage agent=a1 split=present writes=3500'])
+    expect(await ledgerView($, e)).toEqual(before)
+    // register.tsx gives the subagent's usage to the debug log only, never to noteUsage: no 1h entry,
+    // no subagents element in the cache part
+    expect(before['1h']).toBe('keepalive 1h: off (no 1h cache write seen)')
+    expect(e.seen.forks).toBe(0)
+    expect(sent.count).toBe(0)
+  })
+
+  test('AC-17.1.2 (034.c) a subagent response without a split logs split=absent; the ledger is unchanged', async ($, on) => {
+    const sent = sends(on)
+    const e = engine(on, { split: null })
+    const respond = responder(on)
+    await respond($, usageOf(0, 2_000))
+    const before = await ledgerView($, e)
+    await respond($, { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 900 }, 'a1')
+    expect(agentLogs(e.seen)).toEqual(['keepalive: agent usage agent=a1 split=absent writes=900'])
+    // Not D2a's unknown marker, not a pending main write: the usage never reached the ledger
+    expect(await ledgerView($, e)).toEqual(before)
+    expect(before['5m']).not.toContain('split unknown')
+    expect(e.seen.forks).toBe(0)
+    expect(sent.count).toBe(0)
+  })
+
+  test('AC-17.1.2 (034.c) a main response logs no agent usage line', async ($, on) => {
+    const { seen } = engine(on, { split: null })
+    const respond = responder(on)
+    await respond($, usageOf(0, 2_000))
+    expect(agentLogs(seen)).toEqual([])
+  })
+
+  test('AC-17.1.2 (034.c) SubagentStop with a split row in the agent transcript logs rows and split=present, and calls next', async ($, on) => {
+    const sent = sends(on)
+    const e = engine(on, { split: null, files: { [AGENT_TRANSCRIPT]: [sidechainRow(0, 0), sidechainRow(0, 2_000), '', sidechainRow(0, 0)].join('\n') } })
+    const respond = responder(on)
+    await respond($, usageOf(0, 2_000))
+    const before = await ledgerView($, e)
+    await $.classic.SubagentStop({ agent_id: 'a1', agent_transcript_path: AGENT_TRANSCRIPT } as never)
+    await settle()
+    expect(agentLogs(e.seen)).toEqual(['keepalive: subagent transcript agent=a1 rows=3 split=present'])
+    expect(e.seen.subagentStops).toBe(1)
+    expect(await ledgerView($, e)).toEqual(before)
+    expect(e.seen.forks).toBe(0)
+    expect(sent.count).toBe(0)
+  })
+
+  test('AC-17.1.2 (034.c) SubagentStop with no split row logs split=absent', async ($, on) => {
+    const e = engine(on, { split: null, files: { [AGENT_TRANSCRIPT]: [sidechainRow(0, 0), JSON.stringify({ type: 'user', isSidechain: true })].join('\n') } })
+    const respond = responder(on)
+    await respond($, usageOf(0, 2_000))
+    const before = await ledgerView($, e)
+    await $.classic.SubagentStop({ agent_id: 'a1', agent_transcript_path: AGENT_TRANSCRIPT } as never)
+    await settle()
+    expect(agentLogs(e.seen)).toEqual(['keepalive: subagent transcript agent=a1 rows=2 split=absent'])
+    expect(e.seen.subagentStops).toBe(1)
+    expect(await ledgerView($, e)).toEqual(before)
+  })
+
+  test('AC-17.1.2 (034.c) SubagentStop with no transcript path logs rows=0 split=absent', async ($, on) => {
+    const e = engine(on, { split: null })
+    await $.classic.SubagentStop({ agent_id: 'a1' } as never)
+    await settle()
+    expect(agentLogs(e.seen)).toEqual(['keepalive: subagent transcript agent=a1 rows=0 split=absent'])
+    expect(e.seen.subagentStops).toBe(1)
+  })
+
+  test('AC-17.1.2 (034.c) SubagentStop whose read and tail both fail logs rows=0 split=absent, does not throw and calls next', async ($, on) => {
+    const e = engine(on, { split: null, tail: 'missing', failRead: new Set([AGENT_TRANSCRIPT]), files: { [AGENT_TRANSCRIPT]: sidechainRow(0, 2_000) } })
+    const respond = responder(on)
+    await respond($, usageOf(0, 2_000))
+    const before = await ledgerView($, e)
+    await $.classic.SubagentStop({ agent_id: 'a1', agent_transcript_path: AGENT_TRANSCRIPT } as never)
+    await settle()
+    expect(agentLogs(e.seen)).toEqual(['keepalive: subagent transcript agent=a1 rows=0 split=absent'])
+    expect(e.seen.subagentStops).toBe(1)
+    expect(e.seen.runs.some(r => r[0] === 'tail' && r.at(-1) === AGENT_TRANSCRIPT)).toBe(true)
+    expect(await ledgerView($, e)).toEqual(before)
+  })
+
+  // [17.3.4] SQA: the handler must hand the event on (next), whatever the transcript read does: the engine
+  // double registered after it counts each event it receives. A handler returning undefined is treated as
+  // pass-through by the engine, so only a short-circuit (returning a result without next) is observable.
+  test('AC-17.1.2 (034.c) SubagentStop passes the event on to the next handler, with a readable transcript, none, and a failed read', async ($, on) => {
+    const failRead = new Set<string>()
+    const e = engine(on, { split: null, tail: 'missing', failRead, files: { [AGENT_TRANSCRIPT]: sidechainRow(0, 2_000) } })
+    expect(await $.classic.SubagentStop({ agent_id: 'a1', agent_transcript_path: AGENT_TRANSCRIPT } as never)).toEqual({})
+    expect(await $.classic.SubagentStop({ agent_id: 'a1' } as never)).toEqual({})
+    failRead.add(AGENT_TRANSCRIPT)
+    expect(await $.classic.SubagentStop({ agent_id: 'a1', agent_transcript_path: AGENT_TRANSCRIPT } as never)).toEqual({})
+    expect(e.seen.subagentStops).toBe(3)
+  })
+
+  test('AC-17.1.2 (034.c) SubagentStop without an agent id logs agent=?', async ($, on) => {
+    const e = engine(on, { split: null })
+    await $.classic.SubagentStop({} as never)
+    await settle()
+    expect(agentLogs(e.seen)).toEqual(['keepalive: subagent transcript agent=? rows=0 split=absent'])
+  })
+
+  test('AC-17.1.1 (D2a main) a Stop with no pending write logs no "main write without split" line, even with no main entry and no split in the transcript', async ($, on) => {
+    const { seen } = engine(on, { split: null })
+    await $.classic.Stop(stop([]))
+    await settle()
+    expect(seen.logs.filter(l => l.startsWith('keepalive: main write without split'))).toEqual([])
+  })
+
+  test('splitFromAgentTranscript keeps sidechain rows; splitFromTranscript skips them', () => {
+    const jsonl = [sidechainRow(0, 0), sidechainRow(1_000, 2_000), sidechainRow(0, 0)].join('\n')
+    expect(splitFromAgentTranscript(jsonl)).toEqual({ split: { '1h': 1_000, '5m': 2_000 } })
+    expect(splitFromTranscript(jsonl)).toBeUndefined()
+    expect(splitFromAgentTranscript([sidechainRow(0, 0), JSON.stringify({ type: 'user', isSidechain: true })].join('\n'))).toBeUndefined()
+    expect(splitFromAgentTranscript('')).toBeUndefined()
+    // A main row counts too, as in splitFromTranscript
+    expect(splitFromAgentTranscript(row(0, 500))).toEqual({ split: { '1h': 0, '5m': 500 } })
   })
 })

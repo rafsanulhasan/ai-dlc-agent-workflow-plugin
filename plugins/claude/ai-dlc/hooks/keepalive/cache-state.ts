@@ -14,8 +14,9 @@ export type Ttl = '5m' | '1h'
 export type EntryTtl = Ttl | 'unknown'
 export type LedgerEntry = { warmUntil: number }
 export type AgentCaches = { caches: Partial<Record<EntryTtl, LedgerEntry>>; status: 'running' | 'idle' | 'finished' }
-/** `main` never holds 'unknown': a main write without a split is not recorded (the transcript seed covers it). */
-export type Ledger = { main: Partial<Record<Ttl, LedgerEntry>>; agents: Map<string, AgentCaches> }
+/** `main` never holds 'unknown'. A main write without a split sets `pendingMain` (the time of the
+ * response); the next Stop resolves it from the transcript (LLD 2.1 step 3, rev 5). */
+export type Ledger = { main: Partial<Record<Ttl, LedgerEntry>>; agents: Map<string, AgentCaches>; pendingMain?: { at: number } }
 export type Observation = { at: number; agentId?: string; usage: unknown }
 /** Each TTL's cache lifetime in ms, from the settings (fiveMinute.ttl, oneHour.ttl). */
 export type Lifetimes = Record<Ttl, number>
@@ -27,6 +28,16 @@ export const emptyLedger = (): Ledger => ({ main: {}, agents: new Map() })
 /** `main` has an entry of some TTL: a response or the transcript seed already recorded the main loop's
  * cache, so the transcript need not be read (seedMain's first test, and the Stop's guard before it). */
 export const hasMain = (l: Ledger): boolean => TTLS.some(t => l.main[t] !== undefined)
+
+/** Rev 5. True when `main` has no entry, or a main write without a split is pending: the Stop reads
+ * the transcript only then. */
+export const needsMainSeed = (l: Ledger): boolean => !hasMain(l) || l.pendingMain !== undefined
+
+/** Rev 5. The transcript had no split for the pending write: forget it (one read per pending write,
+ * never retried). */
+export function dropPending(l: Ledger): void {
+  delete l.pendingMain
+}
 
 /** No entry of that TTL (of either TTL when none is named) from any source. 'unknown' entries do not count. */
 export function isEmpty(l: Ledger, ttl?: Ttl): boolean {
@@ -56,14 +67,18 @@ function cachesOf(l: Ledger, agentId: string | undefined): Partial<Record<EntryT
 const usable = (usage: unknown) => numberOf(usage, 'cache_read_input_tokens') > 0 || numberOf(usage, 'cache_creation_input_tokens') > 0
 
 // The writes of one response (LLD 2.1, step 2): each TTL with tokens written is warm until at + its
-// lifetime. D2a: an agent's write with no split is an 'unknown' marker, never shown as a time.
-function recordWrites(caches: Partial<Record<EntryTtl, LedgerEntry>>, o: Observation, life: Lifetimes, isAgent: boolean) {
+// lifetime. A write with no split (D2a): an agent's is an 'unknown' marker, never shown as a time; the
+// main loop's records nothing and marks the ledger pending (the later time wins), for the next Stop to
+// resolve from the transcript (rev 5).
+function recordWrites(l: Ledger, caches: Partial<Record<EntryTtl, LedgerEntry>>, o: Observation, life: Lifetimes) {
   const split = creationSplit(o.usage)
   let wrote = false
   for (const t of TTLS) {
     if ((split?.[t] ?? 0) > 0) { caches[t] = { warmUntil: o.at + life[t] }; wrote = true }
   }
-  if (!wrote && isAgent && numberOf(o.usage, 'cache_creation_input_tokens') > 0) caches.unknown = { warmUntil: o.at }
+  if (wrote || numberOf(o.usage, 'cache_creation_input_tokens') <= 0) return
+  if (o.agentId !== undefined) caches.unknown = { warmUntil: o.at }
+  else l.pendingMain = { at: Math.max(l.pendingMain?.at ?? o.at, o.at) }
 }
 
 /** D1. Records one response. Mutates `l`. Total: an unusable usage object changes nothing.
@@ -79,7 +94,7 @@ export function observe(l: Ledger, o: Observation, life: Lifetimes): void {
     const h = caches['1h']
     if (m && m.warmUntil > o.at && (split?.['1h'] ?? 0) === 0 && !(h && h.warmUntil > o.at)) m.warmUntil = o.at + life['5m']
   }
-  recordWrites(caches, o, life, o.agentId !== undefined)
+  recordWrites(l, caches, o, life)
 }
 
 /** D1, landed ping (spec rev 3). The response to a keep-alive ping that hit the cache, `ttl` being the
@@ -90,17 +105,21 @@ export function observe(l: Ledger, o: Observation, life: Lifetimes): void {
 export function observePing(l: Ledger, o: Observation & { ttl: Ttl }, life: Lifetimes): void {
   const caches = cachesOf(l, o.agentId)
   if (o.ttl === '5m') caches['5m'] = { warmUntil: o.at + life['5m'] }
-  recordWrites(caches, o, life, o.agentId !== undefined)
+  recordWrites(l, caches, o, life)
 }
 
 /** D1 seed, the transcript fallback at a Stop: gives `main` an entry per TTL with tokens > 0, warm
- * until writtenAt + its lifetime, only when `main` has no entry yet and that time is after `now`.
- * `writtenAt` is the time of the transcript row that carried the write (`now` when it has none). */
+ * until writtenAt + its lifetime, only when `needsMainSeed(l)` and that time is after `now`. Rev 5: the
+ * entry is merged, the later of the existing warm-until and writtenAt + lifetime, so a seed never lowers
+ * a live entry; `pendingMain` is cleared on return. `writtenAt` is the time of the transcript row that
+ * carried the write; the caller gives the pending write's time when the row has none, else `now`. */
 export function seedMain(l: Ledger, split: Record<Ttl, number>, writtenAt: number, now: number, life: Lifetimes): void {
-  if (hasMain(l)) return
+  if (!needsMainSeed(l)) return
   for (const t of TTLS) {
-    if (split[t] > 0 && writtenAt + life[t] > now) l.main[t] = { warmUntil: writtenAt + life[t] }
+    const until = writtenAt + life[t]
+    if (split[t] > 0 && until > now) l.main[t] = { warmUntil: Math.max(l.main[t]?.warmUntil ?? until, until) }
   }
+  dropPending(l)
 }
 
 export type SourceView = { warmUntil: number; expired: boolean }

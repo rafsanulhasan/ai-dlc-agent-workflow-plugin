@@ -671,3 +671,52 @@ LLD 3.5, 7):
   to cite their AC ids, their assertions unchanged.
 - **Manual check.** New `MANUAL-CHECKS.md`: row P1, the host repaint check
   of AC-17.4.4 in the terminal and VS Code.
+
+Made by Rafsanul Hasan, 2026-10-25 (run FEAT-20261020-ai-dlc-lens, feature
+root 17, step 17.2.4; spec keepalive-cache-status line 82, D2a; LLD rev 5,
+2, 2.1 step 3, 3.2, 3.4, 7):
+
+- **A main write with no split.** `cache-state.ts`: the ledger gains
+  `pendingMain`, set (the later time wins) when a main response or a ping
+  reply wrote to the cache with no 1h/5m split; nothing is recorded as a
+  time. `needsMainSeed` (no main entry, or a write pending) and
+  `dropPending` are new; `seedMain` merges the later warm-until, so it never
+  lowers a live entry, and clears the pending write. `keepalive.ts`:
+  `seedFromTranscript` reads the transcript when `needsMainSeed`, so once
+  per Stop with a pending write and never per response; a row with no
+  timestamp takes the pending write's time; a transcript with no split row
+  forgets the write and logs `keepalive: main write without split,
+  transcript has none` to the debug log, and the next Stop does not read
+  again. Before, a no-split main write after a first main entry left the
+  line `main expired` while the cache was warm.
+- **Tests.** `tests/keepalive.test.ts`: a block *[17.2.4] D2a main (rev
+  5)* (AC-17.1.4 red before this change, with and without background
+  tasks; the merge never lowers a live entry; no split in the transcript,
+  one read, none at the next Stop; no pending write, no read; a ping reply
+  with no split; a row with no timestamp). The LLD 3.4 `pingWarmUntil` test
+  gets a transcript with no split row, so its missed ping's write is not
+  resolved and the test still covers `pingWarmUntil` alone.
+  `tests/cache-state.test.ts`: the pending marker, the ping reply,
+  `needsMainSeed`/`dropPending` and the `seedMain` merge.
+- **Manual check.** `MANUAL-CHECKS.md` row P1: a new step 3 confirms on
+  the 1h status line that the session wrote a 1h cache before the check
+  starts (AC-17.4.4 precondition); the later steps are renumbered.
+- **The 034.c observation lines (T17.3c / ITEM-034.c; LLD 3.7 rev 6).**
+  `keepalive.ts`: `logAgentUsage` writes `keepalive: agent usage agent=<id>
+  split=present|absent writes=<n>` to the debug log for a subagent
+  response; `logSubagentTranscript` writes `keepalive: subagent transcript
+  agent=<id> rows=<n> split=present|absent` for a finished subagent, from
+  its transcript read whole, else its tail (`rows=0 split=absent` when it
+  cannot be read); a log-only `classic.SubagentStop` handler calls it and
+  always passes the event on. `splitFromAgentTranscript` is
+  `splitFromTranscript` keeping sidechain rows; both, and `transcriptSplit`,
+  now share one reader. None of it touches the cache ledger, pings or
+  changes a line; no `SubagentStart` or `TeammateIdle` handler (T17.3).
+- **Tests.** `tests/keepalive.test.ts`: a block *[17.2.4] ITEM-034.c the
+  observation debug lines* (each line with and without a split, a missing
+  path, a failed read and tail, the handler passing the event on, the
+  ledger unchanged, no ping or send, and `splitFromAgentTranscript`); the
+  test responder takes an agent id; the engine double answers
+  `classic.SubagentStop`.
+- **Manual check.** `MANUAL-CHECKS.md` row P2, the live 034.c check in the
+  terminal: one subagent run with `claude --debug-file`, then the two lines.

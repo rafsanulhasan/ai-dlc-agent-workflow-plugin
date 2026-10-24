@@ -84,7 +84,7 @@ const files = (written: Record<string, string>) => Object.keys(written).filter(p
 // commands: the slash commands the engine lists (default: clear and rename); failRename: /rename rejects.
 // failList: listing a folder whose path matches it fails, as an unreadable folder does.
 // failStore: $.store.get of a key that matches it rejects, as an unreadable store does.
-function engine(on: On, opts: { tokens: number; files?: Record<string, string>; env?: Record<string, string>; brief?: string | null; messages?: SessionMessage[]; toolChars?: number; streamToolChars?: number; store?: Record<string, unknown>; stepUsage?: boolean; surfaces?: ('terminal' | 'desktop' | 'mobile' | 'vscode')[]; noSh?: boolean; git?: Git; failWrite?: RegExp; failList?: RegExp; failStore?: RegExp; window?: number | null; percent?: number; breakdown?: Record<string, unknown> | 'throw'; commands?: string[]; failRename?: boolean; hold?: Promise<unknown>; stepRead?: number }): Calls {
+function engine(on: On, opts: { tokens: number; files?: Record<string, string>; env?: Record<string, string>; brief?: string | null; messages?: SessionMessage[]; toolChars?: number; streamToolChars?: number; store?: Record<string, unknown>; stepUsage?: boolean; surfaces?: ('terminal' | 'desktop' | 'mobile' | 'vscode')[]; noSh?: boolean; git?: Git; failWrite?: RegExp; failList?: RegExp; failStore?: RegExp; window?: number | null; percent?: number; breakdown?: Record<string, unknown> | 'throw'; commands?: string[]; failRename?: boolean; hold?: Promise<unknown>; stepRead?: number; stepSplit?: { h: number; m: number } }): Calls {
   const calls: Calls = { compacts: 0, steps: 0, cleared: 0, seeded: [], written: {}, completes: 0, tokens: opts.tokens, prompts: [], toasts: [], ran: 0, clearedAtWrite: {}, renamed: [], commandOrder: [], branchQueries: 0, usageArgs: [], store: new Map(Object.entries(opts.store ?? {})) }
   let sessionId = 'old-session'
   let clears = 0
@@ -225,7 +225,7 @@ function engine(on: On, opts: { tokens: number; files?: Record<string, string>; 
     // stepUsage: the response reports the request's size, as the real engine does.
     const usage = opts.streamToolChars ? { input_tokens: 0, output_tokens: 100, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } as never
       // stepRead: what the request read from the cache, the rest written to it (all read unless set)
-      : opts.stepUsage ? { input_tokens: 10, output_tokens: 0, cache_read_input_tokens: opts.stepRead ?? calls.tokens - 10, cache_creation_input_tokens: opts.stepRead === undefined ? 0 : calls.tokens - 10 - opts.stepRead } as never
+      : opts.stepUsage ? { input_tokens: 10, output_tokens: 0, cache_read_input_tokens: opts.stepRead ?? calls.tokens - 10, cache_creation_input_tokens: opts.stepRead === undefined ? 0 : calls.tokens - 10 - opts.stepRead, ...(opts.stepSplit ? { cache_creation: { ephemeral_1h_input_tokens: opts.stepSplit.h, ephemeral_5m_input_tokens: opts.stepSplit.m } } : {}) } as never
       : null
     if (usage) yield { kind: 'text', index: 0, text: 'reading' }
     yield { kind: 'stop', stopReason: 'tool_use', usage }
@@ -2525,6 +2525,40 @@ describe('the handoff and the prompt cache', () => {
     await $.classic.Stop({ background_tasks: [KA_TASK], transcript_path: '/home/test/new.jsonl' } as never)
     expect(statuses.at(-1)?.split('\n')).toHaveLength(2)
     expect(statuses.at(-1)).not.toContain('seed')
+  })
+
+  // ITEM-034.c (17.2.4): a subagent response's usage goes to the debug log only, never to the cache
+  // ledger; a main-loop response goes to the ledger and logs no agent line. register.tsx, turn.step.
+  const agentStep = async ($: Parameters<TestBody>[0], agentId?: string) => {
+    for await (const _ of $.turn.step({ ...STEP, ...(agentId ? { agentId } : {}) } as never)) void _
+  }
+
+  test('[ITEM-034.c] a subagent response logs its agent usage line and does not reach the cache ledger', async ($, on) => {
+    engine(on, { tokens: 50_000, stepUsage: true, stepRead: 0, stepSplit: { h: 0, m: 49_990 } })
+    const logs: string[] = []
+    const statuses: (string | undefined)[] = []
+    on('ui.log', async (_$, e) => (logs.push(e.text), { value: undefined }) as never)
+    on('ui.status', async (_$, e) => (statuses.push(e.text), { value: undefined }) as never)
+    on('classic.Stop', async () => ({}) as never)
+    await agentStep($, 'sub-1')
+    expect(logs).toContain('keepalive: agent usage agent=sub-1 split=present writes=49990')
+    // the ledger holds no write: a Stop with background work finds no main cache
+    await $.classic.Stop({ background_tasks: [KA_TASK] } as never)
+    expect(statuses.at(-1)).not.toContain('warm until')
+    expect(statuses.at(-1)).toContain('keepalive 5m: off (no cache write seen yet')
+  })
+
+  test('[ITEM-034.c] a main-loop response reaches the cache ledger and logs no agent usage line', async ($, on) => {
+    engine(on, { tokens: 50_000, stepUsage: true, stepRead: 0, stepSplit: { h: 0, m: 49_990 } })
+    const logs: string[] = []
+    const statuses: (string | undefined)[] = []
+    on('ui.log', async (_$, e) => (logs.push(e.text), { value: undefined }) as never)
+    on('ui.status', async (_$, e) => (statuses.push(e.text), { value: undefined }) as never)
+    on('classic.Stop', async () => ({}) as never)
+    await agentStep($)
+    expect(logs.filter(l => l.includes('agent usage'))).toEqual([])
+    await $.classic.Stop({ background_tasks: [KA_TASK] } as never)
+    expect(statuses.at(-1)).toMatch(/5m: main warm until \d+:\d\d/)
   })
 
   test('the seed cache fields and panel line, for a hit, a miss and a split not reported', () => {

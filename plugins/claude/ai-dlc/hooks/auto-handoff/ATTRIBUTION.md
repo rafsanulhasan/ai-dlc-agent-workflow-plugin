@@ -553,3 +553,24 @@ same date):
   armed track read `keepalive <track>: main warm until H:MM; armed`, and an
   unwritten 5m track reads `keepalive 5m: off (no 5m cache write seen)`.
   `register.tsx` is unchanged.
+
+Made by Rafsanul Hasan, 2026-10-25 (run FEAT-20261020-ai-dlc-lens, feature
+root 17, step 17.2.4, task T17.3c / ITEM-034.c; see
+`../keepalive/ATTRIBUTION.md`, same date):
+
+- **A subagent's usage to the debug log.** `register.tsx`, `turn.step`: a
+  response with an agent id and a usage is handed to keep-alive's
+  `logAgentUsage`, which only writes a debug line; it is not given to
+  `noteUsage`, and the main-loop accounting (`!e.agentId`) is unchanged.
+  T17.3 replaces this one line with the forwarding to `noteUsage`.
+
+Made by Rafsanul Hasan, 2026-10-25 (run FEAT-20261020-ai-dlc-lens, feature
+root 17, step 17.3.4.l1.1, code-review fix round 1 for 17.2.4; see
+`../keepalive/ATTRIBUTION.md`, same date):
+
+- **Tests only.** `tests/auto-handoff.test.tsx`: two register-level tests for
+  the `turn.step` line that hands a subagent response's usage to
+  `logAgentUsage` (a subagent response logs `keepalive: agent usage ...` and
+  leaves the cache ledger alone; a main-loop response reaches the ledger and
+  logs no agent line), and a `stepSplit` option on the fake engine so a step's
+  usage can carry the 1h/5m split. `register.tsx` is unchanged.

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'claude-code/testing'
-import { armUntil, cachePart, cacheView, emptyLedger, hasMain, hhmm, isEmpty, lineOf, observe, observePing, reasonText, seedMain } from '../cache-state.ts'
+import { armUntil, cachePart, cacheView, dropPending, emptyLedger, hasMain, hhmm, isEmpty, lineOf, needsMainSeed, observe, observePing, reasonText, seedMain } from '../cache-state.ts'
 import type { Ledger, Lifetimes } from '../cache-state.ts'
 
 // The pure seam of the cache ledger (spec keepalive-cache-status, D1 and D3; LLD section 2, T17.1).
@@ -200,6 +200,84 @@ describe('[T17.1] the cache ledger, pure', () => {
     expect(hasMain(l)).toBe(true)
     // Expired still counts: the main loop's cache was recorded, so the transcript has nothing newer to say
     expect(hasMain({ main: { '5m': { warmUntil: 0 } }, agents: new Map() })).toBe(true)
+  })
+
+  // LLD rev 5 (17.1.7), D2a main: a main write with no split is marked pending, never recorded as a time.
+  const noSplit = (written: number, read = 0) => ({ input_tokens: 1, output_tokens: 1, cache_read_input_tokens: read, cache_creation_input_tokens: written })
+
+  test('AC-17.1.1 (D2a main) a main write with no split sets pendingMain and records no entry; a read-only response or a write with a split does not', () => {
+    const l = emptyLedger()
+    observe(l, { at: T(10, 0), usage: noSplit(900) }, LIFE)
+    expect(l.main).toEqual({})
+    expect(l.pendingMain).toEqual({ at: T(10, 0) })
+    // A later write without a split moves the marker on; an earlier one does not move it back
+    observe(l, { at: T(10, 2), usage: noSplit(900) }, LIFE)
+    observe(l, { at: T(10, 1), usage: noSplit(900) }, LIFE)
+    expect(l.pendingMain).toEqual({ at: T(10, 2) })
+    // A split whose fields are both 0 is no split
+    const zero = emptyLedger()
+    observe(zero, { at: T(10, 0), usage: { ...usageOf(0, 0), cache_creation_input_tokens: 900 } }, LIFE)
+    expect(zero.pendingMain).toEqual({ at: T(10, 0) })
+    for (const usage of [noSplit(0, 1_500), usageOf(0, 2_000), usageOf(3_000, 0, 1_500)]) {
+      const other = emptyLedger()
+      observe(other, { at: T(10, 0), usage }, LIFE)
+      expect(other.pendingMain).toBeUndefined()
+    }
+    // An agent's write with no split is D2a's unknown marker, never the main marker
+    const agent = emptyLedger()
+    observe(agent, { at: T(10, 0), agentId: 'a1', usage: noSplit(900) }, LIFE)
+    expect(agent.pendingMain).toBeUndefined()
+    expect(agent.agents.get('a1')?.caches.unknown).toEqual({ warmUntil: T(10, 0) })
+  })
+
+  test('AC-17.1.1 (D2a main) a ping reply with a write and no split marks main pending, landed or not', () => {
+    const landed = emptyLedger()
+    observePing(landed, { at: T(10, 3), ttl: '1h', usage: noSplit(900, 1_500) }, LIFE)
+    expect(landed.pendingMain).toEqual({ at: T(10, 3) })
+    expect(landed.main).toEqual({})
+    const missed = emptyLedger()
+    observe(missed, { at: T(10, 3), usage: noSplit(1_000_000) }, LIFE)
+    expect(missed.pendingMain).toEqual({ at: T(10, 3) })
+  })
+
+  test('needsMainSeed: no main entry, or a pending main write; dropPending forgets the write', () => {
+    const l = emptyLedger()
+    expect(needsMainSeed(l)).toBe(true)
+    observe(l, { at: T(10, 0), usage: usageOf(0, 2_000) }, LIFE)
+    expect(needsMainSeed(l)).toBe(false)
+    observe(l, { at: T(10, 1), usage: noSplit(900) }, LIFE)
+    expect(needsMainSeed(l)).toBe(true)
+    dropPending(l)
+    expect(l.pendingMain).toBeUndefined()
+    expect(needsMainSeed(l)).toBe(false)
+    expect(l.main).toEqual({ '5m': { warmUntil: T(10, 5) } })
+    // An agent's entry is not a main one
+    const agent = emptyLedger()
+    observe(agent, { at: T(10, 0), agentId: 'a1', usage: usageOf(0, 2_000) }, LIFE)
+    expect(needsMainSeed(agent)).toBe(true)
+  })
+
+  test('seedMain with a pending write merges the later warm-until, never lowers a live entry, and clears pending', () => {
+    const l = emptyLedger()
+    observe(l, { at: T(9, 50), usage: usageOf(0, 2_000) }, LIFE)
+    observe(l, { at: T(10, 0), usage: noSplit(900) }, LIFE)
+    // The row at 10:00 resolves it: the expired 9:55 entry moves to 10:05
+    seedMain(l, { '1h': 0, '5m': 2_000 }, T(10, 0), T(10, 3), LIFE)
+    expect(l.main).toEqual({ '5m': { warmUntil: T(10, 5) } })
+    expect(l.pendingMain).toBeUndefined()
+    // An older row never lowers a live entry
+    observe(l, { at: T(10, 1), usage: noSplit(900) }, LIFE)
+    seedMain(l, { '1h': 0, '5m': 2_000 }, T(9, 59), T(10, 2), LIFE)
+    expect(l.main).toEqual({ '5m': { warmUntil: T(10, 5) } })
+    expect(l.pendingMain).toBeUndefined()
+    // A 1h row adds the 1h entry beside the 5m one; a row already past leaves pending cleared and adds nothing
+    observe(l, { at: T(10, 2), usage: noSplit(900) }, LIFE)
+    seedMain(l, { '1h': 3_000, '5m': 0 }, T(10, 2), T(10, 3), LIFE)
+    expect(l.main).toEqual({ '5m': { warmUntil: T(10, 5) }, '1h': { warmUntil: T(11, 2) } })
+    observe(l, { at: T(10, 3), usage: noSplit(900) }, LIFE)
+    seedMain(l, { '1h': 0, '5m': 2_000 }, T(9, 0), T(10, 4), LIFE)
+    expect(l.main).toEqual({ '5m': { warmUntil: T(10, 5) }, '1h': { warmUntil: T(11, 2) } })
+    expect(l.pendingMain).toBeUndefined()
   })
 
   test('hhmm is the local H:MM the status line has always used', () => {

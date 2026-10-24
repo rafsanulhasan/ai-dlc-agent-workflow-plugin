@@ -8,7 +8,7 @@ import type { TrustTarget } from '../auto-handoff/config.ts'
 import { homeDir, log, readRaw, repoRoot, trustGate, trustTarget } from '../auto-handoff/io.ts'
 import type { TrustCache } from '../auto-handoff/io.ts'
 import type { KeepaliveState, KeepaliveTrackState } from '../../types/index.d.ts'
-import { armUntil, cachePart, cacheView, emptyLedger, hasMain, hhmm, isEmpty, lineOf, observe, observePing, reasonText, seedMain } from './cache-state.ts'
+import { armUntil, cachePart, cacheView, dropPending, emptyLedger, hhmm, isEmpty, lineOf, needsMainSeed, observe, observePing, reasonText, seedMain } from './cache-state.ts'
 import type { Ledger, Lifetimes } from './cache-state.ts'
 
 // Keep-alive, folded into the ai-dlc hooks module from the vendored cache-keepalive mod (see
@@ -90,16 +90,16 @@ export function splitOf(usage: unknown): Split | undefined {
 /** A transcript's last cache write: its split and, when the row has a timestamp, when it was written. */
 export type TranscriptSplit = { split: Split; at?: number }
 
-/** The split of the last main-conversation response in a transcript (JSON lines) that wrote to the
- * cache, with the time of that row (`at`, from its `timestamp`) when it has one. */
-export function splitFromTranscript(jsonl: string): TranscriptSplit | undefined {
+// The last row of a transcript (JSON lines) that wrote to the cache with a split, with the time of
+// that row (`at`, from its `timestamp`) when it has one. `sidechain`: whether subagent rows count.
+function lastSplit(jsonl: string, sidechain: boolean): TranscriptSplit | undefined {
   const lines = jsonl.split('\n')
   for (let i = lines.length - 1; i >= 0; i--) {
     const line = lines[i]!
     if (!line.includes('"cache_creation"')) continue
     try {
       const o = JSON.parse(line) as { isSidechain?: boolean; timestamp?: unknown; message?: { usage?: unknown } }
-      if (o.isSidechain === true) continue
+      if (!sidechain && o.isSidechain === true) continue
       const split = splitOf(o.message?.usage)
       if (!split) continue
       const at = typeof o.timestamp === 'string' ? Date.parse(o.timestamp) : NaN
@@ -109,30 +109,78 @@ export function splitFromTranscript(jsonl: string): TranscriptSplit | undefined 
   return undefined
 }
 
+/** The split of the last main-conversation response in a transcript (JSON lines) that wrote to the
+ * cache, with the time of that row (`at`, from its `timestamp`) when it has one. */
+export const splitFromTranscript = (jsonl: string): TranscriptSplit | undefined => lastSplit(jsonl, false)
+
+/** splitFromTranscript for a subagent's own transcript, whose rows are all sidechain rows: they count
+ * (LLD 3.7, Fallback and 034.c). */
+export const splitFromAgentTranscript = (jsonl: string): TranscriptSplit | undefined => lastSplit(jsonl, true)
+
 /** Records one main-conversation response in the cache ledger (./cache-state.ts, observe). */
 export async function noteUsage($: EngineInterface, usage: unknown): Promise<void> {
   observe(ledger, { at: await $.clock.now(), usage }, life())
 }
 
-/** The split from the transcript file: read whole, else its last TAIL_BYTES through `tail`. */
-export async function transcriptSplit($: EngineInterface, path: string | undefined): Promise<TranscriptSplit | undefined> {
-  if (!path) return undefined
+// ITEM-034.c, the observation check (LLD 3.7, rev 6): two debug lines that show whether a subagent's
+// usage and its transcript carry the 1h/5m split. Log only: they never touch the ledger and never throw.
+
+/** Logs one subagent response's usage to the debug log: `keepalive: agent usage agent=<id>
+ * split=present|absent writes=<n>`, `writes` being its cache_creation_input_tokens and `split`
+ * whether its cache_creation carries the 1h/5m fields. register.tsx calls it for each response that
+ * has an agent id (until T17.3 moves the call into noteUsage). */
+export function logAgentUsage($: EngineInterface, usage: unknown, agentId: string): void {
+  try {
+    const raw = usage && typeof usage === 'object' ? (usage as Record<string, unknown>).cache_creation_input_tokens : undefined
+    const writes = typeof raw === 'number' && Number.isFinite(raw) ? raw : 0
+    $.ui.log(`keepalive: agent usage agent=${agentId} split=${creationSplit(usage) ? 'present' : 'absent'} writes=${writes}`, { to: 'debug' })
+  } catch {}
+}
+
+/** Logs a finished subagent's transcript to the debug log: `keepalive: subagent transcript
+ * agent=<id> rows=<n> split=present|absent`, `rows` being its non-empty lines and `split` whether a
+ * row wrote to the cache with the 1h/5m split (splitFromAgentTranscript). A missing path or a read
+ * that fails logs `rows=0 split=absent`. Never throws. */
+export async function logSubagentTranscript($: EngineInterface, e: { agent_id?: string; agent_transcript_path?: string }): Promise<void> {
+  try {
+    const text = e.agent_transcript_path ? await readTranscript($, e.agent_transcript_path) : undefined
+    const rows = text === undefined ? 0 : text.split('\n').filter(l => l.trim() !== '').length
+    const split = text !== undefined && splitFromAgentTranscript(text) !== undefined
+    $.ui.log(`keepalive: subagent transcript agent=${e.agent_id ?? '?'} rows=${rows} split=${split ? 'present' : 'absent'}`, { to: 'debug' })
+  } catch {}
+}
+
+// A transcript file: read whole, else its last TAIL_BYTES through `tail`; undefined when neither works.
+async function readTranscript($: EngineInterface, path: string): Promise<string | undefined> {
   const whole = await readRaw($, path)
-  if (whole !== undefined) return splitFromTranscript(whole)
+  if (whole !== undefined) return whole
   try {
     const { exitCode, stdout } = await $.process.run(['tail', '-c', String(TAIL_BYTES), path])
-    return exitCode === 0 ? splitFromTranscript(stdout) : undefined
+    return exitCode === 0 ? stdout : undefined
   } catch {
     return undefined
   }
 }
 
-// No main usage seen yet: the transcript's last write seeds main, from the time of its row (seedMain).
-// The guard skips the transcript read once a response or an earlier seed recorded the main cache.
+/** The split from the transcript file: read whole, else its last TAIL_BYTES through `tail`. */
+export async function transcriptSplit($: EngineInterface, path: string | undefined): Promise<TranscriptSplit | undefined> {
+  if (!path) return undefined
+  const text = await readTranscript($, path)
+  return text === undefined ? undefined : splitFromTranscript(text)
+}
+
+// No main usage seen yet, or a main write with no split is pending (LLD 3.4, rev 5): the transcript's
+// last write seeds main, from the time of its row, else the pending write's time, else now (seedMain,
+// which never lowers a live entry). The guard skips the read otherwise, so the transcript is read once
+// per Stop with a pending write and never per response: a response's own row may not be written yet
+// when its usage arrives, while at the Stop it is. A transcript with no split forgets the pending
+// write, so the next Stop does not read again.
 async function seedFromTranscript($: EngineInterface, path: string | undefined, now: number) {
-  if (hasMain(ledger)) return
+  if (!needsMainSeed(ledger)) return
   const r = await transcriptSplit($, path)
-  if (r) seedMain(ledger, r.split, r.at ?? now, now, life())
+  if (r) return seedMain(ledger, r.split, r.at ?? ledger.pendingMain?.at ?? now, now, life())
+  if (ledger.pendingMain) $.ui.log('keepalive: main write without split, transcript has none', { to: 'debug' })
+  dropPending(ledger)
 }
 
 const anyRunning = () => TRACKS.some(([n]) => tracks[n].timer !== undefined)
@@ -783,6 +831,15 @@ export function registerKeepalive(on: Parameters<Register>[0], deps: KeepaliveDe
     } catch (err) {
       await log($, `keepalive: Stop error ${String(err)}`)
     }
+    return next(e)
+  })
+
+  // ITEM-034.c (LLD 3.7, rev 6): log only, so the live check can see whether a finished subagent's
+  // transcript carries the split. No ledger change; T17.3 adds markAgent and the fallback here.
+  on('classic.SubagentStop', async ($, e, next) => {
+    try {
+      await logSubagentTranscript($, e)
+    } catch {}
     return next(e)
   })
 
