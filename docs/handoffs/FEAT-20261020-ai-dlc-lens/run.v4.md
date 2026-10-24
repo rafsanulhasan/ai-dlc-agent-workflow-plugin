@@ -9,9 +9,9 @@ mode: subagent for the build chains (sequential; orchestrator writes and verifie
 current-stage: Wave 3 Build, sprint 1 Commit: chain A (T16.1) and WF-1 in parallel
 owner: orchestrator
 session: 599f511f-ceae-4288-babb-06a85ef91e3c
-branch: feat/ai-dlc-lens (WF-1 on feat/wf-1 in .worktrees/wf-1)
-commit: 9cc7f84
-last-record: 19.4.l1.1-orchestrator-to-agent-manager.handoff.md
+branch: feat/ai-dlc-lens (feat/wf-1 merged at 734b33d)
+commit: 734b33d
+last-record: 19.6-orchestrator-to-agent-manager.handoff.md
 updated: 2026-10-24
 wave: 3 (Build)
 ---
@@ -39,6 +39,7 @@ Mode choice for the build: subagents. Each chain is a fixed sequence (agent-mana
 | 19.4.l1.2 | code review round 2, both axes, fix diff | code-reviewer | subagent | done · APPROVE r2 (Warning refuted; 2 Suggestions → follow-ups: G4/G5 why-strings "plugin-variant", skip ignored-variant warning on legacy string) | 599f511f | — | `19.4.l1.2-orchestrator-to-code-reviewer.handoff.md` | `19.4.l1.2-code-reviewer-to-orchestrator.handback.md` | 2026-10-24 |
 | 16.2.2 | build T16.2 (ITEM-031) + T16.1 review follow-ups (Warning + Suggestions) | agent-manager | subagent | done (passed: + addendum handoff SKILL.md:464; 560/0, 697/0; checks quoted) | 599f511f | — | `16.2.2-orchestrator-to-agent-manager.handoff.md` | `16.2.2-agent-manager-to-orchestrator.handback.md` | 2026-10-24 |
 | 16.3.2 | tests T16.2 + refactor (no behaviour change, mutations, AC-16.5.3) | sqa-engineer | subagent | done (passed: PASS, equivalence 0 diff, 5/5 mutants, +1 gap test; 560/0, 698/0) | 599f511f | — | `16.3.2-orchestrator-to-sqa-engineer.handoff.md` | `16.3.2-sqa-engineer-to-orchestrator.handback.md` | 2026-10-25 |
+| 19.6 | post-merge checks on 734b33d | agent-manager | subagent | done (passed: 7 checks green at 734b33d) | 599f511f | — | `19.6-orchestrator-to-agent-manager.handoff.md` | `19.6-agent-manager-to-orchestrator.handback.md` | 2026-10-25 |
 | 16.4.l1.1 / 16.4.l1.2 | code review T16.2 (conventions, intent) | code-reviewer ×2 | subagent | done · both APPROVE (7 Suggestions → follow-ups) | 599f511f | — | `16.4.l1.1-…`, `16.4.l1.2-orchestrator-to-code-reviewer.handoff.md` | `16.4.l1.1-…`, `16.4.l1.2-code-reviewer-to-orchestrator.handback.md` | 2026-10-25 |
 | 16.5 | critique T16.2 docs, round 1 / 2 | brutal-critique | subagent | done · PASS r1 (4 Minors → follow-ups) | 599f511f | — | `16.5-orchestrator-to-brutal-critique.handoff.md` | `16.5-brutal-critique-to-orchestrator.handback.md` | 2026-10-24 |
 | 19.4.l1.1 | WF-1 fix round 1: bc 19.5 Majors + Minors, CR 19.4.2 Warning + Suggestions (fresh agent-manager, worktree wf-1) | agent-manager | subagent | done (passed: 2e2f2d9; all findings fixed; CR Warning answered with evidence) | 599f511f | — | `19.4.l1.1-orchestrator-to-agent-manager.handoff.md` | `19.4.l1.1-agent-manager-to-orchestrator.handback.md` | 2026-10-24 |
@@ -56,7 +57,7 @@ Note: the first spawn of 16.2 was stopped before it changed anything, because it
 | 16 | Bug: auto-handoff session N | done (T16.1 9cc7f84, T16.2 committed with this update; tests, code review and docs critique all passed) |
 | 17 | Keep-alive 5m line, 1h counter, cache explanation | planned (Commit: 032, 033, 035) |
 | 18 | Taxonomy | planned (carry) |
-| 19 | AAW variants | in progress (WF-1 fully reviewed on feat/wf-1 8ecbceb; merge after T16.2 commits) |
+| 19 | AAW variants | WF-1 done (merged 734b33d, green); 048, 051 carry |
 | 20 | Diagramming | planned (stretch 053.a; rest carry) |
 | 21-28, 33 | Tiers 2-4 | planned (backlog) |
 
@@ -84,8 +85,9 @@ Note: the first spawn of 16.2 was stopped before it changed anything, because it
 - T16.2 Suggestions (16.4.l1.x): merge the agreement description tests; drop export of sessionSuffix; sessionName↔parseTitle round-trip test; move LOG_FILE up. Low priority.
 
 ## Housekeeping
+- .worktrees/wf-1 (feat/wf-1, merged at 734b33d) could not be removed: Permission denied (a file is held open). Remove it with git worktree remove .worktrees/wf-1 and git branch -d feat/wf-1 when free.
 - The stray root copy of 20.1.3-system-engineer-to-brutal-critique.handoff.md was removed by se (2026-10-24).
 - The stale worktree `.worktrees/agent-a62622e4974e96bd0` (branch `worktree-agent-a62622e4974e96bd0`, 8e80b61) is left for the human to inspect or remove.
 
 ## Next action
-Wait for 16.2 and 19.2. Verify each against `git diff` and the quoted checks; then sqa-engineer and the code reviews. Chain A continues 031 → 032 → 033 → 035 in KA order.
+Chain A continues with T17.1 (ITEM-032), then 033 and 035 (KA order). Ping the human for the 034.c live check after 033 merges (stretch).
