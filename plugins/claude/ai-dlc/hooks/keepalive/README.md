@@ -19,29 +19,44 @@ A track runs only when the session's last cache write used its lifetime. Keep-al
 
 ## Status lines
 
-While a turn has ended with background work, the status line under the prompt shows one line per track:
+**In progress:** the cache part of the lines and the reasons for `off` are built and being tested and reviewed. Two parts are not done yet: the `first ping at H:MM` clause (a later task) and the subagents' caches (a later task), so a line shows the main session's cache only.
+
+When a turn ends, with or without background tasks, the status line under the prompt shows one line per track. Each line is `keepalive <track>: <cache part>; <keep-alive part>`:
 
 ```text
-keepalive 1h: warm until 11:36, ping 2/9, keep warm 8h, stop by 18:46
-keepalive 5m: off
+keepalive 1h: main warm until 11:46; warm until 12:36, ping 1/9, keep warm 8h, stop by 18:46
+keepalive 5m: main expired 10:05; off (cache expired)
 ```
+
+- **The cache part** says what keep-alive has seen of the session's cache for the track's lifetime: `main warm until 10:05`, or `main expired 10:05` once that time has passed. It comes from the cache writes keep-alive has seen this session, so it shows even when no ping is armed. It is left out when no cache of that lifetime has been seen, and the line is then the keep-alive part alone. A new turn keeps it.
+- **The keep-alive part** says whether the track is pinging (the text described below) or, when it is not, why.
 
 After an automatic session handoff, a third line says whether the new session's first request read from the prompt cache (see *What the cache can reuse across a handoff*): `keepalive seed: cache hit, 30k read` or `keepalive seed: cache miss`. It shows from that first request until the next turn starts, alone or under the track lines.
 
-- **warm until**: when the cache expires if no further ping lands: the last successful ping (or the end of the turn, before the first ping) plus the track's lifetime. A line still on screen after that time is stale.
+- **warm until**: in the keep-alive part, when the cache expires if no further ping lands: the last successful ping (or the cache's own time, before the first ping) plus the track's lifetime. A landed 5m ping moves the cache part's time too, to the ping time plus 5 minutes (a 5m hit refreshes the cache's lifetime, even when the ping only read). A landed 1h ping moves the cache part's time only when its response carries a 1h cache write; a 1h ping that only read from the cache moves this time alone, so the two times can differ, as in the example above. A line still on screen after that time is stale.
 - **ping 2/9**: pings sent since the turn ended, out of the track's ping limit (`maxPings`, or more after `/ai-dlc:cache-keepalive <duration>`; see *When the pings stop*).
 - **keep warm 8h**: the total time the track keeps pinging, counted from the end of the turn, and where that time comes from when it is not the track's own setting.
 - **stop by 18:46**: the end of the turn plus the keep-warm time. A ping due at that time still goes out; none is due after it.
 - **armed, 1 task(s)**: at the start of a line, the turn has just ended with that many background tasks, and no ping has run yet.
-- **off**: the track is not in use, because the cache was not written with its lifetime. `off (disabled)`: the track is turned off. `off (no cache write seen yet, …)`: the lifetime is unknown. `off in overage`: see *Limitations*.
+- **off**: the track is not pinging, and the line always says why:
+  - `off (no background tasks)`: the turn ended with no background task, so nothing will wake the session.
+  - `off (no 5m cache write seen)` (or `1h`): the session has not written to the cache with this track's lifetime.
+  - `off (no cache write seen yet, so the cache lifetime is unknown)`: the session has not written to the cache at all.
+  - `off (cache expired)`: the turn ended with background tasks, but every cache of this lifetime has expired.
+  - `off (turn running)`: a new turn started. This shows in the published state; the status line itself is cleared while a turn runs.
+  - `off (session ended)`: the session ended (published only).
+  - `off (disabled)`: the track, or keep-alive, is turned off.
+  - `off in overage`: see *Limitations*.
 
-A stopped track says why, and the ones that kept the cache warm add until when, as in `kept warm 8h, stopped, warm until 18:46`: `kept warm 8h, stopped` (its time ran out), `no ping needed for 30m, stopped` (the time ran out before the first ping was due), `ping limit 20 reached, stopped`, `missed, stopped` (a ping missed the cache), `spend limit reached, stopped`, `expired, stopped` (a timer fired after the cache had already expired, for example after the machine slept), `work done, stopped`, `handed off, stopped` (an automatic session handoff), `overage, stopped` or `error, stopped`. The lines disappear when a new turn starts.
+A stopped track says why, and the ones that kept the cache warm add until when, as in `kept warm 8h, stopped, warm until 18:46`: `kept warm 8h, stopped` (its time ran out), `no ping needed for 30m, stopped` (the time ran out before the first ping was due), `ping limit 20 reached, stopped`, `missed, stopped` (a ping missed the cache), `spend limit reached, stopped`, `expired, stopped` (a timer fired after the cache had already expired, for example after the machine slept), `work done, stopped`, `handed off, stopped` (an automatic session handoff), `overage, stopped` or `error, stopped`. These follow the cache part, as in `keepalive 1h: main warm until 11:00; work done, stopped`. A Stop with no background tasks stops any running track this way (`work done, stopped`). The status lines disappear when a new turn starts.
 
 ## State for other plugins
 
 Keep-alive publishes what its status lines say as the `$.state` value `{ plugin: 'ai-dlc', key: 'keepalive' }`, declared in the plugin's `types/index.d.ts` (`plugin.json` `types`). It writes the value each time the lines change (a track armed, a ping, a track stopped, a new turn, the session ending), even when the status line is off. Only ai-dlc writes it; another plugin, such as `ai-dlc-lens`, reads it with `$.state.get` and needs no `dependencies` entry: without ai-dlc the read gives no value.
 
-The value is `{ enabled, updatedAt, sessionId, tracks }`. Each entry of `tracks` (`1h`, then `5m`) holds `name`, `running` (a ping is scheduled), `armedAt`, `warmUntil`, `nextPingAt` (null when not running), `pingEvery`, `keepWarmMs` (the keep-warm time in force), `pings`, `cap` (the ping limit) and `line` (the status line). Times are epoch milliseconds.
+The value is `{ enabled, updatedAt, sessionId, tracks }`. Each entry of `tracks` (`1h`, then `5m`) holds `name`, `running` (a ping is scheduled), `armedAt`, `warmUntil`, `nextPingAt` (null when not running), `pingEvery`, `keepWarmMs` (the keep-warm time in force), `pings` (pings that landed, that is, cache hits, since the track was armed), `cap` (the ping limit), `line` (the status line, cache part included) and, when keep-alive has seen any cache of the track's lifetime, `caches`. Times are epoch milliseconds.
+
+`caches` is a list with one entry per source, `{ source, warmUntil, expired }`: `source` is `main` (or `subagents`, the latest of the subagents' caches), `warmUntil` is when that cache expires, and `expired` says whether it had by `updatedAt`. The key is omitted when there is no entry. Today only `main` entries appear; `subagents` entries are not published yet (in progress).
 
 **What a track publishes before it runs.** `keepWarmMs` (and `cap`) is the keep-warm time in force; for a track that is not running, that is the time its next arming would take. It is read again at every new turn, when the session ends (this session's override no longer counts), after `/ai-dlc:cache-keepalive` sets or clears an override, whenever a track stops (expired, kept warm, missed, ping limit, spend limit, work done, overage, error) and after every full read (a Stop with background work, the command). A running track publishes the `pingEvery` and limit its timer took when it armed, and a new override at its next ping; the command's reply says so (`; the running 1h track takes it at its next ping`, or `the running tracks take it at their next ping` when both run). The published `enabled`, `pingEvery` and keep-warm times follow the settings files from a session's first turn. A machine override set in another session shows at this session's next turn; the machine override is read from the store at every turn, without the turn cache.
 

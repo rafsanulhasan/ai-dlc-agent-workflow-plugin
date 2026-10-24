@@ -543,3 +543,13 @@ same date):
   cache ledger, so the new session's Stop with a transcript that shows no
   cache write reports `keepalive 5m: off (no cache write seen yet, ...)`
   (a gap found by mutation testing, step 17.3).
+
+Made by Rafsanul Hasan, 2026-10-25 (run FEAT-20261020-ai-dlc-lens, feature
+root 17, step 17.2.2, task T17.2 / ITEM-033; see `../keepalive/ATTRIBUTION.md`,
+same date):
+
+- **Tests only.** `tests/auto-handoff.test.tsx`: keep-alive's lines now carry
+  the cache part before the keep-alive part, so the four assertions on an
+  armed track read `keepalive <track>: main warm until H:MM; armed`, and an
+  unwritten 5m track reads `keepalive 5m: off (no 5m cache write seen)`.
+  `register.tsx` is unchanged.

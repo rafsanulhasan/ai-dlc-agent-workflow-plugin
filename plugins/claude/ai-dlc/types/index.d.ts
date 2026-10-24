@@ -18,12 +18,16 @@ export type KeepaliveTrackState = {
   pingEvery: number
   /** The track's keep-warm time in force (an /ai-dlc:cache-keepalive override, else the setting). */
   keepWarmMs: number
-  /** Pings sent since the track was armed. */
+  /** Pings that landed (cache hits) since the track was armed. */
   pings: number
   /** The track's ping limit. */
   cap: number
-  /** The track's status line, as keep-alive shows it. */
+  /** The track's status line, as keep-alive shows it: its cache part, then its keep-alive part. */
   line: string
+  /** The caches of the track's lifetime keep-alive has seen this session, one per source (`main`, and
+   * `subagents` for the latest of the subagents' caches), with when each is warm until and whether it
+   * has expired at `updatedAt`. Omitted when there is none. */
+  caches?: { source: 'main' | 'subagents'; warmUntil: number; expired: boolean }[]
 }
 
 export type KeepaliveState = {

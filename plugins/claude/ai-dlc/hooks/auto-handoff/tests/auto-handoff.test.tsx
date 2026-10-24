@@ -2332,7 +2332,7 @@ describe('the handoff and the prompt cache', () => {
     on('ui.status', async (_$, e) => (statuses.push({ text: e.text, cleared: calls.cleared }), { value: undefined }) as never)
     on('classic.Stop', async () => ({}) as never)
     await $.classic.Stop({ background_tasks: [KA_TASK], transcript_path: '/home/test/old.jsonl' } as never)
-    expect(statuses.at(-1)?.text).toContain('keepalive 5m: armed')
+    expect(statuses.at(-1)?.text).toMatch(/^keepalive 5m: main warm until \d+:\d\d; armed/m)
     await $.turn.complete(TURN)
     await settle(() => calls.cleared > 0)
     const stopped = statuses.find(s => s.text?.includes('keepalive 5m: handed off, stopped'))
@@ -2354,7 +2354,7 @@ describe('the handoff and the prompt cache', () => {
     on('ui.status', async (_$, e) => (statuses.push(e.text), { value: undefined }) as never)
     on('classic.Stop', async () => ({}) as never)
     await $.classic.Stop({ background_tasks: [KA_TASK], transcript_path: '/home/test/old.jsonl' } as never)
-    expect(statuses.at(-1)).toContain('keepalive 5m: armed')
+    expect(statuses.at(-1)).toMatch(/^keepalive 5m: main warm until \d+:\d\d; armed/m)
     await $.turn.complete(TURN)
     await settle(() => calls.cleared > 0)
     await $.classic.SessionStart({ source: 'clear' })
@@ -2398,7 +2398,7 @@ describe('the handoff and the prompt cache', () => {
     await settle(() => calls.seeded.length > 0)
     // The handoff is over: the same Stop now arms the 5m track, so the guard is what held it back.
     await stopWith('/home/test/new.jsonl')
-    expect(statuses.at(-1)).toContain('keepalive 5m: armed')
+    expect(statuses.at(-1)).toMatch(/^keepalive 5m: main warm until \d+:\d\d; armed/m)
   })
 
   test('the seed turn logs what its first request read from and wrote to the cache, and the panel says hit', async ($, on) => {
@@ -2419,7 +2419,7 @@ describe('the handoff and the prompt cache', () => {
     // D4: keep-alive's status line says it too, under the track lines once a Stop arms one, until the next turn.
     expect(statuses.at(-1)).toBe('keepalive seed: cache hit, 47k read')
     await $.classic.Stop({ background_tasks: [KA_TASK], transcript_path: '/home/test/new.jsonl' } as never)
-    expect(statuses.at(-1)?.split('\n')).toEqual([expect.stringContaining('keepalive 1h: armed'), 'keepalive 5m: off', 'keepalive seed: cache hit, 47k read'])
+    expect(statuses.at(-1)?.split('\n')).toEqual([expect.stringMatching(/^keepalive 1h: main warm until \d+:\d\d; armed/m), 'keepalive 5m: off (no 5m cache write seen)', 'keepalive seed: cache hit, 47k read'])
     await $.turn.start({ turnId: 't-2' } as never)
     await $.classic.Stop({ background_tasks: [KA_TASK], transcript_path: '/home/test/new.jsonl' } as never)
     expect(statuses.at(-1)?.split('\n')).toHaveLength(2)

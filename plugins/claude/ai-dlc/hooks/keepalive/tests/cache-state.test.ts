@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'claude-code/testing'
-import { armUntil, cachePart, cacheView, emptyLedger, hhmm, isEmpty, lineOf, observe, observePing, reasonText, seedMain } from '../cache-state.ts'
+import { armUntil, cachePart, cacheView, emptyLedger, hasMain, hhmm, isEmpty, lineOf, observe, observePing, reasonText, seedMain } from '../cache-state.ts'
 import type { Ledger, Lifetimes } from '../cache-state.ts'
 
 // The pure seam of the cache ledger (spec keepalive-cache-status, D1 and D3; LLD section 2, T17.1).
@@ -100,6 +100,16 @@ describe('[T17.1] the cache ledger, pure', () => {
     expect(l.agents.get('a1')!.caches['5m']).toEqual({ warmUntil: T(10, 7) })
   })
 
+  // T17.2: the stories' E2 and E3 literally. Subagent usage reaches the ledger with ITEM-034 (T17.3), so
+  // these two are pinned here, on the pure seam; tests/keepalive.test.ts pins E1 and E4 to E7.
+  test('AC-17.1.2 E2: only a subagent wrote 5m at 10:02; E3: main 5m at 10:00 as well', () => {
+    const l = emptyLedger()
+    observe(l, { at: T(10, 2), agentId: 'a1', usage: usageOf(0, 500) }, LIFE)
+    expect(at(l, '5m', T(10, 3))).toBe('keepalive 5m: subagents warm until 10:07; off (no background tasks)')
+    observe(l, { at: T(10, 0), usage: usageOf(0, 2_000) }, LIFE)
+    expect(at(l, '5m', T(10, 3))).toBe('keepalive 5m: main warm until 10:05, subagents warm until 10:07; off (no background tasks)')
+  })
+
   test('AC-17.3.4 subagents show the latest warm-until over the agents of that TTL', () => {
     const l = emptyLedger()
     observe(l, { at: T(10, 2), agentId: 'a1', usage: usageOf(0, 500) }, LIFE)
@@ -178,6 +188,18 @@ describe('[T17.1] the cache ledger, pure', () => {
     const l = emptyLedger()
     observe(l, { at: T(10, 2), agentId: 'a1', usage: usageOf(0, 500) }, LIFE)
     expect([isEmpty(l), isEmpty(l, '5m'), isEmpty(l, '1h')]).toEqual([false, false, true])
+  })
+
+  // T17.2 (17.4.1 review follow-up): the Stop's guard before the transcript read and seedMain's first test.
+  test("hasMain: main has an entry of either TTL; an agent's entry or an empty ledger is not one", () => {
+    const l = emptyLedger()
+    expect(hasMain(l)).toBe(false)
+    observe(l, { at: T(10, 0), agentId: 'a1', usage: usageOf(3_000, 2_000) }, LIFE)
+    expect(hasMain(l)).toBe(false)
+    observe(l, { at: T(10, 0), usage: usageOf(3_000, 0) }, LIFE)
+    expect(hasMain(l)).toBe(true)
+    // Expired still counts: the main loop's cache was recorded, so the transcript has nothing newer to say
+    expect(hasMain({ main: { '5m': { warmUntil: 0 } }, agents: new Map() })).toBe(true)
   })
 
   test('hhmm is the local H:MM the status line has always used', () => {

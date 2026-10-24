@@ -6,12 +6,12 @@ previous: run.v3.md
 status: active
 lifecycle: AI-DLC (AAW plugin/mod chain override; build by agent-manager)
 mode: subagent for the build chains (sequential; orchestrator writes and verifies the records)
-current-stage: Wave 3 Build, T17.1 (ITEM-032) committed; next chain A T17.2 (ITEM-033)
+current-stage: Wave 3 Build, T17.2 (ITEM-033) committed; next 034.c live check (needs the human)
 owner: orchestrator
 session: 37788079-a467-459c-9605-3c9fb66627e9 (took over from 599f511f via manual session handoff, 2026-10-25; same version kept)
 branch: feat/ai-dlc-lens (feat/wf-1 merged at 734b33d)
-commit: 6f8cef4
-last-record: 17.2.l2.1-agent-manager-to-orchestrator.handback.md
+commit: 51fedb5
+last-record: 17.4.2.l1.1-code-reviewer-to-orchestrator.handback.md
 updated: 2026-10-25
 wave: 3 (Build)
 ---
@@ -44,6 +44,14 @@ Mode choice for the build: subagents. Each chain is a fixed sequence (agent-mana
 | 17.2.l1.1 | T17.1 addendum: arm from max(ledger, pingWarmUntil); flip pinned test | agent-manager | subagent | done (passed: red→green; 591/0, 744/0) | 599f511f | — | `17.2.l1.1-orchestrator-to-agent-manager.handoff.md` | `17.2.l1.1-agent-manager-to-orchestrator.handback.md` | 2026-10-25 |
 | 17.4.1 / 17.4.2 | code review T17.1 + addendum (conventions, intent) | code-reviewer ×2 | subagent | done · both APPROVE; standards 0B/1W/4S (W: auto-handoff ATTRIBUTION), spec 0B/0W/2S; follow-ups: T17.2 reason helpers + ITEM-034 agent shapes landed early, hasMain guard | 37788079 | — | `17.4.1-orchestrator-to-code-reviewer.handoff.md`, `17.4.2-orchestrator-to-code-reviewer.handoff.md` | `17.4.1-code-reviewer-to-orchestrator.handback.md`, `17.4.2-code-reviewer-to-orchestrator.handback.md` | 2026-10-25 |
 | 17.2.l2.1 | fix round 1 / 2 (code-review loop): auto-handoff ATTRIBUTION, ping-start comment, LF; tsc typecheck | agent-manager | subagent | done (passed: ATTRIBUTION entry + fix, comment, LF; 591/0, build --check clean, tsc pre-existing only). Code-review loop closed in round 1; orchestrator checked the one-entry ATTRIBUTION diff (no separate critique) | 37788079 | — | `17.2.l2.1-orchestrator-to-agent-manager.handoff.md` | `17.2.l2.1-agent-manager-to-orchestrator.handback.md` | 2026-10-25 |
+| 17.2.2 | build T17.2 (ITEM-033) status-line reasons | agent-manager | subagent | done (passed: red AC-17.2.2 → 613/0; 744/0; tsc known-4; build/validate exit 0; 3 LLD deviations → 17.1.5; E6 first-ping → T17.4; Docs update → 17.5) | 37788079 | — | `17.2.2-orchestrator-to-agent-manager.handoff.md` | `17.2.2-agent-manager-to-orchestrator.handback.md` | 2026-10-25 |
+| 17.3.2 | tests T17.2 (traceability, ≥8 mutations) | sqa-engineer | subagent | done (passed: 18/18 mutations, 3 tests added; 616/0, 744/0) | 37788079 | — | `17.3.2-orchestrator-to-sqa-engineer.handoff.md` | `17.3.2-sqa-engineer-to-orchestrator.handback.md` | 2026-10-25 |
+| 17.4.1.l1.1 / 17.4.2.l1.1 | code review T17.2 (conventions, intent) | code-reviewer ×2 | subagent | done · both APPROVE; standards 0B/0W/3S (follow-ups: reasonFor helper for the two reason ladders keepalive.ts:718/:763, name render($, 0), renderNow/publishNow wrapper), spec 0/0/0 | 37788079 | — | `17.4.1.l1.1-orchestrator-to-code-reviewer.handoff.md`, `17.4.2.l1.1-orchestrator-to-code-reviewer.handoff.md` | `17.4.1.l1.1-code-reviewer-to-orchestrator.handback.md`, `17.4.2.l1.1-code-reviewer-to-orchestrator.handback.md` | 2026-10-25 |
+| 17.5 | docs: keepalive README status lines + published state (in progress) | documentation-writer | subagent | done (passed: README +23/-8, **In progress:** marker :22, caches? :59) | 37788079 | — | `17.5-orchestrator-to-documentation-writer.handoff.md` | `17.5-documentation-writer-to-orchestrator.handback.md` | 2026-10-25 |
+| 17.5.l1.1 | critique round 1 / 2: keepalive README (T17.2) | brutal-critique | subagent | done · REVISE r1 (1 Blocker :36 ping rule, 1 Major :27 example; Minors 3-4 → follow-ups; recheck keepalive.ts:720 after sqa) | 37788079 | — | `17.5.l1.1-orchestrator-to-brutal-critique.handoff.md` | `17.5.l1.1-brutal-critique-to-orchestrator.handback.md` | 2026-10-25 |
+| 17.5.1.l1.1 | docs fix round 1 / 2: README Blocker + Major | documentation-writer | subagent | done (passed: :27 example, :36 observePing rule) | 37788079 | — | `17.5.1.l1.1-orchestrator-to-documentation-writer.handoff.md` | `17.5.1.l1.1-documentation-writer-to-orchestrator.handback.md` | 2026-10-25 |
+| 17.5.l1.2 | critique round 2 / 2: keepalive README fix | brutal-critique | subagent | done · PASS r2 (Blocker + Major closed; Minors 3-4 → follow-ups: no-tasks Stop per-track no-write text, example of expired + no background tasks) | 37788079 | — | `17.5.l1.2-orchestrator-to-brutal-critique.handoff.md` | `17.5.l1.2-brutal-critique-to-orchestrator.handback.md` | 2026-10-25 |
+| 17.1.5 | LLD: confirm 3 T17.2 deviations | system-engineer | subagent | done (passed: 3/3 accepted; LLD :130, :144-145, :155 revised; no code change) | 37788079 | — | `17.1.5-orchestrator-to-system-engineer.handoff.md` | `17.1.5-system-engineer-to-orchestrator.handback.md` | 2026-10-25 |
 | 19.6 | post-merge checks on 734b33d | agent-manager | subagent | done (passed: 7 checks green at 734b33d) | 599f511f | — | `19.6-orchestrator-to-agent-manager.handoff.md` | `19.6-agent-manager-to-orchestrator.handback.md` | 2026-10-25 |
 | 16.4.l1.1 / 16.4.l1.2 | code review T16.2 (conventions, intent) | code-reviewer ×2 | subagent | done · both APPROVE (7 Suggestions → follow-ups) | 599f511f | — | `16.4.l1.1-…`, `16.4.l1.2-orchestrator-to-code-reviewer.handoff.md` | `16.4.l1.1-…`, `16.4.l1.2-code-reviewer-to-orchestrator.handback.md` | 2026-10-25 |
 | 16.5 | critique T16.2 docs, round 1 / 2 | brutal-critique | subagent | done · PASS r1 (4 Minors → follow-ups) | 599f511f | — | `16.5-orchestrator-to-brutal-critique.handoff.md` | `16.5-brutal-critique-to-orchestrator.handback.md` | 2026-10-24 |
@@ -96,8 +104,12 @@ Note: the first spawn of 16.2 was stopped before it changed anything, because it
 - The stale worktree `.worktrees/agent-a62622e4974e96bd0` (branch `worktree-agent-a62622e4974e96bd0`, 8e80b61) is left for the human to inspect or remove.
 
 ## Next action
-T17.1 (ITEM-032) reviewed (both axes APPROVE), fixed (17.2.l2.1) and committed by session 37788079.
-1. Chain A: T17.2 (ITEM-033), the status-line reasons. Its brief carries the follow-ups: the early reason helpers in cache-state.ts (Reason, reasonText, cachePart, sourceText) get their production caller and keep their tests; the hasMain guard (keepalive.ts:705) if it touches that code.
-2. After T17.2 merges, ping the human to watch the live 034.c check; then T17.4 (ITEM-035).
-3. ITEM-034 (stretch) inherits the early D2a agent shapes in cache-state.ts.
+T17.1 (51fedb5) and T17.2 (ITEM-033) committed on feat/ai-dlc-lens by session 37788079. Keepalive README stays *in progress* (G4 tier 1 pending).
+1. 034.c (T17.3c) live check: ping the human; it needs them watching (plan :105). Brief: agent-manager adds the two debug log lines (LLD 3.7), then sqa-engineer runs one subagent response and one SubagentStop with the human and records whether the split is present. If the human is not available before T17.3 starts, T17.3 and everything after it in KA carries to the next sprint.
+2. T17.4 (ITEM-035) depends on 033 only (merge order: after 034): can be built in parallel with 034.c if the human agrees.
+3. Follow-ups:
+   - T17.1: hasMain helper done in T17.2.
+   - T17.2 review suggestions: reasonFor helper, name render($, 0), renderNow/publishNow wrapper.
+   - README Minors 3-4: no-tasks Stop per-track no-write text; an example of "main expired …; off (no background tasks)".
+   - ITEM-034 inherits the early D2a shapes and the onlySubagents reason (README to list it then).
 4. Housekeeping: the .worktrees/wf-1 folder (permission), the merged branch feat/wf-1, the stale .worktrees/agent-a62622e4974e96bd0.

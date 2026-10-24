@@ -24,6 +24,10 @@ const TTLS: readonly Ttl[] = ['5m', '1h']
 
 export const emptyLedger = (): Ledger => ({ main: {}, agents: new Map() })
 
+/** `main` has an entry of some TTL: a response or the transcript seed already recorded the main loop's
+ * cache, so the transcript need not be read (seedMain's first test, and the Stop's guard before it). */
+export const hasMain = (l: Ledger): boolean => TTLS.some(t => l.main[t] !== undefined)
+
 /** No entry of that TTL (of either TTL when none is named) from any source. 'unknown' entries do not count. */
 export function isEmpty(l: Ledger, ttl?: Ttl): boolean {
   const ttls = ttl ? [ttl] : TTLS
@@ -93,7 +97,7 @@ export function observePing(l: Ledger, o: Observation & { ttl: Ttl }, life: Life
  * until writtenAt + its lifetime, only when `main` has no entry yet and that time is after `now`.
  * `writtenAt` is the time of the transcript row that carried the write (`now` when it has none). */
 export function seedMain(l: Ledger, split: Record<Ttl, number>, writtenAt: number, now: number, life: Lifetimes): void {
-  if (TTLS.some(t => l.main[t])) return
+  if (hasMain(l)) return
   for (const t of TTLS) {
     if (split[t] > 0 && writtenAt + life[t] > now) l.main[t] = { warmUntil: writtenAt + life[t] }
   }
@@ -150,7 +154,8 @@ export function hhmm(ms: number): string {
   return `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
-const sourceText = (label: string, s: SourceView) => `${label} ${s.expired ? 'expired' : 'warm until'} ${hhmm(s.warmUntil)}`
+/** One source's element of the cache part: `main warm until 10:05`, `subagents expired 10:07`. */
+const sourceText = (label: 'main' | 'subagents', s: SourceView) => `${label} ${s.expired ? 'expired' : 'warm until'} ${hhmm(s.warmUntil)}`
 
 /** The cache part of a track line: `main …` first, then `subagents …`, then `subagents: split unknown`
  * (D2a); undefined when the view holds none of them. */

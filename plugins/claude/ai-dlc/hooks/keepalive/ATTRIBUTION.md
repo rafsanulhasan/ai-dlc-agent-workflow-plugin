@@ -609,3 +609,46 @@ task T17.1 / ITEM-032; spec and LLD `keepalive-cache-status`):
   *[pending LLD clarify]* now checks the new rule, under a name that
   cites the LLD; the test engine's `cacheRead` may be a function, so a
   test can miss a ping after earlier pings landed.
+
+Made by Rafsanul Hasan, 2026-10-25 (run FEAT-20261020-ai-dlc-lens, feature
+root 17, step 17.2.2, task T17.2 / ITEM-033; spec keepalive-cache-status D3,
+D4, D8; LLD 2.2, 3.3, 3.4, 3.6, 7):
+
+- **The cache part on every line.** `keepalive.ts`: `lineFor(t, now)` builds
+  each track's line as `keepalive <track>: <cache part>; <keep-alive part>`,
+  the cache part being the ledger's view of the track's lifetime at `now`
+  (`cacheView`, `cachePart` from `cache-state.ts`, wired in here). `render`
+  and `publish` take the caller's clock reading; every caller passes one.
+  Before a handoff the ledger is emptied first, so `stopForHandoff` still
+  renders synchronously.
+- **A reason for every `off`.** Every `off` the module writes is a
+  `reasonText`: no background tasks, no `<track>` cache write seen, cache
+  expired, turn running (published at a turn start), session ended
+  (published at `session.end`), disabled, no split, overage. A new track
+  starts as `off (no <track> cache write seen)`. With keep-alive turned off,
+  a Stop now publishes each track as `off (disabled)` instead of leaving
+  the turn's text.
+- **A Stop with no background task renders.** It used to render only when
+  a track was running; now it seeds main from the transcript when no main
+  usage was seen, stops a running track as `work done, stopped` (unchanged)
+  and shows every other track's cache and reason (AC-17.2.2). With tasks,
+  the transcript seed runs right after the full read, so the disabled and
+  overage lines carry the cache part too. The seed's guard is
+  `hasMain(ledger)`, a new `cache-state.ts` helper that `seedMain` uses as
+  well (17.4.1 review follow-up).
+- **Published state.** `../../types/index.d.ts`: `KeepaliveTrackState`
+  gains the optional `caches` (one entry per source, `main` and
+  `subagents`, with `warmUntil` and `expired`; omitted when there is none),
+  and `pings` reads "landed (cache hits)". `line` is the line as shown, with
+  its cache part.
+- **Tests.** `tests/keepalive.test.ts`: a `part(track)` helper (the text
+  after the cache part); 48 anchored line assertions moved to it, the bare
+  `off` ones to their reasons, and the published lines to the full line
+  with its cache part; `usageOf` and `responder` are shared at file level;
+  the fork double takes `forkWrites`, a ping's 1h/5m write. A block
+  *[T17.2] the cache part and the reasons*: AC-17.2.2 (red before this
+  change), E1, E4 to E7 (E6 without its first-ping clause, which is
+  T17.4), AC-17.1.3, AC-17.2.3, each row of AC-17.2.1's table and a sweep
+  that no rendered or published line ends `: off`. The test "a Stop with
+  no background task and nothing armed publishes nothing" became AC-17.2.2's
+  published form. `tests/cache-state.test.ts`: E2 and E3, and `hasMain`.

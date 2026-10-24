@@ -127,7 +127,7 @@ export async function noteUsage($: EngineInterface, usage: unknown, agentId?: st
 /** Seeds main from the transcript when the ledger has no main entry (replaces `lastSplit ?? transcriptSplit`). */
 ```
 
-`stopForHandoff($)` stays synchronous and returns the boolean; its render becomes `void (async () => render($, await $.clock.now()))()` (it already launches `republishKeep` with `void`).
+`stopForHandoff($)` stays synchronous and returns the boolean; its render stays synchronous and becomes `render($, 0)`: the ledger is emptied first, so no line has a cache part and `now` changes nothing in what is shown (an async IIFE would let the caller's `/clear` run before the render). `republishKeep` is still launched with `void`.
 
 ### 3.3 Rendering and publishing take a `now`
 
@@ -141,8 +141,8 @@ export async function noteUsage($: EngineInterface, usage: unknown, agentId?: st
 tasks = e.background_tasks?.length ?? 0
 now = await $.clock.now()
 if compacting or handingOff: return next
-if (!settings.enabled)   [after load, as today, when tasks > 0]: unchanged. With 0 tasks and keep-alive disabled the no-tasks branch renders each track's `disabled` part (status hidden by `settings.status` as usual)
-seed: if main has no entry and the ledger has no main entry { r = await transcriptSplit(...) /* now returns { split, at? } */; if (r) seedMain(ledger, r.split, r.at ?? now, now, life()) }   // only when no usage was seen
+if (!settings.enabled)   [after load, when tasks > 0]: stopAll; each track's part = reasonText('disabled') (else `off (turn running)` from turn.start would stay published); publish; clear status. With 0 tasks and keep-alive disabled the no-tasks branch renders each track's `disabled` part (status hidden by `settings.status` as usual)
+seed (`seedFromTranscript`): if the ledger has no main entry { r = await transcriptSplit(...) /* returns { split, at? } */; if (r) seedMain(ledger, r.split, r.at ?? now, now, life()) }   // only when no usage was seen. Placement: tasks = 0 -> before the no-tasks branch; tasks > 0 -> right after `load`, before every later branch (disabled, overage, arming), so life() and those lines use the fresh settings
 if (!tasks) {                                      // NEW: renders (AC-17.2.2)
   if anyRunning(): stopAll('work done, stopped')   // unchanged text, existing branch
   for each track not running:
@@ -152,7 +152,7 @@ if (!tasks) {                                      // NEW: renders (AC-17.2.2)
   refreshKeep; render($, now); return next
 }
 // tasks > 0: today's order, with the ledger replacing `split`
-load; settings.enabled false -> unchanged; overage -> t.part = reasonText('overage') (unchanged text)
+load; seed (above); settings.enabled false -> parts 'disabled' (above); overage -> t.part = reasonText('overage') (unchanged text)
 agentsArm = settings.pingSubagents && pingerOf() !== undefined      // false until 034.b exists
 for each track:
    stopTrack(t)
