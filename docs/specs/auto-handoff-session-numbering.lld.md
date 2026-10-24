@@ -161,7 +161,7 @@ Test names cite the AC id (AC-16.5.1). Pure rows go in `config.test.ts` (`parseT
 | AC-16.2.4 | `readLineage` found without depth, seed `depth: p.next` | `AC-16.2.4 lineage without depth: new 4, stored depth 4` (replaces :693-705; asserts `store['lineage:new-session-1'].depth === 4`) |
 | AC-16.2.5 | `failed` read, `numberingNotice`, step 9 | `AC-16.2.5 a failed store read: new 4 and exactly one fallback notice` (`failStore: /^lineage:old-session$/`; count of `numbering fallback:` in `LOG_FILE` is 1 after the seed too; `band($)` contains the warn step; with `surfaces: ['vscode']` `calls.toasts` has the step once) plus a pure test `numberingNotice` text for both sources |
 | AC-16.2.5b (design-level; no story id) | `numbering(…, readFailed)` | `AC-16.2.5b a failed read with an unnumbered title: new Session 2, no rename` (`failStore`; `renamed` empty; the notice says the chain id restarted) |
-| AC-16.2.6 | the store record written at the seed (found) | `AC-16.2.6 a seeded session resumed with the same id: new 5` |
+| AC-16.2.6 | the store record written at the seed | `AC-16.2.6 a seeded session resumed with the same id: new 5` |
 | AC-16.2.7 | rename gate independent of `/rename` | `AC-16.2.7 no /rename and title Session 3: new 4` (extends :1792-1800 to the numbered title) |
 | AC-16.2.8 | `numbering` row 2 | `AC-16.2.8 title without a number, depth 3: new 4, no rename` and the `numbering` table row in `config.test.ts` |
 | AC-16.3.1 | `parseTitle` strips `P:`; main | `AC-16.3.1 a prefixed title without a number: Session 1 then 2, the prefix once` |

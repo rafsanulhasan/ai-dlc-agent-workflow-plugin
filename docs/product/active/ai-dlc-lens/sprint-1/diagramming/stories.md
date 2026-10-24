@@ -4,7 +4,7 @@ root: 20
 kind: user-stories
 author: requirement-analyst
 date: 2026-10-24
-revision: 3 (bc round 1 fixed: AC-20.5.2 search scope, math / TeX-diagram rule, AC-20.1.5 list, US-20.9 settings; po decisions applied)
+revision: 4 (G2 OQ1 (A), approved by the human 2026-10-24 in 31-orchestrator-to-human.handoff.md: each picture goes right after its fence, with the source still shown, in AC-20.1.1-20.1.3, 20.2.1 and 20.3.1, as docs/specs/diagramming.spec.md, and to stay consistent the spike paragraph, AC-20.8.1, the P20-1 traceability row and the diagram label; revision 3: bc round 1 fixed, po decisions applied)
 status: draft, awaiting brutal-critique round 2, product-owner acceptance and G1
 epic: ai-dlc-lens
 sprint: sprint-1 (2026-10-20 to 2026-10-27 inclusive; stretch, moves to docs/product/backlog/ai-dlc-lens/diagramming/ first if the sprint ends, brief §8 QS)
@@ -41,30 +41,30 @@ Sources: the approved plan `00c-approved-plan-2026-10-24.md` ("00c"), the team b
 
 ## Spike before the stories (ITEM-052)
 
-Can an `AssistantMessage` render replace one fence inside a reply and keep the rest of the text? The answer decides where the picture goes. The stories say "beneath the reply", the plan's AC (00c root 20); if the spike shows in-place replacement works, `po` raises it at G2 and AC-20.1.1 and AC-20.1.2 change with it.
+Can an `AssistantMessage` render replace one fence inside a reply and keep the rest of the text? The answer decided where the picture goes. G2 closed it (OQ1, option A, `31-orchestrator-to-human.handoff.md`): each picture goes right after its fence, with the source still shown, replacing the plan's "beneath the reply" (00c root 20); there is no layout setting (`docs/specs/diagramming.spec.md`, OQ1).
 
 ## Stories
 
 ### US-20.1 Mermaid diagrams render in the chat (increment 1, ITEM-053)
 As a developer reading an architect's or engineer's reply, I want a closed Mermaid fence drawn as a picture, so that I see the diagram without leaving the chat.
 
-- AC-20.1.1 `[PT]` Given an assistant reply with one closed `mermaid` fence holding a valid flowchart, when the reply renders on the terminal surface, then a PNG picture of it is shown beneath the reply and the fence's source is still shown.
-- AC-20.1.2 `[PT]` Given the same reply on the VS Code or desktop surface, when it renders, then an Svg picture is shown beneath the reply and the source is still shown.
-- AC-20.1.3 `[PT]` Given a reply with three closed `mermaid` fences, when it renders, then three pictures are shown, in the order of the fences.
+- AC-20.1.1 `[PT]` Given an assistant reply with one closed `mermaid` fence holding a valid flowchart, when the reply renders on the terminal surface, then a PNG picture of it is shown right after its fence, with the source still shown (G2 OQ1).
+- AC-20.1.2 `[PT]` Given the same reply on the VS Code or desktop surface, when it renders, then an Svg picture is shown right after its fence, with the source still shown (G2 OQ1).
+- AC-20.1.3 `[PT]` Given a reply with three closed `mermaid` fences, when it renders, then three pictures are shown, each right after its own fence, with each source still shown (G2 OQ1).
 - AC-20.1.4 `[PT]` Given a reply with no diagram fence, when it renders, then it is drawn exactly as without the submodule.
 - AC-20.1.5 `[PT]` Given one valid fence of each Mermaid kind flowchart, sequence, class, state and ER (Q20-2, po: this is the floor), when each renders, then each gives a picture. G2 may add kinds to the list; it may not drop these five.
 
 ### US-20.2 LaTeX math renders with bundled MathJax (increment 2, ITEM-054)
 As a developer reading a reply with formulas, I want math drawn as a picture, so that formulas are readable.
 
-- AC-20.2.1 `[PT]` Given a reply with a closed display-math block (`$$ … $$`, `\[ … \]` or a `math` fence), when it renders, then a picture of the formula made by the bundled MathJax is shown beneath the reply and the source is still shown.
+- AC-20.2.1 `[PT]` Given a reply with a closed display-math block (`$$ … $$`, `\[ … \]` or a `math` fence), when it renders, then a picture of the formula made by the bundled MathJax is shown right after its block, with the source still shown (G2 OQ1).
 - AC-20.2.2 `[PT]` Given a fence that *Terms* classes as a TeX diagram (a `tikz` fence, or a `latex` fence whose body has `\begin{tikzpicture}`), when it renders, then no picture is made and the source is shown with a one-line reason that TeX diagrams are not supported (Q20-3, po: math only).
 - AC-20.2.3 `[PT]` Given a `latex` fence whose body is `E = mc^2` (none of the TeX-document markers of *Terms*), when it renders, then it is drawn as math, as in AC-20.2.1.
 
 ### US-20.3 PlantUML renders only with a local Java (increment 3, ITEM-055)
 As a developer who has Java and `plantuml.jar` installed, I want PlantUML fences drawn locally, so that I get pictures without sending my design anywhere.
 
-- AC-20.3.1 `[PT]` Given a configured local Java and `plantuml.jar` path and a closed `plantuml` fence, when it renders, then the picture comes from that local program and the source is still shown.
+- AC-20.3.1 `[PT]` Given a configured local Java and `plantuml.jar` path and a closed `plantuml` fence, when it renders, then the picture comes from that local program and is shown right after its fence, with the source still shown (G2 OQ1).
 - AC-20.3.2 `[PT]` Given no configured Java or jar, when a `plantuml` fence renders, then the source is shown with a one-line notice saying how to configure the local renderer, and no render is attempted.
 - AC-20.3.3 `[PT]` Given a configured path outside the trusted folders, or one that does not exist, when a `plantuml` fence renders, then the program is not run and the source is shown with a one-line reason (the lens's path trust rule, `avatar.ts:242-262`).
 
@@ -106,7 +106,7 @@ As the plugin maintainer, I want every reused idea credited and the lens checks 
 ### US-20.8 A manual check on each surface (ITEM-053)
 As the human approving G4, I want to see a diagram on each surface, so that the picture path is proven where automated tests cannot reach.
 
-- AC-20.8.1 `[MV]` Given a kitty-protocol terminal, VS Code 2.1.299 or later, and desktop, when Claude replies with a closed Mermaid flowchart, then each surface shows the picture beneath the reply with the source visible. Steps: ask Claude for "a mermaid flowchart of A → B → C" on each surface and look under the reply. The steps go into `MANUAL-CHECKS.md` before G4 (00c *Verification*).
+- AC-20.8.1 `[MV]` Given a kitty-protocol terminal, VS Code 2.1.299 or later, and desktop, when Claude replies with a closed Mermaid flowchart, then each surface shows the picture right after its fence, with the source still shown (G2 OQ1). Steps: ask Claude for "a mermaid flowchart of A → B → C" on each surface and look right after the fence. The steps go into `MANUAL-CHECKS.md` before G4 (00c *Verification*).
 
 ## Out of scope
 
@@ -121,7 +121,7 @@ As the human approving G4, I want to see a diagram on each surface, so that the 
 
 | Plan AC | Covered by |
 |---|---|
-| P20-1 closed fences render below the reply with the source still visible | AC-20.1.1, AC-20.1.2, AC-20.1.3, AC-20.2.1, AC-20.3.1 |
+| P20-1 closed fences render below the reply with the source still visible (placement changed at G2 OQ1: right after each fence) | AC-20.1.1, AC-20.1.2, AC-20.1.3, AC-20.2.1, AC-20.3.1 |
 | P20-2 open or streaming fences are not rendered | AC-20.4.1, AC-20.4.2, AC-20.4.3 |
 | P20-3 no network request during rendering | AC-20.5.1, AC-20.5.2, AC-20.5.3 |
 | P20-4 over the 131,072-char Svg cap, or on an error → source plus a one-line reason | AC-20.6.1, AC-20.6.2, AC-20.6.3, AC-20.6.4 |
@@ -145,7 +145,7 @@ flowchart LR
     uc2([Render Mermaid locally])
     uc3([Render math with bundled MathJax])
     uc4([Render PlantUML with the local jar])
-    uc5([Show the picture beneath the reply])
+    uc5([Show the picture right after its fence])
     uc6([Fall back to source with a reason])
     uc7([Wait for an open fence to close])
   end

@@ -81,7 +81,7 @@ The three existing blocks that implement G4/G5 are lifted unchanged into `guardV
   unknownKeys(h, ["lifecycles", "maxRounds", "maxFailures"], "handoffReview");
   // no reviewer key: the reviewer is always brutal-critique (00c), which UNDISABLEABLE already protects
   lifecycles: a non-empty array of defined lifecycle codes, no duplicates
-  checkLimits(h, "handoffReview", err);                        // maxFailures < maxRounds, as every loop
+  checkLimits(h, "handoffReview", err);                        // maxRounds and maxFailures are optional (default 2 / 1, fileLimits); when present maxFailures < maxRounds, as every loop and clarify (spec D5; accepted deviation, the first LLD made them required)
   ```
   A `null` or missing `documents.critic` does not affect it (a null `documents.critic` only stops document critique, `aaw-review.md`).
 
@@ -156,7 +156,7 @@ Fragments, to be applied with the current structure (the file has `byType`, `lif
 ```json
 "handoffReview": {
   "type": "object", "additionalProperties": false,
-  "required": ["lifecycles", "maxRounds", "maxFailures"],
+  "required": ["lifecycles"],
   "properties": {
     "lifecycles": { "type": "array", "items": { "type": "string" }, "minItems": 1, "description": "The lifecycles whose hand-offs are reviewed (default AAWH, AAWP)." },
     "maxRounds": { "type": "integer", "minimum": 1, "default": 2, "description": "…overridden by AI_DLC_HANDOFF_REVIEW_MAX_ROUNDS…" },

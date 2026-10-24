@@ -11,7 +11,7 @@
 - [.ai-dlc copy test](project_ai-dlc-copy-test.md) — handoff-naming test fails until repo .ai-dlc/ is resynced after a template change
 - [Hooks module typecheck](reference_hooks-module-typecheck.md) — plugin test skips types; tsc recipe with bundled engine types; Claude-only skills on Copilot
 - [Harness-sync command](project_harness-sync-command.md) — no consumer sync hook; user-only command runs the script; agents run it directly
-- [Plugin test harness quirks](reference_plugin-test-harness-quirks.md) — hover beside props, turn.step answers, no pane placement API
+- [Plugin test harness quirks](reference_plugin-test-harness-quirks.md) — hover beside props, turn.step answers, {deny} not throw to reject a $ call
 - [Model metadata hook](project_model-metadata-hook.md) — why: never estimate, interval 0, per-user stamp, all-or-nothing API, no git hook
 - [Root AGENTS.md render](project_root-agents-md-render.md) — root AGENTS.md hand-filled from init template; re-render after orchestrator body changes
 - [Claude-only plugins](project_claude-only-plugins.md) — ai-dlc-lens beside ai-dlc; tools/claude-only-plugins.json drives build skip, validate, CI
