@@ -8,7 +8,7 @@ import type { TrustTarget } from '../auto-handoff/config.ts'
 import { homeDir, log, readRaw, repoRoot, trustGate, trustTarget } from '../auto-handoff/io.ts'
 import type { TrustCache } from '../auto-handoff/io.ts'
 import type { KeepaliveState, KeepaliveTrackState } from '../../types/index.d.ts'
-import { armUntil, cachePart, cacheView, dropPending, emptyLedger, hhmm, isEmpty, lineOf, needsMainSeed, observe, observePing, reasonText, seedMain } from './cache-state.ts'
+import { agentUnsettled, armUntil, cachePart, cacheView, dropPending, emptyLedger, hhmm, isEmpty, lineOf, markAgent, needsMainSeed, observe, observePing, onlyAgentsWarm, reasonText, seedMain, settleAgent } from './cache-state.ts'
 import type { Ledger, Lifetimes } from './cache-state.ts'
 
 // Keep-alive, folded into the ai-dlc hooks module from the vendored cache-keepalive mod (see
@@ -117,9 +117,11 @@ export const splitFromTranscript = (jsonl: string): TranscriptSplit | undefined 
  * (LLD 3.7, Fallback and 034.c). */
 export const splitFromAgentTranscript = (jsonl: string): TranscriptSplit | undefined => lastSplit(jsonl, true)
 
-/** Records one main-conversation response in the cache ledger (./cache-state.ts, observe). */
-export async function noteUsage($: EngineInterface, usage: unknown): Promise<void> {
-  observe(ledger, { at: await $.clock.now(), usage }, life())
+/** Records one response in the cache ledger (./cache-state.ts, observe): the main conversation's, or,
+ * with `agentId`, a subagent's or teammate's (whose usage also goes to the debug log, 034.c). */
+export async function noteUsage($: EngineInterface, usage: unknown, agentId?: string): Promise<void> {
+  if (agentId) logAgentUsage($, usage, agentId)
+  observe(ledger, agentId ? { at: await $.clock.now(), agentId, usage } : { at: await $.clock.now(), usage }, life())
 }
 
 // ITEM-034.c, the observation check (LLD 3.7, rev 6): two debug lines that show whether a subagent's
@@ -127,8 +129,8 @@ export async function noteUsage($: EngineInterface, usage: unknown): Promise<voi
 
 /** Logs one subagent response's usage to the debug log: `keepalive: agent usage agent=<id>
  * split=present|absent writes=<n>`, `writes` being its cache_creation_input_tokens and `split`
- * whether its cache_creation carries the 1h/5m fields. register.tsx calls it for each response that
- * has an agent id (until T17.3 moves the call into noteUsage). */
+ * whether its cache_creation carries the 1h/5m fields. noteUsage calls it for each response that
+ * has an agent id. */
 export function logAgentUsage($: EngineInterface, usage: unknown, agentId: string): void {
   try {
     const raw = usage && typeof usage === 'object' ? (usage as Record<string, unknown>).cache_creation_input_tokens : undefined
@@ -140,29 +142,56 @@ export function logAgentUsage($: EngineInterface, usage: unknown, agentId: strin
 /** Logs a finished subagent's transcript to the debug log: `keepalive: subagent transcript
  * agent=<id> rows=<n> split=present|absent`, `rows` being its non-empty lines and `split` whether a
  * row wrote to the cache with the 1h/5m split (splitFromAgentTranscript). A missing path or a read
- * that fails logs `rows=0 split=absent`. Never throws. */
-export async function logSubagentTranscript($: EngineInterface, e: { agent_id?: string; agent_transcript_path?: string }): Promise<void> {
+ * that fails logs `rows=0 split=absent`. Never throws. Returns the text read, for the stop-time fallback. */
+export async function logSubagentTranscript($: EngineInterface, e: { agent_id?: string; agent_transcript_path?: string }): Promise<string | undefined> {
+  let text: string | undefined
   try {
-    const text = e.agent_transcript_path ? await readTranscript($, e.agent_transcript_path) : undefined
+    text = e.agent_transcript_path ? await readTranscript($, e.agent_transcript_path) : undefined
     const rows = text === undefined ? 0 : text.split('\n').filter(l => l.trim() !== '').length
     const split = text !== undefined && splitFromAgentTranscript(text) !== undefined
     $.ui.log(`keepalive: subagent transcript agent=${e.agent_id ?? '?'} rows=${rows} split=${split ? 'present' : 'absent'}`, { to: 'debug' })
   } catch {}
+  return text
 }
 
-// A transcript file: read whole, else its last TAIL_BYTES through `tail`; undefined when neither works.
+// LLD 3.7 rev 12 (b): the last `n` bytes of a file, through `node` (no `tail` on Windows; no shell).
+const TAIL_SCRIPT = [
+  "const fs = require('fs'); const [p, n] = process.argv.slice(1)",
+  'const fd = fs.openSync(p, "r"); const size = fs.fstatSync(fd).size; const len = Math.min(size, Number(n))',
+  'const buf = Buffer.alloc(len); fs.readSync(fd, buf, 0, len, size - len); fs.closeSync(fd)',
+  "process.stdout.write(buf.toString('utf8'))",
+].join('\n')
+// The tail failure is logged once per session (a module flag, reset at session.end).
+let tailLogged = false
+
+// A transcript file: read whole; a missing file reads nothing and starts no process; else (a file over
+// the 4 MiB read limit) its last TAIL_BYTES through `node`; undefined when none of that works.
 async function readTranscript($: EngineInterface, path: string): Promise<string | undefined> {
   const whole = await readRaw($, path)
   if (whole !== undefined) return whole
   try {
-    const { exitCode, stdout } = await $.process.run(['tail', '-c', String(TAIL_BYTES), path])
-    return exitCode === 0 ? stdout : undefined
+    if (!(await $.fs.exists(path))) return undefined
   } catch {
     return undefined
   }
+  let why = ''
+  try {
+    const { exitCode, stdout } = await $.process.run(['node', '-e', TAIL_SCRIPT, path, String(TAIL_BYTES)])
+    if (exitCode === 0) return stdout
+    why = `exit ${exitCode}`
+  } catch (err) {
+    why = String(err)
+  }
+  if (!tailLogged) {
+    tailLogged = true
+    try {
+      $.ui.log(`keepalive: transcript tail unavailable (${why})`, { to: 'debug' })
+    } catch {}
+  }
+  return undefined
 }
 
-/** The split from the transcript file: read whole, else its last TAIL_BYTES through `tail`. */
+/** The split from the transcript file: read whole, else its last TAIL_BYTES through `node`. */
 export async function transcriptSplit($: EngineInterface, path: string | undefined): Promise<TranscriptSplit | undefined> {
   if (!path) return undefined
   const text = await readTranscript($, path)
@@ -810,8 +839,15 @@ export function registerKeepalive(on: Parameters<Register>[0], deps: KeepaliveDe
         // (spec D5), or from its own last landed ping, warm until that ping's time plus the ttl, when
         // that is later and still ahead (LLD 3.4); the cache part stays the ledger's.
         const fromPing = t.pingWarmUntil > now ? t.pingWarmUntil : undefined
-        const fromLedger = armUntil(ledger, n, now)
+        // ITEM-034: subagent caches arm a track only once subagent pings exist (034.b, pingSubagents)
+        const fromLedger = armUntil(ledger, n, now, { agents: false })
         const warm = fromLedger === undefined ? fromPing : fromPing === undefined ? fromLedger : Math.max(fromLedger, fromPing)
+        if (warm === undefined && onlyAgentsWarm(ledger, n, now)) {
+          // AC-17.3.8: only subagents hold a warm cache and nothing pings them: no arm, no main ping
+          t.part = reasonText('onlySubagents')
+          t.warmUntil = 0
+          continue
+        }
         if (warm === undefined) {
           // Not armed: no write of this lifetime by any source, or every one of them has expired
           t.part = reasonText(isEmpty(ledger, n) ? { noWrite: n } : 'expired')
@@ -834,11 +870,39 @@ export function registerKeepalive(on: Parameters<Register>[0], deps: KeepaliveDe
     return next(e)
   })
 
-  // ITEM-034.c (LLD 3.7, rev 6): log only, so the live check can see whether a finished subagent's
-  // transcript carries the split. No ledger change; T17.3 adds markAgent and the fallback here.
+  // ITEM-034 (LLD 3.7): agent liveness. A subagent starts running, a teammate goes idle (TeammateIdle
+  // names the agent only when the input carries its agent_id); each handler only observes.
+  on('classic.SubagentStart', async ($, e, next) => {
+    try {
+      if (e.agent_id) markAgent(ledger, e.agent_id, 'running')
+    } catch {}
+    return next(e)
+  })
+  on('classic.TeammateIdle', async ($, e, next) => {
+    try {
+      const id = (e as { agent_id?: string }).agent_id
+      if (id && ledger.agents.has(id)) markAgent(ledger, id, 'idle')
+    } catch {}
+    return next(e)
+  })
+
+  // ITEM-034.c and 034 (LLD 3.7, rev 12): a stop with no transcript file (a forked helper, or a file not
+  // written yet) is ignored. Otherwise the transcript is logged, the agent is finished (never pinged,
+  // AC-17.3.3), and while it has no entry or only its 'unknown' marker its split comes from the transcript.
   on('classic.SubagentStop', async ($, e, next) => {
     try {
-      await logSubagentTranscript($, e)
+      const path = e.agent_transcript_path
+      if (!path || !(await $.fs.exists(path))) {
+        $.ui.log(`keepalive: subagent ${e.agent_id ?? '?'} has no transcript file, ignored`, { to: 'debug' })
+        return next(e)
+      }
+      const text = await logSubagentTranscript($, e)
+      if (e.agent_id) {
+        const unsettled = agentUnsettled(ledger, e.agent_id)
+        markAgent(ledger, e.agent_id, 'finished')
+        const r = unsettled && text !== undefined ? splitFromAgentTranscript(text) : undefined
+        if (r) settleAgent(ledger, e.agent_id, r, await $.clock.now(), life())
+      }
     } catch {}
     return next(e)
   })
@@ -858,6 +922,7 @@ export function registerKeepalive(on: Parameters<Register>[0], deps: KeepaliveDe
   on('session.end', async ($, e, next) => {
     stopAll()
     ledger = emptyLedger()
+    tailLogged = false
     seedLine = undefined
     spent = 0
     budget = 0

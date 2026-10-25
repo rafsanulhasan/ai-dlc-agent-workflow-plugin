@@ -574,3 +574,9 @@ root 17, step 17.3.4.l1.1, code-review fix round 1 for 17.2.4; see
   leaves the cache ledger alone; a main-loop response reaches the ledger and
   logs no agent line), and a `stepSplit` option on the fake engine so a step's
   usage can carry the 1h/5m split. `register.tsx` is unchanged.
+
+- **Subagent usage to keep-alive (ITEM-034, T17.3, 2026-10-25).** The
+  `turn.step` handler forwards every response's usage, main and each agent's,
+  to keep-alive's `noteUsage` with the agent id; the context accounting stays
+  main-only. The 034.c test now expects the subagent's write in the ledger as
+  a subagent cache that arms nothing.

@@ -2533,7 +2533,7 @@ describe('the handoff and the prompt cache', () => {
     for await (const _ of $.turn.step({ ...STEP, ...(agentId ? { agentId } : {}) } as never)) void _
   }
 
-  test('[ITEM-034.c] a subagent response logs its agent usage line and does not reach the cache ledger', async ($, on) => {
+  test('[ITEM-034] a subagent response logs its agent usage line and reaches the cache ledger as a subagent cache, which arms nothing (AC-17.3.8)', async ($, on) => {
     engine(on, { tokens: 50_000, stepUsage: true, stepRead: 0, stepSplit: { h: 0, m: 49_990 } })
     const logs: string[] = []
     const statuses: (string | undefined)[] = []
@@ -2542,10 +2542,10 @@ describe('the handoff and the prompt cache', () => {
     on('classic.Stop', async () => ({}) as never)
     await agentStep($, 'sub-1')
     expect(logs).toContain('keepalive: agent usage agent=sub-1 split=present writes=49990')
-    // the ledger holds no write: a Stop with background work finds no main cache
+    // T17.3: the agent's write is in the ledger as a subagent cache; with subagent pings off it arms nothing
     await $.classic.Stop({ background_tasks: [KA_TASK] } as never)
-    expect(statuses.at(-1)).not.toContain('warm until')
-    expect(statuses.at(-1)).toContain('keepalive 5m: off (no cache write seen yet')
+    expect(statuses.at(-1)).not.toContain('main warm until')
+    expect(statuses.at(-1)).toMatch(/^keepalive 5m: subagents warm until \d+:\d\d; off \(only subagent caches; subagent pings off\)$/m)
   })
 
   test('[ITEM-034.c] a main-loop response reaches the cache ledger and logs no agent usage line', async ($, on) => {

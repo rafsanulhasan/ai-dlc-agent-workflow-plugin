@@ -720,3 +720,22 @@ root 17, step 17.2.4; spec keepalive-cache-status line 82, D2a; LLD rev 5,
   `classic.SubagentStop`.
 - **Manual check.** `MANUAL-CHECKS.md` row P2, the live 034.c check in the
   terminal: one subagent run with `claude --debug-file`, then the two lines.
+
+### Subagent caches (ITEM-034, T17.3, 2026-10-25)
+
+- **Ledger.** `cache-state.ts` gains `markAgent`, `agentUnsettled`,
+  `settleAgent` (a stopped subagent's split from its transcript; the D2a
+  `unknown` marker is deleted once the split is known), `onlyAgentsWarm`, and
+  an `opts.agents` argument to `armUntil` (false until subagent pings exist).
+- **Keep-alive.** `noteUsage` takes an agent id and logs the agent usage line
+  itself; the Stop reads `off (only subagent caches; subagent pings off)` and
+  arms nothing when only subagents are warm (AC-17.3.8); `classic.SubagentStart`
+  and `classic.TeammateIdle` mark the agent running or idle;
+  `classic.SubagentStop` ignores a stop with no transcript file (forked
+  helpers), marks the agent finished and settles it from its transcript.
+  The transcript tail is read with `node -e` instead of `tail` (missing on
+  Windows), and only when the file exists; a failing read is logged once per
+  session.
+- **Tests.** The 034.c tests that pinned an unchanged ledger now pin the
+  ledger T17.3 builds; the engine double answers `fs.exists` and reads the
+  tail from a `node -e` run.

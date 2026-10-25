@@ -36,9 +36,9 @@ type Opts = {
   // The session's working directory; a function when a test moves it between turns
   cwd?: string | (() => string)
   env?: Record<string, string>
-  // The transcript is over $.fs.read's cap: reading it whole fails, so the module turns to `tail`
+  // The transcript is over $.fs.read's cap: reading it whole fails, so the module reads its tail through `node -e` (T17.3: no `tail` on Windows)
   tooBig?: boolean
-  // What `tail -c` does: prints these lines and exits 0, exits with this code, or is missing (throws)
+  // What the tail read does: prints these lines and exits 0, exits with this code, or is missing (throws)
   tail?: string[] | number | 'missing'
   // A store key whose read fails, as an unreadable store would
   failStoreGet?: string
@@ -137,10 +137,15 @@ function engine(on: On, o: Opts = {}) {
     if (files[path] === undefined) throw new Error(`ENOENT ${e.path}`)
     return { value: { kind: 'file', size: files[path].length, mtimeMs: mtimes[path] ?? START, isLink: false } } as never
   })
+  // T17.3 (LLD 3.7 rev 12 b): a file in `files` exists (the transcript too when it is over the read cap)
+  on('fs.exists', (_, e) => {
+    const path = e.path.replace(/^[A-Za-z]:/, '').replace(/\\/g, '/')
+    return { value: files[path] !== undefined || (o.tooBig === true && path === TRANSCRIPT) } as never
+  })
   on('fs.write', () => ({ value: undefined }) as never)
   on('process.run', (_, e) => {
     seen.runs.push([...e.argv])
-    if (e.argv[0] === 'tail') {
+    if (e.argv[0] === 'node' && e.argv[1] === '-e') {
       if (o.tail === 'missing') throw new Error('ENOENT tail')
       const code = typeof o.tail === 'number' ? o.tail : 0
       const stdout = Array.isArray(o.tail) ? o.tail.join('\n') : ''
@@ -446,11 +451,11 @@ describe('the cache split', () => {
     expect(splitFromTranscript(stamped(0, 9, 'not a date'))).toEqual({ split: { '1h': 0, '5m': 9 } })
   })
 
-  // transcriptSplit: a transcript over $.fs.read's 4 MiB cap is read through `tail -c`.
-  test('a transcript too big to read whole is read through tail -c, and its split arms the track', async ($, on) => {
+  // transcriptSplit: a transcript over $.fs.read's 4 MiB cap is read through `node -e` (its last 2,000,000 bytes).
+  test('a transcript too big to read whole is read through its tail, and its split arms the track', async ($, on) => {
     const { part, seen, line } = engine(on, { tooBig: true, tail: [row(0, 0), row(0, 5)] })
     await $.classic.Stop(stop())
-    expect(seen.runs).toContainEqual(['tail', '-c', '2000000', TRANSCRIPT])
+    expect(seen.runs.some(r => r[0] === 'node' && r[1] === '-e' && r[3] === TRANSCRIPT && r[4] === '2000000')).toBe(true)
     expect(line('5m')).toContain('armed')
     expect(part('1h')).toBe('off (no 1h cache write seen)')
   })
@@ -459,7 +464,7 @@ describe('the cache split', () => {
     test(`with tail ${what}, the split is unknown and neither track arms`, async ($, on) => {
       const { part, seen, clock, line } = engine(on, { tooBig: true, tail })
       await $.classic.Stop(stop())
-      expect(seen.runs.some(r => r[0] === 'tail')).toBe(true)
+      expect(seen.runs.some(r => r[0] === 'node')).toBe(true)
       expect(part('1h')).toBe('off (no cache write seen yet, so the cache lifetime is unknown)')
       expect(part('5m')).toBe('off (no cache write seen yet, so the cache lifetime is unknown)')
       await clock.fire(60)
@@ -2242,7 +2247,7 @@ describe('[T17.2] gaps found by mutation', () => {
     await $.classic.Stop(stop([]))
     await settle()
     expect(seen.readPaths).not.toContain(TRANSCRIPT)
-    expect(seen.runs.filter(r => r[0] === 'tail')).toEqual([])
+    expect(seen.runs.filter(r => r[0] === 'node')).toEqual([])
   })
 })
 
@@ -2342,7 +2347,7 @@ describe('[17.2.4] D2a main (rev 5): a main write with no split', () => {
   // A main response that wrote to the cache but reports no 1h/5m split
   const noSplit = (written = 2_000) => ({ input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: written })
   const rowAt = (h: number, m: number, ms?: number) => JSON.stringify({ ...JSON.parse(row(h, m)), ...(ms === undefined ? {} : { timestamp: new Date(ms).toISOString() }) })
-  const transcriptReads = (seen: { readPaths: string[]; runs: string[][] }) => seen.readPaths.filter(p => p === TRANSCRIPT).length + seen.runs.filter(r => r[0] === 'tail').length
+  const transcriptReads = (seen: { readPaths: string[]; runs: string[][] }) => seen.readPaths.filter(p => p === TRANSCRIPT).length + seen.runs.filter(r => r[0] === 'node').length
 
   test('AC-17.1.4 (D2a main) after a first main entry, a no-split main write at 10:00 then Stop at 10:03 shows main warm until 10:05, not expired', async ($, on) => {
     // START is 9:50 here: the first entry (5m, 9:50) has expired by 10:00, the no-split write's time
@@ -2465,7 +2470,7 @@ describe('[17.2.4] ITEM-034.c the observation debug lines', () => {
     return sent
   }
 
-  test('AC-17.1.2 (034.c) a subagent response with a split logs split=present and its writes; the ledger is unchanged and nothing is pinged or sent', async ($, on) => {
+  test('AC-17.1.2 (034) a subagent response with a split logs split=present and its writes; it enters the ledger as subagents, and nothing is pinged or sent', async ($, on) => {
     const sent = sends(on)
     const e = engine(on, { split: null })
     const respond = responder(on)
@@ -2473,15 +2478,16 @@ describe('[17.2.4] ITEM-034.c the observation debug lines', () => {
     const before = await ledgerView($, e)
     await respond($, usageOf(3_000, 500), 'a1')
     expect(agentLogs(e.seen)).toEqual(['keepalive: agent usage agent=a1 split=present writes=3500'])
-    expect(await ledgerView($, e)).toEqual(before)
-    // register.tsx gives the subagent's usage to the debug log only, never to noteUsage: no 1h entry,
-    // no subagents element in the cache part
     expect(before['1h']).toBe('keepalive 1h: off (no 1h cache write seen)')
+    // T17.3: register.tsx forwards the subagent's usage to noteUsage: a subagents element on both tracks
+    const after = await ledgerView($, e)
+    expect(after['1h']).toBe('keepalive 1h: subagents warm until 19:00; off (no background tasks)')
+    expect(after['5m']).toBe('keepalive 5m: main warm until 18:05, subagents warm until 18:05; off (no background tasks)')
     expect(e.seen.forks).toBe(0)
     expect(sent.count).toBe(0)
   })
 
-  test('AC-17.1.2 (034.c) a subagent response without a split logs split=absent; the ledger is unchanged', async ($, on) => {
+  test('AC-17.1.2 (034, D2a) a subagent response without a split logs split=absent and reads subagents: split unknown', async ($, on) => {
     const sent = sends(on)
     const e = engine(on, { split: null })
     const respond = responder(on)
@@ -2489,9 +2495,11 @@ describe('[17.2.4] ITEM-034.c the observation debug lines', () => {
     const before = await ledgerView($, e)
     await respond($, { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 900 }, 'a1')
     expect(agentLogs(e.seen)).toEqual(['keepalive: agent usage agent=a1 split=absent writes=900'])
-    // Not D2a's unknown marker, not a pending main write: the usage never reached the ledger
-    expect(await ledgerView($, e)).toEqual(before)
     expect(before['5m']).not.toContain('split unknown')
+    // T17.3: D2a's unknown marker, on both tracks; it arms nothing and is never a pending main write
+    const after = await ledgerView($, e)
+    expect(after['1h']).toBe('keepalive 1h: subagents: split unknown; off (no 1h cache write seen)')
+    expect(after['5m']).toBe('keepalive 5m: main warm until 18:05, subagents: split unknown; off (no background tasks)')
     expect(e.seen.forks).toBe(0)
     expect(sent.count).toBe(0)
   })
@@ -2503,7 +2511,7 @@ describe('[17.2.4] ITEM-034.c the observation debug lines', () => {
     expect(agentLogs(seen)).toEqual([])
   })
 
-  test('AC-17.1.2 (034.c) SubagentStop with a split row in the agent transcript logs rows and split=present, and calls next', async ($, on) => {
+  test('AC-17.1.2 (034) SubagentStop with a split row in the agent transcript logs rows and split=present, settles the agent from it, and calls next', async ($, on) => {
     const sent = sends(on)
     const e = engine(on, { split: null, files: { [AGENT_TRANSCRIPT]: [sidechainRow(0, 0), sidechainRow(0, 2_000), '', sidechainRow(0, 0)].join('\n') } })
     const respond = responder(on)
@@ -2513,7 +2521,9 @@ describe('[17.2.4] ITEM-034.c the observation debug lines', () => {
     await settle()
     expect(agentLogs(e.seen)).toEqual(['keepalive: subagent transcript agent=a1 rows=3 split=present'])
     expect(e.seen.subagentStops).toBe(1)
-    expect(await ledgerView($, e)).toEqual(before)
+    // T17.3 (LLD 3.7 rev 12 a): the transcript's split settles the stopped agent
+    expect(before['5m']).toBe('keepalive 5m: main warm until 18:05; off (no background tasks)')
+    expect((await ledgerView($, e))['5m']).toBe('keepalive 5m: main warm until 18:05, subagents warm until 18:05; off (no background tasks)')
     expect(e.seen.forks).toBe(0)
     expect(sent.count).toBe(0)
   })
@@ -2530,11 +2540,12 @@ describe('[17.2.4] ITEM-034.c the observation debug lines', () => {
     expect(await ledgerView($, e)).toEqual(before)
   })
 
-  test('AC-17.1.2 (034.c) SubagentStop with no transcript path logs rows=0 split=absent', async ($, on) => {
+  test('AC-17.3.7 (034) SubagentStop with no transcript path is ignored: one debug line, no transcript line', async ($, on) => {
     const e = engine(on, { split: null })
     await $.classic.SubagentStop({ agent_id: 'a1' } as never)
     await settle()
-    expect(agentLogs(e.seen)).toEqual(['keepalive: subagent transcript agent=a1 rows=0 split=absent'])
+    expect(agentLogs(e.seen)).toEqual([])
+    expect(e.seen.logs).toContain('keepalive: subagent a1 has no transcript file, ignored')
     expect(e.seen.subagentStops).toBe(1)
   })
 
@@ -2547,7 +2558,7 @@ describe('[17.2.4] ITEM-034.c the observation debug lines', () => {
     await settle()
     expect(agentLogs(e.seen)).toEqual(['keepalive: subagent transcript agent=a1 rows=0 split=absent'])
     expect(e.seen.subagentStops).toBe(1)
-    expect(e.seen.runs.some(r => r[0] === 'tail' && r.at(-1) === AGENT_TRANSCRIPT)).toBe(true)
+    expect(e.seen.runs.some(r => r[0] === 'node' && r[3] === AGENT_TRANSCRIPT)).toBe(true)
     expect(await ledgerView($, e)).toEqual(before)
   })
 
@@ -2564,11 +2575,11 @@ describe('[17.2.4] ITEM-034.c the observation debug lines', () => {
     expect(e.seen.subagentStops).toBe(3)
   })
 
-  test('AC-17.1.2 (034.c) SubagentStop without an agent id logs agent=?', async ($, on) => {
+  test('AC-17.1.2 (034.c) SubagentStop without an agent id or a transcript logs agent ? as ignored', async ($, on) => {
     const e = engine(on, { split: null })
     await $.classic.SubagentStop({} as never)
     await settle()
-    expect(agentLogs(e.seen)).toEqual(['keepalive: subagent transcript agent=? rows=0 split=absent'])
+    expect(e.seen.logs).toContain('keepalive: subagent ? has no transcript file, ignored')
   })
 
   test('AC-17.1.1 (D2a main) a Stop with no pending write logs no "main write without split" line, even with no main entry and no split in the transcript', async ($, on) => {

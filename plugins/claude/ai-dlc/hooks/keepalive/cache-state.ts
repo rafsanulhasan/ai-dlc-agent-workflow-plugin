@@ -142,12 +142,54 @@ export function cacheView(l: Ledger, ttl: Ttl, now: number): CacheView {
   return v
 }
 
-/** D5, main only (T17.1): the time a track may arm from, `main`'s warm entry of the TTL; undefined
- * when there is none. Arming from agents comes with ITEM-034. */
-export function armUntil(l: Ledger, ttl: Ttl, now: number): number | undefined {
-  const m = l.main[ttl]
-  return m && m.warmUntil > now ? m.warmUntil : undefined
+/** Agent liveness (034). Creates the agent when unknown; a finished agent keeps its entries. */
+export function markAgent(l: Ledger, agentId: string, status: AgentCaches['status']): void {
+  const a = l.agents.get(agentId) ?? { caches: {}, status }
+  a.status = status
+  l.agents.set(agentId, a)
 }
+
+/** True when the agent has no entry, or only its 'unknown' marker (D2a): the stop-time transcript may settle it. */
+export function agentUnsettled(l: Ledger, agentId: string): boolean {
+  const a = l.agents.get(agentId)
+  return a === undefined || TTLS.every(t => a.caches[t] === undefined)
+}
+
+/** LLD 3.7 rev 12 (a): a stopped subagent's split from its transcript. Each TTL with tokens > 0 is warm
+ * until at + its lifetime, kept only when that is after `now` (as seedMain); the 'unknown' marker is
+ * deleted whether or not an entry survives, since the split is now known. */
+export function settleAgent(l: Ledger, agentId: string, r: { split: Record<Ttl, number>; at?: number }, now: number, life: Lifetimes): void {
+  const a = l.agents.get(agentId) ?? { caches: {}, status: 'finished' as const }
+  const at = r.at ?? now
+  for (const t of TTLS) {
+    const until = at + life[t]
+    if (r.split[t] > 0 && until > now) a.caches[t] = { warmUntil: Math.max(a.caches[t]?.warmUntil ?? until, until) }
+  }
+  delete a.caches.unknown
+  l.agents.set(agentId, a)
+}
+
+// The latest warm entry of the TTL among the agents that are not finished, or undefined.
+function agentsUntil(l: Ledger, ttl: Ttl, now: number): number | undefined {
+  let latest: number | undefined
+  for (const a of l.agents.values()) {
+    const e = a.caches[ttl]
+    if (a.status !== 'finished' && e && e.warmUntil > now && (latest === undefined || e.warmUntil > latest)) latest = e.warmUntil
+  }
+  return latest
+}
+
+/** D5 (spec rev 2): the time a track may arm from, `main`'s warm entry of the TTL; with `opts.agents`
+ * (034.b built and `pingSubagents` on) the latest warm entry of an unfinished agent when `main` has
+ * none. Undefined when none. */
+export function armUntil(l: Ledger, ttl: Ttl, now: number, opts: { agents: boolean } = { agents: false }): number | undefined {
+  const m = l.main[ttl]
+  if (m && m.warmUntil > now) return m.warmUntil
+  return opts.agents ? agentsUntil(l, ttl, now) : undefined
+}
+
+/** AC-17.3.8: no warm main entry of the TTL, and some unfinished agent has one. */
+export const onlyAgentsWarm = (l: Ledger, ttl: Ttl, now: number): boolean => !(l.main[ttl] && l.main[ttl]!.warmUntil > now) && agentsUntil(l, ttl, now) !== undefined
 
 /** The names of the spec's Data shapes: why a track that is not armed is off. */
 export type Reason = 'noTasks' | { noWrite: Ttl } | 'expired' | 'turnRunning' | 'sessionEnded' | 'onlySubagents' | 'disabled' | 'noSplit' | 'overage'

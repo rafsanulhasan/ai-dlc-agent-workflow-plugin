@@ -9,7 +9,7 @@ import { BRIEF_DIR, CAPABILITIES_FILE, DEFAULTS, LAST_RESORT_INSTRUCTIONS, MODUL
 import type { Config, HostWindow, Level, SeedCache, TemplateKey, WindowInfo } from './config.ts'
 import { ENDED, assembleSessionHandoff, currentRunStateFile, handoffsRoot, inRepo, openRecords, parseRunState, pickRun, runStateNote, scratchRoot, sessionHandoffPath, withNextAction } from './run.ts'
 import type { RunState, RunTarget } from './run.ts'
-import { logAgentUsage, noteUsage, registerKeepalive, showSeedCache, stopForHandoff, transcriptSplit } from '../keepalive/keepalive.ts'
+import { noteUsage, registerKeepalive, showSeedCache, stopForHandoff, transcriptSplit } from '../keepalive/keepalive.ts'
 import { git, homeDir, log, orLog, readRaw, readText, repoRoot, trustGate } from './io.ts'
 
 // At the handoff threshold (thresholdPercent of the context window), Haiku writes a handoff brief, the mod runs /clear, then seeds the
@@ -914,15 +914,15 @@ export const register: Register = (on) => {
     const r = yield* next(e)
     // The response measured everything up to its request; its own output is new, and so is
     // any tool output that landed while it streamed (core runs tools before the stream ends).
-    if (!e.agentId && r.usage) {
-      unmeasured = unmeasured - before + r.usage.output_tokens
-      // Keep-alive's cache ledger: until when each cache is warm. A failure is logged, never thrown.
+    // Auto-handoff's accounting is the main conversation's only.
+    if (!e.agentId && r.usage) unmeasured = unmeasured - before + r.usage.output_tokens
+    // Keep-alive's cache ledger (ITEM-034): every response, main and each agent's, until when each cache
+    // is warm; an agent's usage also goes to the debug log (034.c). A failure is logged, never thrown.
+    if (r.usage) {
       const usage = r.usage
-      await orLog($, 'keepalive usage', () => noteUsage($, usage))
+      const agentId = e.agentId
+      await orLog($, 'keepalive usage', () => noteUsage($, usage, agentId))
     }
-    // ITEM-034.c: a subagent response's usage goes to the debug log only, never to the cache ledger
-    // (T17.3 forwards it to noteUsage, which then logs it itself)
-    if (e.agentId && r.usage) logAgentUsage($, r.usage, e.agentId)
     // The seed turn's first request is the fresh session's true starting size. Measuring at
     // the end of that turn instead let a busy first turn (47k to 129k of reads) set
     // the floor at 129k, with the pre-request check off the whole way.
