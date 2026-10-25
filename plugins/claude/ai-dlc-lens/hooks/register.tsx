@@ -158,6 +158,8 @@ import { DEFAULTS, KEYS, agentEnvName, agentEnvPrefix, agentKeyParts, envLevel, 
 import type { Key, Level, LensSettings } from './settings'
 import { SVG_CAP, avatarKey, avatarSvg, checkBytes, classify, isInside, own, trustedFolders, typesOf } from './avatar'
 import type { AvatarImage, ChartAvatars } from './avatar'
+import { FileCache, batches, checkEnvelope, folderOf, mergeCalls, sessionOfTranscript } from './transcripts'
+import type { Call, FileRecord, ListData, ReadData } from './transcripts'
 import { anomaliesOf, anomalyLine, applySettings, colorOf, detectAgents, detectRun, diffAnomalies, edgeAgentOf, frontMatter, handoffsRoot, normDir, recordName, runsToRead, trackWaiting, worstOf } from './anomaly'
 
 // Pane ids: 1-64 of letters, digits, `_` and `-` (PaneOpenArgs.id, d.ts:7590; `$.ui.open`, d.ts:2524), so
@@ -305,6 +307,81 @@ const lastStatus: Record<string, string> = {}
 let cfg: LensSettings = { ...DEFAULTS }
 
 const nowMs = () => Date.now()
+
+// ---- Cache Lab: the transcripts (ITEM-069, cache-lab LLD sections 3, 4 and 6; ADR-0006) ----
+
+/** The folder of this session's transcripts and its session id, from the last `transcript_path` a classic hook carried. */
+let transcriptFolder: string | null = null
+let transcriptSession: string | null = null
+/** Each transcript's calls by (path, size, mtime): only new or changed files go to the reader. */
+const transcriptCache = new FileCache()
+
+function noteTranscript(path: unknown) {
+  const f = folderOf(path)
+  if (f === null) return
+  transcriptFolder = f
+  transcriptSession = sessionOfTranscript(path) ?? transcriptSession
+}
+
+type Checked<T> = { ok: true; value: T } | { ok: false; reason: string }
+
+/** Runs `hooks/cache-reader.mjs` under `node`; its envelope, or one line saying why there is none. Never throws. */
+async function runReader<T>($: EngineInterface, args: readonly string[]): Promise<Checked<T>> {
+  try {
+    const r = await $.process.run(['node', `${$.plugin.root}/hooks/cache-reader.mjs`, ...args], { timeoutMs: 120_000 })
+    if (r.exitCode === 127) return { ok: false, reason: 'node not found' }
+    return checkEnvelope<T>(r.stdout, r.isStdoutTruncated === true, r.exitCode)
+  } catch (err) {
+    const why = String(err).split(/\r?\n/)[0]!
+    return { ok: false, reason: /ENOENT|not found|cannot start/i.test(why) ? 'node not found' : why }
+  }
+}
+
+type TranscriptRead = { ok: true; calls: Call[]; files: number } | { ok: false; reason: string }
+
+/**
+ * Every call of the transcripts written since `since` (ms; null: all), read through the child reader: `list`,
+ * then `read` in batches for the files the cache lacks (newest first), following `data.next`. A failure is
+ * one reason, never a partial set of calls. Skipped (non-JSON) lines go to the debug log, once per read.
+ */
+async function readTranscriptCalls($: EngineInterface, since: number | null): Promise<TranscriptRead> {
+  const folder = transcriptFolder
+  if (folder === null) return { ok: false, reason: 'transcripts not located yet' }
+  const l = await runReader<ListData>($, ['list', '--folder', folder, ...(since === null ? [] : ['--since', String(Math.floor(since))])])
+  if (!l.ok) return l
+  const listed = [...l.value.files].sort((a, b) => a.mtimeMs - b.mtimeMs)
+  const missing = listed
+    .filter(f => transcriptCache.get(f.rel, f.size, f.mtimeMs) === undefined)
+    .reverse()
+    .map(f => f.rel)
+  let skipped = 0
+  let read = 0
+  for (const batch of batches(missing)) {
+    let rest = batch
+    while (rest.length > 0) {
+      const r = await runReader<ReadData>($, ['read', '--folder', folder, '--files', rest.join(',')])
+      if (!r.ok) return r
+      for (const f of r.value.files) {
+        transcriptCache.set(f)
+        skipped += f.skipped
+        read += 1
+      }
+      const next = r.value.next
+      if (next === undefined) break
+      if (next <= 0) return { ok: false, reason: 'transcript reader made no progress' }
+      rest = rest.slice(next)
+    }
+  }
+  if (skipped > 0) {
+    try {
+      await $.ui.log(`cachelab: skipped ${skipped} lines in ${read} files`, { to: 'debug' })
+    } catch {
+      // the debug log is optional
+    }
+  }
+  const recs = listed.map(f => transcriptCache.peek(f.rel)).filter((f): f is FileRecord => f !== undefined)
+  return { ok: true, calls: mergeCalls(recs), files: recs.length }
+}
 const cap = (s: string, n: number) => (s.length > n ? s.slice(0, n) + `\n... [+${s.length - n} chars]` : s)
 
 const blankAgent = (id: string, parent: string | null, type: string): LensAgent => ({
@@ -3540,6 +3617,16 @@ export const register: Register = on => {
     return next(e)
   })
 
+  // ---- Cache Lab: where this session's transcripts are (ITEM-069, cache-lab LLD section 6). Observers only. ----
+  on('classic.SessionStart', async ($, e, next) => {
+    noteTranscript(e.transcript_path)
+    return next(e)
+  }).catch(($, e, next) => next(e))
+  on('classic.UserPromptSubmit', async ($, e, next) => {
+    noteTranscript(e.transcript_path)
+    return next(e)
+  }).catch(($, e, next) => next(e))
+
   // ---- background tasks at stop time (step 16 Q6, E7) ----
   on('classic.SubagentStop', async ($, e, next) => {
     const result = await next(e)
@@ -3552,6 +3639,7 @@ export const register: Register = on => {
 
   // ---- kit section 5b, and main's stop-time background tasks ----
   on('classic.Stop', async ($, e, next) => {
+    noteTranscript(e.transcript_path)
     // Step 1.4: keep-alive arms at Stop; the arming before it and the new one are both kept.
     await captureKeepalive($)
     const result = await next(e)
