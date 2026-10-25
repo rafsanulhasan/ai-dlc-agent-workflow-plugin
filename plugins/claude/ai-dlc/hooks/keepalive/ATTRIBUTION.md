@@ -783,3 +783,9 @@ root 17, step 17.2.4; spec keepalive-cache-status line 82, D2a; LLD rev 5,
   the lens's Cache Lab window.
 - **Tests.** The gated-key table leaves `handoff.onWhenOff` out (it acts only
   at a seed); every-default fixture gains the `handoff` object.
+- **Master off hides the status line (step 40, 2026-10-25).** `statusHidden`
+  (`status` off, the master off, or no track allowed) decides the status line in
+  `render` and `showSeedCache`; before, a track switched on under a master that
+  was off kept it shown. The band and the Pane still draw the rows and buttons.
+  The first band draw after a module load clears a stale status line once, since
+  `/reload-plugins` fires no `session.start`.

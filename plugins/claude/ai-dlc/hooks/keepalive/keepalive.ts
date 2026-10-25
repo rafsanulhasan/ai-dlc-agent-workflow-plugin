@@ -431,13 +431,17 @@ function publish($: EngineInterface, now: number) {
     .catch(() => {})
 }
 
+// No keep-alive status line: `status` off (AC-17.6.5), the master off (step 40: the band and the Pane
+// still show the rows and buttons, so it can be turned back on there), or no track allowed (AC-17.6.33).
+const statusHidden = (): boolean => !settings.status || !masterNow() || !anyOn()
+
 // The full text (the track lines, then the seed line while it shows) or its one-line summary, by the
-// status mode (LLD 20.4); nothing while nothing is allowed or `status` is off (AC-17.6.33, 6.5). The
-// band and the Pane redraw at every render (invalidate).
+// status mode (LLD 20.4); nothing while the status line is hidden (statusHidden). The band and the
+// Pane redraw at every render (invalidate).
 function render($: EngineInterface, now: number) {
   publish($, now)
   $.ui.invalidate('ui.render')
-  if (!settings.status || !anyOn()) return $.ui.status(undefined)
+  if (statusHidden()) return $.ui.status(undefined)
   const full = [...TRACKS.map(([n]) => lineFor(tracks[n], now)), ...(seedLine ? [seedLine] : [])].join('\n')
   const facts = { '1h': factsOf(tracks['1h']), '5m': factsOf(tracks['5m']) }
   $.ui.status(statusTextOf(statusModeOf(settings.statusText, surfaces), full, facts, seedLine ? seedFact : undefined))
@@ -450,11 +454,20 @@ async function bandModelNow($: EngineInterface): Promise<BandModel> {
   return bandModel(masterNow() ? 'off' : 'on', rows, seedLine)
 }
 
+// Whether the first band draw since the module loaded has checked the status line (keepaliveBand).
+let statusChecked = false
+
 /** The keep-alive band (AbovePrompt, Terminal and Desktop) or the Pane's body: the tree, or undefined
  * when `status` is off (AC-17.6.5). register.tsx composes it under auto-handoff's band. Never throws. */
 export async function keepaliveBand($: EngineInterface, t: { Box: any; Text: any; Button: any }): Promise<unknown> {
   try {
     await loadSwitch($)
+    // A /reload-plugins fires no session.start: the first draw after a load clears a status line the
+    // module left before it, when the switches read now hide it (step 40). Once per load.
+    if (!statusChecked) {
+      statusChecked = true
+      if (statusHidden()) $.ui.status(undefined)
+    }
     if (!settings.status) return undefined
     return keepaliveTree(t, await bandModelNow($), n => { void pressTrack($, n) }, () => { void pressMaster($) })
   } catch (err) {
@@ -966,7 +979,7 @@ export async function showSeedCache($: EngineInterface, cache: { read: number })
   await refreshKeep($)
   publish($, await $.clock.now())
   $.ui.invalidate('ui.render')
-  if (!settings.status || !anyOn()) return
+  if (statusHidden()) return
   // No track runs during a turn (turn.start stops them), so the line stands alone until the turn's
   // Stop arms one; render() then shows it under the track lines.
   $.ui.status(seedLine)
