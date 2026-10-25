@@ -593,3 +593,8 @@ root 17, step 17.3.4.l1.1, code-review fix round 1 for 17.2.4; see
   calls keep-alive's `applyHandoffSeed` right after it writes the lineage
   record. Tests: the `enabled=false` seed-line test also sets
   `handoff.onWhenOff` false.
+- **The band draws the hooks beneath it (step 40, 2026-10-25).** The
+  `AbovePrompt` hook now calls `next(e)` and draws what it returns under the
+  panel and keep-alive's rows. Since T17.6 keep-alive's rows made the band draw
+  at every render, and a hook that returns its own tree without `next` skips
+  every hook beneath it, so the ai-dlc-lens band was never drawn.

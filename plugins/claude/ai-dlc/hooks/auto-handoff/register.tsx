@@ -972,13 +972,19 @@ export const register: Register = (on) => {
   // Tailscale IP), and the panel draws its brief link the same way.
   // Yields the band to a survey, and passes when there is nothing to show.
   // One band for both (keep-alive LLD rev 7, section 13): auto-handoff's panel above, keep-alive's
-  // track rows and buttons below, since two hooks that both draw would hide each other.
+  // track rows and buttons below, since two hooks that both draw would hide each other. The hooks
+  // beneath (another plugin's band, such as ai-dlc-lens's, then core's) are drawn under ours: a hook
+  // that returns its own tree without calling next skips every hook beneath it, which hid the lens
+  // band once keep-alive's rows made this band draw at every render (step 40). No `width` on the Box,
+  // since `below` can be core's engine node, which AbovePrompt refuses under a Box with a width.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (e.props.hasSurvey) return next(e)
     const t = $.ui.resolve(e)
     const ka = await keepaliveBand($, t)
     const ho = shown ? panelTree(t, shown, frame, () => hidePanel($)) : undefined
-    return ho || ka ? <t.Box flexDirection="column">{ho}{ka as never}</t.Box> : next(e)
+    if (!ho && !ka) return next(e)
+    const below = await next(e)
+    return <t.Box flexDirection="column">{ho}{ka as never}{below as never}</t.Box>
   })
 
   on('ui.render', { component: 'UserMessage', props: { origin: { kind: 'plugin' } } }, async ($, e, next) => {
