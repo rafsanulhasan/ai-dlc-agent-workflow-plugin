@@ -763,6 +763,12 @@ Setup: install or update the plugin (see *Install*), `/reload-plugins`.
 | O14 | Terminal, pinned, every workflow finished (or none yet): look at the band, press its `×`. Then spawn an agent. Then, with that workflow in progress, look for the `×`. | Step 36.4: the band has a `×` while no workflow is in progress; pressing it removes the band. The spawn (or `/ai-dlc:lens`, or a new session) brings it back; while a workflow is in progress the band has no `×`. | |
 | O13 | With a workflow in the band, run `/clear` or resume the session. | The band appears minimised. | |
 
+## Diagrams (ITEM-053, AC-20.8.1)
+
+| # | Steps | Expected | Result |
+|---|---|---|---|
+| D1 | In a kitty-protocol terminal, in VS Code (2.1.299 or later) and in desktop: ask Claude for "a mermaid flowchart of A → B → C". Look right after the fence. If it shows `rendering…`, wait a few seconds for the redraw; if none arrives, send another message so the reply is drawn again, then look. Then ask for a `pie` chart, and set `AI_DLC_LENS_DIAGRAM_MERMAID=false` in the `env` of `.claude/settings.local.json` and ask again. | Once the render completes, each surface shows the picture right after its fence, with the source still shown: a PNG on the terminal, an SVG elsewhere. Record which of the two (the redraw, or the next message) showed it. The `pie` reply shows its source and `mermaid diagram type "pie" is not supported offline`. With the setting off, the reply is drawn as without the lens. | Terminal: ; VS Code: ; Desktop: |
+
 ## Files
 
 - `.claude-plugin/plugin.json`: the manifest. Its marketplace entry is in `<REPO>\.claude-plugin\marketplace.json`, after `ai-dlc`; the Copilot marketplace does not list it.

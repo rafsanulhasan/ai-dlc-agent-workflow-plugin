@@ -157,6 +157,8 @@ import type { ChartLabel, ChartSize, FlowStatus, KeepaliveCycle, StepChart, Step
 import { DEFAULTS, KEYS, agentEnvName, agentEnvPrefix, agentKeyParts, envLevel, envName, fileLevel, initialFile, resolve, resolveAgent, schema, setKey } from './settings'
 import type { Key, Level, LensSettings } from './settings'
 import { SVG_CAP, avatarKey, avatarSvg, checkBytes, classify, isInside, own, trustedFolders, typesOf } from './avatar'
+import { altOf, cacheKey, cellsOf, errorCode, findFences, fitCaps, isSupportedMermaid, layoutParts, mermaidKind, reasonFor, removedNote, sanitiseSource, scrubSvg } from './diagram'
+import type { Fence, Outcome, Picture } from './diagram'
 import type { AvatarImage, ChartAvatars } from './avatar'
 import { FileCache, batches, checkEnvelope, folderOf, mergeCalls, sessionOfTranscript } from './transcripts'
 import type { Call, FileRecord, ListData, ReadData } from './transcripts'
@@ -3025,7 +3027,209 @@ async function workflowBody($: EngineInterface, t: any, site: ViewSite) {
   )
 }
 
+// ---- Diagrams (ITEM-053.c, diagramming LLD section 4): closed mermaid fences in a reply drawn as pictures,
+// offline, by the renderer process (../renderer/render.mjs). Its own registration, so a fault in it
+// cannot reach the other hooks; any throw draws the reply as the engine would (AC-20.6.4).
+
+/** RENDER_WAIT_MS (LLD 3.4): how long one render waits for its pictures before it shows `rendering…`. */
+const RENDER_WAIT_MS = 300
+const DIAGRAM_MEMORY_MAX = 64
+const DIAGRAM_DISK_MAX = 200
+/** Renderer processes at once. */
+const DIAGRAM_PROCESSES = 3
+
+type Rendered = { picture: Picture } | { reason: string }
+/** The results by cache key, least recently used first. */
+const diagramMemory = new Map<string, Rendered>()
+/** The renders under way, by cache key: one process per key, one redraw per result. */
+const diagramInFlight = new Map<string, Promise<Rendered>>()
+let diagramRunning = 0
+const diagramQueue: (() => void)[] = []
+let nodeOk: boolean | undefined
+let rendererVersion: string | undefined
+
+function rememberDiagram(key: string, r: Rendered) {
+  diagramMemory.delete(key)
+  diagramMemory.set(key, r)
+  while (diagramMemory.size > DIAGRAM_MEMORY_MAX) diagramMemory.delete(diagramMemory.keys().next().value as string)
+}
+
+async function diagramDir($: EngineInterface): Promise<string | undefined> {
+  const home = await homeDir($)
+  return home ? `${home}/.claude/state/ai-dlc-lens/diagrams` : undefined
+}
+
+// A cached picture on disk, or undefined (missing, unreadable, or not this format: a miss).
+async function diskDiagram($: EngineInterface, key: string, format: 'svg' | 'png'): Promise<Picture | undefined> {
+  try {
+    const dir = await diagramDir($)
+    if (!dir) return undefined
+    const text = await readText($, `${dir}/${key}.json`)
+    if (text === null) return undefined
+    const p = JSON.parse(text) as Partial<Picture>
+    return p.format === format && typeof p.body === 'string' && typeof p.width === 'number' && typeof p.height === 'number' ? (p as Picture) : undefined
+  } catch {
+    return undefined
+  }
+}
+
+// Writes a picture to the disk cache while it holds fewer than DIAGRAM_DISK_MAX files (the engine has no
+// delete, so a full folder is left as it is). A failure is ignored.
+async function storeDiagram($: EngineInterface, key: string, p: Picture) {
+  try {
+    const dir = await diagramDir($)
+    if (!dir) return
+    let count = 0
+    try {
+      count = ((await $.fs.list(dir)) as ListEntry[]).filter(e => e.kind !== 'dir').length
+    } catch {}
+    if (count < DIAGRAM_DISK_MAX) await $.fs.write(`${dir}/${key}.json`, JSON.stringify(p))
+  } catch {}
+}
+
+// Waits for a free renderer slot, runs `work`, frees it.
+async function withSlot<T>(work: () => Promise<T>): Promise<T> {
+  if (diagramRunning >= DIAGRAM_PROCESSES) await new Promise<void>(r => diagramQueue.push(r))
+  diagramRunning++
+  try {
+    return await work()
+  } finally {
+    diagramRunning--
+    diagramQueue.shift()?.()
+  }
+}
+
+// One renderer run: the envelope read and checked (LLD 4.1). Never throws.
+async function runRenderer($: EngineInterface, format: 'svg' | 'png', source: string): Promise<Rendered> {
+  try {
+    const r = await withSlot(() => $.process.run(['node', `${$.plugin.root}/renderer/render.mjs`, '--kind', 'mermaid', '--format', format], { stdin: source, timeoutMs: 20_000 }))
+    if (r.isStdoutTruncated) return { reason: reasonFor(format === 'png' ? 'pngCap' : 'svgCap') }
+    const line = r.stdout.split(/\r?\n/).find(l => l.trim().startsWith('{'))
+    if (!line) return { reason: reasonFor('failed') }
+    const env = JSON.parse(line) as { data: Picture | null; error: string | null }
+    if (env.error || !env.data) {
+      const error = env.error ?? 'renderer failed'
+      const code = errorCode(error)
+      return { reason: code === 'syntax' ? reasonFor('syntax', error) : reasonFor(code) }
+    }
+    const p = env.data
+    const body = p.format === 'svg' ? scrubSvg(p.body) : p.body
+    const fit = fitCaps(p.format, body, p.format === 'png' ? Math.floor((body.length * 3) / 4) : body.length)
+    return fit.ok ? { picture: { ...p, body } } : { reason: fit.reason }
+  } catch {
+    return { reason: reasonFor('failed') }
+  }
+}
+
+// `node --version` once per session: the renderer needs node on PATH.
+async function hasNode($: EngineInterface): Promise<boolean> {
+  if (nodeOk === undefined) {
+    try {
+      nodeOk = (await $.process.run(['node', '--version'], { timeoutMs: 10_000 })).exitCode === 0
+    } catch {
+      nodeOk = false
+    }
+  }
+  return nodeOk
+}
+
+async function versionOfRenderer($: EngineInterface): Promise<string> {
+  if (rendererVersion === undefined) {
+    try {
+      rendererVersion = String((JSON.parse((await readText($, `${$.plugin.root}/.claude-plugin/plugin.json`)) ?? '{}') as { version?: unknown }).version ?? '0')
+    } catch {
+      rendererVersion = '0'
+    }
+  }
+  return rendererVersion
+}
+
+/** One fence's outcome (LLD 4.1): a cache hit at once; else the render, waited for until `deadline`,
+ * after which the fence shows `rendering…` and one redraw follows its result. Never throws. */
+async function diagramOutcome($: EngineInterface, f: Fence, format: 'svg' | 'png' | undefined, deadline: number): Promise<Outcome> {
+  if (!format) return { reason: reasonFor('noSurface') }
+  if (!isSupportedMermaid(f.source)) return { reason: reasonFor('unsupportedMermaid', mermaidKind(f.source) || '?') }
+  const clean = sanitiseSource('mermaid', f.source)
+  const withRemoved = (r: Rendered): Outcome => ('picture' in r ? { picture: r.picture, removed: clean.removed } : r)
+  const key = cacheKey('mermaid', format, await versionOfRenderer($), clean.source)
+  const mem = diagramMemory.get(key)
+  if (mem) {
+    rememberDiagram(key, mem)
+    return withRemoved(mem)
+  }
+  const disk = await diskDiagram($, key, format)
+  if (disk) {
+    rememberDiagram(key, { picture: disk })
+    return withRemoved({ picture: disk })
+  }
+  if (!(await hasNode($))) return { reason: reasonFor('noNode') }
+  let job = diagramInFlight.get(key)
+  if (!job) {
+    job = runRenderer($, format, clean.source).then(async r => {
+      rememberDiagram(key, r)
+      if ('picture' in r) await storeDiagram($, key, r.picture)
+      diagramInFlight.delete(key)
+      return r
+    })
+    diagramInFlight.set(key, job)
+    // The redraw for this result: once, and only when it lands after this render stopped waiting
+    let late = false
+    void job.then(() => { if (late) $.ui.invalidate('ui.render') })
+    const left = Math.max(0, deadline - nowMs())
+    const done = await Promise.race([job.then(r => r as Rendered | undefined), new Promise<undefined>(r => { $.clock.after(left, () => { late = true; r(undefined) }) })])
+    if (done) return withRemoved(done)
+    return { reason: reasonFor('rendering') }
+  }
+  // Another render of this key is under way: its own redraw follows; this one shows `rendering…`
+  return { reason: reasonFor('rendering') }
+}
+
+/** The text of a fence as written, delimiters included. */
+const fenceText = (text: string, f: Fence) => text.slice(f.start, f.end)
+
+function registerDiagram(on: Parameters<Register>[0]) {
+  on('ui.render', { component: 'AssistantMessage' }, async ($, e, next) => {
+    try {
+      if (cfg.diagramMermaid !== true) return next(e)
+      const text = String(e.props.text ?? '')
+      if (!text.includes('mermaid')) return next(e)
+      const segs = findFences(text)
+      // Sprint 1: a mermaid fence is the only candidate (math and PlantUML are drawn as source)
+      const candidates = segs.flatMap(s => ('fence' in s && s.fence.kind === 'mermaid' && s.fence.closed ? [s.fence] : []))
+      if (!candidates.length) return next(e)
+      const t = $.ui.resolve(e) as any
+      const format: 'svg' | 'png' | undefined = t.Image ? 'png' : t.Svg ? 'svg' : undefined
+      const deadline = nowMs() + RENDER_WAIT_MS
+      const outcomes = new Map<Fence, Outcome>()
+      await Promise.all(candidates.map(async f => outcomes.set(f, await diagramOutcome($, f, format, deadline))))
+      const parts = layoutParts(segs, f => outcomes.get(f))
+      const { Box, Markdown, Text, Image, Svg } = t
+      return (
+        <Box flexDirection="column">
+          {parts.map((p, i) => {
+            if ('md' in p) return p.md.trim() ? <Markdown key={`d-${i}`} text={p.md} /> : null
+            if ('source' in p) return <Markdown key={`d-${i}`} text={fenceText(text, p.source)} />
+            if ('reason' in p) return <Text key={`d-${i}`} dimColor>{p.reason}</Text>
+            const img = p.image
+            const alt = altOf(p.picture)
+            const pic = img.format === 'png' && Image
+              ? <Image key={`d-${i}`} source={{ png: img.body }} {...cellsOf(img.width, img.height)} alt={alt} />
+              : <Svg key={`d-${i}`} source={img.body} alt={alt} {...(img.width > 0 ? { width: img.width, height: img.height } : {})} />
+            return p.removed > 0
+              ? <Box key={`d-${i}`} flexDirection="column">{pic}<Text dimColor>{removedNote(p.removed)}</Text></Box>
+              : pic
+          })}
+        </Box>
+      )
+    } catch {
+      return next(e)
+    }
+  })
+}
+
+
 export const register: Register = on => {
+  registerDiagram(on)
   // Each load (a /reload-plugins included) sweeps the old card again at the band's first render.
   oldCardSwept = false
   on('session.start', async ($, e, next) => {

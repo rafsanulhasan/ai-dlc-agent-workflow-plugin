@@ -71,6 +71,8 @@ export const SPEC = {
   },
   // ITEM-070 (Q-CL19): keep the Cache Lab window across /reload-plugins.
   cacheLabKeepWindowOnReload: { kind: 'bool', def: false, doc: 'Keep the Cache Lab window across /reload-plugins (development and testing); off resets it to 7d' },
+  // ITEM-053.c (diagramming LLD 5): sprint 1 draws Mermaid only; math and PlantUML rows come with sprint 2.
+  diagramMermaid: { kind: 'bool', def: true, doc: 'Draw closed mermaid fences as pictures (offline)' },
   // Step 1.5: how panels open, where the chart is drawn, and the workflow view's place and layout.
   panelOpenMode: {
     kind: 'enum',
