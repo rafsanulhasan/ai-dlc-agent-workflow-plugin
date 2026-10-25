@@ -38,7 +38,7 @@ describe("keep-alive settings table", { skip: skipReason }, () => {
 
   // ITEM-068 (T17.6): the README rows of these settings are a Docs update request to
   // documentation-writer (only it edits the README); remove each name here once its row is written.
-  const PENDING_DOCS = new Set(["AI_DLC_KEEPALIVE_STATUS_TEXT", "AI_DLC_KEEPALIVE_SOURCE_NOTE"]);
+  const PENDING_DOCS = new Set(["AI_DLC_KEEPALIVE_STATUS_TEXT", "AI_DLC_KEEPALIVE_SOURCE_NOTE", "AI_DLC_KEEPALIVE_HANDOFF_CARRY_OVER", "AI_DLC_KEEPALIVE_HANDOFF_ON_WHEN_OFF"]);
   test("the README's table lists every variable with its key and its default", () => {
     for (const s of mod.SETTINGS) {
       if (PENDING_DOCS.has(s.env) && !readme.includes(`| \`${s.env}\` |`)) continue;
@@ -58,7 +58,7 @@ describe("keep-alive's trust gate", { skip: skipReason }, () => {
     assert.deepEqual([...mod.TRUST_GATED].sort(), [
       "budgetMultiplier", "compactInstructions", "compactOnCap", "enabled",
       "fiveMinute.enabled", "fiveMinute.keepWarmFor", "fiveMinute.maxPings", "fiveMinute.pingEvery",
-      "oneHour.enabled", "oneHour.keepWarmFor", "oneHour.maxPings", "oneHour.pingEvery", "outputMult", "pingPrompt",
+      "handoff.onWhenOff", "oneHour.enabled", "oneHour.keepWarmFor", "oneHour.maxPings", "oneHour.pingEvery", "outputMult", "pingPrompt",
       "readPrice", "writeMult",
     ]);
     const keys = new Set(mod.SETTINGS.map((s) => s.key));
@@ -72,9 +72,11 @@ describe("keep-alive's trust gate", { skip: skipReason }, () => {
     const trust = readme.slice(readme.indexOf("**Workspace trust.**"));
     assert.ok(trust.length > 20, "README has a Workspace trust paragraph");
     const para = trust.slice(0, trust.indexOf("\n\n"));
-    for (const k of mod.TRUST_GATED) assert.ok(para.includes(`\`${k.split(".").pop()}\``), `README trust paragraph names ${k}`);
+    // ITEM-076: the README's trust paragraph gains onWhenOff through a Docs update request (documentation-writer)
+    const pending = mod.TRUST_GATED.filter((k) => k === "handoff.onWhenOff" && !para.includes("`onWhenOff`"));
+    for (const k of mod.TRUST_GATED) if (!pending.includes(k)) assert.ok(para.includes(`\`${k.split(".").pop()}\``), `README trust paragraph names ${k}`);
     assert.ok(para.includes("`.ai-dlc/cache-keepalive.json`") && para.includes("`.claude/settings.json`"));
-    assert.ok(trust.includes(`the ${mod.TRUST_GATED.length} settings above`), "README counts the gated settings");
+    assert.ok(trust.includes(`the ${mod.TRUST_GATED.length - pending.length} settings above`), "README counts the gated settings");
   });
 
 });

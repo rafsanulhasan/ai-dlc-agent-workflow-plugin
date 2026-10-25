@@ -178,6 +178,7 @@ const partOf = (l: string | undefined) => l?.replace(/^keepalive (?:1h|5m): (?:(
 // What keep-alive publishes under $.state { plugin: 'ai-dlc', key: 'keepalive' } (../../../types/index.d.ts).
 type Published = {
   enabled: boolean
+  sessionMaster?: 'on' | 'off'
   updatedAt: number
   sessionId: string
   tracks: { name: string; running: boolean; armedAt: number; warmUntil: number; nextPingAt: number | null; pingEvery: number; keepWarmMs: number; pings: number; cap: number; line: string; caches?: { source: 'main' | 'subagents'; warmUntil: number; expired: boolean }[] }[]
@@ -736,7 +737,7 @@ describe('keep-alive', () => {
   // Run AAW-20261023-keepalive-explicit-defaults: init writes every default into the file, so a gated
   // value equal to its default must not be skipped or warned about in an untrusted folder.
   test('untrusted, a file holding every default (init writes it) logs no trust warning, and the defaults apply', async ($, on) => {
-    const all: Record<string, unknown> = { oneHour: {}, fiveMinute: {} }
+    const all: Record<string, unknown> = { oneHour: {}, fiveMinute: {}, handoff: {} }
     for (const s of SETTINGS) { const [h, t] = s.key.split('.') as [string, string | undefined]; if (t) (all[h] as Record<string, unknown>)[t] = s.default; else all[h] = s.default }
     const { seen, line } = engine(on, { files: { [`${ROOT}/.ai-dlc/cache-keepalive.json`]: JSON.stringify({ ...all, oneHour: { ...(all.oneHour as object), keepWarmFor: '480m' } }) } })
     await $.classic.Stop(stop())
@@ -1605,9 +1606,11 @@ describe('trust gate, every gated key', () => {
   const eng = (g: Gated, on: On, files: Record<string, string>, trusted = false) => engine(on, { split: g.split, forkOutput: g.forkOutput, cacheRead: g.cacheRead, trusted, files: { ...localFile(g, false), ...files } })
   const ctx = ($: Ctx['$'], on: On, e: ReturnType<typeof engine>): Ctx => ({ $, on, seen: e.seen, clock: e.clock, line: e.line, status: e.status })
 
-  test('[R2] the gated list holds the 16 keys of the table, which are the ones SETTINGS marks', () => {
-    expect(TRUST_GATED).toHaveLength(16)
-    expect(GATED.map(g => g.key).sort()).toEqual([...TRUST_GATED].sort())
+  test('[R2] the gated list holds the 17 keys of the table, which are the ones SETTINGS marks', () => {
+    expect(TRUST_GATED).toHaveLength(17)
+    // handoff.onWhenOff (ITEM-076) acts only at an automatic handoff's seed, which this engine has no
+    // handoff for; its gate is the same table-driven trustGate (gatedDiffering) as every key here
+    expect(GATED.map(g => g.key).sort()).toEqual(TRUST_GATED.filter(k => k !== 'handoff.onWhenOff').sort())
     for (const g of GATED) {
       const s = SETTINGS.find(x => x.key === g.key)!
       expect(s.env).toBe(g.env)

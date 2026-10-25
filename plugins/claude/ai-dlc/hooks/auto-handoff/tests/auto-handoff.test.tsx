@@ -2501,8 +2501,9 @@ describe('the handoff and the prompt cache', () => {
     expect(statuses.some(s => s?.includes('seed'))).toBe(false)
   })
 
+  // ITEM-076: with handoff.onWhenOff (default true) the seeded session turns keep-alive on, so it is off here
   test('[R4] with keep-alive off (enabled=false), the seed line is not shown', async ($, on) => {
-    const calls = engine(on, { tokens: 165_000, stepUsage: true, files: { '/home/test/proj/.claude/settings.local.json': JSON.stringify({ env: { AI_DLC_KEEPALIVE_ENABLED: 'false' } }) } })
+    const calls = engine(on, { tokens: 165_000, stepUsage: true, files: { '/home/test/proj/.claude/settings.local.json': JSON.stringify({ env: { AI_DLC_KEEPALIVE_ENABLED: 'false', AI_DLC_KEEPALIVE_HANDOFF_ON_WHEN_OFF: 'false' } }) } })
     const statuses: (string | undefined)[] = []
     on('ui.status', async (_$, e) => (statuses.push(e.text), { value: undefined }) as never)
     await $.turn.complete(TURN)

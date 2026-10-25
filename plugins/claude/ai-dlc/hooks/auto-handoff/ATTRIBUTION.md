@@ -580,3 +580,16 @@ root 17, step 17.3.4.l1.1, code-review fix round 1 for 17.2.4; see
   to keep-alive's `noteUsage` with the agent id; the context accounting stays
   main-only. The 034.c test now expects the subagent's write in the ledger as
   a subagent cache that arms nothing.
+
+- **One band with keep-alive (ITEM-068, T17.6, 2026-10-25).** The
+  AbovePrompt hook composes auto-handoff's panel with keep-alive's band
+  (`keepaliveBand`) below it, and yields only to a survey or when neither
+  draws. Tests: the band helper reads auto-handoff's panel only; the file
+  fixture sets keep-alive's `statusText: full`.
+- **The chain is one keep-alive session (ITEM-076, T17.7, 2026-10-25).** New
+  `chain.ts`: `chainIdOf` (the lineage record's `chain`, else the session's
+  own id; a failed read logs one line) and `chainSessions` (the chain's ids,
+  newest first, at most 50 steps). The seed branch of `classic.SessionStart`
+  calls keep-alive's `applyHandoffSeed` right after it writes the lineage
+  record. Tests: the `enabled=false` seed-line test also sets
+  `handoff.onWhenOff` false.

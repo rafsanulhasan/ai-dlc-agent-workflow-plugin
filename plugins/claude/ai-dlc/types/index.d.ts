@@ -39,6 +39,9 @@ export type KeepaliveState = {
   enabled: boolean
   /** This session's master switch (the band or Pane title-row button), when one is set. */
   sessionMaster?: 'on' | 'off'
+  /** The automatic handoff chain this session belongs to: the id of its first session, and its session
+   * ids, newest first (a session started by hand is a chain of one). */
+  chain?: { id: string; sessions: string[] }
   updatedAt: number
   sessionId: string
   tracks: KeepaliveTrackState[]

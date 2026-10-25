@@ -769,3 +769,17 @@ root 17, step 17.2.4; spec keepalive-cache-status line 82, D2a; LLD rev 5,
   `partOf` leaves the suffix out of a part; the engine double answers
   `session.surfaces` with `['vscode']` (full mode). Auto-handoff's band helper
   reads its own panel only, and its fixture sets `statusText: full`.
+
+### An automatic handoff chain is one session (ITEM-076, T17.7, 2026-10-25)
+
+- **Chain key.** The session switches and the `--session` keep-warm
+  overrides are kept under the chain id (`../auto-handoff/chain.ts`,
+  `chainIdOf`), or the session id with the new setting `handoff.carryOver`
+  off. `session.end` keeps the switch entry during a handoff with carry-over.
+- **Seed.** `applyHandoffSeed`, called once per handoff by the seed step:
+  with the new trust-gated setting `handoff.onWhenOff` on and the chain's
+  master off, it acts as a master `[on]` press. It writes only `$.store`.
+- **Published.** `KeepaliveState.chain` (`id`, `sessions` newest first), for
+  the lens's Cache Lab window.
+- **Tests.** The gated-key table leaves `handoff.onWhenOff` out (it acts only
+  at a seed); every-default fixture gains the `handoff` object.

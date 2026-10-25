@@ -9,7 +9,7 @@ import { BRIEF_DIR, CAPABILITIES_FILE, DEFAULTS, LAST_RESORT_INSTRUCTIONS, MODUL
 import type { Config, HostWindow, Level, SeedCache, TemplateKey, WindowInfo } from './config.ts'
 import { ENDED, assembleSessionHandoff, currentRunStateFile, handoffsRoot, inRepo, openRecords, parseRunState, pickRun, runStateNote, scratchRoot, sessionHandoffPath, withNextAction } from './run.ts'
 import type { RunState, RunTarget } from './run.ts'
-import { keepaliveBand, noteUsage, registerKeepalive, showSeedCache, stopForHandoff, transcriptSplit } from '../keepalive/keepalive.ts'
+import { applyHandoffSeed, keepaliveBand, noteUsage, registerKeepalive, showSeedCache, stopForHandoff, transcriptSplit } from '../keepalive/keepalive.ts'
 import { git, homeDir, log, orLog, readRaw, readText, repoRoot, trustGate } from './io.ts'
 
 // At the handoff threshold (thresholdPercent of the context window), Haiku writes a handoff brief, the mod runs /clear, then seeds the
@@ -1043,6 +1043,8 @@ export const register: Register = (on) => {
       // so one store failure cannot give two numbers. A stored lineage always has a depth from now on.
       lineage = { from: p.oldSession, chain: p.chain, depth: p.next, baseName: p.baseName }
       await $.store.set(`lineage:${newSession}`, lineage)
+      // Keep-alive continues the chain (its LLD rev 10, 19.4): it reads the lineage just written
+      await orLog($, 'keepalive handoff seed', () => applyHandoffSeed($))
       // The run the chain hands off: the new session may carry it on before the resumed
       // orchestrator writes its own id into the run state (run.ts, pickRun).
       if (p.run) await $.store.set(`chainRun:${newSession}`, p.run.id)

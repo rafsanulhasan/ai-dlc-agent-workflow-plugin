@@ -5,7 +5,7 @@
   "description": "Settings of the ai-dlc plugin's keep-alive (Claude Code only), committed in .ai-dlc/cache-keepalive.json. Every key is required and holds a value: /ai-dlc:init (/ai-dlc:cache-keepalive-install) writes this plugin version's defaults, and a later plugin default does not reach a key already written; change a value with /ai-dlc:cache-keepalive-configure. Each key is read, highest first, from a /ai-dlc:cache-keepalive override (keep-warm times only, per track), the env of .claude/settings.local.json (its x-env variable), the env of .claude/settings.json, this file, then the default. Keep-alive has no /config rows, and the process environment is not read. An invalid value (null included), or one that breaks a rule (a duration shorter than minDuration, a pingEvery not shorter than its track's ttl), is logged and the next source applies. Keys marked x-trustGated apply from this file and from the env of .claude/settings.json only when Claude Code trusts the folder (projects[<repository root>].hasTrustDialogAccepted in ~/.claude.json); elsewhere a value that differs from the default is skipped and logged with its value, and one equal to the default applies, since it changes nothing. /ai-dlc:cache-keepalive-configure shows and changes them; /ai-dlc:cache-keepalive-merge brings the file up to date after a plugin upgrade.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["enabled", "scope", "status", "statusText", "sourceNote", "pingPrompt", "hitThreshold", "overagePercent", "minDuration", "sessionOverridesMax", "oneHour", "fiveMinute", "budgetMultiplier", "compactOnCap", "compactInstructions", "writeMult", "outputMult", "readPrice", "compactCostGuess", "summaryRatioGuess"],
+  "required": ["enabled", "scope", "status", "statusText", "sourceNote", "pingPrompt", "hitThreshold", "overagePercent", "minDuration", "sessionOverridesMax", "oneHour", "fiveMinute", "budgetMultiplier", "compactOnCap", "compactInstructions", "writeMult", "outputMult", "readPrice", "compactCostGuess", "summaryRatioGuess", "handoff"],
   "properties": {
     "$schema": {
       "type": "string",
@@ -263,6 +263,29 @@
       "x-kind": "ratio",
       "x-env": "AI_DLC_KEEPALIVE_SUMMARY_RATIO_GUESS",
       "description": "A compaction summary's size over the context, until one has been measured."
+    },
+    "handoff": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["carryOver", "onWhenOff"],
+      "description": "An automatic handoff chain as one keep-alive session.",
+      "properties": {
+        "carryOver": {
+          "type": "boolean",
+          "default": true,
+          "x-kind": "boolean",
+          "x-env": "AI_DLC_KEEPALIVE_HANDOFF_CARRY_OVER",
+          "description": "Keep the session switches (the band and pane buttons) and the /ai-dlc:cache-keepalive --session keep-warm times across an automatic handoff chain; false: a seeded session starts with none, like one started by hand."
+        },
+        "onWhenOff": {
+          "type": "boolean",
+          "default": true,
+          "x-kind": "boolean",
+          "x-env": "AI_DLC_KEEPALIVE_HANDOFF_ON_WHEN_OFF",
+          "x-trustGated": true,
+          "description": "When keep-alive was off at an automatic handoff, turn it on (the master and both tracks) in the seeded session, as the master [on] button does. From this file it applies only when Claude Code trusts the folder."
+        }
+      }
     }
   }
 }

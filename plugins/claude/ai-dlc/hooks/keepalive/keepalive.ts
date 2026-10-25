@@ -4,6 +4,7 @@ import type { Scope, TrackName } from './duration.ts'
 import { defaults, gatedDiffering, readMult, resolveSettings } from './settings.ts'
 import type { Level, Settings, TrackKey, TrackSettings } from './settings.ts'
 import { creationSplit, k, repoConfig, settingsEnv, trustOf } from '../auto-handoff/config.ts'
+import { chainIdOf, chainSessions } from '../auto-handoff/chain.ts'
 import type { TrustTarget } from '../auto-handoff/config.ts'
 import { homeDir, log, readRaw, repoRoot, trustGate, trustTarget } from '../auto-handoff/io.ts'
 import type { TrustCache } from '../auto-handoff/io.ts'
@@ -298,7 +299,7 @@ async function switchList($: EngineInterface): Promise<[string, SessionSwitch][]
 // A store that cannot be read leaves the switches unset and says so in the debug log.
 async function loadSwitch($: EngineInterface): Promise<SessionSwitch> {
   try {
-    const id = await $.session.id()
+    const id = await stateId($)
     if (switchMirror?.id === id) return switchMirror.sw
     const sw = (await switchList($)).find(([s]) => s === id)?.[1] ?? {}
     switchMirror = { id, sw }
@@ -314,7 +315,7 @@ async function loadSwitch($: EngineInterface): Promise<SessionSwitch> {
 async function saveSwitch($: EngineInterface, sw: SessionSwitch) {
   let id = switchMirror?.id ?? ''
   try {
-    id = await $.session.id()
+    id = await stateId($)
     const rest = (await switchList($)).filter(([s]) => s !== id)
     const set = Object.keys(sw).length > 0
     await $.store.set(switchKey, (set ? [...rest, [id, sw]] : rest).slice(-settings.sessionOverridesMax))
@@ -354,10 +355,28 @@ async function refreshSurfaces($: EngineInterface) {
   }
 }
 
-// What a handler that renders reads first: this session's switches and the surface roster.
+// The id the per-session state is kept under (LLD rev 10, 19.2): the automatic handoff chain's id, so
+// a seeded session sees the switches and the --session overrides of the session it continues; with
+// handoff.carryOver off, the session's own id.
+async function stateId($: EngineInterface): Promise<string> {
+  return settings.handoff.carryOver ? (await chainIdOf($)).id : await $.session.id()
+}
+
+// The chain as published for the lens (cache-lab LLD 7.2): its id and its sessions, newest first.
+let chainInfo: { id: string; sessions: string[] } | undefined
+async function refreshChain($: EngineInterface) {
+  try {
+    chainInfo = { id: (await chainIdOf($)).id, sessions: await chainSessions($) }
+  } catch (err) {
+    $.ui.log(`keepalive: chain not read (${err instanceof Error ? err.message : String(err)})`, { to: 'debug' })
+  }
+}
+
+// What a handler that renders reads first: this session's switches, the surface roster and the chain.
 async function prepare($: EngineInterface) {
   await loadSwitch($)
   await refreshSurfaces($)
+  await refreshChain($)
 }
 
 // The published cache entries of a track's lifetime, one per source that has one (D8); omitted when none.
@@ -402,7 +421,7 @@ function trackStates(now: number): KeepaliveTrackState[] {
 // `now` is the caller's clock reading, the time the snapshot's cache parts speak for.
 function publish($: EngineInterface, now: number) {
   const master = curSwitch().master
-  const snapshot = { enabled: masterNow(), ...(master ? { sessionMaster: master } : {}), tracks: trackStates(now) }
+  const snapshot = { enabled: masterNow(), ...(master ? { sessionMaster: master } : {}), ...(chainInfo ? { chain: { id: chainInfo.id, sessions: [...chainInfo.sessions] } } : {}), tracks: trackStates(now) }
   publishing = publishing
     .then(async () => {
       const value: KeepaliveState = { ...snapshot, updatedAt: await $.clock.now(), sessionId: await $.session.id() }
@@ -669,7 +688,7 @@ async function sessionOverrides($: EngineInterface, n: TrackName): Promise<[stri
 async function keepWarm($: EngineInterface, key: TrackKey, { session = true } = {}): Promise<Keep> {
   const n = TRACKS.find(([, k]) => k === key)![0]
   if (session) {
-    const id = await $.session.id()
+    const id = await stateId($)
     const own = (await sessionOverrides($, n)).find(([s]) => s === id)
     if (own) {
       if (own[1] >= settings.minDuration) return { ms: own[1], from: `this session, /${COMMAND}`, override: true }
@@ -726,7 +745,7 @@ async function setKeepWarm($: EngineInterface, scope: Scope, ms: number | undefi
       await (ms === undefined ? $.store.delete(machineKey(n)) : $.store.set(machineKey(n), ms))
       continue
     }
-    const id = await $.session.id()
+    const id = await stateId($)
     const rest = (await sessionOverrides($, n)).filter(([s]) => s !== id)
     await $.store.set(sessionKey(n), ms === undefined ? rest : [...rest, [id, ms]].slice(-settings.sessionOverridesMax))
   }
@@ -953,6 +972,28 @@ export async function showSeedCache($: EngineInterface, cache: { read: number })
   $.ui.status(seedLine)
 }
 
+/** At the seed turn of an automatic handoff (register.tsx, once per handoff, after the lineage record is
+ * written): when handoff.onWhenOff is on and the chain's master in force is off, acts as a master [on]
+ * press (LLD rev 10, 19.4; Q-SL9): the master and both tracks on for the chain. It sends nothing, pings
+ * nothing and writes only $.store (19.5). Never throws. */
+export async function applyHandoffSeed($: EngineInterface): Promise<void> {
+  try {
+    await load($)
+    switchMirror = undefined
+    const sw = await loadSwitch($)
+    if (settings.handoff.onWhenOff && !masterNow()) {
+      await saveSwitch($, afterMasterPress(sw, settings.enabled))
+      for (const [n] of TRACKS) if (tracks[n].timer === undefined && isDisabledPart(tracks[n])) setOff(tracks[n], idleReason(n))
+    }
+    await refreshChain($)
+    await refreshKeep($)
+    publish($, await $.clock.now())
+    $.ui.invalidate('ui.render')
+  } catch (err) {
+    $.ui.log(`keepalive: handoff seed not applied (${err instanceof Error ? err.message : String(err)})`, { to: 'debug' })
+  }
+}
+
 // A surface came or went, or the session started: the roster is read again and the line re-rendered.
 async function rosterChanged($: EngineInterface) {
   try {
@@ -1149,11 +1190,13 @@ export function registerKeepalive(on: Parameters<Register>[0], deps: KeepaliveDe
     // Each session warns about a setting problem once
     for (const [n] of TRACKS) { setOff(tracks[n], 'sessionEnded'); tracks[n].pingWarmUntil = 0 }
     // The session's switches end with it (AC-17.6.18): its store entry is deleted, so a session started
-    // later in this folder starts with none set.
+    // later in this folder starts with none set. Not at an automatic handoff's /clear with carryOver on
+    // (LLD rev 10, 19.3): the chain goes on in the seeded session, which keeps the entry.
     try {
-      const id = await $.session.id()
+      const id = await stateId($)
       const list = await switchList($)
-      if (list.some(([s]) => s === id)) await $.store.set(switchKey, list.filter(([s]) => s !== id))
+      const continuing = deps.handingOff() && settings.handoff.carryOver
+      if (!continuing && list.some(([s]) => s === id)) await $.store.set(switchKey, list.filter(([s]) => s !== id))
     } catch (err) {
       $.ui.log(`keepalive: session switches not cleared (${err instanceof Error ? err.message : String(err)})`, { to: 'debug' })
     }
