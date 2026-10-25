@@ -134,6 +134,9 @@ function engine(on: On, opts: { tokens: number; files?: Record<string, string>; 
     if (text === undefined && path.endsWith("/templates/brief.md")) return { value: SHIPPED_BRIEF }
     if (text === undefined && path.endsWith("/templates/instructions.md")) return { value: SHIPPED_INSTRUCTIONS }
     if (text === undefined && path.endsWith("/templates/session-handoff.md")) return { value: SHIPPED_SESSION }
+    // Keep-alive's status line in full mode (its D13 summary has its own tests in hooks/keepalive/), so
+    // the track lines asserted here stay whole on the terminal surface this engine reports.
+    if (text === undefined && path === '/home/test/proj/.ai-dlc/cache-keepalive.json') return { value: JSON.stringify({ statusText: 'full' }) }
     if (text === undefined) throw new Error(`ENOENT ${e.path}`)
     return { value: text }
   })
@@ -259,7 +262,11 @@ const textOf = (n: unknown): string => typeof n === 'string' ? n
 async function band($: Parameters<TestBody>[0]): Promise<string> {
   const ui = await mountBand($)
   try {
-    return textOf(await ui.drawn())
+    // Auto-handoff's panel only: keep-alive's rows, drawn below it in the same band since ITEM-068, are
+    // tested in hooks/keepalive/
+    const text = textOf(await ui.drawn())
+    const ka = text.indexOf('⚠ ai-dlc cache-keepalive:')
+    return ka < 0 ? text : text.slice(0, ka)
   } finally {
     await ui.unmount()
   }
@@ -1128,7 +1135,8 @@ describe('auto-handoff', () => {
     const ui = await mountBand($)
     expect(textOf(await ui.drawn())).toContain('⚠ brief is facts only')
     await ui.press({ key: 'dismiss' })
-    expect(textOf(await ui.drawn())).toBe('')
+    // Only keep-alive's rows are left in the band (ITEM-068)
+    expect(textOf(await ui.drawn())).toMatch(/^⚠ ai-dlc cache-keepalive:/)
     await ui.unmount()
   })
 
@@ -2360,7 +2368,7 @@ describe('the handoff and the prompt cache', () => {
     await $.classic.SessionStart({ source: 'clear' })
     await settle(() => calls.seeded.length > 0)
     await $.classic.Stop({ background_tasks: [KA_TASK], transcript_path: '/home/test/none.jsonl' } as never)
-    expect(statuses.at(-1)?.split('\n')).toContain('keepalive 5m: off (no cache write seen yet, so the cache lifetime is unknown)')
+    expect(statuses.at(-1)?.split('\n')).toContain('keepalive 5m: off (no cache write seen yet, so the cache lifetime is unknown), ping 0/20, keep warm 1h (default)')
   })
 
   test('no ping is armed while a handoff is under way', async ($, on) => {
@@ -2419,7 +2427,7 @@ describe('the handoff and the prompt cache', () => {
     // D4: keep-alive's status line says it too, under the track lines once a Stop arms one, until the next turn.
     expect(statuses.at(-1)).toBe('keepalive seed: cache hit, 47k read')
     await $.classic.Stop({ background_tasks: [KA_TASK], transcript_path: '/home/test/new.jsonl' } as never)
-    expect(statuses.at(-1)?.split('\n')).toEqual([expect.stringMatching(/^keepalive 1h: main warm until \d+:\d\d; armed/m), 'keepalive 5m: off (no 5m cache write seen)', 'keepalive seed: cache hit, 47k read'])
+    expect(statuses.at(-1)?.split('\n')).toEqual([expect.stringMatching(/^keepalive 1h: main warm until \d+:\d\d; armed/m), 'keepalive 5m: off (no 5m cache write seen), ping 0/20, keep warm 1h (default)', 'keepalive seed: cache hit, 47k read'])
     await $.turn.start({ turnId: 't-2' } as never)
     await $.classic.Stop({ background_tasks: [KA_TASK], transcript_path: '/home/test/new.jsonl' } as never)
     expect(statuses.at(-1)?.split('\n')).toHaveLength(2)
@@ -2545,7 +2553,7 @@ describe('the handoff and the prompt cache', () => {
     // T17.3: the agent's write is in the ledger as a subagent cache; with subagent pings off it arms nothing
     await $.classic.Stop({ background_tasks: [KA_TASK] } as never)
     expect(statuses.at(-1)).not.toContain('main warm until')
-    expect(statuses.at(-1)).toMatch(/^keepalive 5m: subagents warm until \d+:\d\d; off \(only subagent caches; subagent pings off\)$/m)
+    expect(statuses.at(-1)).toMatch(/^keepalive 5m: subagents warm until \d+:\d\d; off \(only subagent caches; subagent pings off\), ping 0\/20, keep warm 1h \(default\)$/m)
   })
 
   test('[ITEM-034.c] a main-loop response reaches the cache ledger and logs no agent usage line', async ($, on) => {

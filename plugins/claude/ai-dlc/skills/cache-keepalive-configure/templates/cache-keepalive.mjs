@@ -193,6 +193,10 @@ export function checkValue(p, raw, byEnv, minDuration = 0) {
       const word = typeof raw === "string" ? raw.trim().toLowerCase() : "";
       return word === "session" || word === "machine" ? { value: word } : bad("not session or machine");
     }
+    case "statusText": {
+      const word = typeof raw === "string" ? raw.trim().toLowerCase() : "";
+      return word === "auto" || word === "summary" || word === "full" ? { value: word } : bad("not auto, summary or full");
+    }
     case "text": return typeof raw === "string" && raw.trim() ? { value: raw.trim() } : bad("blank or not text");
     case "threshold": return n !== undefined && n >= 0 && n < 1 ? { value: n } : bad("not a number from 0 up to, not including, 1");
     case "ratio": return n !== undefined && n > 0 && n < 1 ? { value: n } : bad("not a number between 0 and 1");

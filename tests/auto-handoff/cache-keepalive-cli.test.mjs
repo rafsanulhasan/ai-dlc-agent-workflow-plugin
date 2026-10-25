@@ -94,6 +94,7 @@ describe("the schema against keep-alive's settings table", { skip: skipReason },
 const SAMPLES = {
   boolean: [true, false, "yes", "OFF", " 1 ", "maybe", 1, "", "  "],
   scope: ["session", " Machine ", "global", 3, ""],
+  statusText: ["auto", " Summary ", "FULL", "both", 3, ""],
   text: ["hi", "  padded  ", "", "   ", 5],
   threshold: [0, 0.5, "0.9", 1, -0.1, "x", ""],
   ratio: [0, 0.15, 1, "0.5", ""],

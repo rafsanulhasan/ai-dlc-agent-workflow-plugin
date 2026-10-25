@@ -28,11 +28,17 @@ export type KeepaliveTrackState = {
    * `subagents` for the latest of the subagents' caches), with when each is warm until and whether it
    * has expired at `updatedAt`. Omitted when there is none. */
   caches?: { source: 'main' | 'subagents'; warmUntil: number; expired: boolean }[]
+  /** Where the keep-warm time in force came from, the label the line's source note shows. */
+  keepWarmFrom: 'session' | 'machine' | 'settings' | 'default'
+  /** This session's switch of the track (its band or Pane button), when one is set. */
+  sessionSwitch?: 'on' | 'off'
 }
 
 export type KeepaliveState = {
-  /** Keep-alive's `enabled` setting as last read. */
+  /** Keep-alive's master in force: this session's master switch, else the `enabled` setting as last read. */
   enabled: boolean
+  /** This session's master switch (the band or Pane title-row button), when one is set. */
+  sessionMaster?: 'on' | 'off'
   updatedAt: number
   sessionId: string
   tracks: KeepaliveTrackState[]

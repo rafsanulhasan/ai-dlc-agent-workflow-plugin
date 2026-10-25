@@ -1,4 +1,4 @@
-import { creationSplit } from '../auto-handoff/config.ts'
+import { creationSplit, k } from '../auto-handoff/config.ts'
 
 // The cache ledger (spec keepalive-cache-status, D1 and D3; LLD section 2). Pure and engine-free:
 // no clock, no I/O, so tests/cache-state.test.ts drives it on its own. keepalive.ts owns the timers,
@@ -229,6 +229,128 @@ export function cachePart(v: CacheView): string | undefined {
   return parts.length ? parts.join(', ') : undefined
 }
 
-/** A track's status line: `keepalive <ttl>: <cache part>; <keep-alive part>`, or the keep-alive part alone. */
-export const lineOf = (ttl: Ttl, cache: string | undefined, part: string): string =>
-  `keepalive ${ttl}: ${cache ? `${cache}; ${part}` : part}`
+// ---- ITEM-068 (LLD rev 7 to 11): the off-line suffix, the source note, the session switches, the
+// band model and the status-line summary. Pure, like the ledger above.
+
+/** True for a keep-alive part that says the track is off: every reasonText() result. Stopped texts
+ * ('expired, stopped', 'missed, stopped', ...) are not off (LLD 11). */
+export const isOffPart = (part: string): boolean => part === 'off' || part.startsWith('off ')
+
+/** Where a keep-warm time came from, as the source note writes it (LLD 11.2). */
+export type SourceLabel = 'session' | 'machine' | 'settings' | 'default'
+
+/** The source note of a keep-warm time, from keepalive.ts's Keep: an override of this session or of
+ * this machine, the default, or any settings level. */
+export function sourceLabel(keep: { from: string; override?: boolean }): SourceLabel {
+  if (keep.override && keep.from.startsWith('this session')) return 'session'
+  if (keep.override && keep.from.startsWith('this machine')) return 'machine'
+  return keep.from === 'default' ? 'default' : 'settings'
+}
+
+/** The off-line suffix's values: the ping limit, the keep-warm time (formatDuration) and its source
+ * note, undefined when `sourceNote` is off. */
+export type OffTail = { cap: number; keepWarm: string; source?: SourceLabel }
+export const offTail = (t: OffTail): string => `, ping 0/${t.cap}, keep warm ${t.keepWarm}${t.source ? ` (${t.source})` : ''}`
+
+/** A track's status line: `keepalive <ttl>: <cache part>; <keep-alive part>`, or the keep-alive part
+ * alone. With `tail`, an off part also gets the off-line suffix (rev 7, E1' to E9). */
+export const lineOf = (ttl: Ttl, cache: string | undefined, part: string, tail?: OffTail): string => {
+  const p = tail && isOffPart(part) ? `${part}${offTail(tail)}` : part
+  return `keepalive ${ttl}: ${cache ? `${cache}; ${p}` : p}`
+}
+
+export type Button = 'on' | 'off'
+/** The session switches (D10, D11): the master (keep-alive as a whole) and one per track. Absent = unset. */
+export type SessionSwitch = { master?: Button; '5m'?: Button; '1h'?: Button }
+/** Effective master: the session master, else the settings' `enabled`. */
+export const masterOn = (sw: SessionSwitch, settingEnabled: boolean): boolean => sw.master ? sw.master === 'on' : settingEnabled
+/** Effective track: its switch (over the master and the settings), else the master AND the track's own setting. */
+export const trackOn = (sw: SessionSwitch, n: Ttl, settingEnabled: boolean, trackSetting: boolean): boolean =>
+  sw[n] ? sw[n] === 'on' : masterOn(sw, settingEnabled) && trackSetting
+/** A track press (Q-SL8): `[off]` on an enabled track sets its switch off, `[on]` on a disabled one on.
+ * The master and the other track are untouched. */
+export const afterTrackPress = (sw: SessionSwitch, n: Ttl, enabled: boolean): SessionSwitch => ({ ...sw, [n]: enabled ? 'off' : 'on' })
+/** A master press: `[off]` sets the master off and clears both track switches; `[on]` sets the master
+ * and both track switches on (Q-SL7, force both tracks on). */
+export const afterMasterPress = (sw: SessionSwitch, settingEnabled: boolean): SessionSwitch =>
+  masterOn(sw, settingEnabled) ? { master: 'off' } : { master: 'on', '5m': 'on', '1h': 'on' }
+
+/** The band and Pane title (rev 11, Q-SL2). */
+export const BAND_TITLE = '⚠ ai-dlc cache-keepalive:'
+export type TrackRow = { track: Ttl; line: string; button: Button }
+export type BandModel = { title: typeof BAND_TITLE; master: Button; rows: TrackRow[]; seed?: string }
+/** The band and Pane model: the master button (it names the press), the 5m row then the 1h row (Q-SL5),
+ * each button `[off]` while the track is enabled, else `[on]` (Q-SL8), and the seed line while it shows. */
+export const bandModel = (master: Button, lines: Record<Ttl, { line: string; enabled: boolean }>, seed?: string): BandModel => ({
+  title: BAND_TITLE,
+  master,
+  rows: (['5m', '1h'] as const).map(track => ({ track, line: lines[track].line, button: lines[track].enabled ? 'off' : 'on' })),
+  ...(seed !== undefined ? { seed } : {}),
+})
+
+// ---- D13 (rev 11): the status-line summary
+
+export type StopKind = 'done' | 'ping limit' | 'spend limit' | 'missed' | 'error' | 'expired' | 'handoff' | 'overage'
+export type CompactionPhase = 'compacting' | 'compacted' | 'skipped' | 'refused'
+export type StatusMode = 'full' | 'summary'
+/** What the summary needs from one track, from its state, never parsed from its line. */
+export type TrackFacts =
+  | { kind: 'running'; warmUntil: number; pings: number; cap: number; firstPingAt?: number }
+  | { kind: 'stopped'; stop: StopKind; warmUntil?: number }
+  | { kind: 'off'; reason: Reason }
+  | { kind: 'compaction'; phase: CompactionPhase }
+export type SeedFact = { hit: true; tokens: number } | { hit: false }
+export const SUMMARY_MAX = 72
+
+function reasonToken(r: Reason): string {
+  if (typeof r === 'object') return 'idle (no write)'
+  switch (r) {
+    case 'noTasks': return 'idle (no tasks)'
+    case 'noSplit': return 'idle (no write yet)'
+    case 'turnRunning': return 'idle (turn)'
+    case 'onlySubagents': return 'idle (subagents)'
+    case 'sessionEnded': return 'idle (ended)'
+    case 'disabled': return 'off'
+    case 'expired': return 'expired'
+    case 'overage': return 'off (overage)'
+    default: { const never: never = r; return never }
+  }
+}
+
+const COMPACTION: Record<CompactionPhase, string> = { compacting: 'compacting', compacted: 'compacted', skipped: 'compaction skipped', refused: 'compaction refused' }
+
+// One track's token; `warm` false drops its `warm <H:MM>` clause (the length rule's second step).
+function trackToken(ttl: Ttl, f: TrackFacts, warm: boolean): string {
+  switch (f.kind) {
+    case 'running': {
+      const tail = f.pings === 0 && f.firstPingAt !== undefined ? `first ping ${hhmm(f.firstPingAt)}` : `ping ${f.pings}/${f.cap}`
+      return warm ? `${ttl} warm ${hhmm(f.warmUntil)}, ${tail}` : `${ttl} ${tail}`
+    }
+    case 'stopped': return `${ttl} stopped: ${f.stop}${warm && f.warmUntil !== undefined ? `, warm ${hhmm(f.warmUntil)}` : ''}`
+    case 'off': return `${ttl} ${reasonToken(f.reason)}`
+    case 'compaction': return `${ttl} ${COMPACTION[f.phase]}`
+  }
+}
+
+/** D13. `keepalive <1h token> | <5m token>[ | <seed token>]`; while longer than SUMMARY_MAX it drops the
+ * seed token, then every `warm <H:MM>` clause. */
+export function summaryOf(facts: Record<Ttl, TrackFacts>, seed: SeedFact | undefined): string {
+  const build = (withSeed: boolean, warm: boolean) => {
+    const parts = [trackToken('1h', facts['1h'], warm), trackToken('5m', facts['5m'], warm)]
+    if (withSeed && seed) parts.push(seed.hit ? `seed hit ${k(seed.tokens)}` : 'seed miss')
+    return `keepalive ${parts.join(' | ')}`
+  }
+  const whole = build(true, true)
+  if (whole.length <= SUMMARY_MAX) return whole
+  const noSeed = build(false, true)
+  return noSeed.length <= SUMMARY_MAX ? noSeed : build(false, false)
+}
+
+/** D13 surface rule: 'full' when the roster is non-empty and every entry is 'vscode', else 'summary'. */
+export const surfaceMode = (surfaces: readonly string[]): StatusMode => surfaces.length > 0 && surfaces.every(s => s === 'vscode') ? 'full' : 'summary'
+export type StatusTextSetting = 'auto' | 'summary' | 'full'
+/** The mode in force: `summary` and `full` override the surface rule; `auto` is surfaceMode(surfaces). */
+export const statusModeOf = (setting: StatusTextSetting, surfaces: readonly string[]): StatusMode => setting === 'auto' ? surfaceMode(surfaces) : setting
+/** The one chooser: 'full' is fullText unchanged, 'summary' is summaryOf(...). */
+export const statusTextOf = (mode: StatusMode, fullText: string, facts: Record<Ttl, TrackFacts>, seed: SeedFact | undefined): string =>
+  mode === 'full' ? fullText : summaryOf(facts, seed)

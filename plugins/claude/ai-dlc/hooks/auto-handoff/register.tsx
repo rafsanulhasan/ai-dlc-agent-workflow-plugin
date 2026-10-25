@@ -9,7 +9,7 @@ import { BRIEF_DIR, CAPABILITIES_FILE, DEFAULTS, LAST_RESORT_INSTRUCTIONS, MODUL
 import type { Config, HostWindow, Level, SeedCache, TemplateKey, WindowInfo } from './config.ts'
 import { ENDED, assembleSessionHandoff, currentRunStateFile, handoffsRoot, inRepo, openRecords, parseRunState, pickRun, runStateNote, scratchRoot, sessionHandoffPath, withNextAction } from './run.ts'
 import type { RunState, RunTarget } from './run.ts'
-import { noteUsage, registerKeepalive, showSeedCache, stopForHandoff, transcriptSplit } from '../keepalive/keepalive.ts'
+import { keepaliveBand, noteUsage, registerKeepalive, showSeedCache, stopForHandoff, transcriptSplit } from '../keepalive/keepalive.ts'
 import { git, homeDir, log, orLog, readRaw, readText, repoRoot, trustGate } from './io.ts'
 
 // At the handoff threshold (thresholdPercent of the context window), Haiku writes a handoff brief, the mod runs /clear, then seeds the
@@ -971,9 +971,14 @@ export const register: Register = (on) => {
   // Markdown element linkifies http:, https: and file: (the Link element refuses the
   // Tailscale IP), and the panel draws its brief link the same way.
   // Yields the band to a survey, and passes when there is nothing to show.
+  // One band for both (keep-alive LLD rev 7, section 13): auto-handoff's panel above, keep-alive's
+  // track rows and buttons below, since two hooks that both draw would hide each other.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    if (!shown || e.props.hasSurvey) return next(e)
-    return panelTree($.ui.resolve(e), shown, frame, () => hidePanel($))
+    if (e.props.hasSurvey) return next(e)
+    const t = $.ui.resolve(e)
+    const ka = await keepaliveBand($, t)
+    const ho = shown ? panelTree(t, shown, frame, () => hidePanel($)) : undefined
+    return ho || ka ? <t.Box flexDirection="column">{ho}{ka as never}</t.Box> : next(e)
   })
 
   on('ui.render', { component: 'UserMessage', props: { origin: { kind: 'plugin' } } }, async ($, e, next) => {

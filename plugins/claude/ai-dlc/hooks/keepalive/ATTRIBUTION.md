@@ -739,3 +739,33 @@ root 17, step 17.2.4; spec keepalive-cache-status line 82, D2a; LLD rev 5,
 - **Tests.** The 034.c tests that pinned an unchanged ledger now pin the
   ledger T17.3 builds; the engine double answers `fs.exists` and reads the
   tail from a `node -e` run.
+
+### Both tracks, buttons and the status-line summary (ITEM-068, T17.6, 2026-10-25)
+
+- **Lines.** Every off line ends `, ping 0/<cap>, keep warm <d> (<source>)`
+  (`lineOf` with an `OffTail`, `isOffPart`), and every keep-warm clause has
+  its source note, `session`, `machine`, `settings` or `default`
+  (`sourceLabel`); the new setting `sourceNote` turns the note off. The status
+  line is hidden while no track is allowed; the band and the Pane still show.
+- **Switches.** A master switch and one per track, this session only, kept in
+  `$.store` (`keepalive:switch:sessions`, per session id) with a mirror for
+  the synchronous readers; `masterOn`, `trackOn`, `afterTrackPress`,
+  `afterMasterPress` decide them; `pressTrack` and `pressMaster` act on them.
+  The Stop's master branch is gone: each track arms only when enabled.
+  `session.end` deletes the session's entry. Published: `sessionMaster`,
+  `sessionSwitch`, `keepWarmFrom`; `enabled` is the master in force.
+- **Band and Pane.** New `panel.tsx` (`keepaliveTree`, `bandText`): the title
+  row `⚠ ai-dlc cache-keepalive:` with the master button, the 5m and 1h rows
+  with their buttons, the seed row. `../auto-handoff/register.tsx` composes it
+  under auto-handoff's panel in the one AbovePrompt hook; a `Pane` hook
+  (`keepalive`) draws it in VS Code, opened by `/ai-dlc:cache-keepalive`
+  when a VS Code surface is attached. The command reports the set switches.
+- **Summary.** `summaryOf` (D13), `surfaceMode`, `statusModeOf`,
+  `statusTextOf`; each track keeps a `status` beside its part (`setPart`, the
+  one writer), read by `factsOf`. New setting `statusText`
+  (`auto | summary | full`). The surface roster is read at `session.start`,
+  `session.attach`, `session.detach` and before each handler that renders.
+- **Tests.** Mechanical: off lines take the suffix, running lines the note;
+  `partOf` leaves the suffix out of a part; the engine double answers
+  `session.surfaces` with `['vscode']` (full mode). Auto-handoff's band helper
+  reads its own panel only, and its fixture sets `statusText: full`.

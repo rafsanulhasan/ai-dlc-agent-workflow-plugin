@@ -49,6 +49,9 @@ type Opts = {
   failRead?: Set<string>
   // How many of the first state writes fail (28.1.l3)
   failStateSets?: number
+  // The surfaces the session draws on ($.session.surfaces); ['vscode'] by default, so the status line
+  // shows the full text these tests assert (ITEM-068, D13: the summary is tested on its own)
+  surfaces?: string[]
 }
 
 // Stands in for the engine: a 1M-token context, cache hits on every fork unless cacheRead says
@@ -86,6 +89,7 @@ function engine(on: On, o: Opts = {}) {
     on('store.set', (_, e) => (mem.set(e.key, e.value), { value: undefined }) as never)
     on('store.delete', (_, e) => (mem.delete(e.key), { value: undefined }) as never)
   } else mock.store(on, o.store)
+  on('session.surfaces', () => ({ value: o.surfaces ?? ['vscode'] }) as never)
   on('clock.now', () => ({ value: now }) as never)
   on('clock.after', (_, e) => new Promise(r => { timers.push({ due: now + e.ms, resolve: () => r({ value: undefined }) }) }) as never)
   const clock = {
@@ -167,7 +171,9 @@ function engine(on: On, o: Opts = {}) {
 // A line's keep-alive part: what follows `keepalive <track>: ` and the cache part, when the line has one
 // (`main ...`, `subagents ...`, up to the `; `). Tests that assert the keep-alive part read it here, so the
 // cache part, which the default transcript fixture seeds, does not change them (LLD 7).
-const partOf = (l: string | undefined) => l?.replace(/^keepalive (?:1h|5m): (?:(?:main|subagents)[^;]*; )?/, '')
+// An off part's suffix (ITEM-068, `, ping 0/<cap>, keep warm <d> (<source>)`) is not part of its reason
+// (LLD 11.1): it is left out here and asserted on the full lines (line()).
+const partOf = (l: string | undefined) => l?.replace(/^keepalive (?:1h|5m): (?:(?:main|subagents)[^;]*; )?/, '').replace(/^(off\b.*?), ping 0\/\d+, keep warm \S+(?: \((?:session|machine|settings|default)\))?$/, '$1')
 
 // What keep-alive publishes under $.state { plugin: 'ai-dlc', key: 'keepalive' } (../../../types/index.d.ts).
 type Published = {
@@ -494,13 +500,13 @@ describe('keep-alive', () => {
     const { part, seen, clock, status, line } = engine(on)
     await $.classic.Stop(stop())
     expect(status()?.split('\n')).toHaveLength(2)
-    expect(part('1h')).toMatch(new RegExp(`^armed, 1 task\\(s\\), warm until \\d+:\\d\\d, ping 0/9, first ping at ${hhmm(START + 50 * MIN)}, keep warm 8h, stop by \\d+:\\d\\d$`))
+    expect(part('1h')).toMatch(new RegExp(`^armed, 1 task\\(s\\), warm until \\d+:\\d\\d, ping 0/9, first ping at ${hhmm(START + 50 * MIN)}, keep warm 8h \\(default\\), stop by \\d+:\\d\\d$`))
     expect(part('5m')).toBe('off (no 5m cache write seen)')
     await clock.fire(49)
     expect(seen.forks).toBe(0)
     await clock.fire(1)
     expect(seen.forks).toBe(1)
-    expect(part('1h')).toMatch(/^warm until \d+:\d\d, ping 1\/9, keep warm 8h, stop by \d+:\d\d$/)
+    expect(part('1h')).toMatch(/^warm until \d+:\d\d, ping 1\/9, keep warm 8h \(default\), stop by \d+:\d\d$/)
     expect(part('5m')).toBe('off (no 5m cache write seen)')
   })
 
@@ -516,7 +522,7 @@ describe('keep-alive', () => {
     const { part, seen, clock, line } = engine(on, { split: [0, 4_000] })
     await $.classic.Stop(stop())
     expect(part('1h')).toBe('off (no 1h cache write seen)')
-    expect(part('5m')).toMatch(new RegExp(`^armed, 1 task\\(s\\), warm until \\d+:\\d\\d, ping 0/20, first ping at ${hhmm(START + 3 * MIN)}, keep warm 1h, stop by \\d+:\\d\\d$`))
+    expect(part('5m')).toMatch(new RegExp(`^armed, 1 task\\(s\\), warm until \\d+:\\d\\d, ping 0/20, first ping at ${hhmm(START + 3 * MIN)}, keep warm 1h \\(default\\), stop by \\d+:\\d\\d$`))
     await clock.fire(3)
     expect(seen.forks).toBe(1)
     expect(line('5m')).toContain('ping 1/20')
@@ -838,8 +844,8 @@ describe('the published state (read by ai-dlc-lens)', () => {
     expect(s?.sessionId).toBe('s-1')
     expect(s?.updatedAt).toBe(START)
     expect(s?.tracks.map(t => t.name)).toEqual(['1h', '5m'])
-    expect(track(s, '1h')).toEqual({ name: '1h', running: true, armedAt: START, warmUntil: START + 60 * MIN, nextPingAt: START + 50 * MIN, pingEvery: 50 * MIN, keepWarmMs: 8 * 60 * MIN, pings: 0, cap: 9, line: expect.stringMatching(new RegExp(`^keepalive 1h: main warm until ${hhmm(START + 60 * MIN)}; armed, 1 task\\(s\\), `)), caches: [{ source: 'main', warmUntil: START + 60 * MIN, expired: false }] })
-    expect(track(s, '5m')).toMatchObject({ running: false, nextPingAt: null, pings: 0, line: 'keepalive 5m: off (no 5m cache write seen)' })
+    expect(track(s, '1h')).toEqual({ name: '1h', running: true, armedAt: START, warmUntil: START + 60 * MIN, nextPingAt: START + 50 * MIN, pingEvery: 50 * MIN, keepWarmMs: 8 * 60 * MIN, pings: 0, cap: 9, line: expect.stringMatching(new RegExp(`^keepalive 1h: main warm until ${hhmm(START + 60 * MIN)}; armed, 1 task\\(s\\), `)), keepWarmFrom: 'default', caches: [{ source: 'main', warmUntil: START + 60 * MIN, expired: false }] })
+    expect(track(s, '5m')).toMatchObject({ running: false, nextPingAt: null, pings: 0, line: 'keepalive 5m: off (no 5m cache write seen), ping 0/20, keep warm 1h (default)' })
   })
 
   test('each ping publishes the count, the new "warm until" and the next ping', async ($, on) => {
@@ -866,7 +872,7 @@ describe('the published state (read by ai-dlc-lens)', () => {
     expect(last(seen)?.tracks.every(t => t.running)).toBe(true)
     await $.turn.start({ turnId: 't-2' } as never)
     await settle()
-    expect(last(seen)?.tracks.map(t => [t.running, t.nextPingAt, t.line])).toEqual([[false, null, `keepalive 1h: main warm until ${hhmm(START + 60 * MIN)}; off (turn running)`], [false, null, `keepalive 5m: main warm until ${hhmm(START + 5 * MIN)}; off (turn running)`]])
+    expect(last(seen)?.tracks.map(t => [t.running, t.nextPingAt, t.line])).toEqual([[false, null, `keepalive 1h: main warm until ${hhmm(START + 60 * MIN)}; off (turn running), ping 0/9, keep warm 8h (default)`], [false, null, `keepalive 5m: main warm until ${hhmm(START + 5 * MIN)}; off (turn running), ping 0/20, keep warm 1h (default)`]])
     await $.classic.Stop(stop())
     await settle()
     expect(last(seen)?.tracks.every(t => t.running)).toBe(true)
@@ -896,8 +902,8 @@ describe('the published state (read by ai-dlc-lens)', () => {
     const { seen } = engine(on)
     await $.classic.Stop(stop([]))
     await settle()
-    expect(track(last(seen), '1h')).toMatchObject({ running: false, line: `keepalive 1h: main warm until ${hhmm(START + 60 * MIN)}; off (no background tasks)`, caches: [{ source: 'main', warmUntil: START + 60 * MIN, expired: false }] })
-    expect(track(last(seen), '5m')).toMatchObject({ running: false, line: 'keepalive 5m: off (no 5m cache write seen)' })
+    expect(track(last(seen), '1h')).toMatchObject({ running: false, line: `keepalive 1h: main warm until ${hhmm(START + 60 * MIN)}; off (no background tasks), ping 0/9, keep warm 8h (default)`, caches: [{ source: 'main', warmUntil: START + 60 * MIN, expired: false }] })
+    expect(track(last(seen), '5m')).toMatchObject({ running: false, line: 'keepalive 5m: off (no 5m cache write seen), ping 0/20, keep warm 1h (default)' })
     expect(track(last(seen), '5m')?.caches).toBeUndefined()
   })
 })
@@ -951,7 +957,7 @@ describe('the published keep-warm time', () => {
     await $.classic.Stop(stop())
     await $.turn.start({ turnId: 't-2' } as never)
     await settle()
-    expect(keepOf(seen, '1h')).toMatchObject({ running: false, keepWarmMs: 24 * H, cap: 28, line: `keepalive 1h: main warm until ${hhmm(START + 60 * MIN)}; off (turn running)` })
+    expect(keepOf(seen, '1h')).toMatchObject({ running: false, keepWarmMs: 24 * H, cap: 28, line: `keepalive 1h: main warm until ${hhmm(START + 60 * MIN)}; off (turn running), ping 0/28, keep warm 1d (session)` })
     // The 5m track never ran this session (split [1000, 0]): its time in force is the override as well
     expect(keepOf(seen, '5m')).toMatchObject({ running: false, keepWarmMs: 24 * H, cap: 480 })
     await $.classic.Stop(stop())
@@ -1559,7 +1565,7 @@ describe('the ping on the limit', () => {
 // probed through what it changes, since the module under test is not importable from the test.
 type Ctx = { $: Parameters<TestBody>[0]; on: On; seen: ReturnType<typeof engine>['seen']; clock: ReturnType<typeof engine>['clock']; line: ReturnType<typeof engine>['line']; status: ReturnType<typeof engine>['status'] }
 type Gated = { key: string; env: string; a: unknown; split?: [number, number]; forkOutput?: number; cacheRead?: number; base?: Record<string, string>; probe: (c: Ctx) => Promise<string>; ta: string; td: string }
-const warmOf = (c: Ctx, track: '1h' | '5m') => /keep warm (\S+?),/.exec(c.line(track) ?? '')?.[1] ?? 'none'
+const warmOf = (c: Ctx, track: '1h' | '5m') => /keep warm (\S+?)[ ,]/.exec(c.line(track) ?? '')?.[1] ?? 'none'
 const maxOf = (c: Ctx, track: '1h' | '5m') => /ping 0\/(\S+?),/.exec(c.line(track) ?? '')?.[1] ?? 'none'
 const forksAt = async (c: Ctx, minutes: number[]) => { const out: number[] = []; for (const m of minutes) { await c.clock.fire(m); out.push(c.seen.forks) } return out.join('/') }
 const armed = (c: Ctx) => c.$.classic.Stop(stop())
@@ -1840,7 +1846,7 @@ describe('[T17.1] the cache ledger arms the tracks', () => {
     await clock.fire(6)
     await $.classic.Stop(stop())
     await settle()
-    expect(line('5m')).toBe(`keepalive 5m: main expired ${hhmm(START + 5 * MIN)}; off (cache expired)`)
+    expect(line('5m')).toBe(`keepalive 5m: main expired ${hhmm(START + 5 * MIN)}; off (cache expired), ping 0/20, keep warm 1h (default)`)
     expect(keepOf(seen, '5m')).toMatchObject({ running: false, warmUntil: 0 })
     await clock.fire(60)
     expect(seen.forks).toBe(0)
@@ -1991,7 +1997,7 @@ describe('[T17.2] the cache part and the reasons', () => {
     await clock.fire(1)
     await $.classic.Stop(stop([]))
     await settle()
-    expect(line('5m')).toBe(`keepalive 5m: main warm until ${at(5)}; off (no background tasks)`)
+    expect(line('5m')).toBe(`keepalive 5m: main warm until ${at(5)}; off (no background tasks), ping 0/20, keep warm 1h (default)`)
   })
 
   test('AC-17.1.1 E1: main 5m write at 10:00, no background tasks at 10:01; the published state carries the line and the caches', async ($, on) => {
@@ -2001,9 +2007,9 @@ describe('[T17.2] the cache part and the reasons', () => {
     await clock.fire(1)
     await $.classic.Stop(stop([]))
     await settle()
-    const e1 = `keepalive 5m: main warm until ${at(5)}; off (no background tasks)`
+    const e1 = `keepalive 5m: main warm until ${at(5)}; off (no background tasks), ping 0/20, keep warm 1h (default)`
     expect(line('5m')).toBe(e1)
-    expect(line('1h')).toBe('keepalive 1h: off (no 1h cache write seen)')
+    expect(line('1h')).toBe('keepalive 1h: off (no 1h cache write seen), ping 0/9, keep warm 8h (default)')
     expect(track(last(seen), '5m')).toMatchObject({ running: false, line: e1, caches: [{ source: 'main', warmUntil: START + 5 * MIN, expired: false }] })
     expect(track(last(seen), '1h')?.caches).toBeUndefined()
     expect(seen.forks).toBe(0)
@@ -2016,7 +2022,7 @@ describe('[T17.2] the cache part and the reasons', () => {
     await clock.fire(6)
     await $.classic.Stop(stop([]))
     await settle()
-    expect(line('5m')).toBe(`keepalive 5m: main expired ${at(5)}; off (no background tasks)`)
+    expect(line('5m')).toBe(`keepalive 5m: main expired ${at(5)}; off (no background tasks), ping 0/20, keep warm 1h (default)`)
     expect(track(last(seen), '5m')?.caches).toEqual([{ source: 'main', warmUntil: START + 5 * MIN, expired: true }])
   })
 
@@ -2025,7 +2031,7 @@ describe('[T17.2] the cache part and the reasons', () => {
     const respond = responder(on)
     await respond($, usageOf(3_000, 0))
     await $.classic.Stop(stop([]))
-    expect(line('5m')).toBe('keepalive 5m: off (no 5m cache write seen)')
+    expect(line('5m')).toBe('keepalive 5m: off (no 5m cache write seen), ping 0/20, keep warm 1h (default)')
   })
 
   test('AC-17.1.3 the 5m line keeps its own write after a later 1h write; each track shows its own cache', async ($, on) => {
@@ -2036,8 +2042,8 @@ describe('[T17.2] the cache part and the reasons', () => {
     await respond($, usageOf(3_000, 0))
     await clock.fire(1)
     await $.classic.Stop(stop([]))
-    expect(line('5m')).toBe(`keepalive 5m: main warm until ${at(5)}; off (no background tasks)`)
-    expect(line('1h')).toBe(`keepalive 1h: main warm until ${at(62)}; off (no background tasks)`)
+    expect(line('5m')).toBe(`keepalive 5m: main warm until ${at(5)}; off (no background tasks), ping 0/20, keep warm 1h (default)`)
+    expect(line('1h')).toBe(`keepalive 1h: main warm until ${at(62)}; off (no background tasks), ping 0/9, keep warm 8h (default)`)
   })
 
   // E6 in full, with the first-ping clause of D6 (LLD 3.5, T17.4 / ITEM-035, AC-17.4.5)
@@ -2047,8 +2053,8 @@ describe('[T17.2] the cache part and the reasons', () => {
     await respond($, usageOf(3_000, 0))
     await $.classic.Stop(stop())
     await settle()
-    expect(line('1h')).toBe(`keepalive 1h: main warm until ${at(60)}; armed, 1 task(s), warm until ${at(60)}, ping 0/9, first ping at ${at(50)}, keep warm 8h, stop by ${at(480)}`)
-    expect(line('5m')).toBe('keepalive 5m: off (no 5m cache write seen)')
+    expect(line('1h')).toBe(`keepalive 1h: main warm until ${at(60)}; armed, 1 task(s), warm until ${at(60)}, ping 0/9, first ping at ${at(50)}, keep warm 8h (default), stop by ${at(480)}`)
+    expect(line('5m')).toBe('keepalive 5m: off (no 5m cache write seen), ping 0/20, keep warm 1h (default)')
     expect(track(last(seen), '1h')).toMatchObject({ running: true, caches: [{ source: 'main', warmUntil: START + 60 * MIN, expired: false }] })
   })
 
@@ -2061,7 +2067,7 @@ describe('[T17.2] the cache part and the reasons', () => {
     await clock.fire(50)
     await settle()
     expect(seen.forks).toBe(1)
-    expect(line('1h')).toBe(`keepalive 1h: main warm until ${at(110)}; warm until ${at(110)}, ping 1/9, keep warm 8h, stop by ${at(480)}`)
+    expect(line('1h')).toBe(`keepalive 1h: main warm until ${at(110)}; warm until ${at(110)}, ping 1/9, keep warm 8h (default), stop by ${at(480)}`)
     expect(track(last(seen), '1h')).toMatchObject({ running: true, pings: 1, caches: [{ source: 'main', warmUntil: START + 110 * MIN, expired: false }] })
   })
 
@@ -2072,9 +2078,9 @@ describe('[T17.2] the cache part and the reasons', () => {
     await respond($, usageOf(3_000, 0))
     await $.classic.Stop(stop())
     await clock.fire(50)
-    expect(line('1h')).toBe(`keepalive 1h: main warm until ${at(60)}; warm until ${at(110)}, ping 1/9, keep warm 8h, stop by ${at(480)}`)
+    expect(line('1h')).toBe(`keepalive 1h: main warm until ${at(60)}; warm until ${at(110)}, ping 1/9, keep warm 8h (default), stop by ${at(480)}`)
     await clock.fire(50)
-    expect(line('1h')).toBe(`keepalive 1h: main expired ${at(60)}; warm until ${at(160)}, ping 2/9, keep warm 8h, stop by ${at(480)}`)
+    expect(line('1h')).toBe(`keepalive 1h: main expired ${at(60)}; warm until ${at(160)}, ping 2/9, keep warm 8h (default), stop by ${at(480)}`)
   })
 
   test('AC-17.2.3 a turn start keeps the cache part: the next Stop shows the same writes; the turn start publishes them as turn running', async ($, on) => {
@@ -2086,7 +2092,7 @@ describe('[T17.2] the cache part and the reasons', () => {
     const before = line('5m')
     await $.turn.start({ turnId: 't-2' } as never)
     await settle()
-    expect(track(last(seen), '5m')?.line).toBe(`keepalive 5m: main warm until ${at(5)}; off (turn running)`)
+    expect(track(last(seen), '5m')?.line).toBe(`keepalive 5m: main warm until ${at(5)}; off (turn running), ping 0/20, keep warm 1h (default)`)
     await $.classic.Stop(stop([]))
     expect(line('5m')).toBe(before)
   })
@@ -2107,7 +2113,7 @@ describe('[T17.2] the cache part and the reasons', () => {
       const { seen, line } = engine(on)
       await $.classic.Stop(stop())
       await settle()
-      expect(line('5m')).toBe('keepalive 5m: off (no 5m cache write seen)')
+      expect(line('5m')).toBe('keepalive 5m: off (no 5m cache write seen), ping 0/20, keep warm 1h (default)')
       expect(bare(seen)).toEqual([])
     })
 
@@ -2118,7 +2124,7 @@ describe('[T17.2] the cache part and the reasons', () => {
       await clock.fire(6)
       await $.classic.Stop(stop())
       await settle()
-      expect(line('5m')).toBe(`keepalive 5m: main expired ${at(5)}; off (cache expired)`)
+      expect(line('5m')).toBe(`keepalive 5m: main expired ${at(5)}; off (cache expired), ping 0/20, keep warm 1h (default)`)
       expect(seen.forks).toBe(0)
       expect(bare(seen)).toEqual([])
     })
@@ -2129,8 +2135,8 @@ describe('[T17.2] the cache part and the reasons', () => {
       await $.turn.start({ turnId: 't-2' } as never)
       await settle()
       expect(status()).toBeUndefined()
-      expect(track(last(seen), '1h')?.line).toBe(`keepalive 1h: main warm until ${at(60)}; off (turn running)`)
-      expect(track(last(seen), '5m')?.line).toBe('keepalive 5m: off (turn running)')
+      expect(track(last(seen), '1h')?.line).toBe(`keepalive 1h: main warm until ${at(60)}; off (turn running), ping 0/9, keep warm 8h (default)`)
+      expect(track(last(seen), '5m')?.line).toBe('keepalive 5m: off (turn running), ping 0/20, keep warm 1h (default)')
       expect(bare(seen)).toEqual([])
     })
 
@@ -2139,17 +2145,17 @@ describe('[T17.2] the cache part and the reasons', () => {
       await $.classic.Stop(stop())
       await $.session.end({ reason: 'clear', sessionId: 's-1' } as never)
       await settle()
-      expect(last(seen)?.tracks.map(t => [t.line, t.caches])).toEqual([['keepalive 1h: off (session ended)', undefined], ['keepalive 5m: off (session ended)', undefined]])
+      expect(last(seen)?.tracks.map(t => [t.line, t.caches])).toEqual([['keepalive 1h: off (session ended), ping 0/9, keep warm 8h (default)', undefined], ['keepalive 5m: off (session ended), ping 0/20, keep warm 1h (default)', undefined]])
       expect(bare(seen)).toEqual([])
     })
 
     test('track disabled, with tasks and without', async ($, on) => {
       const { seen, line } = engine(on, { split: [0, 5], files: { [`${ROOT}/.claude/settings.local.json`]: JSON.stringify({ env: { AI_DLC_KEEPALIVE_5M_ENABLED: 'false' } }) } })
       await $.classic.Stop(stop())
-      expect(line('5m')).toBe(`keepalive 5m: main warm until ${at(5)}; off (disabled)`)
+      expect(line('5m')).toBe(`keepalive 5m: main warm until ${at(5)}; off (disabled), ping 0/20, keep warm 1h (default)`)
       await $.classic.Stop(stop([]))
       await settle()
-      expect(line('5m')).toBe(`keepalive 5m: main warm until ${at(5)}; off (disabled)`)
+      expect(line('5m')).toBe(`keepalive 5m: main warm until ${at(5)}; off (disabled), ping 0/20, keep warm 1h (default)`)
       expect(bare(seen)).toEqual([])
     })
 
@@ -2159,11 +2165,11 @@ describe('[T17.2] the cache part and the reasons', () => {
       await $.classic.Stop(stop([]))
       await settle()
       expect(status()).toBeUndefined()
-      expect(track(last(seen), '1h')?.line).toBe(`keepalive 1h: main warm until ${at(60)}; off (disabled)`)
+      expect(track(last(seen), '1h')?.line).toBe(`keepalive 1h: main warm until ${at(60)}; off (disabled), ping 0/9, keep warm 8h (default)`)
       await $.classic.Stop(stop())
       await settle()
       expect(status()).toBeUndefined()
-      expect(last(seen)?.tracks.map(t => t.line)).toEqual([`keepalive 1h: main warm until ${at(60)}; off (disabled)`, 'keepalive 5m: off (disabled)'])
+      expect(last(seen)?.tracks.map(t => t.line)).toEqual([`keepalive 1h: main warm until ${at(60)}; off (disabled), ping 0/9, keep warm 8h (default)`, 'keepalive 5m: off (disabled), ping 0/20, keep warm 1h (default)'])
       expect(bare(seen)).toEqual([])
     })
 
@@ -2171,7 +2177,7 @@ describe('[T17.2] the cache part and the reasons', () => {
       const { seen, line } = engine(on, { split: null })
       await $.classic.Stop(stop())
       await settle()
-      expect(line('1h')).toBe('keepalive 1h: off (no cache write seen yet, so the cache lifetime is unknown)')
+      expect(line('1h')).toBe('keepalive 1h: off (no cache write seen yet, so the cache lifetime is unknown), ping 0/9, keep warm 8h (default)')
       expect(bare(seen)).toEqual([])
     })
 
@@ -2179,7 +2185,7 @@ describe('[T17.2] the cache part and the reasons', () => {
       const { seen, line } = engine(on, { rateLimits: [{ percentUsed: 80 }], files: { [`${ROOT}/.ai-dlc/cache-keepalive.json`]: JSON.stringify({ overagePercent: 75 }) } })
       await $.classic.Stop(stop())
       await settle()
-      expect(line('1h')).toBe(`keepalive 1h: main warm until ${at(60)}; off in overage`)
+      expect(line('1h')).toBe(`keepalive 1h: main warm until ${at(60)}; off in overage, ping 0/9, keep warm 8h (default)`)
       expect(bare(seen)).toEqual([])
     })
 
@@ -2190,7 +2196,7 @@ describe('[T17.2] the cache part and the reasons', () => {
       await $.classic.Stop(stop([]))
       await settle()
       expect(line('1h')).toBe(`keepalive 1h: main warm until ${at(60)}; work done, stopped`)
-      expect(line('5m')).toBe('keepalive 5m: off (no 5m cache write seen)')
+      expect(line('5m')).toBe('keepalive 5m: off (no 5m cache write seen), ping 0/20, keep warm 1h (default)')
       expect(bare(seen)).toEqual([])
     })
   })
@@ -2227,7 +2233,7 @@ describe('[T17.2] gaps found by mutation', () => {
     await $.turn.start({ turnId: 't-1' } as never)
     await $.classic.Stop(stop())
     await settle()
-    expect(lastState(seen)?.tracks.map(t => t.line)).toEqual([`keepalive 1h: main warm until ${hhmm(START + 60 * MIN)}; off (disabled)`, 'keepalive 5m: off (disabled)'])
+    expect(lastState(seen)?.tracks.map(t => t.line)).toEqual([`keepalive 1h: main warm until ${hhmm(START + 60 * MIN)}; off (disabled), ping 0/9, keep warm 8h (default)`, 'keepalive 5m: off (disabled), ping 0/20, keep warm 1h (default)'])
   })
 
   // Mutation: the transcript seed ran before the full read, so it used the lifetime of the settings in force before it
@@ -2270,7 +2276,7 @@ describe('[T17.4] the first ping time', () => {
   test('AC-17.4.5 (red first) an armed 5m track before its first ping: ping 0/20, first ping at 10:03', async ($, on) => {
     const { part } = engine(on, { split: [0, 4_000] })
     await $.classic.Stop(stop())
-    expect(part('5m')).toMatch(new RegExp(`^armed, 1 task\\(s\\), warm until \\d+:\\d\\d, ping 0/20, first ping at ${at(3)}, keep warm 1h, stop by \\d+:\\d\\d$`))
+    expect(part('5m')).toMatch(new RegExp(`^armed, 1 task\\(s\\), warm until \\d+:\\d\\d, ping 0/20, first ping at ${at(3)}, keep warm 1h \\(default\\), stop by \\d+:\\d\\d$`))
   })
 
   test('AC-17.4.5 a track re-armed by a later Stop counts from that Stop: its first ping time moves with it', async ($, on) => {
@@ -2301,7 +2307,7 @@ describe('[T17.4] the first ping time', () => {
     await respond($, usageOf(3_000, 0))
     await $.classic.Stop(stop([]))
     await settle()
-    expect(line('1h')).toBe(`keepalive 1h: main warm until ${at(60)}; off (no background tasks)`)
+    expect(line('1h')).toBe(`keepalive 1h: main warm until ${at(60)}; off (no background tasks), ping 0/9, keep warm 8h (default)`)
   })
 })
 
@@ -2359,7 +2365,7 @@ describe('[17.2.4] D2a main (rev 5): a main write with no split', () => {
     await clock.fire(3)
     await $.classic.Stop(stop([]))
     await settle()
-    expect(line('5m')).toBe(`keepalive 5m: main warm until ${hhmm(START + 15 * MIN)}; off (no background tasks)`)
+    expect(line('5m')).toBe(`keepalive 5m: main warm until ${hhmm(START + 15 * MIN)}; off (no background tasks), ping 0/20, keep warm 1h (default)`)
   })
 
   test('AC-17.1.4 (D2a main) with background tasks the same Stop arms the 5m track until the row\'s time plus 5m', async ($, on) => {
@@ -2385,7 +2391,7 @@ describe('[17.2.4] D2a main (rev 5): a main write with no split', () => {
     await $.classic.Stop(stop([]))
     await settle()
     // The row says 9:48 + 5m = 9:53; the live entry (9:50 + 5m) stays
-    expect(line('5m')).toBe(`keepalive 5m: main warm until ${hhmm(START + 5 * MIN)}; off (no background tasks)`)
+    expect(line('5m')).toBe(`keepalive 5m: main warm until ${hhmm(START + 5 * MIN)}; off (no background tasks), ping 0/20, keep warm 1h (default)`)
   })
 
   test('AC-17.1.1 (D2a main) no split in the transcript either: no entry added, one transcript read, a second Stop reads nothing', async ($, on) => {
@@ -2398,8 +2404,8 @@ describe('[17.2.4] D2a main (rev 5): a main write with no split', () => {
     await $.classic.Stop(stop([]))
     await settle()
     expect(transcriptReads(seen)).toBe(1)
-    expect(line('5m')).toBe(`keepalive 5m: main expired ${hhmm(START + 5 * MIN)}; off (no background tasks)`)
-    expect(line('1h')).toBe('keepalive 1h: off (no 1h cache write seen)')
+    expect(line('5m')).toBe(`keepalive 5m: main expired ${hhmm(START + 5 * MIN)}; off (no background tasks), ping 0/20, keep warm 1h (default)`)
+    expect(line('1h')).toBe('keepalive 1h: off (no 1h cache write seen), ping 0/9, keep warm 8h (default)')
     expect(seen.logs).toContain('keepalive: main write without split, transcript has none')
     await clock.fire(1)
     await $.classic.Stop(stop())
@@ -2434,7 +2440,7 @@ describe('[17.2.4] D2a main (rev 5): a main write with no split', () => {
     await $.classic.Stop(stop([]))
     await settle()
     expect(transcriptReads(seen)).toBe(1)
-    expect(line('5m')).toBe(`keepalive 5m: main warm until ${hhmm(START + 8 * MIN)}; off (no background tasks)`)
+    expect(line('5m')).toBe(`keepalive 5m: main warm until ${hhmm(START + 8 * MIN)}; off (no background tasks), ping 0/20, keep warm 1h (default)`)
   })
 
   test('AC-17.1.1 (D2a main) a row with no timestamp uses the response time, not the Stop time', async ($, on) => {
@@ -2447,7 +2453,7 @@ describe('[17.2.4] D2a main (rev 5): a main write with no split', () => {
     await $.classic.Stop(stop([]))
     await settle()
     // The response came at 10:00: warm until 10:05, not the Stop's 10:03 + 5m = 10:08
-    expect(line('5m')).toBe(`keepalive 5m: main warm until ${hhmm(START + 15 * MIN)}; off (no background tasks)`)
+    expect(line('5m')).toBe(`keepalive 5m: main warm until ${hhmm(START + 15 * MIN)}; off (no background tasks), ping 0/20, keep warm 1h (default)`)
   })
 })
 
@@ -2478,11 +2484,11 @@ describe('[17.2.4] ITEM-034.c the observation debug lines', () => {
     const before = await ledgerView($, e)
     await respond($, usageOf(3_000, 500), 'a1')
     expect(agentLogs(e.seen)).toEqual(['keepalive: agent usage agent=a1 split=present writes=3500'])
-    expect(before['1h']).toBe('keepalive 1h: off (no 1h cache write seen)')
+    expect(before['1h']).toBe('keepalive 1h: off (no 1h cache write seen), ping 0/9, keep warm 8h (default)')
     // T17.3: register.tsx forwards the subagent's usage to noteUsage: a subagents element on both tracks
     const after = await ledgerView($, e)
-    expect(after['1h']).toBe('keepalive 1h: subagents warm until 19:00; off (no background tasks)')
-    expect(after['5m']).toBe('keepalive 5m: main warm until 18:05, subagents warm until 18:05; off (no background tasks)')
+    expect(after['1h']).toBe('keepalive 1h: subagents warm until 19:00; off (no background tasks), ping 0/9, keep warm 8h (default)')
+    expect(after['5m']).toBe('keepalive 5m: main warm until 18:05, subagents warm until 18:05; off (no background tasks), ping 0/20, keep warm 1h (default)')
     expect(e.seen.forks).toBe(0)
     expect(sent.count).toBe(0)
   })
@@ -2498,8 +2504,8 @@ describe('[17.2.4] ITEM-034.c the observation debug lines', () => {
     expect(before['5m']).not.toContain('split unknown')
     // T17.3: D2a's unknown marker, on both tracks; it arms nothing and is never a pending main write
     const after = await ledgerView($, e)
-    expect(after['1h']).toBe('keepalive 1h: subagents: split unknown; off (no 1h cache write seen)')
-    expect(after['5m']).toBe('keepalive 5m: main warm until 18:05, subagents: split unknown; off (no background tasks)')
+    expect(after['1h']).toBe('keepalive 1h: subagents: split unknown; off (no 1h cache write seen), ping 0/9, keep warm 8h (default)')
+    expect(after['5m']).toBe('keepalive 5m: main warm until 18:05, subagents: split unknown; off (no background tasks), ping 0/20, keep warm 1h (default)')
     expect(e.seen.forks).toBe(0)
     expect(sent.count).toBe(0)
   })
@@ -2522,8 +2528,8 @@ describe('[17.2.4] ITEM-034.c the observation debug lines', () => {
     expect(agentLogs(e.seen)).toEqual(['keepalive: subagent transcript agent=a1 rows=3 split=present'])
     expect(e.seen.subagentStops).toBe(1)
     // T17.3 (LLD 3.7 rev 12 a): the transcript's split settles the stopped agent
-    expect(before['5m']).toBe('keepalive 5m: main warm until 18:05; off (no background tasks)')
-    expect((await ledgerView($, e))['5m']).toBe('keepalive 5m: main warm until 18:05, subagents warm until 18:05; off (no background tasks)')
+    expect(before['5m']).toBe('keepalive 5m: main warm until 18:05; off (no background tasks), ping 0/20, keep warm 1h (default)')
+    expect((await ledgerView($, e))['5m']).toBe('keepalive 5m: main warm until 18:05, subagents warm until 18:05; off (no background tasks), ping 0/20, keep warm 1h (default)')
     expect(e.seen.forks).toBe(0)
     expect(sent.count).toBe(0)
   })
