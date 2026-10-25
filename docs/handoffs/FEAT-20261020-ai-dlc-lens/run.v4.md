@@ -11,7 +11,7 @@ owner: orchestrator
 session: 7ac45d8b-a3fc-4480-94f2-9c445c6f33f2 (took over from 450673c8 via automatic handoff, 2026-10-25; same version kept)
 branch: feat/ai-dlc-lens (feat/wf-1 merged at 734b33d)
 commit: b5080ce
-last-record: 39-documentation-writer-to-orchestrator.handback.md
+last-record: 40-agent-manager-to-orchestrator.handback.md
 updated: 2026-10-25
 wave: 3 (Build)
 ---
@@ -266,3 +266,5 @@ T17.1 (51fedb5) and T17.2 (f9d29fe) committed by session 37788079. Human (2026-1
 2bm. Step 38 done (verified): T17.6, T17.7, T22.g, T20.3b, T20.3c, T20.6 committed (8116c19..554c54c); T17.5 skipped (README-only ACs, docs deferred). Wave E1 build complete except T17.3c (H1 2026-10-29). Owed later: tests (no suites for Cache Lab, diagrams), reviews, docs (steps 36-38, T17.5), TS2345, README pin test PENDING_DOCS. Not pushed.
 2bn. Human (2026-10-25) after reload: "continue" -> chose Docs now. Step 39: documentation-writer writes the owed docs (steps 36-38, T17.5). commit=2800cb3.
 2bo. Step 39 done (verified, c986108): owed docs for steps 36-38 and T17.5 written (markers: 36 none; 37-38 in progress). T17.5 done by docs. Still owed: tests, reviews, critique for 37-39; README test PENDING_DOCS rows can now be re-enabled (sqa); TS2345 keepalive.test.ts:1593. Not pushed.
+2bp. Human (2026-10-25) live after reload: master off must hide the status line; /ai-dlc:cache-keepalive must write .claude/settings.local.json so it takes precedence; "the Cache Lens band is gone". Step 40 to agent-manager (am-40), low-budget. commit=7823ff5.
+2bq. Step 40 done (verified): 8c0a1d9 band (auto-handoff AbovePrompt skipped next(e) since 8116c19), 6ea1059 master off hides the status line, 10af4ef command on|off writes .claude/settings.local.json. Open: repo test 'README names every gated setting' fails (likely steps 38/39, not investigated); docs owed for step 40. Not pushed.
