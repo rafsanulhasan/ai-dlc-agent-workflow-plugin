@@ -249,6 +249,13 @@ describe('durations and arguments', () => {
     expect(parseCommandArgs('2h 3h', 'session')).toEqual({ kind: 'usage', problem: 'give one duration' })
     expect(parseCommandArgs('0.4m', 'session').kind).toBe('usage')
     expect(parseCommandArgs('10m', 'session', 20 * MIN).kind).toBe('usage') // under minDuration
+    // Step 40: on / off go to .claude/settings.local.json, or with --session to this session's switches
+    expect(parseCommandArgs('off', 'session')).toEqual({ kind: 'switch', on: false, where: 'local' })
+    expect(parseCommandArgs('ON --track 5m', 'machine')).toEqual({ kind: 'switch', on: true, where: 'local', tracks: ['5m'] })
+    expect(parseCommandArgs('off --session', 'session')).toEqual({ kind: 'switch', on: false, where: 'session' })
+    expect(parseCommandArgs('off --machine', 'session').kind).toBe('usage')
+    expect(parseCommandArgs('on 2h', 'session').kind).toBe('usage')
+    expect(parseCommandArgs('on off', 'session').kind).toBe('usage')
   })
 
   test('parseCommandArgs: --track picks the 1h track, the 5m track or both; both when not given', () => {
@@ -1390,7 +1397,7 @@ describe('/ai-dlc:cache-keepalive', () => {
     const { seen } = engine(on)
     const { text } = await keepalive($, 'forever')
     expect(text).toContain('"forever" is not a duration')
-    expect(text).toContain('Usage: /ai-dlc:cache-keepalive [<n>m|<n>h|<n>d|clear] [--track 1h|5m|both] [--session|--machine]')
+    expect(text).toContain('Usage: /ai-dlc:cache-keepalive [<n>m|<n>h|<n>d|clear|on|off] [--track 1h|5m|both] [--session|--machine]')
     expect(text).toContain('the 1h track every 50m and the 5m track every 3m')
     expect(text).not.toMatch(/(^|[^:])\/keepalive/)
     expect(seen.forks).toBe(0)

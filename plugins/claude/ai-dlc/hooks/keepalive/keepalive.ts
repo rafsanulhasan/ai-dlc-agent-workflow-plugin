@@ -1,7 +1,8 @@
 import type { EngineInterface, Register, Timer } from 'claude-code'
 import { TRACK_NAMES, formatDuration, parseCommandArgs } from './duration.ts'
+import type { CommandArgs } from './duration.ts'
 import type { Scope, TrackName } from './duration.ts'
-import { defaults, gatedDiffering, readMult, resolveSettings } from './settings.ts'
+import { SETTINGS, defaults, gatedDiffering, readMult, resolveSettings } from './settings.ts'
 import type { Level, Settings, TrackKey, TrackSettings } from './settings.ts'
 import { creationSplit, k, repoConfig, settingsEnv, trustOf } from '../auto-handoff/config.ts'
 import { chainIdOf, chainSessions } from '../auto-handoff/chain.ts'
@@ -518,6 +519,66 @@ export async function pressMaster($: EngineInterface): Promise<void> {
   } catch (err) {
     $.ui.log(`keepalive: master press failed (${err instanceof Error ? err.message : String(err)})`, { to: 'debug' })
   }
+}
+
+// ---- /ai-dlc:cache-keepalive on|off (step 40) ----
+const LOCAL_FILE = '.claude/settings.local.json'
+const envOf = (key: string): string => SETTINGS.find(s => s.key === key)!.env
+
+// Sets variables in the env of .claude/settings.local.json, every other key kept. Answers the problem
+// and writes nothing when the file cannot be read or is not plain JSON (a file with comments is not
+// rewritten, since they would be lost).
+async function writeLocalEnv($: EngineInterface, vars: Record<string, string>): Promise<string | undefined> {
+  const path = `${await repoRoot($)}/${LOCAL_FILE}`
+  const text = await readRaw($, path)
+  if (text === undefined && (await sigOf($, path)).startsWith('file:')) return `${LOCAL_FILE} exists but could not be read; nothing written`
+  let doc: Record<string, unknown> = {}
+  if (text !== undefined && text.trim()) {
+    let parsed: unknown
+    try { parsed = JSON.parse(text.replace(/^﻿/, '')) } catch { return `${LOCAL_FILE} is not plain JSON (a file with comments is not rewritten); nothing written` }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return `${LOCAL_FILE}: the top level is not an object; nothing written`
+    doc = parsed as Record<string, unknown>
+  }
+  const env = doc.env
+  if (env !== undefined && (!env || typeof env !== 'object' || Array.isArray(env))) return `${LOCAL_FILE}: env is not an object; nothing written`
+  doc.env = { ...(env as Record<string, unknown> | undefined), ...vars }
+  const eol = text?.includes('\r\n') ? '\r\n' : '\n'
+  await $.fs.write(path, JSON.stringify(doc, null, 2).replace(/\n/g, eol) + eol)
+  return undefined
+}
+
+/**
+ * `on` / `off`: the master, or the tracks --track names. With --session, the band's buttons (this
+ * session's switches; no file written). Otherwise the env of .claude/settings.local.json, which wins
+ * over .claude/settings.json and .ai-dlc/cache-keepalive.json; this session's switch for what was
+ * written is dropped, since a switch outranks every settings file, so the written value applies now.
+ */
+async function switchCommand($: EngineInterface, a: Extract<CommandArgs, { kind: 'switch' }>): Promise<string> {
+  const word = a.on ? 'on' : 'off'
+  const names = a.tracks
+  const what = names ? names.map(n => `the ${n} track`).join(' and ') : 'keep-alive'
+  if (a.where === 'session') {
+    if (!names) { if (masterNow() !== a.on) await pressMaster($) }
+    else for (const n of names) if (trackEnabled(n, keyOf(n)) !== a.on) await pressTrack($, n)
+    return withSwitches(`keepalive: ${what} ${word} for this session; no settings file written`)
+  }
+  const vars: Record<string, string> = names
+    ? Object.fromEntries(names.map(n => [envOf(`${keyOf(n)}.enabled`), String(a.on)]))
+    : { [envOf('enabled')]: String(a.on) }
+  const problem = await writeLocalEnv($, vars)
+  if (problem) return `keepalive: ${problem}`
+  const sw = await loadSwitch($)
+  await saveSwitch($, names ? Object.fromEntries(Object.entries(sw).filter(([k]) => !names.includes(k as TrackName))) as SessionSwitch : {})
+  await load($)
+  for (const [n, key] of TRACKS) {
+    const t = tracks[n]
+    if (!trackEnabled(n, key)) { if (t.timer !== undefined) stopTrack(t); setOff(t, 'disabled') }
+    else if (t.timer === undefined && isDisabledPart(t)) setOff(t, idleReason(n))
+  }
+  await refreshKeep($)
+  render($, await $.clock.now())
+  const written = Object.entries(vars).map(([k, v]) => `${k}=${v}`).join(', ')
+  return withSwitches(`keepalive: ${what} ${word}: ${written} written to the env of ${LOCAL_FILE}, which wins over .claude/settings.json and ${REPO_FILE}`)
 }
 
 async function warn($: EngineInterface, line: string) {
@@ -1248,8 +1309,9 @@ export function registerKeepalive(on: Parameters<Register>[0], deps: KeepaliveDe
     const args = parseCommandArgs(e.args ?? '', settings.scope, settings.minDuration)
     if (args.kind === 'usage') {
       const every = TRACKS.map(([n, key]) => `the ${n} track every ${formatDuration(settings[key].pingEvery)}`).join(' and ')
-      return { text: `keepalive: ${args.problem}. Usage: /${COMMAND} [<n>m|<n>h|<n>d|clear] [--track 1h|5m|both] [--session|--machine]. A duration sets the keep-warm time of both tracks, or of the one --track names. Pings come on ${every}, so a duration no longer than a track's interval sends no ping on it: the cache's own lifetime covers it.` }
+      return { text: `keepalive: ${args.problem}. Usage: /${COMMAND} [<n>m|<n>h|<n>d|clear|on|off] [--track 1h|5m|both] [--session|--machine]. on or off turns keep-alive, or the tracks --track names, on or off in the env of ${LOCAL_FILE} (with --session, for this session only). A duration sets the keep-warm time of both tracks, or of the one --track names. Pings come on ${every}, so a duration no longer than a track's interval sends no ping on it: the cache's own lifetime covers it.` }
     }
+    if (args.kind === 'switch') return { text: await switchCommand($, args) }
     if (args.kind !== 'ping') {
       await setKeepWarm($, args.scope, args.kind === 'set' ? args.ms : undefined, args.tracks)
       await refreshKeep($)

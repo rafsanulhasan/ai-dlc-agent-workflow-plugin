@@ -789,3 +789,12 @@ root 17, step 17.2.4; spec keepalive-cache-status line 82, D2a; LLD rev 5,
   was off kept it shown. The band and the Pane still draw the rows and buttons.
   The first band draw after a module load clears a stale status line once, since
   `/reload-plugins` fires no `session.start`.
+- **`/ai-dlc:cache-keepalive on|off` (step 40, 2026-10-25).** New words
+  `on` and `off` (the master, or the tracks `--track` names) write
+  `AI_DLC_KEEPALIVE_ENABLED`, `_1H_ENABLED` or `_5M_ENABLED` to the `env` of
+  `.claude/settings.local.json` (other keys kept; a file that is not plain JSON
+  is not rewritten), drop this session's matching switch so the value applies
+  now, and re-read the settings. With `--session` they press the band's
+  buttons instead and write no file; `--machine` is refused. Durations are
+  unchanged. Tests: the parse test gains the new forms; the usage text names
+  `on|off`.

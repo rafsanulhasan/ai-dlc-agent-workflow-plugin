@@ -41,7 +41,7 @@ Every skill of the plugin is a command: type `/<name>`. The commands marked Clau
 | `/architecture-narrative` | — | Turn an architecture solution into a story stakeholders can follow — business problem first, then constraints and trade-offs, then the proposed design, ADRs and risks. |
 | `/architecture-review` | — | Structured architectural review skill for the project. |
 | `/bunit-blazor-testing` | — | Comprehensive guidance for writing Blazor component tests using bUnit with TUnit as the test runner. |
-| `/cache-keepalive` | `[<n>m\|<n>h\|<n>d\|clear] [--track 1h\|5m\|both] [--session\|--machine]` | Pings the prompt cache now, or sets how long keep-alive keeps it warm while background tasks run, on the 1h track, the 5m track or both. **Not available in GitHub Copilot** (Claude Code only). |
+| `/cache-keepalive` | `[<n>m\|<n>h\|<n>d\|clear\|on\|off] [--track 1h\|5m\|both] [--session\|--machine]` | Pings the prompt cache now, turns keep-alive or a track on or off, or sets how long keep-alive keeps it warm while background tasks run, on the 1h track, the 5m track or both. **Not available in GitHub Copilot** (Claude Code only). |
 | `/cache-keepalive-configure` | `[<change in plain words>]` | Shows or changes keep-alive's settings in .ai-dlc/cache-keepalive.json. **Not available in GitHub Copilot** (Claude Code only). |
 | `/cache-keepalive-install` | — | Creates .ai-dlc/cache-keepalive.json with every key at its default, and its schema, on first use; an existing file is left alone (use /cache-keepalive-merge). **Not available in GitHub Copilot** (Claude Code only). |
 | `/cache-keepalive-merge` | — | Brings .ai-dlc/cache-keepalive.json up to date after a plugin upgrade, or repairs it. **Not available in GitHub Copilot** (Claude Code only). |

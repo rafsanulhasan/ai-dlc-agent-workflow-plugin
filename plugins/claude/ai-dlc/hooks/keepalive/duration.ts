@@ -33,6 +33,10 @@ export type CommandArgs =
   | { kind: 'ping' }
   | { kind: 'set'; ms: number; scope: Scope; tracks: TrackName[] }
   | { kind: 'clear'; scope: Scope; tracks: TrackName[] }
+  // `on` / `off` (step 40): the master, or the tracks --track names. `local`: written to the env of
+  // .claude/settings.local.json, which wins over .claude/settings.json and .ai-dlc/cache-keepalive.json;
+  // `session`: with --session, this session's switches only, as the band's buttons set them.
+  | { kind: 'switch'; on: boolean; where: 'local' | 'session'; tracks?: TrackName[] }
   | { kind: 'usage'; problem: string }
 
 /** `1h`, `5m` or `both` (any case) as the tracks it names; undefined for anything else. */
@@ -42,7 +46,8 @@ function tracksOf(word: string | undefined): TrackName[] | undefined {
   return w === '1h' || w === '5m' ? [w] : undefined
 }
 
-/** The words after `/ai-dlc:cache-keepalive`: a duration or `clear`; `--session` / `--machine` to pick
+/** The words after `/ai-dlc:cache-keepalive`: a duration, `clear`, or `on` / `off` (the master, or the
+ * tracks --track names); `--session` / `--machine` to pick
  * the scope for this call; and `--track 1h`, `--track 5m` or `--track both` (also `--track=5m`) to pick
  * the track whose keep-warm time it sets or clears, both when not given. `min`: the shortest duration
  * accepted (minDuration). A flag alone changes nothing: the call pings. */
@@ -51,6 +56,8 @@ export function parseCommandArgs(args: string, defaultScope: Scope, min = MINUTE
   let ms: number | undefined
   let clear = false
   let tracks: TrackName[] | undefined
+  let turn: boolean | undefined
+  let flag: Scope | undefined
   const words = args.trim().split(/\s+/).filter(Boolean)
   const badTrack = (v: string | undefined) => ({ kind: 'usage' as const, problem: v === undefined ? '--track needs 1h, 5m or both' : `"${v}" is not a track: --track takes 1h, 5m or both` })
   for (let i = 0; i < words.length; i++) {
@@ -64,16 +71,25 @@ export function parseCommandArgs(args: string, defaultScope: Scope, min = MINUTE
       continue
     }
     const d = parseDuration(w, min)
-    if (w === '--machine') scope = 'machine'
-    else if (w === '--session') scope = 'session'
+    if (w === '--machine') { scope = 'machine'; flag = 'machine' }
+    else if (w === '--session') { scope = 'session'; flag = 'session' }
+    else if (w === 'on' || w === 'off') {
+      if (turn !== undefined) return { kind: 'usage', problem: 'give on or off once' }
+      turn = w === 'on'
+    }
     else if (w === 'clear' || w === '--clear') clear = true
     else if (d !== undefined) {
       if (ms !== undefined) return { kind: 'usage', problem: 'give one duration' }
       ms = d
     }
-    else return { kind: 'usage', problem: `"${word}" is not a duration (<n>m, <n>h, <n>d, at least ${formatDuration(Math.max(min, ABSOLUTE_MIN))}), clear, --session, --machine or --track` }
+    else return { kind: 'usage', problem: `"${word}" is not a duration (<n>m, <n>h, <n>d, at least ${formatDuration(Math.max(min, ABSOLUTE_MIN))}), clear, on, off, --session, --machine or --track` }
   }
   if (clear && ms !== undefined) return { kind: 'usage', problem: 'give a duration or clear, not both' }
+  if (turn !== undefined) {
+    if (clear || ms !== undefined) return { kind: 'usage', problem: 'give on or off alone, without a duration or clear' }
+    if (flag === 'machine') return { kind: 'usage', problem: 'on and off take --session or no scope flag (then they are written to .claude/settings.local.json)' }
+    return { kind: 'switch', on: turn, where: flag === 'session' ? 'session' : 'local', ...(tracks ? { tracks } : {}) }
+  }
   const which = tracks ?? [...TRACK_NAMES]
   if (clear) return { kind: 'clear', scope, tracks: which }
   if (ms !== undefined) return { kind: 'set', ms, scope, tracks: which }
