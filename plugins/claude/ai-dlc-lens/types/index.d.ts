@@ -191,7 +191,8 @@ export type LensNotice = { text: string; at: number; w: string }
  * Read-only here.
  */
 export type LensKeepaliveTrack = { name: string; running: boolean; nextPingAt: number | null; warmUntil: number; pings: number; cap: number }
-export type LensKeepalive = { enabled: boolean; updatedAt: number; sessionId: string; tracks: LensKeepaliveTrack[] }
+/** `chain` (ITEM-076): the automatic handoff chain, its first session's id and its sessions, newest first. */
+export type LensKeepalive = { enabled: boolean; updatedAt: number; sessionId: string; tracks: LensKeepaliveTrack[]; chain?: { id: string; sessions: string[] } }
 
 /**
  * /ai-dlc:lens-keepalive (step 1.4): one arming of one keep-alive track, as the lens last read it from

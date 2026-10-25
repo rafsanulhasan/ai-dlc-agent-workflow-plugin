@@ -22,3 +22,4 @@ Not taken (they deliberately differ): Cache Hit % (token-weighted), Tokens Saved
 - 2026-10-25 (ITEM-070, step 37): Saved by cache, Lost to busts (per-TTL write rates) and NET in `hooks/cache-lab.ts`.
 - 2026-10-25 (ITEM-071, step 37): the miss attribution with the compaction rule, and the TTL mix.
 - 2026-10-25 (ITEM-072, step 37): the Invalidation Gallery (busts newest first, cap 50) and the reader's turn join.
+- 2026-10-25 (ITEM-077, step 38): the Cache Lab `This session` window covers the automatic handoff chain: the chain keep-alive publishes (`chainFrom`, `chainNowOf` in `hooks/cache-lab.ts`), else the transcript's session; the window choice is kept per chain id, and a press made before the chain arrives moves to the chain's id.

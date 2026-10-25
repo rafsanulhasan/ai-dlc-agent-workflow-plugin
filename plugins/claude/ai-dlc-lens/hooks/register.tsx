@@ -160,7 +160,7 @@ import { SVG_CAP, avatarKey, avatarSvg, checkBytes, classify, isInside, own, tru
 import type { AvatarImage, ChartAvatars } from './avatar'
 import { FileCache, batches, checkEnvelope, folderOf, mergeCalls, sessionOfTranscript } from './transcripts'
 import type { Call, FileRecord, ListData, ReadData } from './transcripts'
-import { ATTRIBUTION_LABELS, DEFAULT_WINDOW, WINDOWS, galleryHeader, galleryLine, turnLine, WINDOW_LABELS, classify as classifyCalls, count, labOf, medianK, noPriceNote, pct, presetOf, priceOfCosting, share, usd, windowOf as labWindowOf, withPreset } from './cache-lab'
+import { ATTRIBUTION_LABELS, DEFAULT_WINDOW, WINDOWS, chainFrom, chainNowOf, galleryHeader, galleryLine, turnLine, WINDOW_LABELS, classify as classifyCalls, count, labOf, medianK, noPriceNote, pct, presetOf, priceOfCosting, share, usd, windowOf as labWindowOf, withPreset } from './cache-lab'
 import type { CacheLab, WindowPreset } from './cache-lab'
 import { anomaliesOf, anomalyLine, applySettings, colorOf, detectAgents, detectRun, diffAnomalies, edgeAgentOf, frontMatter, handoffsRoot, normDir, recordName, runsToRead, trackWaiting, worstOf } from './anomaly'
 
@@ -1444,6 +1444,7 @@ async function keepaliveValue($: EngineInterface): Promise<unknown> {
 async function captureKeepalive($: EngineInterface) {
   try {
     const value = await keepaliveValue($)
+    publishedChain = chainFrom(value) ?? publishedChain
     const prev = await read($, kaCyclesA)
     const next = noteKeepalive(prev, value)
     if (next !== null) await update($, kaCyclesA, () => next)
@@ -1978,13 +1979,30 @@ let labAgain = false
 /** The window per chain while `cacheLabKeepWindowOnReload` is off: module memory, reset by /reload-plugins only. */
 const windowMemory = new Map<string, WindowPreset>()
 
-/** The id the window choice is kept under, and the sessions "This session" covers. */
-const labChain = (): { id: string; sessions: string[] } | null => (transcriptSession === null ? null : { id: transcriptSession, sessions: [transcriptSession] })
+/** The automatic handoff chain keep-alive last published (ITEM-077, LLD 7.2), null until it does. */
+let publishedChain: { id: string; sessions: string[] } | null = null
+/** The id the window was last read or saved under, and a preset pressed under it (the race, CL m8). */
+let windowChainId: string | null = null
+let pressedPreset: WindowPreset | null = null
 
-/** The window preset of the current chain: `$.store` when `cacheLabKeepWindowOnReload` is on, else module memory. */
+/** The id the window choice is kept under, and the sessions "This session" covers: the chain (US-22.8). */
+const labChain = (): { id: string; sessions: string[] } | null => chainNowOf(publishedChain, transcriptSession)
+
+/** The window preset of the current chain: `$.store` when `cacheLabKeepWindowOnReload` is on, else module memory.
+ * When the chain's id changed since a press (the published chain arrived after it), the press wins: it is
+ * saved under the new id. */
 async function windowPreset($: EngineInterface): Promise<WindowPreset> {
+  publishedChain = chainFrom(await keepaliveValue($)) ?? publishedChain
   const c = labChain()
   if (c === null) return DEFAULT_WINDOW
+  if (windowChainId !== c.id) {
+    windowChainId = c.id
+    if (pressedPreset !== null && publishedChain !== null) {
+      const p = pressedPreset
+      await setWindowPreset($, p)
+      pressedPreset = null
+    }
+  }
   if (cfg.cacheLabKeepWindowOnReload === true) {
     try {
       return presetOf(await $.store.get(WINDOW_STORE_KEY), c.id)
@@ -1998,6 +2016,9 @@ async function windowPreset($: EngineInterface): Promise<WindowPreset> {
 async function setWindowPreset($: EngineInterface, preset: WindowPreset) {
   const c = labChain()
   const id = c === null ? '' : c.id
+  windowChainId = c === null ? windowChainId : id
+  // Only a press made before the published chain arrived moves to the chain's id later
+  pressedPreset = publishedChain === null ? preset : null
   windowMemory.set(id, preset)
   if (cfg.cacheLabKeepWindowOnReload === true) await $.store.set(WINDOW_STORE_KEY, withPreset(await $.store.get(WINDOW_STORE_KEY), id, preset))
 }
@@ -2013,8 +2034,8 @@ async function loadLab($: EngineInterface) {
     do {
       labAgain = false
       await update($, cacheLabA, x => ({ ...x, status: 'loading', reason: '' }))
-      const chain = labChain()
       const preset = await windowPreset($)
+      const chain = labChain()
       const w = labWindowOf(preset, nowMs(), chain?.sessions ?? [])
       const r = await readTranscriptCalls($, w.sessions !== undefined || w.from <= 0 ? null : w.from)
       if (!r.ok) {

@@ -234,6 +234,21 @@ export function presetOf(pairs: unknown, id: string): WindowPreset {
 }
 
 /** The pairs with `[id, preset]` last, bounded by WINDOW_SESSIONS_MAX. */
+/** The chain ai-dlc's keep-alive publishes (`chain` of its state, ITEM-076; LLD 7.2), checked at run
+ * time: its id and its sessions, newest first; null when absent or malformed. */
+export function chainFrom(value: unknown): { id: string; sessions: string[] } | null {
+  const c = value && typeof value === 'object' ? (value as { chain?: unknown }).chain : undefined
+  if (!c || typeof c !== 'object') return null
+  const { id, sessions } = c as { id?: unknown; sessions?: unknown }
+  if (typeof id !== 'string' || !id || !Array.isArray(sessions)) return null
+  const ids = sessions.filter((s): s is string => typeof s === 'string' && s !== '')
+  return { id, sessions: ids.length ? ids : [id] }
+}
+
+/** The chain the lab speaks for (LLD 7.2, `chainNow`): the published chain, else the transcript's session as a chain of one, else null. */
+export const chainNowOf = (published: { id: string; sessions: string[] } | null, transcriptSession: string | null): { id: string; sessions: string[] } | null =>
+  published ?? (transcriptSession === null ? null : { id: transcriptSession, sessions: [transcriptSession] })
+
 export function withPreset(pairs: unknown, id: string, preset: WindowPreset): [string, WindowPreset][] {
   const kept = (Array.isArray(pairs) ? pairs : []).filter((p): p is [string, WindowPreset] => Array.isArray(p) && typeof p[0] === 'string' && p[0] !== id && isPreset(p[1]))
   return [...kept, [id, preset] as [string, WindowPreset]].slice(-WINDOW_SESSIONS_MAX)
