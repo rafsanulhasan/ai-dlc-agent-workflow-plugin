@@ -2520,7 +2520,7 @@ describe('/ai-dlc:* commands (step 8.1.4)', () => {
   test('/ai-dlc:lens-keepalive under a settings env that keeps it on: lens.json changes and the reply names the winner', async ($, on) => {
     await seed($, on, { files: { '.claude/settings.json': JSON.stringify({ env: { AI_DLC_LENS_KEEPALIVE_SECTION: 'true' } }) } })
     const r: any = await ($.command.run as any)({ command: 'ai-dlc:lens-keepalive', args: 'off' })
-    expect(String(r?.text)).toMatch(/keepaliveSection = false\. The Cache keep-alive section is shown in the agent panes\. A higher level wins: \.claude\/settings\.json env\./)
+    expect(String(r?.text)).toMatch(/keepaliveSection = false\. The Cache keep-alive section is shown in the agent panes and the Keep Alive sub-accordion of Cache Lab\. A higher level wins: \.claude\/settings\.json env\./)
   })
 })
 

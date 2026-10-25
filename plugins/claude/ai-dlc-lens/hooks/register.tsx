@@ -2076,6 +2076,21 @@ async function cacheLabSection($: EngineInterface, t: any, open: Record<string, 
   const o = labOpen(open)
   const preset = await windowPreset($)
   const lab = labNow
+  // ITEM-074: keep-alive's session figures, a view over the state it publishes (no transcript read: drawn in every load state).
+  const ka = o && s.keepaliveSection ? await keepaliveFigures($) : null
+  const kaLine = ka === null ? null : keepaliveLine(await keepaliveValue($))
+  const keepAlive = () =>
+    ka === null
+      ? null
+      : labSub($, t, open, `${CACHE_LAB}:keepalive`, 'Keep Alive', () => [
+          ...ka.warm.map(w => kv(t, `Kept warm, ${w.track} track`, `${fmtSpan(w.ms)}${w.running ? ' (running)' : ''} · ${w.pings} pings · ${w.armings} armings`)),
+          kv(t, 'Saved by cache reads, session', ka.session.text),
+          kaLine === null ? null : (
+            <Text dimColor wrap="wrap">
+              {kaLine}
+            </Text>
+          ),
+        ])
   const money = (n: number) => (lab !== null && lab.priced ? usd(n) : 'no price')
   const figures = () => {
     if (state.status === 'loading' && lab === null) return [<Text dimColor wrap="wrap">reading transcripts...</Text>]
@@ -2141,6 +2156,7 @@ async function cacheLabSection($: EngineInterface, t: any, open: Record<string, 
             <Button key="cachelab-reload" label="↻" onPress={() => loadLab($)} />
           </Box>
           {figures()}
+          {keepAlive()}
         </Box>
       )}
     </Box>
@@ -3203,7 +3219,7 @@ export const register: Register = on => {
   // .ai-dlc/lens.json (keepaliveSection, on by default); bare, it flips the value in force. Then the figures.
   on('command.run', { command: CMD.keepalive }, async ($, e) => {
     const arg = e.args.trim().toLowerCase()
-    if (arg !== '' && arg !== 'on' && arg !== 'off') return { text: `Usage: /${CMD.keepalive} [on|off]. Bare, it turns the Cache keep-alive section of the agent panes off when it is on, and on when it is off.` }
+    if (arg !== '' && arg !== 'on' && arg !== 'off') return { text: `Usage: /${CMD.keepalive} [on|off]. Bare, it turns the Cache keep-alive section of the agent panes and the Keep Alive sub-accordion of Cache Lab off when it is on, and on when it is off.` }
     const before = await loadSettings($)
     const want = arg === '' ? !(before.settings.keepaliveSection as boolean) : arg === 'on'
     const r = setKey(await readText($, LENS_JSON), 'keepaliveSection', String(want))
@@ -3216,7 +3232,7 @@ export const register: Register = on => {
     const f = await keepaliveFigures($)
     return {
       text:
-        `${LENS_JSON} updated: keepaliveSection = ${want}. The Cache keep-alive section is ${now ? 'shown' : 'hidden'} in the agent panes.${note}\n` +
+        `${LENS_JSON} updated: keepaliveSection = ${want}. The Cache keep-alive section is ${now ? 'shown' : 'hidden'} in the agent panes and the Keep Alive sub-accordion of Cache Lab.${note}\n` +
         `Kept warm: ${f.warm.map(w => `${w.track} ${fmtSpan(w.ms)} (${w.pings} pings, ${w.armings} armings${w.running ? ', running' : ''})`).join(' · ')}. ` +
         `Saved by cache reads this session: ${f.session.text}${f.session.usd === null ? ` (${f.session.source})` : ''}.`,
     }
