@@ -82,7 +82,7 @@ export type LensUi = {
 
 /**
  * Step 1.5: an arrow or avatar opened in `drill-in` mode, inside the drawing it was pressed in (the
- * `/ai-dlc:lens` pane, the workflow pane or band, one chat card), with "< Back". Kept per drawing.
+ * workflow pane or band, one chat card), with "< Back". Kept per drawing.
  */
 export type LensDrill = { kind: string; id: string; snap: LensAgent }
 
@@ -90,8 +90,12 @@ export type LensDrill = { kind: string; id: string; snap: LensAgent }
  * Step 1.5: the workflow view's state. `place`: `pinned` (above the prompt) or `docked` (the pane);
  * `size`: `normal`, `minimised` or `fullscreen`; `prev`: the sizes before, newest last, that restore
  * returns to; `selected`: the run (workflow) shown beside the list when wide, or opened from the list when narrow.
+ * Step 36.2, amendment 3: `pane`, the run the pane shows while the band shows the view (the pane `/ai-dlc:lens` opens
+ * beside the band); absent or '': the band's `selected`. `size` and `prev` are then the band's alone: that pane is never minimised.
+ * Amendment 8: `band`, the band's own size (`normal` or `minimised`) while the view is docked, when the band is still
+ * drawn above the prompt because a workflow is in progress; `size` and `prev` are then the docked pane's.
  */
-export type LensView = { place: string; size: string; prev: string[]; selected: string }
+export type LensView = { place: string; size: string; prev: string[]; selected: string; pane?: string; band?: string }
 
 /** What `tool.call` saw of one Agent call before `agent.spawn` named its agent: the placeholder avatar. */
 export type LensPending = { type: string; description: string; name: string; prompt: string; model: string }
@@ -235,6 +239,8 @@ declare module 'claude-code' {
       tabsMin: Record<string, boolean>
       /** Step 8.6.1: the step chart full screen shows, per workflow (its chart key); absent: the first in order, the highest code. */
       stepSel: Record<string, string>
+      /** Step 36.2, amendment 8: the band closed with its close, which it has only while no workflow is in progress. */
+      bandClosed: boolean
     }
   }
 }

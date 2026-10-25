@@ -74,7 +74,7 @@ export const SPEC = {
     kind: 'enum',
     values: ['tab', 'drill-in'],
     def: 'drill-in',
-    doc: 'How an avatar or arrow Button opens its details: drill-in (the default): inside the pane or chat card it was pressed in, with "< Back"; tab: a separate pane (a tab beside the others). The "Panel Type" switch of the workflow view and of the /ai-dlc:lens pane overrides it for the session',
+    doc: 'How an avatar or arrow Button opens its details: drill-in (the default): inside the pane or chat card it was pressed in, with "< Back"; tab: a separate pane (a tab beside the others). The "Panel Type" switch of the AI-DLC Lens view overrides it for the session',
   },
   chartInChat: { kind: 'bool', def: true, doc: "Draw each workflow's flowchart in the chat card of its first spawn (chartMode decides chart or chip by the row's width)" },
   chartInPane: { kind: 'bool', def: true, doc: 'Draw the flowcharts in the workflow view (pane or band); off: the avatar and arrow Buttons only' },

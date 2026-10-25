@@ -1537,6 +1537,20 @@ export function workflowStatus(members: readonly StatusMember[], runStatuses: re
   return 'completed'
 }
 
+/**
+ * Step 36.2, amendment 6: the one workflow the minimised band names, from the workflows newest first: the newest in
+ * progress, else the first waiting, then pending, then halted; with every one completed, the newest. `live`: how many
+ * are in progress. Null with no workflow ("Nothing Here").
+ */
+export function bandLineOf<T extends { info: { status: FlowStatus } }>(flows: readonly T[]): { flow: T; live: number } | null {
+  const live = flows.filter(f => f.info.status === 'in-progress').length
+  for (const st of ['in-progress', 'waiting', 'pending', 'halted'] as const) {
+    const f = flows.find(x => x.info.status === st)
+    if (f !== undefined) return { flow: f, live }
+  }
+  return flows[0] === undefined ? null : { flow: flows[0], live }
+}
+
 /** Round 6, requirement A5: whether some agents run while others wait (the dot then shows both colours). */
 export const runningAndWaiting = (members: readonly StatusMember[], spawner: string | null = null): boolean => {
   const ms = spawner === null ? members : members.filter(a => a.id !== spawner)
@@ -1832,6 +1846,29 @@ export const layoutOf = (bodyColumns: number | undefined, wideColumns: number): 
 
 /** The run shown: the one selected, while it is still listed; else the newest. */
 export const selectedOf = (v: LensView, newestFirst: readonly string[]): string => (newestFirst.includes(v.selected) ? v.selected : (newestFirst[0] ?? ''))
+
+/**
+ * Step 36.2, amendment 3: the view as the pane beside the band draws it: its own run (`pane`, else the band's), and
+ * always its normal size, whatever the band's (minimised or not); no size of the band's to restore to.
+ */
+export const paneViewOf = (v: LensView): LensView => ({ ...v, size: 'normal', prev: [], selected: v.pane || v.selected })
+
+/**
+ * Finding 36.3-F1 (amendment 3) and amendment 8: the view leaving the band for docked. The band's size is the band's
+ * alone, so the docked pane starts at its normal size with no size to restore to; with the pane open beside the band
+ * it keeps that pane's run, else the band's. `pane` is dropped (docked, the pane draws `selected`); `band` keeps the
+ * band's own size, minimised or its list, for the band drawn above the prompt while work is in progress.
+ */
+export function dockedFromBand(v: LensView, paneOpen: boolean): LensView {
+  const { pane: _pane, ...rest } = paneOpen ? paneViewOf(v) : { ...v, size: 'normal', prev: [] }
+  return { ...rest, band: v.size === 'normal' ? 'normal' : 'minimised' }
+}
+
+/**
+ * Step 36.2, amendment 8: the view as the band draws it while the view is docked (shown only while a workflow is in
+ * progress): the band's own size (`band`, minimised unless its list was kept), never the docked pane's; no size to restore.
+ */
+export const dockedBandViewOf = (v: LensView): LensView => ({ ...v, size: v.band === 'normal' ? 'normal' : 'minimised', prev: [] })
 
 /**
  * The start date in a run folder's name, `{LIFECYCLE}-{YYYYMMDD}-{feature-slug}` (local midnight), else null

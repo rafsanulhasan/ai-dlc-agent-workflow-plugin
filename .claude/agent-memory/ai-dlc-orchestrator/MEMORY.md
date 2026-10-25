@@ -10,3 +10,4 @@
 - [Related work joins parent run](feedback_related-work-parent-run.md) — follow-ups to an active feature run are its next top-level steps; ask if unsure
 - [Lens: one chart per step](feedback_lens-chart-per-step.md) — one flowchart per top-level step, sub-steps under their parent; confirm layout requests in the human's terms
 - [Feature-root numbering](feedback_feature-root-numbering.md) — root N, phase sub-roots N.1–N.5, `l<k>` loops with round sub-numbers; run state major.minor versions
+- [Pause after reload request](feedback_pause-after-reload-request.md) — after asking for /reload-plugins, spawn nothing more until the human reports back

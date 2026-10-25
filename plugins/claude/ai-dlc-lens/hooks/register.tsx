@@ -38,8 +38,10 @@
 // a run's chart draws a later spawn by another spawner (A3, `workflowBatch`).
 // Experiments E1, E2, E4, E5, E7, E9 and E10 log to PROBE-LOG.jsonl while the `probes` setting is on (off by default).
 // The round-0 kit (checks 1-5: resize, Svg blink, buttons, transcript cards, gate alert) is `/ai-dlc:lens-kit`.
+// Step 36.2: one view. `/ai-dlc:lens` opens the workflow view, titled "AI-DLC Lens" (`VIEW_TITLE`), or raises it
+// (`openLens`). The round 1 lens card (the `ai-dlc-lens` pane, L1-L6) is gone, so "the lens pane" above is history.
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register, RenderElement, Timer } from 'claude-code'
+import type { EngineInterface, Register, RenderElement, Timer, UiOpenResult } from 'claude-code'
 import type { LensAgent, LensAnomaly, LensBatch, LensCall, LensConfig, LensCosting, LensDef, LensDoc, LensDrill, LensNotice, LensRun, LensTask, LensUi, LensView, LensWorkflows, Tokens } from '../types'
 import {
   AGENT_TOOLS,
@@ -116,9 +118,13 @@ import {
   VIEW0,
   BAND_SURFACES,
   bandEverywhere,
+  bandLineOf,
+  dockedBandViewOf,
+  dockedFromBand,
   layoutOf,
   openModeOf,
   openSizeOf,
+  paneViewOf,
   placeOf,
   selectedOf,
   newestFirst,
@@ -157,10 +163,15 @@ import { anomaliesOf, anomalyLine, applySettings, colorOf, detectAgents, detectR
 // Pane ids: 1-64 of letters, digits, `_` and `-` (PaneOpenArgs.id, d.ts:7590; `$.ui.open`, d.ts:2524), so
 // `ai-dlc:lens-*` is not a valid id; `ai-dlc-lens-*` is the closest. The titles stay readable.
 const KIT = 'ai-dlc-lens-kit'
-const LENS = 'ai-dlc-lens'
 const EDGE = 'ai-dlc-lens-edge'
 const AGENT = 'ai-dlc-lens-agent'
 const CHART = 'ai-dlc-lens-chart'
+// Step 36.2: the workflow view's title (its tab, and the minimised view with no run yet). The id stays `ai-dlc-lens-chart`:
+// with the round 1 card's `ai-dlc-lens` gone nothing clashes, and a pane left open keeps its id across the update.
+const VIEW_TITLE = 'AI-DLC Lens'
+// Step 36.2.3, amendment 7: the round 1 lens card's pane id, gone since step 36.2. A card left open from an older build
+// stays on screen after /reload-plugins (the engine's `unload` did not drop it), so it is closed explicitly (`closeOldCard`).
+const OLD_CARD = 'ai-dlc-lens'
 // The commands, served by the ai-dlc skills of the same names (skills/lens*).
 const CMD = {
   lens: 'ai-dlc:lens',
@@ -213,6 +224,8 @@ const mainPromptA = atom({ plugin: 'ai-dlc-lens', key: 'mainPrompt' } as const, 
 const workflowsA = atom({ plugin: 'ai-dlc-lens', key: 'workflows' } as const, WF0, { shape: 'workflows-1' })
 /** The workflow pane opens by itself once a session, on the first spawn. */
 let workflowOpened = false
+/** Step 36.4 (rcm-spec): the old card is closed once per load from the band's first render (`closeOldCardOnce`). */
+let oldCardSwept = false
 const LENS0: LensConfig = { settings: { ...DEFAULTS }, sources: Object.fromEntries(KEYS.map(k => [k, 'default'])), ignored: [] }
 const lensA = atom({ plugin: 'ai-dlc-lens', key: 'lens' } as const, LENS0, { shape: 'lens-3' })
 // ---- round-5 state ----
@@ -224,10 +237,15 @@ const noticesA = atom({ plugin: 'ai-dlc-lens', key: 'notices' } as const, [], { 
 /** Agent call -> its task key (`taskKeyOf`): a spawn for the same task joins its workflow (A8). */
 const callKeyA = atom({ plugin: 'ai-dlc-lens', key: 'callKey' } as const, {})
 // ---- step 1.5 state ----
-/** Drill-in views by drawing: `lens` (the /ai-dlc:lens pane), `pane` (the workflow pane and band), `card:<call>` (a chat card). */
+/** Drill-in views by drawing: `pane` (the workflow pane and band), `card:<call>` (a chat card). */
 const drillsA = atom({ plugin: 'ai-dlc-lens', key: 'drills' } as const, {}, { shape: 'drills-1' })
 /** The workflow view: pinned or docked, normal, minimised (A1's one-line bar) or full screen, the sizes restore returns to, the run selected. */
 const viewA = atom({ plugin: 'ai-dlc-lens', key: 'view' } as const, VIEW0, { shape: 'view-1' })
+/**
+ * Amendment 8: the band closed with its `×`, which it has only while no workflow is in progress. It stays closed until
+ * the next spawn or `/ai-dlc:lens`, and never while a workflow is in progress.
+ */
+const bandClosedA = atom({ plugin: 'ai-dlc-lens', key: 'bandClosed' } as const, false)
 /** The view's `Panel Type` switch: `tab` or `drill-in` for this session; '' follows the `panelOpenMode` setting. */
 const openModeA = atom({ plugin: 'ai-dlc-lens', key: 'openMode' } as const, '')
 /** The workflow pane's last viewport (full screen asks for its rows and columns) and the session's surfaces (pinned needs the band). */
@@ -1018,7 +1036,7 @@ async function surfacesNow($: EngineInterface): Promise<string[]> {
  * size applies again. Where it is seated (dock or inline) is the surface's (Pane `placement`, d.ts:10895-10902).
  */
 async function openWorkflowPane($: EngineInterface, v: LensView, focus = false) {
-  return $.ui.open({ id: CHART, title: 'AI-DLC workflow', closeOnEscape: true, ...(focus ? { focus: true } : {}), ...openSizeOf(v.size, lastViewport) })
+  return $.ui.open({ id: CHART, title: VIEW_TITLE, closeOnEscape: true, ...(focus ? { focus: true } : {}), ...openSizeOf(v.size, lastViewport) })
 }
 
 /**
@@ -1026,16 +1044,14 @@ async function openWorkflowPane($: EngineInterface, v: LensView, focus = false) 
  * on the terminal and desktop only, d.ts:10809-10819); the pane closes only when every attached surface
  * draws that band, else it stays a pane. Docked: the pane.
  */
-async function showView($: EngineInterface, v: LensView, focus = false) {
-  const conf = await read($, lensA)
-  const place = placeOf(v, String(conf.settings.workflowPlace))
+async function showView($: EngineInterface, v: LensView, focus = false): Promise<void> {
   // Addendum A7: full screen is always the pane, raised, never the band (the band only has the rows the
   // bottom slot spares, AbovePrompt `maxRows`); restored, a pinned view goes back to the band.
   if (v.size === 'fullscreen') {
     await openWorkflowPane($, v, true)
     return
   }
-  if (place === 'pinned' && bandEverywhere(await surfacesNow($))) {
+  if (await onBand($, v)) {
     // An id that is not open is left alone (`$.ui.close`, d.ts:2538).
     await $.ui.close({ id: CHART })
     return
@@ -1043,15 +1059,172 @@ async function showView($: EngineInterface, v: LensView, focus = false) {
   await openWorkflowPane($, v, focus)
 }
 
-/** Step 1.5: a view change (place, size, selection), then the view shown where and how it now says. */
+/** Step 1.5: whether the band above the prompt shows the view: pinned, not full screen, and every attached surface draws the band. */
+async function onBand($: EngineInterface, v: LensView): Promise<boolean> {
+  if (v.size === 'fullscreen') return false
+  const conf = await read($, lensA)
+  return placeOf(v, String(conf.settings.workflowPlace)) === 'pinned' && bandEverywhere(await surfacesNow($))
+}
+
+/**
+ * Step 36.4 (rcm-spec): `closeOldCard` at most once per load (`oldCardSwept`, set before the close so two renders in
+ * flight never close twice). Not awaited by the band's render; `closeOldCard` logs a failing close and never throws.
+ */
+function closeOldCardOnce($: EngineInterface) {
+  if (oldCardSwept) return
+  oldCardSwept = true
+  void closeOldCard($)
+}
+
+/**
+ * Step 36.2.3, amendment 7: closes the old "AI-DLC lens" card (`OLD_CARD`), at load and before `/ai-dlc:lens` shows
+ * the view. An id that is not open is left alone (`$.ui.close`, d.ts:2538); a failing close is logged, never thrown.
+ */
+async function closeOldCard($: EngineInterface) {
+  try {
+    await $.ui.close({ id: OLD_CARD })
+  } catch (err) {
+    lensFail('close old card', err)
+  }
+}
+
+/** Step 36.2: whether the AI-DLC Lens pane is open (`$.ui.panes()`, d.ts:2563); false when the host cannot say. Never throws. */
+async function viewPaneOpen($: EngineInterface): Promise<boolean> {
+  try {
+    return (await $.ui.panes()).some(p => p.id === CHART)
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Step 36.2: `/ai-dlc:lens`. Docked, or where the band is not drawn: opens the AI-DLC Lens pane when it is closed and
+ * raises it (`focus`) when it is open. On the band: one step per run (`bandStep`). Returns the one-line reply.
+ */
+async function openLens($: EngineInterface): Promise<string> {
+  await closeOldCard($)
+  // Amendment 8: the command brings back a band closed with its `×`.
+  await update($, bandClosedA, () => false)
+  const v = await read($, viewA)
+  const wasOpen = await viewPaneOpen($)
+  if (await onBand($, v)) return bandStep($, v, wasOpen)
+  const r = await openWorkflowPane($, v, true)
+  if (!r.isPlaced) return `${VIEW_TITLE} is open but not drawn yet: ${r.reason}`
+  return `${VIEW_TITLE} ${wasOpen ? 'brought forward' : 'opened'}.`
+}
+
+/**
+ * Step 36.2, amendment 4: the band starts minimised whenever it appears (load, the first spawn, docked -> pinned).
+ * Only a normal size changes; full screen and an already minimised band are kept. Call it only when `onBand` holds.
+ */
+async function bandStart($: EngineInterface) {
+  await update($, viewA, x => ((x as LensView).size === 'normal' ? viewResize(x as LensView, 'minimised') : (x as LensView)))
+}
+
+/** Step 36.2: the band's list view from a minimised band: the size before when it is the list, else normal. */
+function bandList(x: LensView): LensView {
+  const back = viewRestore(x)
+  return back.size === 'normal' ? back : viewResize(x, 'normal')
+}
+
+type Latest = NonNullable<Awaited<ReturnType<typeof latestFlow>>>
+
+/** Step 36.2: how a reply names the workflow the pane goes to: the latest in progress, else the most recent. */
+const latestWhich = (latest: Latest): string =>
+  latest.live ? `the latest in-progress workflow, ${latest.title}` : `the most recent workflow, ${latest.title} (none is in progress)`
+
+/**
+ * Step 36.2, amendment 3: the pane beside the band, opened (or raised) on `w`, focused; the band is not touched.
+ * Amendment 8: docked (the band drawn because a workflow is in progress), the docked pane itself selects `w`.
+ */
+async function paneOn($: EngineInterface, w: string): Promise<UiOpenResult> {
+  if (!(await onBand($, await read($, viewA)))) {
+    await update($, viewA, x => ({ ...(x as LensView), selected: w }))
+    return openWorkflowPane($, await read($, viewA), true)
+  }
+  await update($, viewA, x => ({ ...(x as LensView), pane: w }))
+  return openWorkflowPane($, paneViewOf(await read($, viewA)), true)
+}
+
+/**
+ * Step 36.2, amendment 6: the band's `⤢` (and a step chart's `⤢` on the band). The band stays as it is, minimised or
+ * its list, and is never hidden; the pane opens beside it on the latest workflow, or switches to it from an older one
+ * (`latestFlow`: the newest in progress, else the newest), or, from a step chart, on that chart's workflow.
+ */
+async function expandBand($: EngineInterface, w?: string) {
+  // A button press has no reply line, unlike `/ai-dlc:lens` (`bandStep`): what it did is logged, like the other
+  // panes' opens (E3). With no workflow there is nothing to open, and the band already reads "Nothing Here".
+  const target = w ?? (await latestFlow($))?.w
+  if (target === undefined) {
+    await plog($, 'E3', { open: null, via: 'band expand', reason: 'no workflow' })
+    return
+  }
+  const r = await paneOn($, target)
+  await plog($, 'E3', { open: CHART, via: 'band expand', workflow: target, result: r })
+}
+
+/**
+ * Step 36.2, amendments 1 and 4: `/ai-dlc:lens` while the band shows the view. Each run moves one step, the rules
+ * checked in this order: (1) the band minimised: its list view is restored, the pane untouched; (2) the band in list
+ * view and the pane closed: the pane opens on the latest workflow (`latestFlow`: the newest in progress, else the
+ * newest) and the band is minimised; (3) the pane open on another workflow: it switches to the latest; (4) the pane
+ * already on the latest: the band is minimised and the pane stays open on it. With the pane open, each run so toggles
+ * the band between minimised and its list. Amendment 3: the pane beside the band keeps its own run
+ * (`LensView.pane`) and is drawn at its normal size whatever the band's (`paneViewOf`), so steps 2 and 3 set `pane`,
+ * never the band's `selected`, and minimising the band never closes the pane. Steps 1 to 4 set `viewA` directly,
+ * never `changeView`, so nothing else opens or closes.
+ */
+async function bandStep($: EngineInterface, v: LensView, paneOpen: boolean): Promise<string> {
+  if (v.size === 'minimised') {
+    await update($, viewA, x => bandList(x as LensView))
+    return `${VIEW_TITLE}: the band's list view is restored.`
+  }
+  const latest = await latestFlow($)
+  if (latest === null) return `${VIEW_TITLE} is pinned to the band above the prompt, which draws it once a workflow starts; no pane opened.`
+  const which = latestWhich(latest)
+  const minimise = () => update($, viewA, x => viewResize(x as LensView, 'minimised'))
+  const drawn = (r: UiOpenResult, text: string) => (r.isPlaced ? text : `${VIEW_TITLE}: the pane is open on ${which} but not drawn yet: ${r.reason}`)
+  if (!paneOpen) {
+    const r = await paneOn($, latest.w)
+    await minimise()
+    return drawn(r, `${VIEW_TITLE}: the pane opened on ${which}; the band is minimised.`)
+  }
+  if (selectedOf(paneViewOf(v), latest.ws) !== latest.w) return drawn(await paneOn($, latest.w), `${VIEW_TITLE}: the pane switched to ${which}.`)
+  await minimise()
+  return `${VIEW_TITLE}: the band is minimised; the pane stays open on ${which}.`
+}
+
+/**
+ * Step 1.5: a view change (place, size, selection), then the view shown where and how it now says. Step 36.2,
+ * amendment 3: a change that leaves the view on the band (its size or selection, the pane's run) neither opens nor
+ * closes the pane, so a pane opened beside the band stays open, on its run, while the band is minimised or restored.
+ * Amendment 4: a change that brings the view to the band from docked starts the band minimised (`bandStart`);
+ * a return from full screen keeps the size it restores to. Finding 36.3-F1: a change that takes the view from the
+ * band to docked leaves the band's size on the band (`dockedFromBand`, lens.ts), so the docked pane starts at its
+ * normal size; amendment 8: the band keeps that size for while it is still drawn (a workflow in progress).
+ */
 async function changeView($: EngineInterface, fn: (v: LensView) => LensView) {
+  let prev: LensView = VIEW0
   let next: LensView = VIEW0
+  const paneWasOpen = await viewPaneOpen($)
   await update($, viewA, v => {
-    next = fn(v as LensView)
+    prev = v as LensView
+    next = fn(prev)
     return next
   })
+  const was = await onBand($, prev)
+  const now = await onBand($, next)
+  if (was && now) return
+  if (now && prev.size !== 'fullscreen') {
+    await bandStart($)
+    next = await read($, viewA)
+  } else if (was && next.size !== 'fullscreen') {
+    await update($, viewA, x => dockedFromBand(x as LensView, paneWasOpen))
+    next = await read($, viewA)
+  }
   await showView($, next)
 }
+
 
 /**
  * "Open flowchart" (a chat card): the workflow view, restored if minimised, with that run selected.
@@ -1940,33 +2113,13 @@ async function snapshot($: EngineInterface) {
   return { agents, roster, defs, conf, s, mainModel, label: labeler(roster, defs, mainModel), av: chartAvatars(s), marks }
 }
 
-/** A settings warning without the level it names (round 4): /ai-dlc:lens-configure still says where. */
-const unlevel = (msg: string): string => {
-  for (const w of [SETTINGS_LOCAL, SETTINGS_PROJECT, LENS_JSON]) for (const at of [`${w} env: `, `${w}: `]) if (msg.startsWith(at)) return msg.slice(at.length)
-  return msg
-}
-
-function settingsRows(t: any, conf: LensConfig) {
-  const { Box, Text } = t
-  return (
-    <Box flexDirection="column">
-      <Text bold>Lens settings (effective value)</Text>
-      {KEYS.map(k => (
-        <Text dimColor>
-          {k} = {JSON.stringify(conf.settings[k])}
-        </Text>
-      ))}
-      {conf.ignored.map(x => (
-        <Text color="yellow">{unlevel(x)}</Text>
-      ))}
-    </Box>
-  )
-}
-
 /** A stop-time `background_tasks` entry as a task: a subagent keeps its agent type. */
 function stopTask(b: { id: string; type: string; status: string; description: string; agent_type?: string }, source: string): LensTask {
   return { id: b.id, type: b.type, status: b.status, description: b.description, source, ...(b.agent_type ? { agentType: b.agent_type } : {}) }
 }
+
+/** Where `viewControls` are drawn: a `ViewSite`, or `side`, the pane beside the band (amendment 3). */
+type ControlSite = ViewSite['where'] | 'side'
 
 /**
  * Step 1.5: the workflow view's first row. Left: the `Panel Type` switch (drill-in or tab, for the session)
@@ -1975,8 +2128,16 @@ function stopTask(b: { id: string; type: string; status: string; description: st
  * tab (Pane `title` read-only, d.ts:10876-10883; the close mark is the engine's, d.ts:10868-10873), so
  * they sit in the body. What each can and cannot do: see `showView`, `openSizeOf` and MANUAL-CHECKS Z9-Z13.
  */
-function viewControls($: EngineInterface, t: any, v: LensView, place: 'pinned' | 'docked', where: string, lead: any) {
+function viewControls($: EngineInterface, t: any, v: LensView, place: 'pinned' | 'docked', where: ControlSite, lead: any, idle: boolean) {
   const { Box, Button } = t
+  // Step 36.2, amendment 3: `side`, the pane beside the band. The band's size is not this pane's, so it has no minimise
+  // or restore of its own; full screen takes the run it shows (`v` is `paneViewOf`).
+  const side = where === 'side'
+  // Amendment 6: on the band, `⤢` opens the pane beside it on the latest workflow (`expandBand`) and leaves the band
+  // as it is, never full screen; `□` on the minimised band brings back its list (`bandList`), the pane untouched.
+  // Amendment 8: the band has a close (`×`, `bandClosedA`) only while no workflow is in progress. Docked (the band
+  // drawn because a workflow is in progress), its `–` / `□` change the band's own size (`band`), never the docked pane's.
+  const band = where === 'band'
   const full = v.size === 'fullscreen'
   const min = v.size === 'minimised'
   return (
@@ -1986,10 +2147,29 @@ function viewControls($: EngineInterface, t: any, v: LensView, place: 'pinned' |
       </Box>
       <Box flexDirection="row" alignItems="center" columnGap={1}>
         <Button key="pane-place" label={place} plain onPress={() => changeView($, x => ({ ...x, place: place === 'pinned' ? 'docked' : 'pinned' }))} />
-        <Button key="pane-full" label={full ? '⤡' : '⤢'} plain onPress={() => changeView($, x => (x.size === 'fullscreen' ? viewRestore(x) : viewResize(x, 'fullscreen')))} />
-        <Button key="pane-min" label={min ? '□' : '–'} plain onPress={() => changeView($, x => (x.size === 'minimised' ? viewRestore(x) : viewResize(x, 'minimised')))} />
-        {v.prev.length > 0 ? <Button key="pane-restore" label="↺" plain onPress={() => changeView($, viewRestore)} /> : null}
-        {where === 'pane' ? <Button key="pane-close" label="×" role="dismiss" plain onPress={() => $.ui.close({ id: CHART })} /> : null}
+        <Button
+          key="pane-full"
+          label={full ? '⤡' : '⤢'}
+          plain
+          onPress={() =>
+            band ? expandBand($) : changeView($, x => (x.size === 'fullscreen' ? viewRestore(x) : { ...viewResize(x, 'fullscreen'), ...(side ? { selected: v.selected } : {}) }))
+          }
+        />
+        {side ? null : (
+          <Button
+            key="pane-min"
+            label={min ? '□' : '–'}
+            plain
+            onPress={() =>
+              band && place === 'docked'
+                ? update($, viewA, x => ({ ...(x as LensView), band: (x as LensView).band === 'normal' ? 'minimised' : 'normal' }))
+                : changeView($, x => (x.size === 'minimised' ? (band ? bandList(x) : viewRestore(x)) : viewResize(x, 'minimised')))
+            }
+          />
+        )}
+        {!side && v.prev.length > 0 ? <Button key="pane-restore" label="↺" plain onPress={() => changeView($, viewRestore)} /> : null}
+        {!band ? <Button key="pane-close" label="×" role="dismiss" plain onPress={() => $.ui.close({ id: CHART })} /> : null}
+        {band && idle ? <Button key="band-close" label="×" role="dismiss" plain onPress={() => update($, bandClosedA, () => true)} /> : null}
       </Box>
     </Box>
   )
@@ -2097,6 +2277,54 @@ function flowSteps(view: { ids: string[]; agents: Record<string, LensAgent> }, s
   return { steps: all.filter(c => c.key !== NOT_FOUND), gone: lost === undefined ? [] : lost.ids.slice(1).map(id => lost.agents[id]!) }
 }
 
+/** Step 36.2: what every workflow's figures are read from, shared by `workflowBody` and `/ai-dlc:lens` (`latestFlow`). */
+async function flowContext($: EngineInterface, agents: Record<string, LensAgent>) {
+  return {
+    agents,
+    wf: await readWorkflows($),
+    batches: await read($, batchesA),
+    order: await read($, orderA),
+    callAgent: await read($, callAgentA),
+    callTask: await read($, callTaskA),
+    runs: await read($, runsA),
+    roots: await readRoots($),
+  }
+}
+
+/**
+ * Step 36.2: one workflow's batch, drawing, title and status (`workflowInfo`) and its run (`workflowRunOf`: the top
+ * run's id and start when a child run, `parent:`, is drawn in this one).
+ */
+function flowCore(fc: Awaited<ReturnType<typeof flowContext>>, w: string, label: (a: LensAgent) => ChartLabel) {
+  const batch = workflowBatch(fc.wf, w, fc.batches, fc.agents)
+  const view = batchView(batch, fc.agents, fc.order, fc.callAgent)
+  const root = view.agents[batch.parent]!
+  const n = batch.ids.length
+  const rootName = label(root).name
+  const info = workflowInfo(view, batch, fc.callTask, fc.runs, `${rootName} spawned ${n} agent${n > 1 ? 's' : ''}`, fc.roots)
+  const run = workflowRunOf(info.members, fc.runs, fc.roots)
+  return { batch, view, root, n, rootName, info, run }
+}
+
+/**
+ * Step 36.2: the workflow `/ai-dlc:lens` shows: the newest (`newestFirst`, as the view lists them) whose status is
+ * in progress, else the newest of all (`live` false); `ws` every workflow, newest first; null with no workflow yet.
+ */
+async function latestFlow($: EngineInterface): Promise<{ w: string; title: string; live: boolean; ws: string[] } | null> {
+  const { agents, label } = await snapshot($)
+  const fc = await flowContext($, agents)
+  const flows = newestFirst(
+    fc.wf.order.map(w => {
+      const { info, run } = flowCore(fc, w, label)
+      return { w, title: info.parent, status: info.status, start: run.start, id: run.id || w }
+    }),
+  )
+  const ws = flows.map(f => f.w)
+  const live = flows.find(f => f.status === 'in-progress')
+  const f = live ?? flows[0]
+  return f ? { w: f.w, title: f.title, live: live !== undefined, ws } : null
+}
+
 /** Where the workflow view is drawn: the pane (Pane props, d.ts:10867-10909) or the band above the prompt (AbovePrompt props, d.ts:10809-10850). */
 type ViewSite = { surface: string; columns: number | undefined; rows: number; where: 'pane' | 'band' }
 
@@ -2115,20 +2343,22 @@ type ViewSite = { surface: string; columns: number | undefined; rows: number; wh
 async function workflowBody($: EngineInterface, t: any, site: ViewSite) {
   const { Box, Text, Button } = t
   const { agents, s, label, av, marks } = await snapshot($)
-  const wf = await readWorkflows($)
-  const batches = await read($, batchesA)
-  const order = await read($, orderA)
-  const callAgent = await read($, callAgentA)
-  const callTask = await read($, callTaskA)
-  const runs = await read($, runsA)
-  const roots = await readRoots($)
+  const fc = await flowContext($, agents)
+  const { runs, roots } = fc
   const open = await read($, cardOpenA)
   const thinking = await read($, thinkingA)
   const calls = await read($, callsA)
   const mainContext = await read($, contextA)
   const notices = await read($, noticesA)
   const anomalies = marks.list
-  const v = await read($, viewA)
+  const stored = await read($, viewA)
+  // Step 36.2, amendment 3: the pane beside the band (`/ai-dlc:lens`) draws its own run at its normal size; the band's
+  // size (minimised or not) and selection are the band's alone (`paneViewOf`).
+  const side = site.where === 'pane' && (await onBand($, stored))
+  // Amendment 8: docked, the band (drawn while a workflow is in progress) has its own size (`dockedBandViewOf`).
+  const dockedBand = site.where === 'band' && placeOf(stored, String(s.workflowPlace)) === 'docked'
+  const v = side ? paneViewOf(stored) : dockedBand ? dockedBandViewOf(stored) : stored
+  const choose = (w: string) => changeView($, x => (side ? { ...x, pane: w } : { ...x, selected: w }))
   const drills = await read($, drillsA)
   const mode = openModeOf(await read($, openModeA), String(s.panelOpenMode))
   const place = placeOf(v, String(s.workflowPlace))
@@ -2138,18 +2368,11 @@ async function workflowBody($: EngineInterface, t: any, site: ViewSite) {
   // Newest start first (`runStartOf`, `newestFirst`): a run resumed later stays below one started after it;
   // step 27.1: a child run drawn here takes its top run's start (`workflowRunOf`).
   const flows = newestFirst(
-    wf.order.map(w => {
-      const batch = workflowBatch(wf, w, batches, agents)
-      const view = batchView(batch, agents, order, callAgent)
-      const root = view.agents[batch.parent]!
-      const n = batch.ids.length
-      const rootName = label(root).name
-      const info = workflowInfo(view, batch, callTask, runs, `${rootName} spawned ${n} agent${n > 1 ? 's' : ''}`, roots)
+    fc.wf.order.map(w => {
+      const { batch, view, root, n, rootName, info, run } = flowCore(fc, w, label)
       // Step 1.6.1: the run's anomalies (its run folders and its agents), the worst colour on its marker.
       // Step 27.1: a child run's folder is among them, so its anomalies (named by the child's run) show here.
       const dirs = [...new Set(info.members.map(a => runDirOf(a)).filter((d): d is string => d !== null))]
-      // Step 27.1: the id and start are the top run's when a child run (`parent:`) is drawn in this one.
-      const run = workflowRunOf(info.members, runs, roots)
       // Step 8.6.1: the run's step charts, by code, highest first, from its records and its live spawns.
       const { steps, gone } = flowSteps(view, batch.parent, run.id, runs, roots)
       return { w, batch, view, root, n, rootName, info, bad: anomaliesOf(anomalies, dirs, view.ids), start: run.start, id: run.id || w, steps, gone }
@@ -2158,14 +2381,18 @@ async function workflowBody($: EngineInterface, t: any, site: ViewSite) {
   const stepSel = await read($, stepSelA)
   const ws = flows.map(f => f.w)
   const loose = notices.filter(n => !ws.includes(n.w))
+  // Amendment 8: no workflow in progress (the band may then be closed).
+  const idle = !flows.some(f => f.info.status === 'in-progress')
   type Flow = (typeof flows)[number]
   const modeButton = panelTypeSwitch($, t, mode, { drill: 'panel-drill-in', tab: 'panel-tab' })
   // Full screen: the body takes every row the site gives it (the frame was asked for the whole viewport).
   const fill = v.size === 'fullscreen' && site.rows > 0 ? { minHeight: site.rows } : {}
 
-  // A1: minimised, one line: the newest workflow's dot and title, how many more, and the controls (restore).
+  // A1: minimised, one line. Step 36.2, amendment 6: the controls row holds it: the newest workflow in progress with
+  // how many are in progress, "(n)"; with none in progress the first waiting, then pending, then halted (`bandLineOf`);
+  // with no workflow, "Nothing Here". The list view adds the detail.
   if (v.size === 'minimised') {
-    const top = flows[0]
+    const line = bandLineOf(flows)
     return (
       <Box flexDirection="column" width="100%">
         {viewControls(
@@ -2174,18 +2401,19 @@ async function workflowBody($: EngineInterface, t: any, site: ViewSite) {
           v,
           place,
           site.where,
-          top ? (
+          line ? (
             <Box flexDirection="row" alignItems="center" columnGap={1}>
-              {statusIndicator(t, hasSvg, on1, top.info.status, s, top.info.both)}
+              {statusIndicator(t, hasSvg, on1, line.flow.info.status, s, line.flow.info.both)}
               {anomalyMark(t, anomalies, s)}
               <Text bold wrap="truncate">
-                {top.info.parent}
+                {line.flow.info.parent}
               </Text>
-              {ws.length > 1 ? <Text dimColor>(+{ws.length - 1})</Text> : null}
+              {line.live > 0 ? <Text dimColor>({line.live})</Text> : null}
             </Box>
           ) : (
-            <Text dimColor>AI-DLC workflow</Text>
+            <Text dimColor>Nothing Here</Text>
           ),
+          idle,
         )}
       </Box>
     )
@@ -2196,11 +2424,12 @@ async function workflowBody($: EngineInterface, t: any, site: ViewSite) {
     t,
     v,
     place,
-    site.where,
+    side ? 'side' : site.where,
     <Box flexDirection="row" alignItems="center" columnGap={1}>
       {modeButton}
       {noticeIcon($, t, 'pane', loose)}
     </Box>,
+    idle,
   )
   const keepalive = await keepaliveRow($, t)
   const pinnedNote =
@@ -2291,7 +2520,9 @@ async function workflowBody($: EngineInterface, t: any, site: ViewSite) {
               plain
               onPress={async () => {
                 await update($, stepSelA, m => ({ ...(m as Record<string, string>), [f.w]: c.key }))
-                await changeView($, x => ({ ...viewResize(x, 'fullscreen'), selected: f.w }))
+                // Step 36.2, amendment 6: on the band, the pane opens on this workflow; the band is never hidden.
+                if (site.where === 'band') await expandBand($, f.w)
+                else await changeView($, x => ({ ...viewResize(x, 'fullscreen'), selected: f.w }))
               }}
             />
           )}
@@ -2422,7 +2653,7 @@ async function workflowBody($: EngineInterface, t: any, site: ViewSite) {
             {f.info.parent}
           </Text>
           {noticeIcon($, t, f.w, mine)}
-          {pick ? <Button key={`wf-show-${f.w}`} label={f.w === sel ? '(shown)' : 'show'} plain onPress={() => changeView($, x => ({ ...x, selected: f.w }))} /> : null}
+          {pick ? <Button key={`wf-show-${f.w}`} label={f.w === sel ? '(shown)' : 'show'} plain onPress={() => choose(f.w)} /> : null}
         </Box>
         {noticeList(t, f.w, mine, open)}
         {wOpen && content(f)}
@@ -2440,7 +2671,7 @@ async function workflowBody($: EngineInterface, t: any, site: ViewSite) {
         if (w !== '') out[`nr:${w}`] = true
         return out
       })
-      if (w !== '') await changeView($, x => ({ ...x, selected: w }))
+      if (w !== '') await choose(w)
     }
     return (
       <Box flexDirection="column" width="100%" {...fill}>
@@ -2497,10 +2728,13 @@ async function workflowBody($: EngineInterface, t: any, site: ViewSite) {
 }
 
 export const register: Register = on => {
+  // Each load (a /reload-plugins included) sweeps the old card again at the band's first render.
+  oldCardSwept = false
   on('session.start', async ($, e, next) => {
     // Module variables survive /clear and a resume: the last session's timers stop before new ones start.
     stopTimers()
     workflowOpened = false
+    oldCardSwept = false
     waitingSince = {}
     recordCache = {}
     mergedSeen = {}
@@ -2528,11 +2762,25 @@ export const register: Register = on => {
     cwd = e.cwd
     probePath = `${$.plugin.root}/PROBE-LOG.jsonl`
     try {
+      // Amendment 8: a band closed with its `×` in an earlier session is drawn again (after the timers: no `await` before them).
+      await update($, bandClosedA, () => false)
+    } catch (err) {
+      lensFail('session.start band close', err)
+    }
+    try {
       await loadSettings($)
       await loadRoster($)
       await loadCosting($)
     } catch (err) {
       lensFail('session.start settings', err)
+    }
+    // Step 36.2.3, amendment 7: the old lens card, if an older build left it open.
+    await closeOldCard($)
+    // Step 36.2, amendment 4 (point 1): a band drawn from the start (a resumed session's workflows) starts minimised.
+    try {
+      if (await onBand($, await read($, viewA))) await bandStart($)
+    } catch (err) {
+      lensFail('session.start band', err)
     }
     let sessionAgent = ''
     try {
@@ -2571,8 +2819,7 @@ export const register: Register = on => {
 
   on('command.run', { command: CMD.lens }, async $ => {
     await loadSettings($)
-    const placed = await $.ui.open({ id: LENS, title: 'AI-DLC lens' })
-    return { text: `Lens card opened (isPlaced: ${JSON.stringify(placed)}). Arrows and avatars are the Buttons under the flowchart.` }
+    return { text: await openLens($) }
   })
 
   // /ai-dlc:lens-init (addendum 3; step 1.4: the thin ai-dlc skill lens-init names it).
@@ -2718,6 +2965,12 @@ export const register: Register = on => {
   on('agent.spawn', async ($, e, next) => {
     const r: any = await next(e)
     try {
+      // Amendment 8: a band closed with its `×` (no workflow was in progress) comes back with the next spawn.
+      if (await read($, bandClosedA)) await update($, bandClosedA, () => false)
+    } catch (err) {
+      lensFail('spawn band close', err)
+    }
+    try {
       const id: string | undefined = r?.agentId ?? e.resume?.agentId
       const parent = e.parentAgentId ?? 'main'
       const match = matchHandoff(e.prompt)
@@ -2791,6 +3044,10 @@ export const register: Register = on => {
         // Round 6: Esc closes it once it holds the keys (no `focus`: an unasked open never takes the keyboard).
         // Where it goes is the surface's: PaneOpenArgs has no placement or order (d.ts:7588-7660), A9.
         // Step 1.5: pinned, on surfaces that all draw the band above the prompt, the band shows it and no pane opens.
+        // Step 36.2.3, amendment 7: the old lens card goes when the view first appears (a /reload-plugins has no session.start).
+        await closeOldCard($)
+        // Step 36.2, amendment 4 (point 1): the band appears minimised.
+        if (await onBand($, await read($, viewA))) await bandStart($)
         await showView($, await read($, viewA))
         await plog($, 'E3', { open: CHART, auto: true })
       }
@@ -2956,72 +3213,6 @@ export const register: Register = on => {
     return r
   })
 
-  // ---- the lens pane (L1-L6) ----
-  on('ui.render', { component: 'Pane', requestId: LENS }, async ($, e) => {
-    return guardPane($, e, 'lens pane', async () => {
-      const t = $.ui.resolve(e) as any
-      const { Box, Text, Button } = t
-      const { agents, conf, s, label, av, marks } = await snapshot($)
-      const order = await read($, orderA)
-      const thinking = await read($, thinkingA)
-      const context = await read($, contextA)
-      const open = await read($, cardOpenA)
-      const hasSvg = e.surface !== 'terminal'
-
-      // Step 1.5: the session's open mode, shared with the workflow view's `Panel Type` switch.
-      const mode = openModeOf(await read($, openModeA), String(s.panelOpenMode))
-      const modeRow = (
-        <Box flexDirection="row">
-          {panelTypeSwitch($, t, mode, { drill: 'mode-drill', tab: 'mode-pane' })}
-        </Box>
-      )
-
-      const drilled = (await read($, drillsA))['lens']
-      if (drilled !== undefined) return drillBody($, t, 'lens', drilled, hasSvg)
-
-      const ids = order.filter(id => agents[id])
-      const on1 = hasSvg ? false : (await read($, tick))
-      const mainThinking = thinking['main'] ?? ''
-      const thOpen = isOpen(open, 'pane:thinking', s)
-      const ctxOpen = isOpen(open, 'pane:context', s)
-      const setOpen = isOpen(open, 'pane:settings', s)
-      return (
-        <Box flexDirection="column">
-          <Text bold>Workflow</Text>
-          {await keepaliveRow($, t)}
-          {chartNode(t, hasSvg, on1, ids, agents, label, s, `Flowchart of ${ids.length} agents`, av)}
-          {agentButtons($, t, order, agents, label, 'lens', null, marks)}
-          {modeRow}
-          <Text bold>{agents['main'] ? label(agents['main']).name : 'Main loop'} (main loop)</Text>
-          <Box flexDirection="row">
-            <Button key="lens-thinking" label={thOpen ? '[-]' : '[+]'} onPress={() => toggleOpen($, 'pane:thinking', s)} />
-            <Text> Thinking ({mainThinking.length} chars)</Text>
-          </Box>
-          {thOpen && <Text dimColor>{mainThinking === '' ? '(no thinking chunks seen yet)' : mainThinking}</Text>}
-          <Box flexDirection="row">
-            <Button key="lens-context" label={ctxOpen ? '[-]' : '[+]'} onPress={() => toggleOpen($, 'pane:context', s)} />
-            <Text> Gathered context ({context.length} calls)</Text>
-          </Box>
-          {ctxOpen &&
-            context.map(c => (
-              <Text dimColor>
-                {c.status === 'running' ? '...' : c.status === 'error' ? 'ERR' : 'ok '} {c.tool} {c.summary}
-              </Text>
-            ))}
-          <Box flexDirection="row">
-            <Button key="lens-settings" label={setOpen ? '[-]' : '[+]'} onPress={() => toggleOpen($, 'pane:settings', s)} />
-            <Text> Lens settings ({KEYS.filter(k => conf.sources[k] !== 'default').length} set, {conf.ignored.length} ignored)</Text>
-          </Box>
-          {setOpen && settingsRows(t, conf)}
-          <Text dimColor>The figures, the cost and the window are in each avatar's panel.</Text>
-          {lensErrors.map(x => (
-            <Text color="red">lens hook error: {x}</Text>
-          ))}
-        </Box>
-      )
-    })
-  })
-
   on('ui.render', { component: 'Pane', requestId: EDGE }, async ($, e) => {
     return guardPane($, e, 'hand-off pane', async () => {
       const t = $.ui.resolve(e) as any
@@ -3080,25 +3271,41 @@ export const register: Register = on => {
   })
 
   // Step 1.5, "pinned": the same view in the band directly above the prompt (AbovePrompt, d.ts:10809-10850;
-  // raised on the terminal and desktop only). Drawn while the view is pinned and a workflow exists; a
+  // raised on the terminal and desktop only). Drawn while the view is pinned (since step 36.2.3 with no workflow too); a
   // survey holding the band (`hasSurvey`) and every other case pass to the hooks beneath, whose tree stays under ours.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    // Step 36.4 (rcm-spec): a /reload-plugins fires no session.start, so the old card goes at the first render after
+    // the load, whatever the view's place; once per load, never on every render.
+    closeOldCardOnce($)
     try {
       if (e.props.hasSurvey) return next(e)
       const conf = await read($, lensA)
       const v = await read($, viewA)
-      const wf = await read($, workflowsA)
-      // Addendum A7: in full screen the view is the pane's alone; the band steps aside.
-      if (placeOf(v, String(conf.settings.workflowPlace)) !== 'pinned' || v.size === 'fullscreen' || wf.order.length === 0) return next(e)
+      // Addendum A7: in full screen the view is the pane's alone; the band steps aside. Step 36.2, amendment 6: the
+      // band is drawn with no workflow too, its minimised line reading "Nothing Here". Amendment 8: docked, the band
+      // stays while a workflow is in progress; pinned, it is gone once closed with its `×` (only while none is).
+      if (v.size === 'fullscreen') return next(e)
+      const pinned = placeOf(v, String(conf.settings.workflowPlace)) === 'pinned'
+      const closed = pinned && (await read($, bandClosedA))
+      if (!pinned || closed) {
+        const live = (await latestFlow($))?.live === true
+        if (!live) return next(e)
+      }
       const t = $.ui.resolve(e) as any
       const { Box } = t
       const ours = await workflowBody($, t, { surface: String(e.surface), columns: e.props.bodyColumns, rows: e.props.maxRows, where: 'band' })
       const below = await next(e)
       // No `width` on this Box: `below` can be core's own drawing (an engine node), and AbovePrompt refuses an
-      // engine node under a Box with `width` (the hook is skipped and the view never draws). `ours` sizes itself.
+      // engine node under a Box with `width` (the hook is skipped and the view never draws). Step 36.2, amendment 5:
+      // `ours` alone sits in a Box as wide as the band's body (`bodyColumns`, AbovePrompt props), so the view takes
+      // the full width, minimised or not; that Box holds no engine node.
+      const cols = e.props.bodyColumns
+      const wide = typeof cols === 'number' && Number.isInteger(cols) && cols > 0 ? { width: cols } : {}
       return (
         <Box flexDirection="column">
-          {ours}
+          <Box flexDirection="column" {...wide}>
+            {ours}
+          </Box>
           {below}
         </Box>
       )

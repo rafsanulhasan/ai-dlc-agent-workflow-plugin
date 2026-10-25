@@ -63,6 +63,10 @@ import {
   KEEPALIVE_CYCLES_KEPT,
   VIEW0,
   bandEverywhere,
+  bandLineOf,
+  paneViewOf,
+  dockedFromBand,
+  dockedBandViewOf,
   layoutOf,
   openModeOf,
   openSizeOf,
@@ -376,6 +380,8 @@ type SeedOpts = {
   teammate?: boolean
   /** Round 6: the status `$.agent.list()` gives a1 (default `running`). */
   listStatus?: string
+  /** Step 36.2.3: panes already open before the session starts (a card an older build left open). */
+  openAtStart?: string[]
   /** Avatars: what `$.fs.stat` answers per path (absent: the path does not exist), and the engine env (HOME). */
   stat?: Record<string, { kind: 'file' | 'dir' | 'other'; size: number; realPath?: string }>
   env?: Record<string, string>
@@ -477,15 +483,24 @@ async function seed($: any, on: any, opts: SeedOpts = {}) {
     return { value: undefined }
   })
   on('agent.list', () => ({ value: [{ id: 'a1', description: desc[0], type: 'ai-dlc:software-engineer', status: listStatus }] }))
+  // Step 36.2: the panes open now, for `$.ui.panes()` (what `/ai-dlc:lens` reads to tell "open" from "closed").
+  const openNow = new Set<string>(opts.openAtStart ?? [])
+  /** Step 36.2.3: every open and close in order, `open:<id>` / `close:<id>`. */
+  const events: string[] = []
   on('ui.open', (_: unknown, e: any) => {
+    events.push(`open:${e.id}`)
     opened.push(e.id)
     openArgs.push(e)
+    openNow.add(e.id)
     return { value: { isPlaced: true } }
   })
   on('ui.close', (_: unknown, e: any) => {
+    events.push(`close:${e.id}`)
     closed.push(e.id)
+    openNow.delete(e.id)
     return { value: undefined }
   })
+  on('ui.panes', () => ({ value: [...openNow].map(id => ({ id, title: id, isShown: true, isFocused: false, isPlaced: true })) }))
   on('ui.view', () => ({ value: undefined }))
   on('agent.spawn', (_: unknown, e: any) => ({
     model: 'claude-sonnet-5-5',
@@ -551,7 +566,7 @@ async function seed($: any, on: any, opts: SeedOpts = {}) {
       fork: false,
     })
   if (complete) await completeAgent($, 'a1')
-  return { opened, nativeInputs, writes, files, openArgs, closed, statted, toasts }
+  return { opened, nativeInputs, writes, files, openArgs, closed, statted, toasts, events, openNow }
 }
 
 async function completeAgent($: any, agentId: string) {
@@ -601,6 +616,15 @@ const chartPane = async ($: any, surface: (typeof SURFACES)[number] = 'vscode', 
   const ui = await $.ui.mount({ ...pane(CHART_PANE), surface })
   if (open) await openPanels(ui)
   return ui
+}
+/**
+ * Step 36.2: opens the main loop's avatar panel. Its Button was on the lens card, which is gone; the chat card of
+ * `seed`'s first call (toolu_1) has it, as `card:agent-main` (the workflow view's step charts start at the spawned agent).
+ */
+const pressMain = async ($: any) => {
+  const card = await $.ui.mount(toolRow('toolu_1', 'vscode', SE_INPUT, 'Agent', 500))
+  await card.press({ key: 'card:agent-main' })
+  await card.unmount()
 }
 
 describe('chat card', () => {
@@ -742,10 +766,10 @@ describe('chat card', () => {
     await ui.unmount()
   })
 
-  test('C7 (step 8.1.5): drill-in chosen in the lens pane applies to the workflow pane too; "Panel Type: Tab" opens the separate panes again', async ($, on) => {
+  test('C7 (step 8.1.5; one view since 36.2): drill-in chosen in the view opens the panels inside it; "Panel Type: Tab" opens the separate panes again', async ($, on) => {
     const { opened } = await seed($, on)
-    const pane0 = await $.ui.mount({ ...pane('ai-dlc-lens'), surface: 'vscode' })
-    await pane0.press({ key: 'mode-drill' })
+    const pane0 = await chartPane($)
+    await pane0.press({ key: 'panel-drill-in' })
     await pane0.unmount()
     opened.length = 0
     const wp = await chartPane($)
@@ -792,7 +816,7 @@ describe('panels', () => {
 
   test('L4: a matched record: record and hand-back, collapsed until opened; no match label', async ($, on) => {
     await seed($, on)
-    const ui = await $.ui.mount({ ...pane('ai-dlc-lens'), surface: 'vscode' })
+    const ui = await chartPane($)
     await ui.press({ key: 'edge-a1' })
     await ui.unmount()
     const edge = await $.ui.mount({ ...pane('ai-dlc-lens-edge'), surface: 'vscode' })
@@ -808,7 +832,7 @@ describe('panels', () => {
 
   test('3, 4: the avatar panel: header, then Usage with the figures, the window and the cost, with no source', async ($, on) => {
     await seed($, on, { files: { '.ai-dlc/model-costing.json': COSTING_ARRAY } })
-    const ui = await $.ui.mount({ ...pane('ai-dlc-lens'), surface: 'vscode' })
+    const ui = await chartPane($)
     await ui.press({ key: 'agent-a1' })
     await ui.unmount()
     const ag = await $.ui.mount({ ...pane('ai-dlc-lens-agent'), surface: 'vscode' })
@@ -833,7 +857,7 @@ describe('panels', () => {
   test('rename: model-metadata.json is read before model-costing.json; the panel does not name the file', async ($, on) => {
     const other = COSTING_ARRAY.replace('"outputPerMTok":15', '"outputPerMTok":16')
     await seed($, on, { files: { '.ai-dlc/model-metadata.json': other, '.ai-dlc/model-costing.json': COSTING_ARRAY } })
-    const ui = await $.ui.mount({ ...pane('ai-dlc-lens'), surface: 'vscode' })
+    const ui = await chartPane($)
     await ui.press({ key: 'agent-a1' })
     await ui.unmount()
     const ag = await $.ui.mount({ ...pane('ai-dlc-lens-agent'), surface: 'vscode' })
@@ -846,7 +870,7 @@ describe('panels', () => {
 
   test('4: no metadata file: cost and a subagent window on another model show —', async ($, on) => {
     await seed($, on)
-    const ui = await $.ui.mount({ ...pane('ai-dlc-lens'), surface: 'vscode' })
+    const ui = await chartPane($)
     await ui.press({ key: 'agent-a1' })
     await ui.unmount()
     const ag = await $.ui.mount({ ...pane('ai-dlc-lens-agent'), surface: 'vscode' })
@@ -857,11 +881,11 @@ describe('panels', () => {
     await ag.unmount()
   })
 
-  test('L4 fallback: drill-in shows the panel inside the lens pane with a Back button', async ($, on) => {
+  test('L4 fallback: drill-in shows the panel inside the AI-DLC Lens view with a Back button', async ($, on) => {
     const { opened } = await seed($, on)
     opened.length = 0
-    const ui = await $.ui.mount({ ...pane('ai-dlc-lens'), surface: 'vscode' })
-    await ui.press({ key: 'mode-drill' })
+    const ui = await chartPane($)
+    await ui.press({ key: 'panel-drill-in' })
     await ui.press({ key: 'edge-a1' })
     expect(opened).not.toContain('ai-dlc-lens-edge')
     expect(await ui.find({ type: 'Button', key: 'drill-back' })).toBeDefined()
@@ -873,7 +897,7 @@ describe('panels', () => {
   test('L6: a SendMessage to an agent draws a two-way arrow', async ($, on) => {
     await seed($, on)
     await $.tool.call({ tool: 'SendMessage', to: 'a1', message: 'again', tool_use_id: 'toolu_s1' })
-    const ui = await $.ui.mount({ ...pane('ai-dlc-lens'), surface: 'vscode' })
+    const ui = await chartPane($)
     expect((await ui.find({ type: 'Button', key: 'edge-a1' }))?.text).toMatch(/<-> David Fowler$/)
     expect(await svgSource(ui)).toMatch(/marker-start/)
     await ui.unmount()
@@ -888,7 +912,7 @@ describe('panels', () => {
       agent_type: 'ai-dlc:software-engineer',
       background_tasks: [{ id: 'b1', type: 'shell', status: 'running', description: 'npm run watch' }],
     })
-    const ui = await $.ui.mount({ ...pane('ai-dlc-lens'), surface: 'vscode' })
+    const ui = await chartPane($)
     await ui.press({ key: 'agent-a1' })
     await ui.unmount()
     const sub = await $.ui.mount({ ...pane('ai-dlc-lens-agent'), surface: 'vscode' })
@@ -901,9 +925,7 @@ describe('panels', () => {
   test('E7: a background Bash shows in the main avatar panel at once', async ($, on) => {
     await seed($, on)
     await $.tool.call({ tool: 'Bash', command: 'sleep 15', run_in_background: true, tool_use_id: 'toolu_b' })
-    const ui = await $.ui.mount({ ...pane('ai-dlc-lens'), surface: 'vscode' })
-    await ui.press({ key: 'agent-main' })
-    await ui.unmount()
+    await pressMain($)
     const main = await $.ui.mount({ ...pane('ai-dlc-lens-agent'), surface: 'vscode' })
     await main.press({ key: 'agent-tasks' })
     expect(await main.find({ type: 'Text', text: /^\s*sleep 15 - running$/ })).toBeDefined()
@@ -924,7 +946,7 @@ describe('panels', () => {
 
   test('round 4 UI: a narrow avatar panel: four divided sections, each with a heading, a count and its own Button; no raw JSON', async ($, on) => {
     await seed($, on, { files: { '.ai-dlc/lens.json': JSON.stringify({ collapsedByDefault: false }) } })
-    const ui = await $.ui.mount({ ...pane('ai-dlc-lens'), surface: 'vscode' })
+    const ui = await chartPane($)
     await ui.press({ key: 'agent-a1' })
     await ui.unmount()
     const ag = await $.ui.mount({ ...pane('ai-dlc-lens-agent', 'inline', 24), surface: 'vscode' })
@@ -941,7 +963,7 @@ describe('panels', () => {
 })
 
 describe('collapsed by default (addendum 2)', () => {
-  test('every [+]/[-] section starts collapsed: workflow pane, /ai-dlc:lens pane, arrow and avatar panels', async ($, on) => {
+  test('every [+]/[-] section starts collapsed: the AI-DLC Lens view, arrow and avatar panels', async ($, on) => {
     await seed($, on)
     await $.tool.call({ tool: 'Grep', pattern: 'needle', tool_use_id: 'toolu_m1' })
     const wp = await chartPane($)
@@ -949,12 +971,9 @@ describe('collapsed by default (addendum 2)', () => {
     expect(await wp.find({ type: 'Text', text: /Grep needle/ })).toBe(undefined)
     await wp.press({ key: 'wf-context' })
     expect(await wp.find({ type: 'Text', text: /Grep needle/ })).toBeDefined()
+    await wp.press({ key: 'edge-a1' })
+    await wp.press({ key: 'agent-a1' })
     await wp.unmount()
-    const lens = await $.ui.mount({ ...pane('ai-dlc-lens'), surface: 'vscode' })
-    for (const k of ['lens-thinking', 'lens-context', 'lens-settings']) expect((await lens.find({ type: 'Button', key: k }))?.text).toBe('[+]')
-    await lens.press({ key: 'edge-a1' })
-    await lens.press({ key: 'agent-a1' })
-    await lens.unmount()
     const edge = await $.ui.mount({ ...pane('ai-dlc-lens-edge'), surface: 'vscode' })
     for (const k of ['edge-usage', 'edge-doc', 'edge-back']) expect((await edge.find({ type: 'Button', key: k }))?.text).toBe('[+]')
     await edge.unmount()
@@ -994,7 +1013,7 @@ describe('settings (addendum 3)', () => {
     expect(JSON.parse(setKey(null, 'cellPx', '12').text).cellPx).toBe(12)
   })
 
-  test('the module reads the three files, never the process env; the pane shows each value, not its level', async ($, on) => {
+  test('the module reads the three files, never the process env; /ai-dlc:lens-configure lists each value', async ($, on) => {
     await seed($, on, {
       files: {
         '.claude/settings.local.json': local({ AI_DLC_LENS_CHART_MODE: 'button' }),
@@ -1007,14 +1026,14 @@ describe('settings (addendum 3)', () => {
     expect(await card.find({ type: 'Svg' })).toBe(undefined)
     expect(await card.find({ type: 'Button', key: 'card-open-chart' })).toBeDefined()
     await card.unmount()
-    const lens = await $.ui.mount({ ...pane('ai-dlc-lens'), surface: 'vscode' })
-    await lens.press({ key: 'lens-settings' })
-    // Round 4: the pane shows the values only; /ai-dlc:lens-configure names the levels.
-    expect(await lens.find({ type: 'Text', text: 'chartMode = "button"' })).toBeDefined()
-    expect(await lens.find({ type: 'Text', text: 'showCost = false' })).toBeDefined()
-    expect(await lens.find({ type: 'Text', text: 'callsShown = 5' })).toBeDefined()
-    expect(await lens.find({ type: 'Text', text: 'blinkMs = 1000' })).toBeDefined()
-    expect(await lens.find({ type: 'Text', text: /^blinkMs = "fast" is invalid, ignored$/ })).toBeDefined()
+    // Step 36.2: the settings section went with the lens card; /ai-dlc:lens-configure lists the values and their levels.
+    const listed = String(((await ($.command.run as any)({ command: 'ai-dlc:lens-configure', args: '' })) as any)?.text)
+    expect(listed).toMatch(/^chartMode = "button" \[\.claude\/settings\.local\.json env\]/m)
+    expect(listed).toMatch(/^showCost = false \[\.claude\/settings\.json env\]/m)
+    expect(listed).toMatch(/^callsShown = 5 \[\.ai-dlc\/lens\.json\]/m)
+    expect(listed).toMatch(/^blinkMs = 1000 \[default\]/m)
+    expect(listed).toMatch(/blinkMs = "fast" is invalid, ignored$/m)
+    const lens = await chartPane($)
     await lens.press({ key: 'agent-a1' })
     await lens.unmount()
     const ag = await $.ui.mount({ ...pane('ai-dlc-lens-agent'), surface: 'vscode' })
@@ -1062,8 +1081,8 @@ describe('fallbacks', () => {
     on('session.messages', () => ({ value: [{ role: 'assistant', content: [{ type: 'thinking', thinking: '', signature: 's' }] }] }))
     await seed($, on)
     await $.turn.complete({ reason: 'answer', answer: 'ok', durationMs: 1, isAborted: false, turnId: 'm' })
-    const ui = await $.ui.mount({ ...pane('ai-dlc-lens'), surface: 'vscode' })
-    await ui.press({ key: 'lens-thinking' })
+    const ui = await chartPane($)
+    await ui.press({ key: 'wf-thinking' })
     expect(await ui.find({ type: 'Text', text: /no thinking text: 0 block.*transcript holds 1 thinking block.*0 chars/ })).toBeDefined()
     await ui.unmount()
   })
@@ -1076,7 +1095,7 @@ async function drawn(ui: any): Promise<string[]> {
   return all.flatMap((x: any) => [x.text, x.label, x.props?.label, x.props?.source, x.source, x.props?.alt].filter((v: unknown) => typeof v === 'string' && v !== '')) as string[]
 }
 
-/** Mounts the chat cards, the /ai-dlc:lens pane, and every avatar and arrow panel; returns all their text. */
+/** Mounts the chat cards, the AI-DLC Lens view, and every avatar and arrow panel; returns all their text. */
 async function everything($: any, extraCard?: string): Promise<string[]> {
   const out: string[] = []
   for (const id of ['toolu_1', ...(extraCard ? [extraCard] : [])]) {
@@ -1084,9 +1103,14 @@ async function everything($: any, extraCard?: string): Promise<string[]> {
     out.push(...(await drawn(card)))
     await card.unmount()
   }
-  const lens = await $.ui.mount({ ...pane('ai-dlc-lens'), surface: 'vscode' })
+  // Step 36.2: main's avatar panel opens from the chat card; the view has the other avatars and arrows.
+  await pressMain($)
+  const mp = await $.ui.mount({ ...pane('ai-dlc-lens-agent'), surface: 'vscode' })
+  out.push(...(await drawn(mp)))
+  await mp.unmount()
+  const lens = await chartPane($)
   out.push(...(await drawn(lens)))
-  for (const target of ['agent-main', 'agent-a1', 'agent-a2', 'edge-a1', 'edge-a2']) {
+  for (const target of ['agent-a1', 'agent-a2', 'edge-a1', 'edge-a2']) {
     if ((await lens.find({ type: 'Button', key: target })) === undefined) continue
     await lens.press({ key: target })
     const id = target.startsWith('agent-') ? 'ai-dlc-lens-agent' : 'ai-dlc-lens-edge'
@@ -1099,7 +1123,7 @@ async function everything($: any, extraCard?: string): Promise<string[]> {
 }
 
 describe('round 4: no Agent description, no sources, collapsible background tasks', () => {
-  test("no rendered text contains an Agent call's description: card, context, chip, panels, /ai-dlc:lens pane", async ($, on) => {
+  test("no rendered text contains an Agent call's description: card, context, chip, panels, the AI-DLC Lens view", async ($, on) => {
     await seed($, on, { parallel: true, desc: ['Wait test agent one', 'Wait test agent two'], files: { '.ai-dlc/lens.json': JSON.stringify({ collapsedByDefault: false }) } })
     // A main-loop Agent call lands in the gathered context; a subagent's in its tool calls.
     await $.tool.call({ tool: 'Agent', subagent_type: 'ai-dlc:code-reviewer', description: 'Wait test agent three', prompt: 'x', tool_use_id: 'toolu_3' })
@@ -1136,7 +1160,7 @@ describe('round 4: no Agent description, no sources, collapsible background task
     const texts = await everything($)
     expect(texts.some(t => t === 'sonnet · Software Engineer')).toBe(true)
     expect(texts.some(t => /^Cost\$\d/.test(t))).toBe(true)
-    expect(texts.some(t => /is invalid, ignored$/.test(t))).toBe(true)
+    // Step 36.2: the settings warnings were drawn only in the lens card's settings section; /ai-dlc:lens-configure lists them now.
     const SOURCE = [
       /\bfrom (agent definition|the orchestrator|the session|\.ai-dlc)/,
       /window from/,
@@ -1168,7 +1192,7 @@ describe('round 4: no Agent description, no sources, collapsible background task
     })
     // The shell main started is no longer listed at stop time: it has ended.
     await $.classic.Stop({ stop_hook_active: false, background_tasks: [] })
-    const lens = await $.ui.mount({ ...pane('ai-dlc-lens'), surface: 'vscode' })
+    const lens = await chartPane($)
     await lens.press({ key: 'agent-a1' })
     const sub = await $.ui.mount({ ...pane('ai-dlc-lens-agent'), surface: 'vscode' })
     expect(await sub.find({ type: 'Button', key: 'task-b1' })).toBe(undefined)
@@ -1188,7 +1212,7 @@ describe('round 4: no Agent description, no sources, collapsible background task
     expect(await sub.find({ type: 'Box', text: 'Agent typeai-dlc:sqa-engineer' })).toBeDefined()
     await sub.unmount()
     // Main's panel: a1 (an agent.list child) by persona, its last message as output; the ended shell has an end time.
-    await lens.press({ key: 'agent-main' })
+    await pressMain($)
     const main = await $.ui.mount({ ...pane('ai-dlc-lens-agent'), surface: 'vscode' })
     await main.press({ key: 'agent-tasks' })
     expect(await main.find({ type: 'Text', text: /^\s*David Fowler - running$/ })).toBeDefined()
@@ -1323,7 +1347,7 @@ describe('round 4: null model limits', () => {
       ],
     })
     await seed($, on, { files: { '.ai-dlc/model-metadata.json': meta } })
-    const ui = await $.ui.mount({ ...pane('ai-dlc-lens'), surface: 'vscode' })
+    const ui = await chartPane($)
     await ui.press({ key: 'agent-a1' })
     await ui.unmount()
     const ag = await $.ui.mount({ ...pane('ai-dlc-lens-agent'), surface: 'vscode' })
@@ -1334,9 +1358,7 @@ describe('round 4: null model limits', () => {
     expect(await ag.find({ type: 'Box', text: /^Cost\$/ })).toBeDefined()
     await ag.unmount()
     // main runs on claude-opus-5-5, not in the file: no limit rows at all, and its cost is —.
-    const lens = await $.ui.mount({ ...pane('ai-dlc-lens'), surface: 'vscode' })
-    await lens.press({ key: 'agent-main' })
-    await lens.unmount()
+    await pressMain($)
     const main = await $.ui.mount({ ...pane('ai-dlc-lens-agent'), surface: 'vscode' })
     await main.press({ key: 'agent-usage' })
     expect(await main.find({ type: 'Box', text: 'Cost—' })).toBeDefined()
@@ -1390,7 +1412,7 @@ describe('round 5: centring (requirement 1)', () => {
     expect(all.findIndex((x: any) => x.text === 'NATIVE ROW')).toBe(all.length - 1)
     await card.unmount()
     // The avatar panel's header block.
-    const lens = await $.ui.mount({ ...pane('ai-dlc-lens'), surface: 'vscode' })
+    const lens = await chartPane($)
     await lens.press({ key: 'agent-a1' })
     await lens.unmount()
     const ag = await $.ui.mount({ ...pane('ai-dlc-lens-agent'), surface: 'vscode' })
@@ -1605,7 +1627,7 @@ describe('round 5: long-context pricing (requirement 6) and limits (requirement 
   test('the avatar panel: per-request cost, and the AI_DLC_LENS_LONG_CONTEXT_THRESHOLD_TOKENS override', async ($, on) => {
     // a1's one request: prompt 1000 + 90000 + 9000 = 100000, exactly the threshold: flat, $3.06.
     await seed($, on, { files: { '.ai-dlc/model-metadata.json': META(LONG) } })
-    const ui = await $.ui.mount({ ...pane('ai-dlc-lens'), surface: 'vscode' })
+    const ui = await chartPane($)
     await ui.press({ key: 'agent-a1' })
     await ui.unmount()
     const ag = await $.ui.mount({ ...pane('ai-dlc-lens-agent'), surface: 'vscode' })
@@ -1617,7 +1639,7 @@ describe('round 5: long-context pricing (requirement 6) and limits (requirement 
 
   test('the lens setting from a settings env puts the request over the threshold', async ($, on) => {
     await seed($, on, { files: { '.ai-dlc/model-metadata.json': META(LONG), '.claude/settings.json': JSON.stringify({ env: { AI_DLC_LENS_LONG_CONTEXT_THRESHOLD_TOKENS: '99999' } }) } })
-    const ui = await $.ui.mount({ ...pane('ai-dlc-lens'), surface: 'vscode' })
+    const ui = await chartPane($)
     await ui.press({ key: 'agent-a1' })
     await ui.unmount()
     const ag = await $.ui.mount({ ...pane('ai-dlc-lens-agent'), surface: 'vscode' })
@@ -1899,7 +1921,7 @@ describe('round 6: review findings (18.3, 18.4)', () => {
       for await (const _ of $.turn.step({ turnId: 't', index: 0, model: 'claude-sonnet-5-5', messageCount: 1, agentId: 'a1' })) {
         // drain
       }
-    const ui = await $.ui.mount({ ...pane('ai-dlc-lens'), surface: 'vscode' })
+    const ui = await chartPane($)
     await ui.press({ key: 'agent-a1' })
     await ui.unmount()
     const ag = await $.ui.mount({ ...pane('ai-dlc-lens-agent'), surface: 'vscode' })
@@ -2111,7 +2133,7 @@ describe('avatars: in the panes (spike 029, AC-13.3 to 13.9)', () => {
     expect(img).toBeDefined()
     expect(img?.props?.source?.png ?? img?.source?.png).toBe(AVATAR_PNG)
     await term.unmount()
-    const lens = await $.ui.mount({ ...pane('ai-dlc-lens'), surface: 'vscode' })
+    const lens = await chartPane($)
     await lens.press({ key: 'agent-a1' })
     await lens.unmount()
     const ag = await $.ui.mount({ ...pane('ai-dlc-lens-agent'), surface: 'vscode' })
@@ -2312,27 +2334,22 @@ describe('keep-alive (spike 028, AC-9.4)', () => {
       expect(keepaliveLine(none)).toBe(null)
   })
 
-  test('the workflow pane and the lens pane show the line while a track runs, and drop it when it stops', { plugins: [kaProvider] }, async ($, on) => {
+  test('the AI-DLC Lens view shows the line while a track runs, and drops it when it stops', { plugins: [kaProvider] }, async ($, on) => {
     await seed($, on)
     for (const surface of SURFACES) {
       await $.command.run({ command: 'ka-arm' } as never)
       const wp = await chartPane($, surface, false)
       expect((await wp.find({ type: 'Text', text: /^keep-alive:/ }))?.text).toBe(KA_LINE)
-      const lp = await $.ui.mount({ ...pane('ai-dlc-lens'), surface })
-      expect((await lp.find({ type: 'Text', text: /^keep-alive:/ }))?.text).toBe(KA_LINE)
 
-      // The provider's next write redraws both panes: no line, every other header field still draws.
+      // The provider's next write redraws the view: no line, every other header field still draws.
       await $.command.run({ command: 'ka-stop' } as never)
       expect(await wp.find({ type: 'Text', text: /^keep-alive:/ })).toBe(undefined)
       expect(await wp.find({ type: 'Button', key: 'pane-close' })).toBeDefined()
       expect(await wp.find({ type: 'Button', key: 'pane-min' })).toBeDefined()
-      expect(await lp.find({ type: 'Text', text: /^keep-alive:/ })).toBe(undefined)
-      expect(await lp.find({ type: 'Text', text: /^Workflow$/ })).toBeDefined()
 
       // Keep-alive turned off: no line, even with a track still marked running.
       await $.command.run({ command: 'ka-off' } as never)
       expect(await wp.find({ type: 'Text', text: /^keep-alive:/ })).toBe(undefined)
-      await lp.unmount()
       await wp.unmount()
     }
   })
@@ -2455,10 +2472,12 @@ describe('/ai-dlc:* commands (step 8.1.4)', () => {
     const { opened } = await seed($, on)
     expect(registered).toEqual([])
     const lens: any = await ($.command.run as any)({ command: 'ai-dlc:lens', args: '' })
-    expect(String(lens?.text)).toMatch(/^Lens card opened/)
+    expect(String(lens?.text)).toMatch(/^AI-DLC Lens (opened|brought forward)\.$/)
     const kit: any = await ($.command.run as any)({ command: 'ai-dlc:lens-kit', args: '' })
     expect(String(kit?.text)).toMatch(/^Kit pane opened/)
-    expect(opened).toEqual(expect.arrayContaining(['ai-dlc-lens', 'ai-dlc-lens-kit', 'ai-dlc-lens-chart']))
+    expect(opened).toEqual(expect.arrayContaining(['ai-dlc-lens-kit', 'ai-dlc-lens-chart']))
+    // Step 36.2: the round 1 lens card is gone.
+    expect(opened).not.toContain('ai-dlc-lens')
     // Every pane id is a valid PaneOpenArgs.id: 1-64 of letters, digits, _ and - (d.ts:7590).
     for (const id of opened) expect(id).toMatch(/^[A-Za-z0-9_-]{1,64}$/)
   })
@@ -2484,7 +2503,7 @@ describe('/ai-dlc:* commands (step 8.1.4)', () => {
     expect(String(off?.text)).toMatch(/^\.ai-dlc\/lens\.json updated: keepaliveSection = false\. The Cache keep-alive section is hidden/)
     expect(String(off?.text)).toMatch(/Kept warm: 5m 0s \(0 pings, 0 armings\) · 1h 0s \(0 pings, 0 armings\)\./)
     expect(JSON.parse(String(files['.ai-dlc/lens.json'])).keepaliveSection).toBe(false)
-    const lp = await $.ui.mount({ ...pane('ai-dlc-lens'), surface: 'vscode' })
+    const lp = await chartPane($)
     await lp.press({ key: 'agent-a1' })
     await lp.unmount()
     const ag = await $.ui.mount({ ...pane('ai-dlc-lens-agent'), surface: 'vscode' })
@@ -2513,7 +2532,7 @@ describe('/ai-dlc:lens-keepalive: the agent pane section (step 8.1.4)', () => {
     await $.turn.start({ text: 'next', turnId: 'm2' })
     await $.command.run({ command: 'ka2-second' } as never)
     for (const surface of SURFACES) {
-      const lp = await $.ui.mount({ ...pane('ai-dlc-lens'), surface })
+      const lp = await chartPane($, surface)
       await lp.press({ key: 'agent-a1' })
       await lp.unmount()
       const ag = await $.ui.mount({ ...pane('ai-dlc-lens-agent'), surface })
@@ -2534,7 +2553,7 @@ describe('/ai-dlc:lens-keepalive: the agent pane section (step 8.1.4)', () => {
 
   test('without ai-dlc and without prices: zero time, a note, and — for the savings; the pane draws as before', async ($, on) => {
     await seed($, on, { files: { '.ai-dlc/lens.json': JSON.stringify({ collapsedByDefault: false }) } })
-    const lp = await $.ui.mount({ ...pane('ai-dlc-lens'), surface: 'vscode' })
+    const lp = await chartPane($)
     await lp.press({ key: 'agent-a1' })
     await lp.unmount()
     const ag = await $.ui.mount({ ...pane('ai-dlc-lens-agent'), surface: 'vscode' })
@@ -2547,7 +2566,7 @@ describe('/ai-dlc:lens-keepalive: the agent pane section (step 8.1.4)', () => {
 
   test('keepaliveSection false: no section; the other four stay', async ($, on) => {
     await seed($, on, { files: { '.ai-dlc/lens.json': JSON.stringify({ keepaliveSection: false }) } })
-    const lp = await $.ui.mount({ ...pane('ai-dlc-lens'), surface: 'vscode' })
+    const lp = await chartPane($)
     await lp.press({ key: 'agent-a1' })
     await lp.unmount()
     const ag = await $.ui.mount({ ...pane('ai-dlc-lens-agent'), surface: 'vscode' })
@@ -2817,6 +2836,8 @@ describe('step 8.1.5: pane view controls', () => {
     const { opened, closed } = await seed($, on)
     expect(opened).not.toContain(CHART_PANE)
     expect(closed).toContain(CHART_PANE)
+    // Step 36.2, amendment 4: the band appears minimised; /ai-dlc:lens brings its list back (rule 1).
+    await ($.command.run as any)({ command: 'ai-dlc:lens', args: '' })
     const band = () => $.ui.mount({ plugin: PLUGIN, surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 20, bodyColumns: 100, scroll: { offset: 0, bodyRows: 20 }, view: {} } } as any)
     let b = await band()
     expect(await b.find({ type: 'Button', key: 'wf-toolu_1' })).toBeDefined()
@@ -2840,6 +2861,8 @@ describe('step 8.1.5: pane view controls', () => {
     on('ui.render', { component: 'AbovePrompt' }, () => ({ type: 'engine', ref: 0 }) as any)
     on('session.surfaces', () => ({ value: ['terminal'] }))
     await seed($, on)
+    // Step 36.2, amendment 4: the band appears minimised; /ai-dlc:lens brings its list back (rule 1).
+    await ($.command.run as any)({ command: 'ai-dlc:lens', args: '' })
     const b = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 20, bodyColumns: 100, scroll: { offset: 0, bodyRows: 20 }, view: {} } } as any)
     expect(await b.find({ type: 'Button', key: 'wf-toolu_1' })).toBeDefined()
     expect(await b.find({ type: 'Text', text: 'NATIVE ROW' })).toBe(undefined)
@@ -3087,7 +3110,7 @@ describe('step 8.1.6.1: anomaly detection (in the lens)', () => {
 
   test('an agent waiting too long (anomalyWaitingMinutes 0: at once) is red, reported once (clearing: the pure trackWaiting test)', async ($, on) => {
     const { toasts } = await seed($, on, { complete: false, listStatus: 'waiting', files: lensJson({ anomalyWaitingMinutes: 0 }) })
-    await $.ui.mount({ ...pane('ai-dlc-lens'), surface: 'vscode' }).then(async ui => {
+    await chartPane($).then(async ui => {
       await ui.press({ key: 'agent-a1' })
       await ui.unmount()
     })
@@ -3331,7 +3354,7 @@ describe('step 8.1.6.1.l1 addendum A5: one chart per run, whatever session, batc
 })
 
 describe('step 8.1.6.1.l1 addendum A6: Panel Type, drill-in by default', () => {
-  test('no setting: drill-in; the switch reads "Panel Type: ◉ Drill in  ○ Tab" (radio glyphs, 8.1.6.1.l2) in the view and the /ai-dlc:lens pane; Tab switches for the session, never lens.json', async ($, on) => {
+  test('no setting: drill-in; the switch reads "Panel Type: ◉ Drill in  ○ Tab" (radio glyphs, 8.1.6.1.l2) in the view; Tab switches for the session, never lens.json', async ($, on) => {
     const { opened, writes } = await seed($, on, { defaultOpenMode: true })
     expect([DEFAULTS.panelOpenMode, openModeOf('', DEFAULTS.panelOpenMode)]).toEqual(['drill-in', 'drill-in'])
     const wp = await chartPane($, 'vscode')
@@ -3347,9 +3370,9 @@ describe('step 8.1.6.1.l1 addendum A6: Panel Type, drill-in by default', () => {
     await wp.press({ key: 'agent-a1' })
     expect(opened).toContain('ai-dlc-lens-agent')
     await wp.unmount()
-    // The /ai-dlc:lens pane shows the same switch and the same session choice.
-    const lp = await $.ui.mount({ ...pane('ai-dlc-lens'), surface: 'vscode' })
-    expect([(await lp.find({ type: 'Button', key: 'mode-drill' }))?.text, (await lp.find({ type: 'Button', key: 'mode-pane' }))?.text]).toEqual(['○ Drill in', '◉ Tab'])
+    // Step 36.2: the choice holds for the session: the view mounted again still shows Tab.
+    const lp = await chartPane($)
+    expect([(await lp.find({ type: 'Button', key: 'panel-drill-in' }))?.text, (await lp.find({ type: 'Button', key: 'panel-tab' }))?.text]).toEqual(['○ Drill in', '◉ Tab'])
     await lp.unmount()
     expect(writes.filter(w => w.path === '.ai-dlc/lens.json')).toEqual([])
   })
@@ -3385,21 +3408,30 @@ describe('step 8.1.6.1.l1 addendum A7: full screen on every host', () => {
     await ui.unmount()
   })
 
-  test('terminal, pinned: full screen leaves the band for the pane (opened, raised); the band steps aside; restore closes the pane and the band draws again', async ($, on) => {
+  test("terminal, pinned: the band's ⤢ opens the pane and keeps the band (step 36.2.3); the pane's own full screen leaves the band for the pane; the band steps aside; restore closes the pane and the band draws again", async ($, on) => {
     on('session.surfaces', () => ({ value: ['terminal'] }))
     const { openArgs, closed } = await seed($, on)
+    // Step 36.2, amendment 4: the band appears minimised; /ai-dlc:lens brings its list back (rule 1).
+    await ($.command.run as any)({ command: 'ai-dlc:lens', args: '' })
     const band = () => $.ui.mount({ plugin: PLUGIN, surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 20, bodyColumns: 100, scroll: { offset: 0, bodyRows: 20 }, view: {} } } as any)
     let b = await band()
     expect(await b.find({ type: 'Button', key: 'wf-toolu_1' })).toBeDefined()
     await b.press({ key: 'pane-full' })
+    const opened = openArgs.filter((x: any) => x.id === CHART_PANE).at(-1)
+    expect([opened?.id, opened?.focus]).toEqual([CHART_PANE, true])
+    expect(await b.find({ type: 'Button', key: 'wf-toolu_1' })).toBeDefined()
+    await b.unmount()
+    // Addendum A7, from the pane: its own ⤢ is full screen, and the band steps aside.
+    let ui = await $.ui.mount({ ...pane(CHART_PANE, 'dock', 100), surface: 'terminal', viewport: { columns: 200, rows: 50 } })
+    await ui.press({ key: 'pane-full' })
+    await ui.unmount()
     const full = openArgs.filter((x: any) => x.id === CHART_PANE).at(-1)
     expect([full?.id, full?.focus]).toEqual([CHART_PANE, true])
-    await b.unmount()
     b = await band()
     expect(await b.find({ type: 'Button', key: 'pane-full' })).toBe(undefined)
     expect(await b.find({ type: 'Text', text: 'NATIVE ROW' })).toBeDefined()
     await b.unmount()
-    const ui = await $.ui.mount({ ...pane(CHART_PANE, 'dock', 100), surface: 'terminal', viewport: { columns: 200, rows: 50 } })
+    ui = await $.ui.mount({ ...pane(CHART_PANE, 'dock', 100), surface: 'terminal', viewport: { columns: 200, rows: 50 } })
     expect(await ui.find({ type: 'Text', text: /^Full screen: this step only, at the height the terminal gives the pane/ })).toBeDefined()
     const closedBefore = closed.filter(x => x === CHART_PANE).length
     await ui.press({ key: 'pane-full' })
@@ -3441,7 +3473,7 @@ describe('step 8.1.6.1.l2 (full screen since step 8.6.1: the selected step); Pan
     await ui.unmount()
   })
 
-  test('Panel Type: radio glyphs, the current ◉ and the other ○; a press moves the ◉; the same keys in the view and the /ai-dlc:lens pane', async ($, on) => {
+  test('Panel Type: radio glyphs, the current ◉ and the other ○; a press moves the ◉', async ($, on) => {
     const { writes } = await seed($, on, { defaultOpenMode: true })
     const wp = await chartPane($, 'vscode')
     const pair = async (ui: any, a: string, b: string) => [(await ui.find({ type: 'Button', key: a }))?.text, (await ui.find({ type: 'Button', key: b }))?.text]
@@ -3451,11 +3483,6 @@ describe('step 8.1.6.1.l2 (full screen since step 8.6.1: the selected step); Pan
     await wp.press({ key: 'panel-drill-in' })
     expect(await pair(wp, 'panel-drill-in', 'panel-tab')).toEqual(['◉ Drill in', '○ Tab'])
     await wp.unmount()
-    const lp = await $.ui.mount({ ...pane('ai-dlc-lens'), surface: 'vscode' })
-    expect(await pair(lp, 'mode-drill', 'mode-pane')).toEqual(['◉ Drill in', '○ Tab'])
-    await lp.press({ key: 'mode-pane' })
-    expect(await pair(lp, 'mode-drill', 'mode-pane')).toEqual(['○ Drill in', '◉ Tab'])
-    await lp.unmount()
     expect(writes.filter(w => w.path === '.ai-dlc/lens.json')).toEqual([])
   })
 })
@@ -3465,9 +3492,7 @@ describe('step 8.1.6.1: background-task sections collapse (the human\'s bug)', (
     await seed($, on, { complete: false })
     // a1 is listed by $.agent.list() and again in main's Stop background_tasks: the same id twice before the fix.
     await $.classic.Stop({ stop_hook_active: false, background_tasks: [{ id: 'a1', type: 'subagent', status: 'running', description: 'build', agent_type: 'ai-dlc:software-engineer' }, { id: 'b1', type: 'shell', status: 'running', description: 'npm run watch' }] })
-    const lens = await $.ui.mount({ ...pane('ai-dlc-lens'), surface: 'vscode' })
-    await lens.press({ key: 'agent-main' })
-    await lens.unmount()
+    await pressMain($)
     const main = await $.ui.mount({ ...pane('ai-dlc-lens-agent'), surface: 'vscode' })
     await main.press({ key: 'agent-tasks' })
     const taskKeys = async () => ((await main.findAll({ type: 'Button' })) as any[]).map((b: any) => String(b.key)).filter(k => k.startsWith('task-'))
@@ -3952,7 +3977,7 @@ describe('anomaly markers follow the detector in every drawing', () => {
     const passed = hb('passed', 'handoff 17-orchestrator-to-agent-manager.handoff.md: passed — ok')
     const { files } = await seed($, on, { complete: false, clockEvery: h.clockEvery, files: { 'docs/handoffs/R/run.md': RUN_R('build'), [back]: passed } })
     const card = await $.ui.mount(toolRow('toolu_1', 'vscode', SE_INPUT, 'Agent', 500))
-    const lens = await $.ui.mount({ ...pane('ai-dlc-lens'), surface: 'vscode' })
+    const lens = await chartPane($)
     const label = async (ui: any, key: string) => String((await ui.find({ type: 'Button', key }))?.text)
     expect(await label(card, 'card:edge-a1')).toMatch(/^17 /)
     expect(await label(lens, 'edge-a1')).toMatch(/^17 /)
@@ -3974,7 +3999,7 @@ describe('anomaly markers follow the detector in every drawing', () => {
   test('the chat card and the /ai-dlc:lens pane, already mounted, gain the ▲ when an agent fails and lose it when the stage runs again', async ($, on) => {
     await seed($, on, { complete: false, files: { 'docs/handoffs/R/run.md': RUN_R('build') } })
     const card = await $.ui.mount(toolRow('toolu_1', 'vscode', SE_INPUT, 'Agent', 500))
-    const lens = await $.ui.mount({ ...pane('ai-dlc-lens'), surface: 'vscode' })
+    const lens = await chartPane($)
     const label = async (ui: any, key: string) => String((await ui.find({ type: 'Button', key }))?.text)
     expect(await label(card, 'card:agent-a1')).toBe('David Fowler')
     expect(await label(lens, 'agent-a1')).toBe('David Fowler')
@@ -4547,12 +4572,10 @@ describe('step 8.4.1 addendum L1: the live session after the merge (in the lens)
       expect(Number(svg?.props?.width)).toBe(wide * SIZE0.col)
       expect(nodes(String(svg?.props?.source ?? ''))).toBe(43)
       await wp.unmount()
-      const lens = await $.ui.mount({ ...pane('ai-dlc-lens'), surface: 'vscode' })
-      await lens.press({ key: 'lens-settings' })
-      expect(await lens.find({ type: 'Text', text: `chartAvatarsPerRow = ${wide}` })).toBeDefined()
-      const warned = await lens.find({ type: 'Text', text: /^chartAvatarsPerRow = 30 is invalid, ignored$/ })
-      expect(warned !== undefined).toBe(value === 30)
-      await lens.unmount()
+      // Step 36.2: the card's settings section is gone; /ai-dlc:lens-configure lists the value and the warning.
+      const listed = String(((await ($.command.run as any)({ command: 'ai-dlc:lens-configure', args: '' })) as any)?.text)
+      expect(listed).toMatch(new RegExp(`^chartAvatarsPerRow = ${wide} `, 'm'))
+      expect(/chartAvatarsPerRow = 30 is invalid, ignored$/m.test(listed)).toBe(value === 30)
     })
 })
 
@@ -5799,5 +5822,558 @@ describe('step 8.6.5.l1: a run folder with many run-state versions (scanRuns / r
     expect(await ui.find({ type: 'Text', text: 'Step 8 · from run.v3.10.md' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /from (RUN\.V9|run\.v09|run\.v3\.010|run\.v3\.2)\.md/ })).toBe(undefined)
     await ui.unmount()
+  })
+})
+
+// ---------------- step 36.2: one view, /ai-dlc:lens opens it ----------------
+describe('step 36.2: /ai-dlc:lens opens the AI-DLC Lens view; the lens card is gone', () => {
+  const lensCmd = async ($: any): Promise<string> => String(((await ($.command.run as any)({ command: 'ai-dlc:lens', args: '' })) as any)?.text)
+  const chartOpens = (openArgs: any[]) => openArgs.filter((x: any) => x.id === CHART_PANE)
+  /** A second workflow: a new request, then a background spawn (a2) that keeps running. */
+  const spawnLater = async ($: any) => {
+    await $.turn.start({ text: 'and now something else', turnId: 'm2' })
+    await $.tool.call({ tool: 'Agent', subagent_type: 'ai-dlc:sqa-engineer', description: 'later', prompt: 'SQA PROMPT: test the change.', tool_use_id: 'toolu_2' })
+    await $.agent.spawn({ tool_use_id: 'toolu_2', prompt: 'SQA PROMPT: test the change.', description: 'later', subagentType: 'ai-dlc:sqa-engineer', provider: { plugin: 'ai-dlc', tier: 'user' }, parentModel: 'claude-opus-5-5', background: true, fork: false })
+  }
+  const band = ($: any) => $.ui.mount({ plugin: PLUGIN, surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 40, bodyColumns: 120, scroll: { offset: 0, bodyRows: 40 }, view: {} } } as any)
+
+  test('the view is titled "AI-DLC Lens", from the first spawn on; no ai-dlc-lens pane is ever opened', async ($, on) => {
+    const { opened, openArgs } = await seed($, on)
+    expect(chartOpens(openArgs).map((x: any) => x.title)).toEqual(['AI-DLC Lens'])
+    await lensCmd($)
+    expect(chartOpens(openArgs).map((x: any) => x.title)).toEqual(['AI-DLC Lens', 'AI-DLC Lens'])
+    expect(opened).not.toContain('ai-dlc-lens')
+  })
+
+  test('docked: closed, the command opens the view (focused); its reply names AI-DLC Lens and no card', async ($, on) => {
+    const { openArgs } = await seed($, on)
+    const ui = await chartPane($, 'vscode', false)
+    await ui.press({ key: 'pane-close' })
+    await ui.unmount()
+    const before = openArgs.length
+    const text = await lensCmd($)
+    expect(text).toBe('AI-DLC Lens opened.')
+    expect(text).not.toMatch(/card/i)
+    expect(openArgs.slice(before).map((x: any) => [x.id, x.title, x.focus])).toEqual([[CHART_PANE, 'AI-DLC Lens', true]])
+  })
+
+  test('docked: open, the command brings the view forward (focus), and opens no second pane', async ($, on) => {
+    const { openArgs, opened } = await seed($, on)
+    const before = openArgs.length
+    expect(await lensCmd($)).toBe('AI-DLC Lens brought forward.')
+    expect(openArgs.slice(before).map((x: any) => [x.id, x.focus])).toEqual([[CHART_PANE, true]])
+    expect(new Set(opened)).toEqual(new Set([CHART_PANE]))
+  })
+
+  /** Whether the band draws its list (the first workflow's panel Button), or only its minimised line. */
+  const listed = async ($: any): Promise<boolean> => {
+    const b = await band($)
+    const x = await b.find({ type: 'Button', key: 'wf-toolu_1' })
+    await b.unmount()
+    return x !== undefined
+  }
+
+  test('amendment 4, point 1: the band appears minimised at the first spawn; the band is drawn, as one line', async ($, on) => {
+    on('session.surfaces', () => ({ value: ['terminal'] }))
+    const { openArgs } = await seed($, on, { complete: false })
+    expect(chartOpens(openArgs)).toEqual([])
+    const b = await band($)
+    expect(await b.find({ type: 'Button', key: 'wf-toolu_1' })).toBe(undefined)
+    expect((await b.find({ type: 'Button', key: 'pane-min' }))?.props?.label).toBe('□')
+    await b.unmount()
+  })
+
+  test('amendment 4, point 1: a band in list view starts minimised again at the next load (session.start)', async ($, on) => {
+    on('session.surfaces', () => ({ value: ['terminal'] }))
+    await seed($, on, { complete: false })
+    await lensCmd($)
+    expect(await listed($)).toBe(true)
+    await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+    expect(await listed($)).toBe(false)
+  })
+
+  test('amendment 4, point 1: docked -> pinned: the band appears minimised and the pane closes', async ($, on) => {
+    on('session.surfaces', () => ({ value: ['terminal'] }))
+    const { closed } = await seed($, on, { complete: false })
+    await lensCmd($)
+    const b = await band($)
+    await b.press({ key: 'pane-place' })
+    await b.unmount()
+    const wp = await chartPane($, 'terminal', false)
+    const closes = closed.length
+    await wp.press({ key: 'pane-place' })
+    await wp.unmount()
+    expect(closed.slice(closes)).toEqual([CHART_PANE])
+    expect(await listed($)).toBe(false)
+  })
+
+  test('amendment 4, point 2: while a workflow is in progress the band has no close (×), minimised or in list view, and the command cycle never closes it', async ($, on) => {
+    on('session.surfaces', () => ({ value: ['terminal'] }))
+    await seed($, on, { complete: false })
+    let b = await band($)
+    expect(await b.find({ type: 'Button', key: 'pane-close' })).toBe(undefined)
+    await b.unmount()
+    for (let i = 0; i < 4; i++) {
+      await lensCmd($)
+      b = await band($)
+      expect(await b.find({ type: 'Button', key: 'pane-min' })).toBeDefined()
+      expect(await b.find({ type: 'Button', key: 'pane-close' })).toBe(undefined)
+      await b.unmount()
+    }
+  })
+
+  test('amendment 6, point 1: □ on the minimised band brings back its list; no pane opens or closes', async ($, on) => {
+    on('session.surfaces', () => ({ value: ['terminal'] }))
+    const { openArgs, closed } = await seed($, on, { complete: false })
+    const before = { opens: openArgs.length, closes: closed.length }
+    const b = await band($)
+    expect((await b.find({ type: 'Button', key: 'pane-min' }))?.props?.label).toBe('□')
+    await b.press({ key: 'pane-min' })
+    expect(await b.find({ type: 'Button', key: 'wf-toolu_1' })).toBeDefined()
+    await b.unmount()
+    expect(chartOpens(openArgs.slice(before.opens))).toEqual([])
+    expect(closed.slice(before.closes).filter(x => x === CHART_PANE)).toEqual([])
+  })
+
+  test('amendment 6, point 1: with the pane open beside the band, □ brings back the band\'s list and leaves the pane open on its workflow', async ($, on) => {
+    on('session.surfaces', () => ({ value: ['terminal'] }))
+    const { openArgs, closed } = await seed($, on, { complete: false })
+    await lensCmd($) // rule 1
+    await lensCmd($) // rule 2: the pane open, the band minimised
+    const before = { opens: openArgs.length, closes: closed.length }
+    const b = await band($)
+    await b.press({ key: 'pane-min' })
+    expect(await b.find({ type: 'Button', key: 'wf-toolu_1' })).toBeDefined()
+    await b.unmount()
+    expect(chartOpens(openArgs.slice(before.opens))).toEqual([])
+    expect(closed.slice(before.closes).filter(x => x === CHART_PANE)).toEqual([])
+    const wp = await chartPane($, 'terminal', false)
+    expect(await wp.find({ type: 'Button', key: 'agent-a1' })).toBeDefined()
+    await wp.unmount()
+  })
+
+  test('amendment 6, point 2: ⤢ on the minimised band opens the pane, focused, on the latest in-progress workflow; the band stays drawn and minimised', async ($, on) => {
+    on('session.surfaces', () => ({ value: ['terminal'] }))
+    const { openArgs, closed } = await seed($, on, { complete: false })
+    const before = { opens: openArgs.length, closes: closed.length }
+    const b = await band($)
+    await b.press({ key: 'pane-full' })
+    expect(await b.find({ type: 'Button', key: 'pane-place' })).toBeDefined()
+    expect((await b.find({ type: 'Button', key: 'pane-min' }))?.props?.label).toBe('□')
+    expect(await b.find({ type: 'Button', key: 'wf-toolu_1' })).toBe(undefined)
+    await b.unmount()
+    expect(chartOpens(openArgs.slice(before.opens)).map((x: any) => [x.title, x.focus, x.rows ?? null])).toEqual([['AI-DLC Lens', true, null]])
+    expect(closed.slice(before.closes).filter(x => x === CHART_PANE)).toEqual([])
+    const wp = await chartPane($, 'terminal', false)
+    expect(await wp.find({ type: 'Button', key: 'agent-a1' })).toBeDefined()
+    await wp.unmount()
+  })
+
+  test('amendment 6, point 2: ⤢ on the band in list view opens the pane and keeps the list; with the pane on an older workflow it switches to the latest', async ($, on) => {
+    on('session.surfaces', () => ({ value: ['terminal'] }))
+    const { openArgs } = await seed($, on, { complete: false, request: 'Ship it' })
+    await lensCmd($) // rule 1: the list
+    let b = await band($)
+    await b.press({ key: 'pane-full' })
+    expect(await b.find({ type: 'Button', key: 'wf-toolu_1' })).toBeDefined()
+    await b.unmount()
+    let wp = await chartPane($, 'terminal', false)
+    expect(await wp.find({ type: 'Button', key: 'agent-a1' })).toBeDefined()
+    await wp.unmount()
+    await spawnLater($)
+    const before = openArgs.length
+    b = await band($)
+    await b.press({ key: 'pane-full' })
+    expect(await b.find({ type: 'Button', key: 'wf-toolu_1' })).toBeDefined()
+    await b.unmount()
+    expect(chartOpens(openArgs.slice(before)).map((x: any) => x.focus)).toEqual([true])
+    wp = await chartPane($, 'terminal', false)
+    expect(await wp.find({ type: 'Button', key: 'toolu_2:agent-a2' })).toBeDefined()
+    expect(await wp.find({ type: 'Button', key: 'toolu_1:agent-a1' })).toBe(undefined)
+    await wp.unmount()
+    expect(await listed($)).toBe(true)
+  })
+
+  test('amendment 6, point 2: no workflow in progress: ⤢ on the band opens the pane on the most recent one; the band keeps its size', async ($, on) => {
+    on('session.surfaces', () => ({ value: ['terminal'] }))
+    const { openArgs } = await seed($, on)
+    const b = await band($)
+    await b.press({ key: 'pane-full' })
+    await b.unmount()
+    expect(chartOpens(openArgs).map((x: any) => x.focus)).toEqual([true])
+    expect(await listed($)).toBe(false)
+  })
+
+  test("amendment 6, point 2: a step chart's ⤢ on the band opens the pane on that workflow and never hides the band", async ($, on) => {
+    on('session.surfaces', () => ({ value: ['terminal'] }))
+    const { openArgs } = await seed($, on, { complete: false })
+    await lensCmd($) // rule 1: the list
+    const b = await band($)
+    const keys: string[] = (await b.findAll({ type: 'Button' })).map((x: any) => String(x.key ?? x.props?.key ?? ''))
+    const stepFull = keys.find(k => k.endsWith('step-full'))
+    expect(stepFull).toBeDefined()
+    const before = openArgs.length
+    await b.press({ key: stepFull! })
+    expect(await b.find({ type: 'Button', key: 'wf-toolu_1' })).toBeDefined()
+    await b.unmount()
+    expect(chartOpens(openArgs.slice(before)).map((x: any) => [x.focus, x.rows ?? null])).toEqual([[true, null]])
+  })
+
+  test('amendment 6, point 3 (pure, bandLineOf): the newest in progress with the count; else the first waiting, then pending, then halted; all completed: the newest; none: null', () => {
+    const f = (w: string, status: string) => ({ w, info: { status } }) as any
+    expect(bandLineOf([])).toBe(null)
+    expect(bandLineOf([f('a', 'waiting'), f('b', 'in-progress'), f('c', 'in-progress')])).toEqual({ flow: f('b', 'in-progress'), live: 2 })
+    expect(bandLineOf([f('a', 'halted'), f('b', 'pending'), f('c', 'waiting')])).toEqual({ flow: f('c', 'waiting'), live: 0 })
+    expect(bandLineOf([f('a', 'halted'), f('b', 'pending'), f('c', 'completed')])).toEqual({ flow: f('b', 'pending'), live: 0 })
+    expect(bandLineOf([f('a', 'completed'), f('b', 'halted')])).toEqual({ flow: f('b', 'halted'), live: 0 })
+    expect(bandLineOf([f('a', 'completed'), f('b', 'completed')])).toEqual({ flow: f('a', 'completed'), live: 0 })
+  })
+
+  test('amendment 6, point 3: workflows in progress: the minimised band is one line, the latest in-progress workflow and "(2)"', async ($, on) => {
+    on('session.surfaces', () => ({ value: ['terminal'] }))
+    await seed($, on, { complete: false, request: 'Ship it' })
+    await spawnLater($)
+    const b = await band($)
+    expect(await b.find({ type: 'Button', key: 'wf-toolu_1' })).toBe(undefined)
+    expect(await b.find({ type: 'Text', text: /^and now something else/ })).toBeDefined()
+    expect(await b.find({ type: 'Text', text: /^Ship it/ })).toBe(undefined)
+    expect(await b.find({ type: 'Text', text: /^\(2\)$/ })).toBeDefined()
+    await b.unmount()
+  })
+
+  test('amendment 6, point 3: none in progress: one line naming the workflow, no count', async ($, on) => {
+    on('session.surfaces', () => ({ value: ['terminal'] }))
+    await seed($, on, { request: 'Ship it' })
+    const b = await band($)
+    expect(await b.find({ type: 'Text', text: /^Ship it/ })).toBeDefined()
+    expect(await b.find({ type: 'Text', text: /^\(\d+\)$/ })).toBe(undefined)
+    await b.unmount()
+  })
+
+  test('amendment 6, point 3: no workflow at all: the band is drawn, minimised, reading "Nothing Here"', async ($, on) => {
+    on('session.surfaces', () => ({ value: ['terminal'] }))
+    on('session.start', (_: unknown, e: any) => ({ cwd: e.cwd }))
+    on('ui.close', () => ({ value: undefined }))
+    on('ui.render', ($s: any, e: any) => {
+      const { Text } = $s.ui.resolve(e)
+      return <Text>NATIVE ROW</Text>
+    })
+    await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+    const b = await band($)
+    expect(await b.find({ type: 'Text', text: 'Nothing Here' })).toBeDefined()
+    expect((await b.find({ type: 'Button', key: 'pane-min' }))?.props?.label).toBe('□')
+    await b.unmount()
+  })
+
+  test('amendment 7: an old "AI-DLC lens" card (pane ai-dlc-lens) left open is closed at load; the command closes it again before the view opens, and never opens it', async ($, on) => {
+    on('session.surfaces', () => ({ value: ['vscode'] }))
+    const { events, openNow, opened } = await seed($, on, { openAtStart: ['ai-dlc-lens'] })
+    expect(events.indexOf('close:ai-dlc-lens')).toBeGreaterThanOrEqual(0)
+    expect(openNow.has('ai-dlc-lens')).toBe(false)
+    const before = events.length
+    await lensCmd($)
+    const now = events.slice(before)
+    expect(now[0]).toBe('close:ai-dlc-lens')
+    expect(now.indexOf('open:ai-dlc-lens-chart')).toBeGreaterThan(0)
+    expect(opened).not.toContain('ai-dlc-lens')
+  })
+
+  test("amendment 5, point 2: the band takes its body's full width (a Box of bodyColumns around the view), minimised and in list view, also over core's engine node", async ($, on) => {
+    on('ui.render', { component: 'AbovePrompt' }, () => ({ type: 'engine', ref: 0 }) as any)
+    on('session.surfaces', () => ({ value: ['terminal'] }))
+    await seed($, on, { complete: false })
+    const wide = async () => {
+      const b = await band($)
+      const all = await b.findAll({})
+      const box = all.find((x: any) => x.type === 'Box' && x.props?.width === 120)
+      const controls = await b.find({ type: 'Button', key: 'pane-place' })
+      await b.unmount()
+      return [box !== undefined, controls !== undefined]
+    }
+    expect(await wide()).toEqual([true, true])
+    await lensCmd($)
+    expect(await listed($)).toBe(true)
+    expect(await wide()).toEqual([true, true])
+  })
+
+  test('band, rule 1: the band minimised: the command restores its list view, and opens no pane', async ($, on) => {
+    on('session.surfaces', () => ({ value: ['terminal'] }))
+    const { openArgs } = await seed($, on, { complete: false })
+    expect(await listed($)).toBe(false)
+    const before = openArgs.length
+    expect(await lensCmd($)).toBe("AI-DLC Lens: the band's list view is restored.")
+    expect(await listed($)).toBe(true)
+    expect(chartOpens(openArgs.slice(before))).toEqual([])
+  })
+
+  test('band, rule 2 (amendment 4): the band in list view and no pane: the pane opens, focused, on the latest in-progress workflow, and the band is minimised', async ($, on) => {
+    on('session.surfaces', () => ({ value: ['terminal'] }))
+    const { openArgs, closed } = await seed($, on, { complete: false })
+    expect(closed).toContain(CHART_PANE)
+    await lensCmd($)
+    const before = openArgs.length
+    expect(await lensCmd($)).toMatch(/^AI-DLC Lens: the pane opened on the latest in-progress workflow, .+; the band is minimised\.$/)
+    expect(chartOpens(openArgs.slice(before)).map((x: any) => [x.title, x.focus])).toEqual([['AI-DLC Lens', true]])
+    expect(await listed($)).toBe(false)
+    const wp = await chartPane($, 'terminal', false)
+    expect(await wp.find({ type: 'Button', key: 'agent-a1' })).toBeDefined()
+    await wp.unmount()
+  })
+
+  test('band, rule 3: the pane open on an older workflow: it switches to the latest in-progress one', async ($, on) => {
+    on('session.surfaces', () => ({ value: ['terminal'] }))
+    const { openArgs } = await seed($, on, { complete: false, request: 'Ship it' })
+    await lensCmd($) // rule 1
+    await lensCmd($) // rule 2: the pane on the first workflow, the band minimised
+    // A newer workflow starts while the pane shows the first one.
+    await spawnLater($)
+    let wp = await chartPane($, 'terminal', false)
+    expect(await wp.find({ type: 'Button', key: 'toolu_1:agent-a1' })).toBeDefined()
+    await wp.unmount()
+    expect(await lensCmd($)).toBe("AI-DLC Lens: the band's list view is restored.")
+    const before = openArgs.length
+    expect(await lensCmd($)).toMatch(/^AI-DLC Lens: the pane switched to the latest in-progress workflow, and now something else\.$/)
+    expect(chartOpens(openArgs.slice(before)).map((x: any) => x.focus)).toEqual([true])
+    expect(await listed($)).toBe(true)
+    wp = await chartPane($, 'terminal', false)
+    expect(await wp.find({ type: 'Button', key: 'toolu_2:agent-a2' })).toBeDefined()
+    expect(await wp.find({ type: 'Button', key: 'toolu_1:agent-a1' })).toBe(undefined)
+    await wp.unmount()
+  })
+
+  test('band, rule 4 (amendment 3): the pane already on the latest: the band is minimised, the pane stays open on the latest in-progress workflow; each further run toggles the band', async ($, on) => {
+    on('session.surfaces', () => ({ value: ['terminal'] }))
+    const { openArgs, closed } = await seed($, on, { complete: false })
+    await lensCmd($) // rule 1
+    await lensCmd($) // rule 2
+    expect(await lensCmd($)).toBe("AI-DLC Lens: the band's list view is restored.")
+    const before = { opens: openArgs.length, closes: closed.length }
+    expect(await lensCmd($)).toMatch(/^AI-DLC Lens: the band is minimised; the pane stays open on the latest in-progress workflow, .+\.$/)
+    expect(chartOpens(openArgs.slice(before.opens))).toEqual([])
+    expect(closed.slice(before.closes).filter(x => x === CHART_PANE)).toEqual([])
+    expect(await listed($)).toBe(false)
+    // The pane is not minimised: it still draws the workflow's list and its agents, and has no minimise of its own.
+    const wp = await chartPane($, 'terminal', false)
+    expect(await wp.find({ type: 'Button', key: 'wf-toolu_1' })).toBeDefined()
+    expect(await wp.find({ type: 'Button', key: 'agent-a1' })).toBeDefined()
+    expect(await wp.find({ type: 'Button', key: 'pane-min' })).toBe(undefined)
+    await wp.unmount()
+    // The next run is rule 1 again: the band restored, the pane left as it is.
+    expect(await lensCmd($)).toBe("AI-DLC Lens: the band's list view is restored.")
+    expect(closed.slice(before.closes).filter(x => x === CHART_PANE)).toEqual([])
+  })
+
+  test("amendment 3: the band's own minimise (–) leaves the pane open on the latest in-progress workflow, and the band's selection never moves the pane", async ($, on) => {
+    on('session.surfaces', () => ({ value: ['terminal'] }))
+    const { openArgs, closed } = await seed($, on, { complete: false, request: 'Ship it' })
+    await spawnLater($)
+    await lensCmd($) // rule 1
+    // Rule 2: the pane opens on the latest in-progress workflow (the second).
+    expect(await lensCmd($)).toMatch(/^AI-DLC Lens: the pane opened on the latest in-progress workflow, and now something else; the band is minimised\.$/)
+    await lensCmd($) // rule 1: the band's list again
+    const before = { opens: openArgs.length, closes: closed.length }
+    const b = await band($)
+    // The band shows the older workflow, then is minimised with its own button.
+    await b.press({ key: 'wf-show-toolu_1' })
+    await b.press({ key: 'pane-min' })
+    expect(await b.find({ type: 'Button', key: 'wf-toolu_1' })).toBe(undefined)
+    await b.unmount()
+    expect(closed.slice(before.closes).filter(x => x === CHART_PANE)).toEqual([])
+    expect(chartOpens(openArgs.slice(before.opens))).toEqual([])
+    const wp = await chartPane($, 'terminal', false)
+    expect(await wp.find({ type: 'Button', key: 'toolu_2:agent-a2' })).toBeDefined()
+    expect(await wp.find({ type: 'Button', key: 'toolu_1:agent-a1' })).toBe(undefined)
+    await wp.unmount()
+  })
+
+  test('band, no workflow in progress: the most recent one, and the reply says none is in progress', async ($, on) => {
+    on('session.surfaces', () => ({ value: ['terminal'] }))
+    await seed($, on)
+    await lensCmd($) // rule 1
+    expect(await lensCmd($)).toMatch(/^AI-DLC Lens: the pane opened on the most recent workflow, .* \(none is in progress\); the band is minimised\.$/)
+  })
+})
+
+// ---------------- step 36.3: gaps found tracing step 36.2 ----------------
+describe('step 36.3: old view state, docked mode, and a place switch with the pane open', () => {
+  const lensCmd = async ($: any): Promise<string> => String(((await ($.command.run as any)({ command: 'ai-dlc:lens', args: '' })) as any)?.text)
+  const chartOpens = (openArgs: any[]) => openArgs.filter((x: any) => x.id === CHART_PANE)
+  const band = ($: any) => $.ui.mount({ plugin: PLUGIN, surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 40, bodyColumns: 120, scroll: { offset: 0, bodyRows: 40 }, view: {} } } as any)
+  const spawnLater = async ($: any) => {
+    await $.turn.start({ text: 'and now something else', turnId: 'm2' })
+    await $.tool.call({ tool: 'Agent', subagent_type: 'ai-dlc:sqa-engineer', description: 'later', prompt: 'SQA PROMPT: test the change.', tool_use_id: 'toolu_2' })
+    await $.agent.spawn({ tool_use_id: 'toolu_2', prompt: 'SQA PROMPT: test the change.', description: 'later', subagentType: 'ai-dlc:sqa-engineer', provider: { plugin: 'ai-dlc', tier: 'user' }, parentModel: 'claude-opus-5-5', background: true, fork: false })
+  }
+  const DOCKED = { '.ai-dlc/lens.json': JSON.stringify({ workflowPlace: 'docked', panelOpenMode: 'tab' }) }
+
+  test('paneViewOf: state saved before step 36.2 has no pane, so the pane shows the band\'s run; an empty pane is the same; the size is always normal and nothing is kept to restore', () => {
+    const old = { place: 'pinned', size: 'minimised', prev: ['normal'], selected: 'w1' }
+    expect(paneViewOf(old)).toEqual({ place: 'pinned', size: 'normal', prev: [], selected: 'w1' })
+    expect(paneViewOf({ ...old, pane: '' }).selected).toBe('w1')
+    expect(paneViewOf({ ...old, pane: 'w2' })).toEqual({ place: 'pinned', size: 'normal', prev: [], selected: 'w2', pane: 'w2' })
+    expect(paneViewOf({ ...old, size: 'fullscreen', prev: ['normal', 'minimised'] }).size).toBe('normal')
+  })
+
+  test('docked: the band rules do not apply: the pane opens at its normal size on the first spawn, keeps – and ×, stays so after a new load, and the command only raises it', async ($, on) => {
+    on('session.surfaces', () => ({ value: ['terminal'] }))
+    const { openArgs, closed } = await seed($, on, { complete: false, files: DOCKED })
+    expect(chartOpens(openArgs).map((x: any) => [x.title, x.rows ?? null])).toEqual([['AI-DLC Lens', null]])
+    const state = async () => {
+      const ui = await chartPane($, 'terminal', false)
+      const r = [(await ui.find({ type: 'Button', key: 'pane-min' }))?.props?.label, (await ui.find({ type: 'Button', key: 'pane-close' })) !== undefined, (await ui.find({ type: 'Button', key: 'wf-toolu_1' })) !== undefined]
+      await ui.unmount()
+      return r
+    }
+    expect(await state()).toEqual(['–', true, true])
+    await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+    expect(await state()).toEqual(['–', true, true])
+    const before = { opens: openArgs.length, closes: closed.filter(x => x === CHART_PANE).length }
+    expect(await lensCmd($)).toBe('AI-DLC Lens brought forward.')
+    expect(await lensCmd($)).toBe('AI-DLC Lens brought forward.')
+    expect(chartOpens(openArgs.slice(before.opens)).map((x: any) => x.focus)).toEqual([true, true])
+    expect(closed.filter(x => x === CHART_PANE).length).toBe(before.closes)
+    expect(await state()).toEqual(['–', true, true])
+    // Amendment 8: docked with a workflow in progress, the band is still drawn above the prompt, minimised, with no x.
+    const b = await band($)
+    expect((await b.find({ type: 'Button', key: 'pane-min' }))?.props?.label).toBe('□')
+    expect(await b.find({ type: 'Button', key: 'band-close' })).toBe(undefined)
+    expect(await b.find({ type: 'Button', key: 'pane-close' })).toBe(undefined)
+    await b.unmount()
+  })
+
+  test('docked, nothing in progress: no band above the prompt', async ($, on) => {
+    on('session.surfaces', () => ({ value: ['terminal'] }))
+    await seed($, on, { files: DOCKED })
+    const b = await band($)
+    expect(await b.find({ type: 'Button', key: 'pane-min' })).toBe(undefined)
+    expect(await b.find({ type: 'Button', key: 'wf-toolu_1' })).toBe(undefined)
+    expect(await b.find({ type: 'Text', text: 'NATIVE ROW' })).toBeDefined()
+    await b.unmount()
+  })
+
+  test("amendment 8a, docked with work in progress: the band's □ and – change only the band, never the docked pane's size; its ⤢ focuses the docked pane", async ($, on) => {
+    on('session.surfaces', () => ({ value: ['terminal'] }))
+    const { openArgs } = await seed($, on, { complete: false, files: DOCKED })
+    const paneMin = async () => {
+      const ui = await chartPane($, 'terminal', false)
+      const r = (await ui.find({ type: 'Button', key: 'pane-min' }))?.props?.label
+      await ui.unmount()
+      return r
+    }
+    let b = await band($)
+    await b.press({ key: 'pane-min' }) // □: the band's list
+    await b.unmount()
+    b = await band($)
+    expect((await b.find({ type: 'Button', key: 'pane-min' }))?.props?.label).toBe('–')
+    expect(await b.find({ type: 'Button', key: 'wf-toolu_1' })).toBeDefined()
+    expect(await paneMin()).toBe('–')
+    await b.press({ key: 'pane-min' }) // –: the band minimised again
+    await b.unmount()
+    b = await band($)
+    expect((await b.find({ type: 'Button', key: 'pane-min' }))?.props?.label).toBe('□')
+    expect(await paneMin()).toBe('–')
+    const before = openArgs.length
+    await b.press({ key: 'pane-full' })
+    await b.unmount()
+    const o = chartOpens(openArgs.slice(before)).at(-1)
+    expect([o?.id, o?.focus]).toEqual([CHART_PANE, true])
+    expect(await paneMin()).toBe('–')
+  })
+
+  test('amendment 8b: the band has x (band-close) only while no workflow is in progress; pressing it passes the band; /ai-dlc:lens, a new session or a new spawn brings it back', async ($, on) => {
+    on('session.surfaces', () => ({ value: ['terminal'] }))
+    await seed($, on) // the workflow completed
+    const shown = async () => {
+      const b = await band($)
+      const r = [(await b.find({ type: 'Button', key: 'band-close' }))?.props?.label, (await b.find({ type: 'Button', key: 'pane-min' })) !== undefined]
+      await b.unmount()
+      return r
+    }
+    expect(await shown()).toEqual(['×', true])
+    let b = await band($)
+    await b.press({ key: 'band-close' })
+    await b.unmount()
+    expect(await shown()).toEqual([undefined, false])
+    await lensCmd($)
+    expect(await shown()).toEqual(['×', true])
+    b = await band($)
+    await b.press({ key: 'band-close' })
+    await b.unmount()
+    expect(await shown()).toEqual([undefined, false])
+    await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+    expect(await shown()).toEqual(['×', true])
+    b = await band($)
+    await b.press({ key: 'band-close' })
+    await b.unmount()
+    await spawnLater($)
+    const again = await band($)
+    expect(await again.find({ type: 'Button', key: 'pane-min' })).toBeDefined()
+    expect(await again.find({ type: 'Button', key: 'band-close' })).toBe(undefined) // a workflow is in progress again
+    await again.unmount()
+  })
+
+  test('amendment 8b: with a workflow in progress the band has no x', async ($, on) => {
+    on('session.surfaces', () => ({ value: ['terminal'] }))
+    await seed($, on, { complete: false })
+    const b = await band($)
+    expect(await b.find({ type: 'Button', key: 'band-close' })).toBe(undefined)
+    await b.unmount()
+  })
+
+  test('finding 36.3-F3: the old card is closed from the band render, once per load, never on every render', async ($, on) => {
+    on('session.surfaces', () => ({ value: ['terminal'] }))
+    const { events } = await seed($, on, { complete: false })
+    const closes = () => events.filter((e: string) => e === 'close:ai-dlc-lens').length
+    const base = closes()
+    for (let i = 0; i < 3; i++) await (await band($)).unmount()
+    expect(closes() - base).toBe(1)
+    const after = closes()
+    for (let i = 0; i < 3; i++) await (await band($)).unmount()
+    expect(closes()).toBe(after)
+  })
+
+  test('dockedFromBand / dockedBandViewOf (pure): the docked pane is at normal size with nothing to restore and no stale pane; the band keeps its own size', () => {
+    const v: any = { place: 'pinned', size: 'minimised', prev: ['normal'], selected: 'w1', pane: 'w2' }
+    expect(dockedFromBand(v, true)).toEqual({ place: 'pinned', size: 'normal', prev: [], selected: 'w2', band: 'minimised' })
+    expect(dockedFromBand(v, false)).toEqual({ place: 'pinned', size: 'normal', prev: [], selected: 'w1', band: 'minimised' })
+    expect(dockedFromBand({ place: 'pinned', size: 'normal', prev: [], selected: 'w1' } as any, false).band).toBe('normal')
+    expect(dockedBandViewOf({ place: 'docked', size: 'fullscreen', prev: ['normal'], selected: 'w1' } as any)).toEqual({ place: 'docked', size: 'minimised', prev: [], selected: 'w1' })
+    expect(dockedBandViewOf({ place: 'docked', size: 'minimised', prev: [], selected: 'w1', band: 'normal' } as any).size).toBe('normal')
+  })
+
+  test('docked: ⤢ on the pane is full screen (the pane asks the whole viewport), not the band\'s expand; – minimises the pane itself', async ($, on) => {
+    on('session.surfaces', () => ({ value: ['terminal'] }))
+    const { openArgs } = await seed($, on, { complete: false, files: DOCKED })
+    const ui = await $.ui.mount({ ...pane(CHART_PANE, 'dock', 100), surface: 'terminal', viewport: { columns: 200, rows: 50 } })
+    await ui.press({ key: 'pane-full' })
+    const full = chartOpens(openArgs).at(-1)
+    expect([full?.rows, full?.columns, full?.focus]).toEqual([50, 200, true])
+    await ui.press({ key: 'pane-restore' })
+    await ui.press({ key: 'pane-min' })
+    expect(await ui.find({ type: 'Button', key: 'wf-toolu_1' })).toBe(undefined)
+    expect((await ui.find({ type: 'Button', key: 'pane-min' }))?.props?.label).toBe('□')
+    await ui.unmount()
+  })
+
+  test('pinned band with the pane open beside it, then the place switched to docked: the pane is not closed and is drawn in full as the docked pane', async ($, on) => {
+    on('session.surfaces', () => ({ value: ['terminal'] }))
+    const { openArgs, closed } = await seed($, on, { complete: false })
+    await lensCmd($) // rule 1: the list
+    await lensCmd($) // rule 2: the pane opens, the band is minimised
+    const b = await band($)
+    expect((await b.find({ type: 'Button', key: 'pane-min' }))?.props?.label).toBe('□')
+    const before = { opens: openArgs.length, closes: closed.filter(x => x === CHART_PANE).length }
+    await b.press({ key: 'pane-place' })
+    await b.unmount()
+    expect(closed.filter(x => x === CHART_PANE).length).toBe(before.closes)
+    expect(chartOpens(openArgs.slice(before.opens)).length).toBeGreaterThan(0)
+    // The pane is the docked pane of the same run, drawn in full (finding 36.3-F1): "–", the run's buttons.
+    const wp = await chartPane($, 'terminal')
+    expect((await wp.find({ type: 'Button', key: 'pane-place' }))?.props?.label).toBe('docked')
+    expect((await wp.find({ type: 'Button', key: 'pane-min' }))?.props?.label).toBe('–')
+    expect(await wp.find({ type: 'Button', key: 'pane-restore' })).toBe(undefined)
+    expect(await wp.find({ type: 'Button', key: 'wf-toolu_1' })).toBeDefined()
+    expect((await wp.find({ type: 'Button', key: 'agent-a1' }))?.text).toBe('David Fowler')
+    await wp.unmount()
   })
 })
