@@ -1,13 +1,14 @@
 import { describe, expect, mock, test } from 'claude-code/testing'
 import type { Call } from '../hooks/transcripts'
 
-// The Cache Lab accordion of the lens pane (cache-lab spec: AC-22.2.1, 22.2.12, 22.2.13, 22.1.5, 22.4, 22.7, 22.8;
-// ITEM-070 to 074 and 077). The engine is stubbed at its edges: `process.run` answers the transcript reader's
+// The Cache Lab accordion of the agent panel (cache-lab spec: AC-22.2.1, 22.2.12, 22.2.13, 22.1.5, 22.4, 22.7, 22.8;
+// ITEM-070 to 074 and 077; step 42 moved it from the lens view's head into the agent panel, opened from an avatar). The engine is stubbed at its edges: `process.run` answers the transcript reader's
 // `list` and `read` from calls built here (the reader itself is tested by tests/cache-reader/), the price file is
 // a fixture, and keep-alive's published value comes from `state.get`.
 
 const DAY = 86_400_000
 const PANE = 'ai-dlc-lens-chart'
+const AGENT_PANE = 'ai-dlc-lens-agent'
 const FOLDER = '/home/test/.claude/projects/p'
 const M = 'fixture-model-m'
 const N = 'fixture-model-n'
@@ -42,12 +43,25 @@ function calls(now: number): Call[] {
   ]
 }
 
-type Stub = { readerRuns: string[][]; fileWrites: string[]; stores: Map<string, unknown>; storeWrites: string[] }
+type Stub = { readerRuns: string[][]; fileWrites: string[]; stores: Map<string, unknown>; storeWrites: string[]; commands: { command: string; args: string }[] }
 
-function engine(on: any, o: { now?: number; prices?: string | null; chain?: { id: string; sessions: string[] } | null | (() => { id: string; sessions: string[] } | null); files?: Record<string, string>; keepalive?: unknown; calls?: Call[]; readerError?: string; exitCode?: number; env?: Record<string, string> } = {}): Stub {
+// Step 42: the lens opens an avatar as a tab (the panel is mounted by id), as the lens tests' `seed` does.
+const withTabMode = (files: Record<string, string> = {}): Record<string, string> => {
+  let json: Record<string, unknown> = {}
+  try {
+    json = files['.ai-dlc/lens.json'] === undefined ? {} : JSON.parse(files['.ai-dlc/lens.json'])
+  } catch {
+    json = {}
+  }
+  return { ...files, '.ai-dlc/lens.json': JSON.stringify({ panelOpenMode: 'tab', ...json }) }
+}
+
+function engine(on: any, o: { now?: number; prices?: string | null; chain?: { id: string; sessions: string[] } | null | (() => { id: string; sessions: string[] } | null); files?: Record<string, string>; keepalive?: unknown; onCommand?: (e: { command: string; args: string }) => void; calls?: Call[]; readerError?: string; exitCode?: number; env?: Record<string, string> } = {}): Stub {
   const now = o.now ?? Date.now()
   const all = o.calls ?? calls(now)
-  const stub: Stub = { readerRuns: [], fileWrites: [], stores: new Map(), storeWrites: [] }
+  const stub: Stub = { readerRuns: [], fileWrites: [], stores: new Map(), storeWrites: [], commands: [] }
+  const files = withTabMode(o.files)
+  const published = () => (typeof o.keepalive === 'function' ? (o.keepalive as () => unknown)() : o.keepalive)
   const bySession = new Map<string, Call[]>()
   for (const x of all) bySession.set(x.session, [...(bySession.get(x.session) ?? []), x])
   const rels = [...bySession.keys()].map(s => `${s}.jsonl`)
@@ -67,7 +81,7 @@ function engine(on: any, o: { now?: number; prices?: string | null; chain?: { id
   on('store.get', (_: unknown, e: any) => ({ value: stub.stores.get(e.key) }))
   on('store.set', (_: unknown, e: any) => (stub.stores.set(e.key, e.value), stub.storeWrites.push(e.key), { value: undefined }))
   // keep-alive's published value; any other state key (the lens's own atoms) is the engine's
-  on('state.get', (_: unknown, e: any, next: any) => (e.plugin === 'ai-dlc' && e.key === 'keepalive' ? { value: { value: ((c: any) => (c === null || c === undefined ? o.keepalive : { ...((o.keepalive as object) ?? {}), chain: c }))(typeof o.chain === 'function' ? o.chain() : o.chain), version: 1 } } : next(e)))
+  on('state.get', (_: unknown, e: any, next: any) => (e.plugin === 'ai-dlc' && e.key === 'keepalive' ? { value: { value: ((c: any) => (c === null || c === undefined ? published() : { ...((published() as object) ?? {}), chain: c }))(typeof o.chain === 'function' ? o.chain() : o.chain), version: 1 } } : next(e)))
   on('clock.every', () => ({ value: undefined }))
   on('session.start', (_: unknown, e: any) => ({ cwd: e.cwd }))
   on('session.end', (_: unknown, e: any) => ({ sessionId: e.sessionId }))
@@ -79,13 +93,28 @@ function engine(on: any, o: { now?: number; prices?: string | null; chain?: { id
   on('fs.list', () => ({ value: [] }))
   on('fs.read', (_: unknown, e: any) => {
     const path = String(e.path).replace(/\\/g, '/')
-    const hit = Object.keys(o.files ?? {}).find(k => path.endsWith(k))
-    if (hit) return { value: o.files![hit] }
+    const hit = Object.keys(files).find(k => path.endsWith(k))
+    if (hit) return { value: files[hit] }
     if (o.prices !== null && path.endsWith('.ai-dlc/model-metadata.json')) return { value: o.prices ?? PRICES }
     throw new Error(`ENOENT ${path}`)
   })
   on('fs.write', (_: unknown, e: any) => (stub.fileWrites.push(String(e.path)), { value: undefined }))
   mock.env(on as never, { HOME: '/home/test', ...(o.env ?? {}) })
+  // Step 42: an avatar opens the agent panel; a Cache Lab keep-alive button runs the /ai-dlc:cache-keepalive command
+  on('agent.list', () => ({ value: [] }))
+  on('agent.spawn', () => ({ model: 'claude-sonnet-5-5', agentId: 'a1' }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('ui.close', () => ({ value: undefined }))
+  on('ui.render', ($s: any, e: any) => {
+    const { Text } = $s.ui.resolve(e)
+    return <Text>NATIVE ROW</Text>
+  })
+  on('command.run', (_: unknown, e: any) => {
+    const c = { command: String(e.command), args: String(e.args ?? '') }
+    stub.commands.push(c)
+    o.onCommand?.(c)
+    return { value: undefined }
+  })
   // the classic hooks nothing beneath the lens answers
   on('classic.UserPromptSubmit', () => ({}))
   on('classic.SessionStart', () => ({}))
@@ -93,11 +122,23 @@ function engine(on: any, o: { now?: number; prices?: string | null; chain?: { id
   return stub
 }
 
-const mount = ($: any, surface: 'vscode' | 'terminal' = 'vscode') =>
-  $.ui.mount({ plugin: 'ai-dlc-lens', surface, component: 'Pane', requestId: PANE, props: { title: PANE, isFocused: false, bodyColumns: 120, placement: 'dock', scroll: { offset: 0, bodyRows: 80 }, view: {} } })
+const paneOf = ($: any, requestId: string, surface: 'vscode' | 'terminal') =>
+  $.ui.mount({ plugin: 'ai-dlc-lens', surface, component: 'Pane', requestId, props: { title: requestId, isFocused: false, bodyColumns: 120, placement: 'dock', scroll: { offset: 0, bodyRows: 80 }, view: {} } })
+/** The agent panel (Cache Lab's place since step 42). */
+const mount = ($: any, surface: 'vscode' | 'terminal' = 'vscode') => paneOf($, AGENT_PANE, surface)
+/** The lens view (the workflow pane): its head no longer holds Cache Lab. */
+const mountView = ($: any, surface: 'vscode' | 'terminal' = 'vscode') => paneOf($, PANE, surface)
+/** Opens the main loop's avatar panel from its chat card, as the lens tests do (`card:agent-main`). */
+const selectAgent = async ($: any) => {
+  await $.agent.spawn({ tool_use_id: 'toolu_1', prompt: 'p', description: 'build', subagentType: 'ai-dlc:software-engineer', provider: { plugin: 'ai-dlc', tier: 'user' }, parentModel: 'claude-opus-5-5', background: false, fork: false })
+  const card = await $.ui.mount({ plugin: 'ai-dlc-lens', surface: 'vscode', component: 'ToolUse', requestId: 'toolu_1', props: { tool_use_id: 'toolu_1', tool: 'Agent', input: { subagent_type: 'ai-dlc:software-engineer', description: 'build', prompt: 'p' }, isRunning: false, isErrored: false, isInterrupted: false } })
+  await card.press({ key: 'card:agent-main' })
+  await card.unmount()
+}
 const start = async ($: any, session = 'C2') => {
   await $.session.start({ cwd: '/', surface: 'vscode', isInteractive: true })
   await $.classic.UserPromptSubmit({ transcript_path: `${FOLDER}/${session}.jsonl`, prompt: 'x' } as never)
+  await selectAgent($)
 }
 const texts = async (ui: any): Promise<string[]> => ((await ui.findAll({})) as any[]).filter(x => x.type === 'Text').map(x => String(x.text ?? ''))
 const labels = async (ui: any): Promise<string[]> => ((await ui.findAll({ type: 'Button' })) as any[]).map(b => String(b.text ?? b.label ?? b.props?.label ?? ''))
@@ -111,16 +152,53 @@ const row = async (ui: any, label: string) => {
 }
 
 describe('[AC-22.2.1] the Cache Lab accordion', () => {
-  test('it is in the lens pane head, labelled "Cache Lab" (capital L), collapsed, with a [+] button', async ($, on) => {
+  test('[42.3] it is in the agent panel, labelled "Cache Lab" (capital L), collapsed, with a [+] button', async ($, on) => {
     engine(on)
     await start($)
     const ui = await mount($)
     expect((await texts(ui)).some(t => t.trim() === 'Cache Lab')).toBe(true)
-    expect((await ui.find({ type: 'Button', key: 'cachelab-open' }))?.text ?? (await labels(ui))[0]).toBeDefined()
-    expect((await labels(ui)).some(l => l === '[+]')).toBe(true)
+    expect((await ui.find({ type: 'Button', key: 'cachelab-open' }))?.text).toBe('[+]')
     // collapsed: no figures, and the transcripts are never read while it is closed
     expect((await texts(ui)).some(t => t.includes('Saved by cache'))).toBe(false)
     await ui.unmount()
+  })
+
+  test('[42.3] it replaces the Cache keep-alive section of the agent panel: that section is gone, Context Lab stays', async ($, on) => {
+    engine(on)
+    await start($)
+    const ui = await mount($)
+    expect(await ui.find({ type: 'Button', key: 'agent-keepalive' })).toBe(undefined)
+    expect((await texts(ui)).some(t => /^\s*Cache keep-alive/.test(t))).toBe(false)
+    expect((await texts(ui)).some(t => /^Context Lab \(/.test(t.trim()))).toBe(true)
+    await ui.unmount()
+  })
+
+  test('[42.3] Cache Lab is its own section directly after Context Lab: in that order, only the divider between them, neither inside the other', async ($, on) => {
+    engine(on)
+    await start($)
+    const ui = await mount($)
+    const lines = (await texts(ui)).map(t => t.trim())
+    const ctx = lines.findIndex(t => /^Context Lab \(/.test(t))
+    const lab = lines.findIndex(t => t === 'Cache Lab')
+    expect(ctx).toBeGreaterThanOrEqual(0)
+    expect(lab).toBeGreaterThan(ctx)
+    // between the two headings: only the dividers (the Context Lab section is collapsed and ends at its heading)
+    expect(lines.slice(ctx + 1, lab).filter(t => t !== '' && !/^─+$/.test(t))).toEqual([])
+    // opened, Context Lab's rows come before Cache Lab's heading: Cache Lab is not one of them
+    await ui.press({ key: 'agent-usage' })
+    const opened = (await texts(ui)).map(t => t.trim())
+    expect(opened.findIndex(t => t === 'Cache Lab')).toBeGreaterThan(opened.findIndex(t => t === 'Ran on'))
+    await ui.unmount()
+  })
+
+  test('[42.3] nothing of Cache Lab is left in the view head: no Cache Lab text, no cachelab-open button', async ($, on) => {
+    engine(on)
+    await start($)
+    const view = await mountView($)
+    expect((await texts(view)).some(t => t.trim() === 'Cache Lab')).toBe(false)
+    expect(await view.find({ type: 'Button', key: 'cachelab-open' })).toBe(undefined)
+    expect(await view.find({ type: 'Button', key: 'cachelab-reload' })).toBe(undefined)
+    await view.unmount()
   })
 
   test('nothing is read while it is collapsed', async ($, on) => {
@@ -415,6 +493,7 @@ describe('the load states', () => {
   test('before any transcript is known: "transcripts not located yet", nothing is run', async ($, on) => {
     const stub = engine(on)
     await $.session.start({ cwd: '/', surface: 'vscode', isInteractive: true })
+    await selectAgent($)
     const ui = await mount($)
     await open(ui)
     expect((await texts(ui)).some(t => t.includes('transcripts not located yet'))).toBe(true)
@@ -489,13 +568,189 @@ describe('[AC-22.7] the Keep Alive sub-accordion', () => {
 
 describe('[AC-22.7.7] the header line of keep-alive stays', () => {
   const RUNNING = { enabled: true, updatedAt: 0, sessionId: 's', tracks: [{ name: '1h', running: true, pings: 2, cap: 9, nextPingAt: null, armedAt: 0, warmUntil: 0, pingEvery: 1, keepWarmMs: 1, line: 'x' }] }
-  test('with a track running, the pane head draws "keep-alive: 1h ping 2/9" with Cache Lab closed and open', async ($, on) => {
+  test('with a track running, the pane head draws "keep-alive: 1h ping 2/9" with Cache Lab (in the agent panel) closed and open', async ($, on) => {
     engine(on, { keepalive: RUNNING })
     await start($)
+    const view = await mountView($)
+    expect((await texts(view)).some(t => t.trim() === 'keep-alive: 1h ping 2/9')).toBe(true)
+    await view.unmount()
+    // Cache Lab is not in the head any more: opening it in the agent panel leaves the head's line alone
     const ui = await mount($)
-    expect((await texts(ui)).some(t => t.trim() === 'keep-alive: 1h ping 2/9')).toBe(true)
     await open(ui)
-    expect((await texts(ui)).filter(t => t.trim() === 'keep-alive: 1h ping 2/9')).toHaveLength(1)
+    const view2 = await mountView($)
+    expect((await texts(view2)).filter(t => t.trim() === 'keep-alive: 1h ping 2/9')).toHaveLength(1)
+    await view2.unmount()
     await ui.unmount()
+  })
+})
+
+// ---- step 42, point 3: Master, 1h and 5m buttons and the Keep Alive sub-accordion in the agent panel ----
+describe('[42.3] Cache Lab in the agent panel: the Keep Alive buttons', () => {
+  const track = (name: string, enabled: boolean, o: Record<string, unknown> = {}) => ({ name, running: false, pings: 0, cap: 9, nextPingAt: null, armedAt: 0, warmUntil: 0, pingEvery: 1, keepWarmMs: 1, line: 'x', enabled, ...o })
+  const published = (master: boolean, h1: boolean, m5: boolean) => ({ enabled: master, updatedAt: 0, sessionId: 's', tracks: [track('1h', h1), track('5m', m5)] })
+  const norm = (t: string) => t.replace(/\s+/g, ' ').trim()
+  const buttonKeys = async (ui: any): Promise<string[]> => ((await ui.findAll({ type: 'Button' })) as any[]).map(b => String(b.key)).filter(k => k.startsWith('cachelab-ka-'))
+
+  test('open: the three buttons in the order Master, 1h, 5m, each with its state; the press offers the opposite', async ($, on) => {
+    engine(on, { keepalive: published(true, false, true) })
+    await start($)
+    const ui = await mount($)
+    await open(ui)
+    expect(await buttonKeys(ui)).toEqual(['cachelab-ka-master-press', 'cachelab-ka-1h-press', 'cachelab-ka-5m-press'])
+    const lines = (await texts(ui)).map(norm)
+    const at = (s: string) => lines.findIndex(t => t.startsWith(s))
+    expect([at('Master: on'), at('1h: off'), at('5m: on')].every(i => i >= 0)).toBe(true)
+    expect(at('Master: on')).toBeLessThan(at('1h: off'))
+    expect(at('1h: off')).toBeLessThan(at('5m: on'))
+    const label = async (k: string) => String(((await ui.find({ type: 'Button', key: k })) as any)?.text ?? '')
+    expect(await label('cachelab-ka-master-press')).toContain('off')
+    expect(await label('cachelab-ka-1h-press')).toContain('on')
+    expect(await label('cachelab-ka-5m-press')).toContain('off')
+    await ui.unmount()
+  })
+
+  test('each press runs /ai-dlc:cache-keepalive for this session only, with the opposite of its state', async ($, on) => {
+    const stub = engine(on, { keepalive: published(true, false, true) })
+    await start($)
+    const ui = await mount($)
+    await open(ui)
+    await ui.press({ key: 'cachelab-ka-master-press' })
+    await ui.press({ key: 'cachelab-ka-1h-press' })
+    await ui.press({ key: 'cachelab-ka-5m-press' })
+    await settle()
+    expect(stub.commands).toEqual([
+      { command: 'ai-dlc:cache-keepalive', args: 'off --session' },
+      { command: 'ai-dlc:cache-keepalive', args: 'on --track 1h --session' },
+      { command: 'ai-dlc:cache-keepalive', args: 'off --track 5m --session' },
+    ])
+    await ui.unmount()
+  })
+
+  test('a press changes the switch it names and no other: after keep-alive publishes the new state the button reads it', async ($, on) => {
+    let state = published(true, true, true)
+    const stub = engine(on, {
+      keepalive: () => state,
+      onCommand: c => {
+        if (c.args === 'off --track 1h --session') state = published(true, false, true)
+      },
+    })
+    await start($)
+    const ui = await mount($)
+    await open(ui)
+    await ui.press({ key: 'cachelab-ka-1h-press' })
+    await settle()
+    await ui.press({ key: 'cachelab-reload' })
+    await settle()
+    const lines = (await texts(ui)).map(norm)
+    expect(lines.some(t => t.startsWith('1h: off'))).toBe(true)
+    expect(lines.some(t => t.startsWith('Master: on'))).toBe(true)
+    expect(lines.some(t => t.startsWith('5m: on'))).toBe(true)
+    expect(stub.commands).toEqual([{ command: 'ai-dlc:cache-keepalive', args: 'off --track 1h --session' }])
+    await ui.unmount()
+  })
+
+  test('a track that is on under a master that is off reads the track state, not the master state', async ($, on) => {
+    engine(on, { keepalive: published(false, true, false) })
+    await start($)
+    const ui = await mount($)
+    await open(ui)
+    const lines = (await texts(ui)).map(norm)
+    expect(lines.some(t => t.startsWith('Master: off'))).toBe(true)
+    expect(lines.some(t => t.startsWith('1h: on'))).toBe(true)
+    expect(lines.some(t => t.startsWith('5m: off'))).toBe(true)
+    await ui.unmount()
+  })
+
+  test('a command that rejects is swallowed: the panel keeps drawing and a later press still runs', async ($, on) => {
+    let n = 0
+    const stub = engine(on, {
+      keepalive: published(true, true, true),
+      onCommand: () => {
+        if (n++ === 0) throw new Error('boom')
+      },
+    })
+    await start($)
+    const ui = await mount($)
+    await open(ui)
+    await ui.press({ key: 'cachelab-ka-master-press' })
+    await settle()
+    expect((await texts(ui)).some(t => t.includes('Saved by cache'))).toBe(true)
+    await ui.press({ key: 'cachelab-ka-5m-press' })
+    await settle()
+    expect(stub.commands).toHaveLength(2)
+    await ui.unmount()
+  })
+
+  test('no published value: no buttons, and nothing is run', async ($, on) => {
+    const stub = engine(on)
+    await start($)
+    const ui = await mount($)
+    await open(ui)
+    expect(await buttonKeys(ui)).toEqual([])
+    expect(stub.commands).toEqual([])
+    await ui.unmount()
+  })
+
+  test('a published value with no tracks to read: no buttons', async ($, on) => {
+    engine(on, { keepalive: { enabled: true, tracks: [], updatedAt: 0, sessionId: 's' } })
+    await start($)
+    const ui = await mount($)
+    await open(ui)
+    expect(await buttonKeys(ui)).toEqual([])
+    await ui.unmount()
+  })
+
+  test('keepaliveSection false: no buttons and no Keep Alive sub-accordion', async ($, on) => {
+    engine(on, { keepalive: published(true, true, true), files: { '.ai-dlc/lens.json': JSON.stringify({ keepaliveSection: false }) } })
+    await start($)
+    const ui = await mount($)
+    await open(ui)
+    expect(await buttonKeys(ui)).toEqual([])
+    expect((await texts(ui)).some(t => t.trim() === 'Keep Alive')).toBe(false)
+    await ui.unmount()
+  })
+
+  test('Cache Lab collapsed: no buttons are drawn', async ($, on) => {
+    engine(on, { keepalive: published(true, true, true) })
+    await start($)
+    const ui = await mount($)
+    expect(await buttonKeys(ui)).toEqual([])
+    await ui.unmount()
+  })
+
+  test('the Keep Alive sub-accordion is collapsed in the open Cache Lab; opened it holds what the Cache keep-alive section showed', async ($, on) => {
+    engine(on, { keepalive: published(true, true, true) })
+    await start($)
+    const ui = await mount($)
+    await open(ui)
+    expect((await ui.find({ type: 'Button', key: 'lens:cachelab:keepalive-open' }))?.text).toBe('[+]')
+    expect((await texts(ui)).some(t => t.includes('Saved by cache reads, session'))).toBe(false)
+    await ui.press({ key: 'lens:cachelab:keepalive-open' })
+    await settle()
+    const lines = (await texts(ui)).map(norm)
+    expect(lines.filter(t => t.includes('0s · 0 pings · 0 armings'))).toHaveLength(2)
+    expect(lines.some(t => t.startsWith('No keep-alive arming seen this session'))).toBe(true)
+    expect(lines.some(t => t.startsWith('Saved by cache reads, this agent'))).toBe(true)
+    expect(lines.some(t => t.startsWith('Saved by cache reads, session'))).toBe(true)
+    // the buttons stay outside the sub-accordion: drawn with it closed too
+    await ui.press({ key: 'lens:cachelab:keepalive-open' })
+    await settle()
+    expect(await buttonKeys(ui)).toHaveLength(3)
+    await ui.unmount()
+  })
+
+  test('the drill-in panel (an avatar pressed on a chat card in drill-in mode) draws the same Cache Lab', async ($, on) => {
+    engine(on, { keepalive: published(true, true, true), files: { '.ai-dlc/lens.json': JSON.stringify({ panelOpenMode: 'drill-in' }) } })
+    await $.session.start({ cwd: '/', surface: 'vscode', isInteractive: true })
+    await $.classic.UserPromptSubmit({ transcript_path: `${FOLDER}/C2.jsonl`, prompt: 'x' } as never)
+    await $.agent.spawn({ tool_use_id: 'toolu_1', prompt: 'p', description: 'build', subagentType: 'ai-dlc:software-engineer', provider: { plugin: 'ai-dlc', tier: 'user' }, parentModel: 'claude-opus-5-5', background: false, fork: false })
+    const card = await $.ui.mount({ plugin: 'ai-dlc-lens', surface: 'vscode', component: 'ToolUse', requestId: 'toolu_1', props: { tool_use_id: 'toolu_1', tool: 'Agent', input: { subagent_type: 'ai-dlc:software-engineer', description: 'build', prompt: 'p' }, isRunning: false, isErrored: false, isInterrupted: false } })
+    await card.press({ key: 'card:agent-main' })
+    await settle()
+    expect((await texts(card)).some(t => t.trim() === 'Cache Lab')).toBe(true)
+    await card.press({ key: 'cachelab-open' })
+    await settle()
+    expect(await buttonKeys(card)).toEqual(['cachelab-ka-master-press', 'cachelab-ka-1h-press', 'cachelab-ka-5m-press'])
+    await card.unmount()
   })
 })

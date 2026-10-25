@@ -255,6 +255,14 @@ let clock: ReturnType<typeof mock.clock>
 const mountBand = ($: Parameters<TestBody>[0]) =>
   $.ui.mount({ plugin: 'ai-dlc', surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 20, bodyColumns: 120 } as never })
 
+// Step 42: keep-alive's band starts minimised (one row: whether it is on, and the master button). Opens it, whatever its state.
+const mountOpenBand = async ($: Parameters<TestBody>[0]) => {
+  const ui = await mountBand($)
+  const min = await ui.find({ type: 'Button', key: 'ka-min' })
+  if (min && String((min as { text?: unknown }).text ?? '').includes('□')) await ui.press({ key: 'ka-min' })
+  return ui
+}
+
 // Every string in a drawn tree, in order: Text children, a Markdown's text, a Button's label.
 const textOf = (n: unknown): string => typeof n === 'string' ? n
   : Array.isArray(n) ? n.map(textOf).join('')
@@ -2651,19 +2659,22 @@ describe('the band above the prompt draws the hooks beneath it', () => {
     const text = textOf(await ui.drawn())
     expect(text).toContain(KA)
     expect(text).toContain('LENS BAND BENEATH')
-    expect(text.indexOf(KA)).toBeLessThan(text.indexOf('LENS BAND BENEATH'))
+    // Step 42: the lens band first, keep-alive's band after it
+    expect(text.indexOf('LENS BAND BENEATH')).toBeLessThan(text.indexOf(KA))
     await ui.unmount()
   })
 
-  test('with a handoff panel showing too: panel, keep-alive rows, then the hook beneath, in that order', async ($, on) => {
+  test('with a handoff panel showing too: panel, then the hook beneath (the lens band), then keep-alive\'s band, in that order', async ($, on) => {
     const calls = engine(on, { tokens: 165_000, stepUsage: true, beneath: 'LENS BAND BENEATH' })
     await $.turn.complete(TURN)
     await settle(() => calls.cleared > 0)
     const ui = await mountBand($)
     const text = textOf(await ui.drawn())
-    expect(text).toContain(KA)
-    expect(text).toContain('LENS BAND BENEATH')
-    expect(text.indexOf(KA)).toBeLessThan(text.indexOf('LENS BAND BENEATH'))
+    const lens = text.indexOf('LENS BAND BENEATH')
+    expect(lens).toBeGreaterThan(0)
+    expect(text.slice(0, lens).trim()).not.toBe('') // the handoff panel
+    expect(text.slice(0, lens)).not.toContain(KA)
+    expect(text.indexOf(KA)).toBeGreaterThan(lens)
     await ui.unmount()
   })
 
@@ -2678,15 +2689,232 @@ describe('the band above the prompt draws the hooks beneath it', () => {
 
 })
 
+// Step 42, points 1 and 2: the lens band and keep-alive's are two separate bands, in that order, and keep-alive's
+// minimises like the lens band: `–` minimises, `□` restores. Minimised it is one row: whether keep-alive is on
+// or off, and the master button only. It starts minimised at each load.
+describe('[42.1, 42.2] keep-alive\'s band: separate from the lens band, minimised like it', () => {
+  const TITLE = '⚠ ai-dlc cache-keepalive:'
+  const kids = (n: any): any[] => {
+    const c = n?.props?.children ?? n?.children
+    return c === undefined || c === null ? [] : Array.isArray(c) ? c.flat(Infinity) : [c]
+  }
+  const press = async (ui: Awaited<ReturnType<typeof mountBand>>, key: string) => {
+    await ui.press({ key })
+    await settle(() => false)
+  }
+
+  test('[42.1] two blocks side by side, never nested in each other: the lens band is one child of the band, keep-alive\'s another, after it', async ($, on) => {
+    engine(on, { tokens: 10_000, beneath: 'LENS BAND BENEATH' })
+    const ui = await mountBand($)
+    const root: any = await ui.drawn()
+    const blocks = kids(root)
+    const at = (needle: string) => blocks.findIndex(b => textOf(b).includes(needle))
+    expect(at('LENS BAND BENEATH')).toBeGreaterThanOrEqual(0)
+    expect(at(TITLE)).toBeGreaterThanOrEqual(0)
+    expect(at('LENS BAND BENEATH')).toBeLessThan(at(TITLE))
+    // neither block holds the other's text
+    expect(textOf(blocks[at('LENS BAND BENEATH')])).not.toContain(TITLE)
+    expect(textOf(blocks[at(TITLE)])).not.toContain('LENS BAND BENEATH')
+    await ui.unmount()
+  })
+
+  // every `width` prop in a drawn tree (the engine refuses a Box with a width around core's engine node, step 34)
+  const widths = (n: any): unknown[] => {
+    if (n === null || typeof n !== 'object') return []
+    const own = n.props && 'width' in n.props ? [n.props.width] : []
+    return [...own, ...kids(n).flatMap(widths)]
+  }
+
+  test('[42.1] step 34\'s rule holds on the whole band: no Box anywhere in the tree has a width, keep-alive\'s included; keep-alive\'s band is the last child after the hook beneath', async ($, on) => {
+    engine(on, { tokens: 10_000, beneath: 'LENS BAND BENEATH' })
+    const ui = await mountBand($)
+    const root: any = await ui.drawn()
+    expect(widths(root)).toEqual([])
+    const blocks = kids(root)
+    expect(textOf(blocks[blocks.length - 1]).startsWith(TITLE)).toBe(true)
+    expect(textOf(blocks[blocks.length - 2])).toContain('LENS BAND BENEATH')
+    await ui.press({ key: 'ka-min' })
+    await settle(() => false)
+    expect(widths(await ui.drawn())).toEqual([]) // opened too
+    await ui.unmount()
+  })
+
+  test('[42.1] with a handoff panel showing: panel, lens band, keep-alive band; the panel is not inside keep-alive\'s block', async ($, on) => {
+    const calls = engine(on, { tokens: 165_000, stepUsage: true, beneath: 'LENS BAND BENEATH' })
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    const ui = await mountBand($)
+    const blocks = kids(await ui.drawn())
+    const lens = blocks.findIndex(b => textOf(b).includes('LENS BAND BENEATH'))
+    const keep = blocks.findIndex(b => textOf(b).includes(TITLE))
+    expect(lens).toBeGreaterThan(0)
+    expect(keep).toBeGreaterThan(lens)
+    expect(textOf(blocks[keep]).startsWith(TITLE)).toBe(true)
+    await ui.unmount()
+  })
+
+  test('[42.2] the band starts minimised: one row with the title, whether keep-alive is on, the master button and the restore control', async ($, on) => {
+    engine(on, { tokens: 10_000 })
+    const ui = await mountBand($)
+    expect(textOf(await ui.drawn())).toBe(`${TITLE} on off□×`)
+    expect((await ui.find({ type: 'Button', key: 'ka-min' }))?.text).toBe('□')
+    expect(await ui.find({ type: 'Button', key: 'ka-master' })).toBeDefined()
+    // no track row and no track button while minimised
+    expect(await ui.find({ type: 'Button', key: 'ka-5m' })).toBe(undefined)
+    expect(await ui.find({ type: 'Button', key: 'ka-1h' })).toBe(undefined)
+    expect(textOf(await ui.drawn())).not.toContain('keepalive 5m:')
+    await ui.unmount()
+  })
+
+  test('[42.2] the control restores (`□` becomes `–`, the rows appear) and minimises again; it is the lens band\'s plain button', async ($, on) => {
+    engine(on, { tokens: 10_000 })
+    const ui = await mountBand($)
+    await press(ui, 'ka-min')
+    expect((await ui.find({ type: 'Button', key: 'ka-min' }))?.text).toBe('–')
+    const open = textOf(await ui.drawn())
+    expect(open).toContain('keepalive 5m:')
+    expect(open).toContain('keepalive 1h:')
+    for (const key of ['ka-master', 'ka-5m', 'ka-1h']) expect(await ui.find({ type: 'Button', key })).toBeDefined()
+    await press(ui, 'ka-min')
+    expect(textOf(await ui.drawn())).toBe(`${TITLE} on off□×`)
+    const min: any = await ui.find({ type: 'Button', key: 'ka-min' })
+    expect(min?.props?.plain ?? min?.plain).toBe(true)
+    await ui.unmount()
+  })
+
+  test('[42.2] the size is the band\'s own and survives a redraw: opened, a new mount draws it opened', async ($, on) => {
+    engine(on, { tokens: 10_000 })
+    const first = await mountBand($)
+    await press(first, 'ka-min')
+    await first.unmount()
+    const second = await mountBand($)
+    expect(textOf(await second.drawn())).toContain('keepalive 5m:')
+    expect((await second.find({ type: 'Button', key: 'ka-min' }))?.text).toBe('–')
+    await second.unmount()
+  })
+
+  test('[42.2] minimised, the master button works: it switches keep-alive off for this session, the row reads off and the button reads on', async ($, on) => {
+    const calls = engine(on, { tokens: 10_000 })
+    const ui = await mountBand($)
+    await press(ui, 'ka-master')
+    expect(textOf(await ui.drawn())).toBe(`${TITLE} off on□×`)
+    expect(Object.keys(calls.written).filter(p => p.endsWith('settings.json') || p.endsWith('settings.local.json') || p.endsWith('cache-keepalive.json'))).toEqual([])
+    await press(ui, 'ka-master')
+    expect(textOf(await ui.drawn())).toBe(`${TITLE} on off□×`)
+    await ui.unmount()
+  })
+
+  test('[42.2] the master state read minimised is the state the full band shows: master off in the settings reads off in both', async ($, on) => {
+    engine(on, { tokens: 10_000, files: { '/home/test/proj/.claude/settings.local.json': JSON.stringify({ env: { AI_DLC_KEEPALIVE_ENABLED: 'false' } }) } })
+    on('classic.Stop', async () => ({}) as never)
+    on('ui.status', async () => ({ value: undefined }) as never)
+    await $.classic.Stop({ background_tasks: [{ id: 'b1', type: 'shell', status: 'running', description: 'build' }] } as never) // settings are read at the turn and at its Stop
+    const ui = await mountBand($)
+    expect(textOf(await ui.drawn())).toBe(`${TITLE} off on□×`)
+    await press(ui, 'ka-min')
+    expect(textOf(await ui.drawn())).toMatch(/^⚠ ai-dlc cache-keepalive: on[–□]×keepalive 5m:/)
+    await ui.unmount()
+  })
+
+  test('[42.2] the seed row and the track rows are hidden while minimised and back when restored', async ($, on) => {
+    const calls = engine(on, { tokens: 165_000, stepUsage: true })
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    await $.classic.SessionStart({ source: 'clear' })
+    await settle(() => calls.seeded.length > 0)
+    calls.tokens = 47_000
+    await step($, 0)
+    const ui = await mountBand($)
+    expect(textOf(await ui.drawn())).not.toContain('keepalive seed:')
+    await press(ui, 'ka-min')
+    expect(textOf(await ui.drawn())).toContain('keepalive seed:')
+    await ui.unmount()
+  })
+
+  test('[42.2] a close `×` is on the band, full and minimised, after the minimise control: plain, a dismiss', async ($, on) => {
+    engine(on, { tokens: 10_000 })
+    const ui = await mountBand($)
+    for (const opened of [false, true]) {
+      if (opened) await press(ui, 'ka-min')
+      const close: any = await ui.find({ type: 'Button', key: 'ka-close' })
+      expect(close?.text).toBe('×')
+      expect(close?.props?.plain ?? close?.plain).toBe(true)
+      expect(close?.props?.role ?? close?.role).toBe('dismiss')
+      expect(textOf(await ui.drawn())).toMatch(/[–□]×/)
+    }
+    await ui.unmount()
+  })
+
+  test('[42.2] the close hides keep-alive\'s band for the session; the lens band beneath stays', async ($, on) => {
+    engine(on, { tokens: 10_000, beneath: 'LENS BAND BENEATH' })
+    const ui = await mountBand($)
+    await press(ui, 'ka-close')
+    const text = textOf(await ui.drawn())
+    expect(text).toContain('LENS BAND BENEATH')
+    expect(text).not.toContain(TITLE)
+    expect(await ui.find({ type: 'Button', key: 'ka-master' })).toBe(undefined)
+    // a new mount (a redraw) still has it hidden
+    await ui.unmount()
+    const again = await mountBand($)
+    expect(textOf(await again.drawn())).not.toContain(TITLE)
+    await again.unmount()
+  })
+
+  test('[42.2] a run of /ai-dlc:cache-keepalive brings the closed band back', async ($, on) => {
+    engine(on, { tokens: 10_000 })
+    const ui = await mountBand($)
+    await press(ui, 'ka-close')
+    expect(textOf(await ui.drawn())).not.toContain(TITLE)
+    await $.command.run({ command: 'ai-dlc:cache-keepalive', args: 'on --session' } as never)
+    await settle(() => false)
+    expect(textOf(await ui.drawn())).toContain(TITLE)
+    await ui.unmount()
+  })
+
+  test('[42.2] a new session (session.start) brings the closed band back', async ($, on) => {
+    engine(on, { tokens: 10_000 })
+    on('session.start', async (_$, e) => ({ cwd: e.cwd }) as never)
+    const ui = await mountBand($)
+    await press(ui, 'ka-close')
+    expect(textOf(await ui.drawn())).not.toContain(TITLE)
+    await $.session.start({ cwd: '/home/test/proj', surface: 'terminal', isInteractive: true })
+    await settle(() => false)
+    expect(textOf(await ui.drawn())).toContain(TITLE)
+    await ui.unmount()
+  })
+
+  test('[42.2] closed or not, a later load starts with the band shown: a fresh module draws it', async ($, on) => {
+    // each test loads the hooks module afresh, as a /reload-plugins does: nothing of an earlier close remains
+    engine(on, { tokens: 10_000 })
+    const ui = await mountBand($)
+    expect(textOf(await ui.drawn())).toContain(TITLE)
+    await ui.unmount()
+  })
+
+  test('[42.1] status off: no keep-alive band at all, and the lens band beneath still draws', async ($, on) => {
+    engine(on, { tokens: 10_000, beneath: 'LENS BAND BENEATH', files: { '/home/test/proj/.claude/settings.local.json': JSON.stringify({ env: { AI_DLC_KEEPALIVE_STATUS: 'false' } }) } })
+    on('classic.Stop', async () => ({}) as never)
+    on('ui.status', async () => ({ value: undefined }) as never)
+    await $.classic.Stop({ background_tasks: [{ id: 'b1', type: 'shell', status: 'running', description: 'build' }] } as never) // settings are read at the turn and at its Stop
+    const ui = await mountBand($)
+    const text = textOf(await ui.drawn())
+    expect(text).toContain('LENS BAND BENEATH')
+    expect(text).not.toContain(TITLE)
+    await ui.unmount()
+  })
+})
+
 // ITEM-068 (T17.6, AC-17.6.x): the band above the prompt (Terminal and Desktop) draws keep-alive's rows with a
 // master button and one button per track; a press affects the current session only (no settings file written).
 describe('keep-alive in the band: master and track buttons (T17.6)', () => {
+  // Step 42: the band starts minimised; the track rows and their buttons are there once it is opened.
+  const mountBand = mountOpenBand
   const press = async (ui: Awaited<ReturnType<typeof mountBand>>, key: string) => {
     await ui.press({ key })
     await settle(() => false) // the presses write the store and redraw after the handler returns
   }
   const rows = (text: string) => ({
-    master: /⚠ ai-dlc cache-keepalive: (on|off)keepalive/.exec(text)?.[1],
+    master: /⚠ ai-dlc cache-keepalive: (on|off)[–□]?×?keepalive/.exec(text)?.[1],
     five: /(?:)keepalive 5m:[^]*?(on|off)keepalive 1h/.exec(text)?.[1],
     one: /(?:)keepalive 1h:[^]*?(on|off)$/.exec(text)?.[1],
   })
@@ -2776,8 +3004,8 @@ describe('keep-alive across an automatic handoff (T17.7)', () => {
   // a low threshold, so each seeded session can hand off again after its seed turn (chainRounds, above)
   const MANY = { ...LOW, AI_DLC_AUTO_HANDOFF_MAX_CONSECUTIVE_HANDOFFS: '5' }
   const cacheRow = JSON.stringify({ type: 'assistant', message: { usage: { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 2000, cache_creation: { ephemeral_1h_input_tokens: 0, ephemeral_5m_input_tokens: 2000 } } } })
-  const bandOf = async ($: Parameters<TestBody>[0]) => { const ui = await mountBand($); try { return textOf(await ui.drawn()) } finally { await ui.unmount() } }
-  const pressKey = async ($: Parameters<TestBody>[0], key: string) => { const ui = await mountBand($); await ui.press({ key }); await settle(() => false); await ui.unmount() }
+  const bandOf = async ($: Parameters<TestBody>[0]) => { const ui = await mountOpenBand($); try { return textOf(await ui.drawn()) } finally { await ui.unmount() } }
+  const pressKey = async ($: Parameters<TestBody>[0], key: string) => { const ui = await mountOpenBand($); await ui.press({ key }); await settle(() => false); await ui.unmount() }
   // One automatic handoff: the old session ends during it (as /clear does), the fresh session starts.
   async function handOff($: Parameters<TestBody>[0], calls: Calls) {
     const before = calls.cleared

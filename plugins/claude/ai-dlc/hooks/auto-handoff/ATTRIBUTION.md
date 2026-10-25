@@ -598,3 +598,8 @@ root 17, step 17.3.4.l1.1, code-review fix round 1 for 17.2.4; see
   panel and keep-alive's rows. Since T17.6 keep-alive's rows made the band draw
   at every render, and a hook that returns its own tree without `next` skips
   every hook beneath it, so the ai-dlc-lens band was never drawn.
+- **Keep-alive's band after the hooks beneath (step 42, 2026-10-25).** The
+  `AbovePrompt` hook draws auto-handoff's panel, then what `next(e)` returns
+  (the ai-dlc-lens band, then core's), then keep-alive's band, so the lens
+  band and keep-alive's are two separate bands, the lens first. No Box of
+  the tree has a width.

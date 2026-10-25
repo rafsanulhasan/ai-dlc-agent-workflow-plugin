@@ -13,13 +13,13 @@ In Claude Code, the ai-dlc plugin's hooks module answers `/ai-dlc:cache-keepaliv
 
 | Command | What it does |
 |---|---|
-| `/ai-dlc:cache-keepalive` | Pings now and reports the hit rate and the keep-warm time in force on each track |
+| `/ai-dlc:cache-keepalive` | Pings now and reports the hit rate and the keep-warm time in force on each track. Any run also brings back the band above the prompt when its `×` closed it |
 | `/ai-dlc:cache-keepalive 2h` | Sets the keep-warm time of both tracks in the default scope. Does not ping |
 | `/ai-dlc:cache-keepalive 30m --track 5m` | Sets it for the 5m track only; `--track 1h` for the 1h track, `--track both` (the default) for both |
 | `/ai-dlc:cache-keepalive 2h --session` | Sets it for this session only |
 | `/ai-dlc:cache-keepalive 1d --machine` | Sets it for every session on this machine until cleared |
 | `/ai-dlc:cache-keepalive off`, `/ai-dlc:cache-keepalive on --track 5m` | Turns keep-alive (or the tracks `--track` names) off or on by writing `AI_DLC_KEEPALIVE_ENABLED` (or `AI_DLC_KEEPALIVE_1H_ENABLED`, `AI_DLC_KEEPALIVE_5M_ENABLED`) to the `env` of `.claude/settings.local.json`, which wins over `.claude/settings.json` and `.ai-dlc/cache-keepalive.json`; this session's band switch for it is dropped so the value applies now. Does not ping |
-| `/ai-dlc:cache-keepalive off --session` | Turns it off (or on) for this session only, as the band's buttons do; no file is written |
+| `/ai-dlc:cache-keepalive off --session` | Turns it off (or on) for this session only, as the band's buttons (and the lens's Cache Lab buttons) do; no file is written |
 | `/ai-dlc:cache-keepalive clear`, `/ai-dlc:cache-keepalive clear --track 5m --machine` | Removes the override of the tracks named (both unless `--track` is given) in that scope |
 
 The team's keep-alive settings, in `.ai-dlc/cache-keepalive.json`, are created with `/ai-dlc:cache-keepalive-install`, brought up to date with `/ai-dlc:cache-keepalive-merge`, and shown and changed with `/ai-dlc:cache-keepalive-configure`.

@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'claude-code/testing'
 import {
+  KEEPALIVE_TARGETS,
+  KEEPALIVE_TARGET_LABELS,
+  keepaliveSwitches,
+  switchArgs,
   ATTRIBUTION_LABELS,
   BUST_THRESHOLD,
   DEFAULT_WINDOW,
@@ -554,5 +558,50 @@ describe('priceOfCosting: the lens model metadata file as a PriceOf', () => {
     expect(p(M)).toMatchObject({ cacheRead: null, cacheWrite5m: null })
     const lab = labOf(classify(f1()), p, ALL)
     expect(lab.unpricedCalls).toBeGreaterThan(0)
+  })
+})
+
+// ---- step 42: the on/off buttons of Master, 1h and 5m ----
+describe('[42.3] keepaliveSwitches, switchArgs and the button order', () => {
+  const tr = (name: string, o: Record<string, unknown> = {}) => ({ name, ...o })
+  test('the buttons are Master, 1h, 5m, in that order, with those labels', () => {
+    expect([...KEEPALIVE_TARGETS]).toEqual(['master', '1h', '5m'])
+    expect(KEEPALIVE_TARGETS.map(k => KEEPALIVE_TARGET_LABELS[k])).toEqual(['Master', '1h', '5m'])
+  })
+  test('a track\'s published `enabled` is its state in force', () => {
+    expect(keepaliveSwitches({ enabled: true, tracks: [tr('1h', { enabled: false }), tr('5m', { enabled: true })] })).toEqual({ master: true, '1h': false, '5m': true })
+  })
+  test('the master reads its own flag, apart from the tracks', () => {
+    expect(keepaliveSwitches({ enabled: false, tracks: [tr('1h', { enabled: true }), tr('5m', { enabled: true })] })).toEqual({ master: false, '1h': true, '5m': true })
+  })
+  test('a value from before `enabled` was published falls back to the session switch: off is off, anything else on', () => {
+    expect(keepaliveSwitches({ enabled: true, tracks: [tr('1h', { sessionSwitch: 'off' }), tr('5m', { sessionSwitch: 'on' })] })).toEqual({ master: true, '1h': false, '5m': true })
+    expect(keepaliveSwitches({ enabled: true, tracks: [tr('1h'), tr('5m')] })).toEqual({ master: true, '1h': true, '5m': true })
+  })
+  test('`enabled` wins over the session switch when both are there', () => {
+    expect(keepaliveSwitches({ enabled: true, tracks: [tr('1h', { enabled: true, sessionSwitch: 'off' }), tr('5m', { enabled: false, sessionSwitch: 'on' })] })).toEqual({ master: true, '1h': true, '5m': false })
+  })
+  test('no usable value gives null (no button is drawn)', () => {
+    expect(keepaliveSwitches(undefined)).toBeNull()
+    expect(keepaliveSwitches(null)).toBeNull()
+    expect(keepaliveSwitches('on')).toBeNull()
+    expect(keepaliveSwitches({})).toBeNull()
+    expect(keepaliveSwitches({ enabled: 'yes', tracks: [tr('1h'), tr('5m')] })).toBeNull()
+    expect(keepaliveSwitches({ enabled: true })).toBeNull()
+    expect(keepaliveSwitches({ enabled: true, tracks: 'x' })).toBeNull()
+  })
+  test('a missing track gives null: both tracks must be there', () => {
+    expect(keepaliveSwitches({ enabled: true, tracks: [] })).toBeNull()
+    expect(keepaliveSwitches({ enabled: true, tracks: [tr('1h', { enabled: true })] })).toBeNull()
+    expect(keepaliveSwitches({ enabled: true, tracks: [tr('5m', { enabled: true })] })).toBeNull()
+    expect(keepaliveSwitches({ enabled: true, tracks: [null, 'x', tr('1h', { enabled: true }), tr('5m', { enabled: true })] })).toEqual({ master: true, '1h': true, '5m': true })
+  })
+  test('switchArgs: this session only; the master has no --track', () => {
+    expect(switchArgs('master', true)).toBe('on --session')
+    expect(switchArgs('master', false)).toBe('off --session')
+    expect(switchArgs('1h', true)).toBe('on --track 1h --session')
+    expect(switchArgs('1h', false)).toBe('off --track 1h --session')
+    expect(switchArgs('5m', true)).toBe('on --track 5m --session')
+    expect(switchArgs('5m', false)).toBe('off --track 5m --session')
   })
 })

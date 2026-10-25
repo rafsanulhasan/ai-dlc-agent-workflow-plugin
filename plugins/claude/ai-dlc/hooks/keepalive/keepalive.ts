@@ -421,6 +421,7 @@ function trackStates(now: number): KeepaliveTrackState[] {
       cap: pingCap(cfg.maxPings, cfg.pingEvery, keep),
       line: lineFor(t, now),
       keepWarmFrom: sourceLabel(keep),
+      enabled: trackEnabled(n, keyOf(n)),
       ...(sw ? { sessionSwitch: sw } : {}),
       ...(caches ? { caches } : {}),
     }
@@ -468,9 +469,21 @@ async function bandModelNow($: EngineInterface): Promise<BandModel> {
 // Whether the first band draw since the module loaded has checked the status line (keepaliveBand).
 let statusChecked = false
 
+// Step 42: the band's own size. It starts minimised at each load, as the lens band starts minimised when
+// it appears; the `–` / `□` on its title row change it. Module memory: the band's alone, never the Pane's;
+// a /reload-plugins loads the module again, so the band is minimised again after one (MANUAL-CHECKS P9).
+let bandMinimised = true
+// Step 42: the band's `×` hides it for this session (the Pane is untouched); any run of /ai-dlc:cache-keepalive,
+// a new session (session.start) or a load brings it back.
+let bandClosed = false
+
+/** Where keepaliveBand draws: the band (AbovePrompt) or, by default, the Pane. */
+export type BandSite = { where: 'band' } | { where: 'pane' }
+
 /** The keep-alive band (AbovePrompt, Terminal and Desktop) or the Pane's body: the tree, or undefined
- * when `status` is off (AC-17.6.5). register.tsx composes it under auto-handoff's band. Never throws. */
-export async function keepaliveBand($: EngineInterface, t: { Box: any; Text: any; Button: any }): Promise<unknown> {
+ * when `status` is off (AC-17.6.5) or the band was closed. register.tsx draws it as a band of its own, after
+ * the lens band (step 42). On the band it has its own minimise and close; the Pane has neither. Never throws. */
+export async function keepaliveBand($: EngineInterface, t: { Box: any; Text: any; Button: any }, site: BandSite = { where: 'pane' }): Promise<unknown> {
   try {
     await loadSwitch($)
     // A /reload-plugins fires no session.start: the first draw after a load clears a status line the
@@ -480,7 +493,13 @@ export async function keepaliveBand($: EngineInterface, t: { Box: any; Text: any
       if (statusHidden()) $.ui.status(undefined)
     }
     if (!settings.status) return undefined
-    return keepaliveTree(t, await bandModelNow($), n => { void pressTrack($, n) }, () => { void pressMaster($) })
+    if (site.where === 'band' && bandClosed) return undefined
+    const press = (n: TrackName) => { void pressTrack($, n) }
+    const master = () => { void pressMaster($) }
+    if (site.where === 'pane') return keepaliveTree(t, await bandModelNow($), press, master)
+    const onToggle = () => { bandMinimised = !bandMinimised; $.ui.invalidate('ui.render') }
+    const onClose = () => { bandClosed = true; $.ui.invalidate('ui.render') }
+    return keepaliveTree(t, await bandModelNow($), press, master, { minimised: bandMinimised, onToggle, onClose })
   } catch (err) {
     $.ui.log(`keepalive: band not drawn (${err instanceof Error ? err.message : String(err)})`, { to: 'debug' })
     return undefined
@@ -1297,7 +1316,11 @@ export function registerKeepalive(on: Parameters<Register>[0], deps: KeepaliveDe
 
   // The roster of surfaces (LLD 20.4): re-read when the session starts or a surface comes or goes, and
   // the status line re-rendered in the mode it gives. The payloads are not read.
-  on('session.start', async ($, e, next) => (await rosterChanged($), next(e)))
+  on('session.start', async ($, e, next) => {
+    bandClosed = false
+    await rosterChanged($)
+    return next(e)
+  })
   on('session.attach', async ($, e, next) => (await rosterChanged($), next(e)))
   on('session.detach', async ($, e, next) => (await rosterChanged($), next(e)))
 
@@ -1311,6 +1334,8 @@ export function registerKeepalive(on: Parameters<Register>[0], deps: KeepaliveDe
   // tracks, or of the one --track names, and with clear it removes that override, in the default scope
   // or the one --session / --machine names.
   on('command.run', { command: COMMAND }, async ($, e) => {
+    // Step 42: any run brings back a band closed with its `×`.
+    if (bandClosed) { bandClosed = false; $.ui.invalidate('ui.render') }
     await load($)
     await prepare($)
     // A full read: publish the keep-warm time, pingEvery and limit it leaves in force

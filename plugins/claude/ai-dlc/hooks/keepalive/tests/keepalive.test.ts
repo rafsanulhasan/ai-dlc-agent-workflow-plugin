@@ -853,8 +853,8 @@ describe('the published state (read by ai-dlc-lens)', () => {
     expect(s?.sessionId).toBe('s-1')
     expect(s?.updatedAt).toBe(START)
     expect(s?.tracks.map(t => t.name)).toEqual(['1h', '5m'])
-    expect(track(s, '1h')).toEqual({ name: '1h', running: true, armedAt: START, warmUntil: START + 60 * MIN, nextPingAt: START + 50 * MIN, pingEvery: 50 * MIN, keepWarmMs: 8 * 60 * MIN, pings: 0, cap: 9, line: expect.stringMatching(new RegExp(`^keepalive 1h: main warm until ${hhmm(START + 60 * MIN)}; armed, 1 task\\(s\\), `)), keepWarmFrom: 'default', caches: [{ source: 'main', warmUntil: START + 60 * MIN, expired: false }] })
-    expect(track(s, '5m')).toMatchObject({ running: false, nextPingAt: null, pings: 0, line: 'keepalive 5m: off (no 5m cache write seen), ping 0/20, keep warm 1h (default)' })
+    expect(track(s, '1h')).toEqual({ name: '1h', enabled: true, running: true, armedAt: START, warmUntil: START + 60 * MIN, nextPingAt: START + 50 * MIN, pingEvery: 50 * MIN, keepWarmMs: 8 * 60 * MIN, pings: 0, cap: 9, line: expect.stringMatching(new RegExp(`^keepalive 1h: main warm until ${hhmm(START + 60 * MIN)}; armed, 1 task\\(s\\), `)), keepWarmFrom: 'default', caches: [{ source: 'main', warmUntil: START + 60 * MIN, expired: false }] })
+    expect(track(s, '5m')).toMatchObject({ enabled: true, running: false, nextPingAt: null, pings: 0, line: 'keepalive 5m: off (no 5m cache write seen), ping 0/20, keep warm 1h (default)' })
   })
 
   test('each ping publishes the count, the new "warm until" and the next ping', async ($, on) => {
@@ -2737,6 +2737,47 @@ describe('[step 40] /ai-dlc:cache-keepalive on|off writes the env of .claude/set
     expect(t('5m').sessionSwitch).toBeUndefined()
   })
 
+  // Step 42: each published track carries `enabled`, the state in force, which the lens's Cache Lab buttons read.
+  test('[42.3] the published tracks carry `enabled`: both on by default', async ($, on) => {
+    const { seen } = engine(on)
+    await $.classic.Stop(stop())
+    await settle()
+    const t = (n: string) => seen.states.at(-1)!.tracks.find(x => x.name === n) as { enabled?: boolean }
+    expect(seen.states.at(-1)?.enabled).toBe(true)
+    expect(t('1h').enabled).toBe(true)
+    expect(t('5m').enabled).toBe(true)
+  })
+
+  test('[42.3] off --session --track 1h: only the 1h track reads enabled false, and the master stays on', async ($, on) => {
+    const { seen } = engine(on, { split: [1_000, 2_000] })
+    await keepalive($, 'off --session --track 1h')
+    await settle()
+    const t = (n: string) => seen.states.at(-1)!.tracks.find(x => x.name === n) as { enabled?: boolean }
+    expect(seen.states.at(-1)?.enabled).toBe(true)
+    expect(t('1h').enabled).toBe(false)
+    expect(t('5m').enabled).toBe(true)
+  })
+
+  test('[42.3] off --session (the master): the master and both tracks read enabled false', async ($, on) => {
+    const { seen } = engine(on)
+    await keepalive($, 'off --session')
+    await settle()
+    const t = (n: string) => seen.states.at(-1)!.tracks.find(x => x.name === n) as { enabled?: boolean }
+    expect(seen.states.at(-1)?.enabled).toBe(false)
+    expect(t('1h').enabled).toBe(false)
+    expect(t('5m').enabled).toBe(false)
+  })
+
+  test('[42.3] a track switched on for the session under a master switched off reads enabled true (the track state, not the master\'s)', async ($, on) => {
+    const { seen } = engine(on)
+    await keepalive($, 'off --session')
+    await keepalive($, 'on --session --track 1h')
+    await settle()
+    const t = (n: string) => seen.states.at(-1)!.tracks.find(x => x.name === n) as { enabled?: boolean }
+    expect(t('1h').enabled).toBe(true)
+    expect(t('5m').enabled).toBe(false)
+  })
+
   test('--machine with on or off is refused with the usage text and writes nothing', async ($, on) => {
     const { seen } = engine(on)
     const { text } = await keepalive($, 'off --machine')
@@ -2937,6 +2978,18 @@ describe('[T17.6] the keep-alive Pane (VS Code)', () => {
     expect(text.indexOf('keepalive 5m:')).toBeGreaterThan(0)
     expect(text.indexOf('keepalive 1h:')).toBeGreaterThan(text.indexOf('keepalive 5m:'))
     for (const key of ['ka-master', 'ka-5m', 'ka-1h']) expect(await ui.find({ type: 'Button', key })).toBeDefined()
+    await ui.unmount()
+  })
+
+  test('[42.2] the Pane has no minimise and no close: the full rows and buttons are always drawn, with no `–` / `□` / `×` control', async ($, on) => {
+    withPane(on)
+    const ui = await pane($)
+    const text = textOf(await ui.drawn())
+    expect(text).toContain('keepalive 5m:')
+    expect(text).toContain('keepalive 1h:')
+    expect(await ui.find({ type: 'Button', key: 'ka-min' })).toBe(undefined)
+    expect(await ui.find({ type: 'Button', key: 'ka-close' })).toBe(undefined) // no close either: only the band has one
+    expect(text).not.toMatch(/[–□×]/)
     await ui.unmount()
   })
 

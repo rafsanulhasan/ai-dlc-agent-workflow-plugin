@@ -30,6 +30,9 @@ export type KeepaliveTrackState = {
   caches?: { source: 'main' | 'subagents'; warmUntil: number; expired: boolean }[]
   /** Where the keep-warm time in force came from, the label the line's source note shows. */
   keepWarmFrom: 'session' | 'machine' | 'settings' | 'default'
+  /** Whether the track is on in force: this session's switches, else the settings (step 42: the lens's
+   * Cache Lab buttons show it). */
+  enabled: boolean
   /** This session's switch of the track (its band or Pane button), when one is set. */
   sessionSwitch?: 'on' | 'off'
 }

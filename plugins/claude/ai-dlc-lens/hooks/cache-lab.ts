@@ -282,3 +282,34 @@ export const noPriceNote = (n: number): string => `${n} call${n === 1 ? '' : 's'
 export function hhmm(ms: number, tz?: string): string {
   return new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: tz }).format(new Date(ms))
 }
+
+// ---- step 42: keep-alive's on/off buttons in Cache Lab ----
+
+/** What Cache Lab's keep-alive buttons switch: the master, or one track. */
+export type KeepaliveTarget = 'master' | '1h' | '5m'
+/** The buttons in the human's order: Master, 1h, 5m. */
+export const KEEPALIVE_TARGETS: readonly KeepaliveTarget[] = ['master', '1h', '5m']
+export const KEEPALIVE_TARGET_LABELS: Record<KeepaliveTarget, string> = { master: 'Master', '1h': '1h', '5m': '5m' }
+
+/**
+ * Whether the master and each track are on, from the state ai-dlc's keep-alive publishes; null when there is
+ * no usable value (ai-dlc absent or not published yet), and then Cache Lab draws no button. A track's
+ * `enabled` is its state in force; a value from before it was published falls back to the track's session
+ * switch, else on.
+ */
+export function keepaliveSwitches(value: unknown): Record<KeepaliveTarget, boolean> | null {
+  if (typeof value !== 'object' || value === null) return null
+  const v = value as { enabled?: unknown; tracks?: unknown }
+  if (typeof v.enabled !== 'boolean' || !Array.isArray(v.tracks)) return null
+  const on = (name: '1h' | '5m'): boolean | null => {
+    const t = (v.tracks as unknown[]).find(x => typeof x === 'object' && x !== null && (x as { name?: unknown }).name === name) as { enabled?: unknown; sessionSwitch?: unknown } | undefined
+    if (t === undefined) return null
+    return typeof t.enabled === 'boolean' ? t.enabled : t.sessionSwitch !== 'off'
+  }
+  const h1 = on('1h')
+  const m5 = on('5m')
+  return h1 === null || m5 === null ? null : { master: v.enabled, '1h': h1, '5m': m5 }
+}
+
+/** The `/ai-dlc:cache-keepalive` arguments a press runs: this session only (`--session`), as the band's buttons do. */
+export const switchArgs = (target: KeepaliveTarget, on: boolean): string => `${on ? 'on' : 'off'}${target === 'master' ? '' : ` --track ${target}`} --session`

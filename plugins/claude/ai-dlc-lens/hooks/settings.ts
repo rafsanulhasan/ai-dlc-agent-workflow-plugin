@@ -63,11 +63,11 @@ export const SPEC = {
     doc: 'The image types an avatarImage may be, comma-separated (checked on the bytes, not the name)',
   },
   avatarImageMaxBytes: { kind: 'int', min: 1, max: 2097152, def: 65536, doc: 'The largest avatarImage, bytes; the whole chart must also stay under 131,072 Svg characters' },
-  // /ai-dlc:lens-keepalive (step 1.4): the keep-alive section of every agent pane; the command toggles it.
+  // /ai-dlc:lens-keepalive (step 1.4): keep-alive in Cache Lab, in every agent panel (step 42); the command toggles it.
   keepaliveSection: {
     kind: 'bool',
     def: true,
-    doc: "Show the Cache keep-alive section in every agent pane (collapsed like every section): how long keep-alive kept the cache warm per track (5m, 1h) and what cache reads saved, priced from costingPath. /ai-dlc:lens-keepalive turns it off and on",
+    doc: "Show keep-alive in Cache Lab, in every agent panel: the on/off buttons of Master, 1h and 5m, and the Keep Alive sub-accordion (how long keep-alive kept the cache warm per track and what cache reads saved, priced from costingPath). /ai-dlc:lens-keepalive turns it off and on",
   },
   // ITEM-070 (Q-CL19): keep the Cache Lab window across /reload-plugins.
   cacheLabKeepWindowOnReload: { kind: 'bool', def: false, doc: 'Keep the Cache Lab window across /reload-plugins (development and testing); off resets it to 7d' },

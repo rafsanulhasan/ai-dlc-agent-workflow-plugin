@@ -190,7 +190,7 @@ export type LensNotice = { text: string; at: number; w: string }
  * field it uses. The lens does not list ai-dlc under `dependencies`: without it the read gives no value.
  * Read-only here.
  */
-export type LensKeepaliveTrack = { name: string; running: boolean; nextPingAt: number | null; warmUntil: number; pings: number; cap: number }
+export type LensKeepaliveTrack = { name: string; running: boolean; nextPingAt: number | null; warmUntil: number; pings: number; cap: number; enabled?: boolean; sessionSwitch?: 'on' | 'off' }
 /** `chain` (ITEM-076): the automatic handoff chain, its first session's id and its sessions, newest first. */
 export type LensKeepalive = { enabled: boolean; updatedAt: number; sessionId: string; tracks: LensKeepaliveTrack[]; chain?: { id: string; sessions: string[] } }
 

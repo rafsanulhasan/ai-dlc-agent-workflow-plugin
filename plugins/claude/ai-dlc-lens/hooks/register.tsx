@@ -162,8 +162,8 @@ import type { Fence, Outcome, Picture } from './diagram'
 import type { AvatarImage, ChartAvatars } from './avatar'
 import { FileCache, batches, checkEnvelope, folderOf, mergeCalls, sessionOfTranscript } from './transcripts'
 import type { Call, FileRecord, ListData, ReadData } from './transcripts'
-import { ATTRIBUTION_LABELS, DEFAULT_WINDOW, WINDOWS, chainFrom, chainNowOf, galleryHeader, galleryLine, turnLine, WINDOW_LABELS, classify as classifyCalls, count, labOf, medianK, noPriceNote, pct, presetOf, priceOfCosting, share, usd, windowOf as labWindowOf, withPreset } from './cache-lab'
-import type { CacheLab, WindowPreset } from './cache-lab'
+import { ATTRIBUTION_LABELS, DEFAULT_WINDOW, KEEPALIVE_TARGETS, KEEPALIVE_TARGET_LABELS, WINDOWS, keepaliveSwitches, switchArgs, chainFrom, chainNowOf, galleryHeader, galleryLine, turnLine, WINDOW_LABELS, classify as classifyCalls, count, labOf, medianK, noPriceNote, pct, presetOf, priceOfCosting, share, usd, windowOf as labWindowOf, withPreset } from './cache-lab'
+import type { CacheLab, KeepaliveTarget, WindowPreset } from './cache-lab'
 import { anomaliesOf, anomalyLine, applySettings, colorOf, detectAgents, detectRun, diffAnomalies, edgeAgentOf, frontMatter, handoffsRoot, normDir, recordName, runsToRead, trackWaiting, worstOf } from './anomaly'
 
 // Pane ids: 1-64 of letters, digits, `_` and `-` (PaneOpenArgs.id, d.ts:7590; `$.ui.open`, d.ts:2524), so
@@ -1965,9 +1965,9 @@ function edgeBody(
 }
 
 /**
- * /ai-dlc:lens-keepalive (step 1.4): the Cache keep-alive section of an agent pane, collapsed like every
- * section. Measured: each track's armings, expiry and pings as ai-dlc publishes them, and the agent's
- * cache-read tokens. Derived: the kept-warm time (`keptWarm`) and the savings, priced from the metadata
+ * /ai-dlc:lens-keepalive (step 1.4): the figures of Keep Alive, the sub-accordion of Cache Lab in the agent
+ * panel (since step 42; before, the agent pane's Cache keep-alive section). Measured: each track's armings,
+ * expiry and pings as ai-dlc publishes them, and the agent's cache-read tokens. Derived: the kept-warm time (`keptWarm`) and the savings, priced from the metadata
  * file only (`savingsOfAgent`), `—` when a price is missing.
  */
 // ---- Cache Lab (ITEM-070, cache-lab LLD section 7): the accordion, its window and its load ----
@@ -2094,27 +2094,70 @@ function labSub($: EngineInterface, t: any, open: Record<string, boolean>, key: 
   )
 }
 
-/** The Cache Lab accordion of the lens view: window row, savings row, cards row (AC-22.2.1 order). */
-async function cacheLabSection($: EngineInterface, t: any, open: Record<string, boolean>, s: LensSettings) {
+/** The `/ai-dlc:cache-keepalive` command ai-dlc's keep-alive answers (Cache Lab's buttons run it, step 42). */
+const KEEPALIVE_COMMAND = 'ai-dlc:cache-keepalive'
+
+/** Step 42: a Cache Lab button's press: the same session switch as keep-alive's band button, through its command. Never throws. */
+async function pressKeepalive($: EngineInterface, target: KeepaliveTarget, on: boolean) {
+  try {
+    await $.command.run({ command: KEEPALIVE_COMMAND, args: switchArgs(target, on) })
+  } catch (err) {
+    lensFail('keepalive switch', err)
+  }
+}
+
+/** Step 42: the on/off buttons of every cache, Master, 1h and 5m, each its state and the press that changes it (`[off]` while on). */
+function keepaliveButtons($: EngineInterface, t: any, sw: Record<KeepaliveTarget, boolean>) {
+  const { Box, Text, Button } = t
+  return (
+    <Box key="cachelab-ka-buttons" flexDirection="row" flexWrap="wrap" columnGap={2}>
+      {KEEPALIVE_TARGETS.map(k => (
+        <Box key={`cachelab-ka-${k}`} flexDirection="row" columnGap={1}>
+          <Text>
+            {KEEPALIVE_TARGET_LABELS[k]}: {sw[k] ? 'on' : 'off'}
+          </Text>
+          <Button key={`cachelab-ka-${k}-press`} label={sw[k] ? 'off' : 'on'} onPress={() => pressKeepalive($, k, !sw[k])} />
+        </Box>
+      ))}
+    </Box>
+  )
+}
+
+/**
+ * The Cache Lab accordion, in the agent panel (step 42; it was in the lens view's head): window row, savings row,
+ * cards row (AC-22.2.1 order); then, with keep-alive's state published and `keepaliveSection` on, the on/off
+ * buttons of Master, 1h and 5m and the Keep Alive sub-accordion, which holds what the agent panel's Cache
+ * keep-alive section showed (`agentId`: the panel's agent, for its own savings).
+ */
+async function cacheLabSection($: EngineInterface, t: any, open: Record<string, boolean>, s: LensSettings, agentId: string | null = null) {
   const { Box, Text, Button } = t
   const state = await read($, cacheLabA)
   const o = labOpen(open)
   const preset = await windowPreset($)
   const lab = labNow
-  // ITEM-074: keep-alive's session figures, a view over the state it publishes (no transcript read: drawn in every load state).
-  const ka = o && s.keepaliveSection ? await keepaliveFigures($) : null
-  const kaLine = ka === null ? null : keepaliveLine(await keepaliveValue($))
+  // ITEM-074: keep-alive's figures, a view over the state it publishes (no transcript read: drawn in every load state).
+  // Read only while Cache Lab is open, so a closed one never redraws on keep-alive writes.
+  const ka = o && s.keepaliveSection ? await keepaliveFigures($, agentId) : null
+  const kaValue = ka === null ? undefined : await keepaliveValue($)
+  const kaLine = ka === null ? null : keepaliveLine(kaValue)
+  const sw = ka === null ? null : keepaliveSwitches(kaValue)
   const keepAlive = () =>
     ka === null
       ? null
       : labSub($, t, open, `${CACHE_LAB}:keepalive`, 'Keep Alive', () => [
           ...ka.warm.map(w => kv(t, `Kept warm, ${w.track} track`, `${fmtSpan(w.ms)}${w.running ? ' (running)' : ''} · ${w.pings} pings · ${w.armings} armings`)),
+          ka.warm.every(w => w.armings === 0) ? <Text dimColor wrap="wrap">No keep-alive arming seen this session (ai-dlc keep-alive absent, off, or not armed yet).</Text> : null,
+          kv(t, 'Saved by cache reads, this agent', ka.agent === null ? '—' : ka.agent.text),
           kv(t, 'Saved by cache reads, session', ka.session.text),
           kaLine === null ? null : (
             <Text dimColor wrap="wrap">
               {kaLine}
             </Text>
           ),
+          // Round 4: a panel shows figures, never where they came from; `—` is a missing price.
+          <Text dimColor wrap="wrap">
+            Kept warm: from each arming to the cache's expiry, its own TTL included. Saved: cache-read tokens x (input price - cache-read price), priced from the model metadata file, — where a price is missing; the cache-write premium is not taken off.
+          </Text>,
         ])
   const money = (n: number) => (lab !== null && lab.priced ? usd(n) : 'no price')
   const figures = () => {
@@ -2181,26 +2224,12 @@ async function cacheLabSection($: EngineInterface, t: any, open: Record<string, 
             <Button key="cachelab-reload" label="↻" onPress={() => loadLab($)} />
           </Box>
           {figures()}
+          {sw === null ? null : keepaliveButtons($, t, sw)}
           {keepAlive()}
         </Box>
       )}
     </Box>
   )
-}
-
-function keepaliveSection($: EngineInterface, t: any, open: Record<string, boolean>, s: LensSettings, id: string, ka: KeepaliveFigures) {
-  const { Text } = t
-  const head = ka.warm.map(w => `${w.track} ${fmtSpan(w.ms)}`).join(' · ')
-  return section($, t, open, s, `agent:${id}:keepalive`, 'agent-keepalive', `Cache keep-alive (${head} · saved ${ka.session.text})`, () => [
-    ...ka.warm.map(w => kv(t, `Kept warm, ${w.track} track`, `${fmtSpan(w.ms)}${w.running ? ' (running)' : ''} · ${w.pings} pings · ${w.armings} armings`)),
-    ka.warm.every(w => w.armings === 0) ? <Text dimColor wrap="wrap">No keep-alive arming seen this session (ai-dlc keep-alive absent, off, or not armed yet).</Text> : null,
-    kv(t, 'Saved by cache reads, this agent', ka.agent === null ? '—' : ka.agent.text),
-    kv(t, 'Saved by cache reads, session', ka.session.text),
-    // Round 4: a panel shows figures, never where they came from; `—` is a missing price (the sources stay in the figures' `source`).
-    <Text dimColor wrap="wrap">
-      Kept warm: from each arming to the cache's expiry, its own TTL included. Saved: cache-read tokens x (input price - cache-read price), priced from the model metadata file, — where a price is missing; the cache-write premium is not taken off.
-    </Text>,
-  ])
 }
 
 /**
@@ -2223,7 +2252,7 @@ function agentBody(
   av: ChartAvatars,
   hasSvg: boolean,
   closeHere = false,
-  ka: KeepaliveFigures | null = null,
+  cacheLab: RenderElement | null = null,
 ) {
   const { Box, Text, Button } = t
   const a = liveOr(agents, ui.agent, ui.agentSnap)
@@ -2277,7 +2306,7 @@ function agentBody(
           ...limitRows(costing, a.model).map(([k, v]) => kv(t, k, v)),
         ])
       )}
-      {s.keepaliveSection && ka !== null ? keepaliveSection($, t, open, s, id, ka) : null}
+      {cacheLab}
       {section($, t, open, s, `agent:${id}:calls`, 'agent-calls', `Tool calls (${list.length})`, () =>
         list.length === 0 ? <Text dimColor>none yet</Text> : list.slice(-s.callsShown).map(c => callRow(t, c)),
       )}
@@ -2490,7 +2519,8 @@ async function drillBody($: EngineInterface, t: any, target: string, d: LensDril
         {edgeBody($, t, { ...UI0, edge: d.id, edgeSnap: d.snap }, await read($, docA), agents, label, open, s, av, hasSvg)}
       </Box>
     )
-  const ka = s.keepaliveSection ? await keepaliveFigures($, d.id) : null
+  // Step 42: Cache Lab, in place of the Cache keep-alive section.
+  const cacheLab = await cacheLabSection($, t, open, s, d.id)
   return (
     <Box flexDirection="column" width="100%">
       {back}
@@ -2510,7 +2540,7 @@ async function drillBody($: EngineInterface, t: any, target: string, d: LensDril
         av,
         hasSvg,
         false,
-        ka,
+        cacheLab,
       )}
     </Box>
   )
@@ -2733,7 +2763,8 @@ async function workflowBody($: EngineInterface, t: any, site: ViewSite) {
     </Box>,
     idle,
   )
-  const keepalive = await keepaliveRow($, t)
+  // Step 42: the keep-alive band is a band of its own, after this one: no keep-alive line in the lens band.
+  const keepalive = site.where === 'band' ? null : await keepaliveRow($, t)
   const pinnedNote =
     site.where === 'pane' && place === 'pinned' && !BAND_SURFACES.has(site.surface) ? (
       <Text dimColor wrap="wrap">
@@ -2752,7 +2783,8 @@ async function workflowBody($: EngineInterface, t: any, site: ViewSite) {
             </Box>
           )),
         )
-  const head = [controls, pinnedNote, keepalive, noticeList(t, 'pane', loose, open), anomalySection, site.where === 'pane' ? await cacheLabSection($, t, open, s) : null]
+  // Step 42: Cache Lab moved to the agent panel (cacheLabSection), out of this head.
+  const head = [controls, pinnedNote, keepalive, noticeList(t, 'pane', loose, open), anomalySection]
 
   // Drill-in, pressed in this view: the details with "< Back", in place of the runs.
   const drilled = drills['pane']
@@ -3442,11 +3474,11 @@ export const register: Register = on => {
     }
   })
 
-  // /ai-dlc:lens-keepalive [on|off]: turns the Cache keep-alive section of the agent panes on or off in
+  // /ai-dlc:lens-keepalive [on|off]: turns the keep-alive part of Cache Lab (agent panel) on or off in
   // .ai-dlc/lens.json (keepaliveSection, on by default); bare, it flips the value in force. Then the figures.
   on('command.run', { command: CMD.keepalive }, async ($, e) => {
     const arg = e.args.trim().toLowerCase()
-    if (arg !== '' && arg !== 'on' && arg !== 'off') return { text: `Usage: /${CMD.keepalive} [on|off]. Bare, it turns the Cache keep-alive section of the agent panes and the Keep Alive sub-accordion of Cache Lab off when it is on, and on when it is off.` }
+    if (arg !== '' && arg !== 'on' && arg !== 'off') return { text: `Usage: /${CMD.keepalive} [on|off]. Bare, it turns the Keep Alive sub-accordion and the keep-alive buttons of Cache Lab, in the agent panel, off when they are on, and on when they are off.` }
     const before = await loadSettings($)
     const want = arg === '' ? !(before.settings.keepaliveSection as boolean) : arg === 'on'
     const r = setKey(await readText($, LENS_JSON), 'keepaliveSection', String(want))
@@ -3459,7 +3491,7 @@ export const register: Register = on => {
     const f = await keepaliveFigures($)
     return {
       text:
-        `${LENS_JSON} updated: keepaliveSection = ${want}. The Cache keep-alive section is ${now ? 'shown' : 'hidden'} in the agent panes and the Keep Alive sub-accordion of Cache Lab.${note}\n` +
+        `${LENS_JSON} updated: keepaliveSection = ${want}. The Keep Alive sub-accordion and the keep-alive buttons of Cache Lab, in the agent panel, are ${now ? 'shown' : 'hidden'}.${note}\n` +
         `Kept warm: ${f.warm.map(w => `${w.track} ${fmtSpan(w.ms)} (${w.pings} pings, ${w.armings} armings${w.running ? ', running' : ''})`).join(' · ')}. ` +
         `Saved by cache reads this session: ${f.session.text}${f.session.usd === null ? ` (${f.session.source})` : ''}.`,
     }
@@ -3739,8 +3771,9 @@ export const register: Register = on => {
         const a = liveOr(agents, ui.agent, ui.agentSnap)
         return minimisedTab($, t, AGENT, a ? `Agent: ${label(a).name} - ${a.status}` : 'Agent')
       }
-      // Step 1.4: read only while the section is on, so a pane without it never redraws on keep-alive writes.
-      const ka = s.keepaliveSection ? await keepaliveFigures($, ui.agent) : null
+      // Step 42: Cache Lab, in place of the Cache keep-alive section; it reads keep-alive only while open.
+      const open = await read($, cardOpenA)
+      const cacheLab = await cacheLabSection($, t, open, s, ui.agent)
       return agentBody(
         $,
         t,
@@ -3752,12 +3785,12 @@ export const register: Register = on => {
         label,
         defs,
         await read($, costingA),
-        await read($, cardOpenA),
+        open,
         s,
         av,
         e.surface !== 'terminal',
         true,
-        ka,
+        cacheLab,
       )
     })
   })

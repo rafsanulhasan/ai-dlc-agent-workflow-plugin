@@ -19,7 +19,7 @@ import {
   trackOn,
 } from '../cache-state.ts'
 import type { SessionSwitch, TrackFacts } from '../cache-state.ts'
-import { bandText } from '../panel.tsx'
+import { bandText, masterState } from '../panel.tsx'
 
 // ITEM-068 (T17.6; LLD rev 7 to 11): the off-line suffix and the source note, the session switches, the band
 // and Pane model, and the status-line summary. All pure, driven directly. Times are local, as the line writes them.
@@ -198,5 +198,22 @@ describe('[D13] which text the status line carries', () => {
     expect(hhmm(T(9, 5))).toBe('9:05')
     expect(hhmm(T(0, 0))).toBe('0:00')
     expect(hhmm(T(23, 59))).toBe('23:59')
+  })
+})
+
+// Step 42: the keep-alive band minimises like the lens band: one row with whether keep-alive is on, and the master button only.
+describe('[42.2] the minimised keep-alive band', () => {
+  const rows = { '5m': { line: 'keepalive 5m: off (disabled)', enabled: false }, '1h': { line: 'keepalive 1h: armed', enabled: true } }
+  test('masterState names the state, the opposite of the master button (which names the press)', () => {
+    expect(masterState(bandModel('off', rows))).toBe('on')
+    expect(masterState(bandModel('on', rows))).toBe('off')
+  })
+  test('minimised, the band is one row: title, on|off, and the master button; no track row, no seed row', () => {
+    expect(bandText(bandModel('off', rows, 'keepalive seed: cache miss'), true)).toBe('⚠ ai-dlc cache-keepalive: on [off]')
+    expect(bandText(bandModel('on', rows), true)).toBe('⚠ ai-dlc cache-keepalive: off [on]')
+  })
+  test('not minimised (the default and the Pane) is the full band as before', () => {
+    expect(bandText(bandModel('on', rows), false)).toBe(bandText(bandModel('on', rows)))
+    expect(bandText(bandModel('on', rows)).split('\n')).toHaveLength(3)
   })
 })

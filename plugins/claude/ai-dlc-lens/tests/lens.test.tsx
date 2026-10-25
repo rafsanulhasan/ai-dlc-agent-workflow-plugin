@@ -951,11 +951,12 @@ describe('panels', () => {
     await ui.unmount()
     const ag = await $.ui.mount({ ...pane('ai-dlc-lens-agent', 'inline', 24), surface: 'vscode' })
     const all: any[] = await ag.findAll({})
-    const headings = all.filter((x: any) => x.type === 'Text' && /^\s*(Context Lab|Cache keep-alive|Tool calls|Background tasks|Thinking) \(/.test(String(x.text))).map((x: any) => String(x.text).trim().replace(/ \(.*$/, ''))
-    // Step 1.4: the Cache keep-alive section, on by default (keepaliveSection), comes after Context Lab (ITEM-073: the agent pane's Usage section renamed).
-    expect(headings).toEqual(['Context Lab', 'Cache keep-alive', 'Tool calls', 'Background tasks', 'Thinking'])
+    const headings = all.filter((x: any) => x.type === 'Text' && /^\s*(Context Lab \(|Cache Lab$|Tool calls \(|Background tasks \(|Thinking \()/.test(String(x.text).trim())).map((x: any) => String(x.text).trim().replace(/ \(.*$/, ''))
+    // Step 42: Cache Lab takes the place of the Cache keep-alive section, after Context Lab (ITEM-073: the agent pane's Usage section renamed).
+    expect(headings).toEqual(['Context Lab', 'Cache Lab', 'Tool calls', 'Background tasks', 'Thinking'])
     expect(all.filter((x: any) => x.type === 'Text' && /^─+$/.test(String(x.text))).length).toBe(5)
-    for (const k of ['agent-usage', 'agent-keepalive', 'agent-calls', 'agent-tasks', 'agent-thinking']) expect(await ag.find({ type: 'Button', key: k })).toBeDefined()
+    for (const k of ['agent-usage', 'cachelab-open', 'agent-calls', 'agent-tasks', 'agent-thinking']) expect(await ag.find({ type: 'Button', key: k })).toBeDefined()
+    expect(await ag.find({ type: 'Button', key: 'agent-keepalive' })).toBe(undefined)
     // No raw JSON in the panel.
     expect(all.some((x: any) => x.type === 'Text' && /^\s*[[{]"/.test(String(x.text)))).toBe(false)
     await ag.unmount()
@@ -978,7 +979,7 @@ describe('collapsed by default (addendum 2)', () => {
     for (const k of ['edge-usage', 'edge-doc', 'edge-back']) expect((await edge.find({ type: 'Button', key: k }))?.text).toBe('[+]')
     await edge.unmount()
     const ag = await $.ui.mount({ ...pane('ai-dlc-lens-agent'), surface: 'vscode' })
-    for (const k of ['agent-usage', 'agent-keepalive', 'agent-calls', 'agent-tasks', 'agent-thinking']) expect((await ag.find({ type: 'Button', key: k }))?.text).toBe('[+]')
+    for (const k of ['agent-usage', 'cachelab-open', 'agent-calls', 'agent-tasks', 'agent-thinking']) expect((await ag.find({ type: 'Button', key: k }))?.text).toBe('[+]')
     await ag.unmount()
   })
 
@@ -2354,6 +2355,22 @@ describe('keep-alive (spike 028, AC-9.4)', () => {
     }
   })
 
+  test('[42.1] the lens band above the prompt draws no keep-alive line: keep-alive has a band of its own after it (the pane head keeps the line)', { plugins: [kaProvider] }, async ($, on) => {
+    on('session.surfaces', () => ({ value: ['terminal'] }))
+    await seed($, on)
+    await ($.command.run as any)({ command: 'ai-dlc:lens', args: '' })
+    await $.command.run({ command: 'ka-arm' } as never)
+    const b = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 20, bodyColumns: 100, scroll: { offset: 0, bodyRows: 20 }, view: {} } } as any)
+    // the band is drawn (its workflow list), a track is running, and still no keep-alive line in it
+    expect(await b.find({ type: 'Button', key: 'wf-toolu_1' })).toBeDefined()
+    expect(await b.find({ type: 'Text', text: /^keep-alive:/ })).toBe(undefined)
+    await b.unmount()
+    // the same value in the view's pane head still draws the line
+    const wp = await chartPane($, 'terminal', false)
+    expect((await wp.find({ type: 'Text', text: /^keep-alive:/ }))?.text).toBe(KA_LINE)
+    await wp.unmount()
+  })
+
   test('without ai-dlc (no published value) no line draws and the panes draw as before', async ($, on) => {
     await seed($, on)
     for (const surface of SURFACES) {
@@ -2500,17 +2517,21 @@ describe('/ai-dlc:* commands (step 8.1.4)', () => {
   test('/ai-dlc:lens-keepalive: bare flips keepaliveSection in lens.json, on|off set it, anything else is the usage', async ($, on) => {
     const { files } = await seed($, on)
     const off: any = await ($.command.run as any)({ command: 'ai-dlc:lens-keepalive', args: '' })
-    expect(String(off?.text)).toMatch(/^\.ai-dlc\/lens\.json updated: keepaliveSection = false\. The Cache keep-alive section is hidden/)
+    expect(String(off?.text)).toMatch(/^\.ai-dlc\/lens\.json updated: keepaliveSection = false\. The Keep Alive sub-accordion and the keep-alive buttons of Cache Lab, in the agent panel, are hidden\./)
     expect(String(off?.text)).toMatch(/Kept warm: 5m 0s \(0 pings, 0 armings\) · 1h 0s \(0 pings, 0 armings\)\./)
     expect(JSON.parse(String(files['.ai-dlc/lens.json'])).keepaliveSection).toBe(false)
     const lp = await chartPane($)
     await lp.press({ key: 'agent-a1' })
     await lp.unmount()
     const ag = await $.ui.mount({ ...pane('ai-dlc-lens-agent'), surface: 'vscode' })
+    // Step 42: Cache Lab stays (its figures are not keep-alive's); its Keep Alive part is what the switch hides.
+    expect(await ag.find({ type: 'Button', key: 'cachelab-open' })).toBeDefined()
+    await ag.press({ key: 'cachelab-open' })
+    expect(await ag.find({ type: 'Button', key: 'lens:cachelab:keepalive-open' })).toBe(undefined)
     expect(await ag.find({ type: 'Button', key: 'agent-keepalive' })).toBe(undefined)
     await ag.unmount()
     const back: any = await ($.command.run as any)({ command: 'ai-dlc:lens-keepalive', args: '' })
-    expect(String(back?.text)).toMatch(/keepaliveSection = true\. The Cache keep-alive section is shown/)
+    expect(String(back?.text)).toMatch(/keepaliveSection = true\. The Keep Alive sub-accordion and the keep-alive buttons of Cache Lab, in the agent panel, are shown/)
     const onAgain: any = await ($.command.run as any)({ command: 'ai-dlc:lens-keepalive', args: 'ON' })
     expect(String(onAgain?.text)).toMatch(/keepaliveSection = true/)
     const bad: any = await ($.command.run as any)({ command: 'ai-dlc:lens-keepalive', args: 'maybe' })
@@ -2520,11 +2541,11 @@ describe('/ai-dlc:* commands (step 8.1.4)', () => {
   test('/ai-dlc:lens-keepalive under a settings env that keeps it on: lens.json changes and the reply names the winner', async ($, on) => {
     await seed($, on, { files: { '.claude/settings.json': JSON.stringify({ env: { AI_DLC_LENS_KEEPALIVE_SECTION: 'true' } }) } })
     const r: any = await ($.command.run as any)({ command: 'ai-dlc:lens-keepalive', args: 'off' })
-    expect(String(r?.text)).toMatch(/keepaliveSection = false\. The Cache keep-alive section is shown in the agent panes and the Keep Alive sub-accordion of Cache Lab\. A higher level wins: \.claude\/settings\.json env\./)
+    expect(String(r?.text)).toMatch(/keepaliveSection = false\. The Keep Alive sub-accordion and the keep-alive buttons of Cache Lab, in the agent panel, are shown\. A higher level wins: \.claude\/settings\.json env\./)
   })
 })
 
-describe('/ai-dlc:lens-keepalive: the agent pane section (step 8.1.4)', () => {
+describe('/ai-dlc:lens-keepalive: the Keep Alive sub-accordion of Cache Lab in the agent panel (step 8.1.4, moved by step 42)', () => {
   test('on by default, collapsed; opened it shows kept-warm time per track over armings and the savings of the agent and the session', { plugins: [kaTimed] }, async ($, on) => {
     await seed($, on, { files: { '.ai-dlc/model-metadata.json': COSTING_BOTH } })
     await $.command.run({ command: 'ka2-first' } as never)
@@ -2536,17 +2557,23 @@ describe('/ai-dlc:lens-keepalive: the agent pane section (step 8.1.4)', () => {
       await lp.press({ key: 'agent-a1' })
       await lp.unmount()
       const ag = await $.ui.mount({ ...pane('ai-dlc-lens-agent'), surface })
-      expect((await ag.find({ type: 'Button', key: 'agent-keepalive' }))?.text).toBe('[+]')
+      // Step 42: no Cache keep-alive section any more; Cache Lab is collapsed and so is its Keep Alive part.
+      expect(await ag.find({ type: 'Button', key: 'agent-keepalive' })).toBe(undefined)
+      expect(await ag.find({ type: 'Text', text: /Cache keep-alive/ })).toBe(undefined)
+      expect((await ag.find({ type: 'Button', key: 'cachelab-open' }))?.text).toBe('[+]')
+      expect(await ag.find({ type: 'Text', text: /Kept warm, 5m track/ })).toBe(undefined)
+      await ag.press({ key: 'cachelab-open' })
+      expect((await ag.find({ type: 'Button', key: 'lens:cachelab:keepalive-open' }))?.text).toBe('[+]')
+      expect(await ag.find({ type: 'Text', text: /Kept warm, 5m track/ })).toBe(undefined)
       // 9m of the first arming, then the second arming to its expiry (2m, already past): 11m.
       // Saved: main 100K x (5 - 0.5) + a1 90K x (3 - 0.3) = 0.45 + 0.243.
-      expect(await ag.find({ type: 'Text', text: /^\s*Cache keep-alive \(5m 11m 00s · 1h 0s · saved \$0\.6930\)$/ })).toBeDefined()
-      expect(await ag.find({ type: 'Text', text: /Kept warm, 5m track/ })).toBe(undefined)
-      await ag.press({ key: 'agent-keepalive' })
+      await ag.press({ key: 'lens:cachelab:keepalive-open' })
       expect(await ag.find({ type: 'Text', text: '11m 00s (running) · 1 pings · 2 armings' })).toBeDefined()
       expect(await ag.find({ type: 'Text', text: '0s · 0 pings · 0 armings' })).toBeDefined()
       expect(await ag.find({ type: 'Text', text: '$0.2430' })).toBeDefined()
       expect(await ag.find({ type: 'Text', text: '$0.6930' })).toBeDefined()
-      await ag.press({ key: 'agent-keepalive' })
+      await ag.press({ key: 'lens:cachelab:keepalive-open' })
+      await ag.press({ key: 'cachelab-open' })
       await ag.unmount()
     }
   })
@@ -2557,21 +2584,25 @@ describe('/ai-dlc:lens-keepalive: the agent pane section (step 8.1.4)', () => {
     await lp.press({ key: 'agent-a1' })
     await lp.unmount()
     const ag = await $.ui.mount({ ...pane('ai-dlc-lens-agent'), surface: 'vscode' })
-    expect(await ag.find({ type: 'Text', text: /^\s*Cache keep-alive \(5m 0s · 1h 0s · saved —\)$/ })).toBeDefined()
+    await ag.press({ key: 'cachelab-open' })
+    await ag.press({ key: 'lens:cachelab:keepalive-open' })
     expect(await ag.find({ type: 'Text', text: /^No keep-alive arming seen this session/ })).toBeDefined()
+    expect(await ag.find({ type: 'Text', text: '—' })).toBeDefined()
     expect(await ag.find({ type: 'Text', text: /lens hook error/ })).toBe(undefined)
     expect(await ag.find({ type: 'Button', key: 'agent-calls' })).toBeDefined()
     await ag.unmount()
   })
 
-  test('keepaliveSection false: no section; the other four stay', async ($, on) => {
+  test('keepaliveSection false: no Keep Alive part in Cache Lab; the other sections stay', async ($, on) => {
     await seed($, on, { files: { '.ai-dlc/lens.json': JSON.stringify({ keepaliveSection: false }) } })
     const lp = await chartPane($)
     await lp.press({ key: 'agent-a1' })
     await lp.unmount()
     const ag = await $.ui.mount({ ...pane('ai-dlc-lens-agent'), surface: 'vscode' })
     expect(await ag.find({ type: 'Button', key: 'agent-keepalive' })).toBe(undefined)
-    for (const k of ['agent-usage', 'agent-calls', 'agent-tasks', 'agent-thinking']) expect(await ag.find({ type: 'Button', key: k })).toBeDefined()
+    await ag.press({ key: 'cachelab-open' })
+    expect(await ag.find({ type: 'Button', key: 'lens:cachelab:keepalive-open' })).toBe(undefined)
+    for (const k of ['agent-usage', 'cachelab-open', 'agent-calls', 'agent-tasks', 'agent-thinking']) expect(await ag.find({ type: 'Button', key: k })).toBeDefined()
     await ag.unmount()
   })
 })

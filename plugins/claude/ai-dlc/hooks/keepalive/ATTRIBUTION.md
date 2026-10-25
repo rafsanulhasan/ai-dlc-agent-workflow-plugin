@@ -811,3 +811,13 @@ root 17, step 17.2.4; spec keepalive-cache-status line 82, D2a; LLD rev 5,
   left. A track switched off in S1 so reads `off (disabled)` in S2, in step
   with its `[on]` button (AC-17.7.1). Test finding, sqa-41; spec blocker,
   cr-spec-41.
+- **The band minimises; the tracks publish whether they are on (step 42,
+  2026-10-25).** `keepaliveBand` takes where it draws (`band`, or
+  the Pane, the default). On the band, `keepaliveTree` ends the title row in
+  the lens band's minimise control (`–`, `□`) and a close (`×`), and draws
+  the band minimised as one row: the title, `on` or `off`, the master button
+  and the two controls. No Box of the band has a width. The band starts
+  minimised at each load, as the lens band does; `×` hides it until a run of
+  `/ai-dlc:cache-keepalive`, a new session or a load. The Pane has neither.
+  `bandText` gains the minimised row. Each published track gains `enabled`,
+  its state in force, for the lens's Cache Lab buttons.
