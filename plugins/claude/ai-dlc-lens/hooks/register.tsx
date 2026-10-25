@@ -160,7 +160,7 @@ import { SVG_CAP, avatarKey, avatarSvg, checkBytes, classify, isInside, own, tru
 import type { AvatarImage, ChartAvatars } from './avatar'
 import { FileCache, batches, checkEnvelope, folderOf, mergeCalls, sessionOfTranscript } from './transcripts'
 import type { Call, FileRecord, ListData, ReadData } from './transcripts'
-import { ATTRIBUTION_LABELS, DEFAULT_WINDOW, WINDOWS, WINDOW_LABELS, classify as classifyCalls, count, labOf, medianK, noPriceNote, pct, presetOf, priceOfCosting, share, usd, windowOf as labWindowOf, withPreset } from './cache-lab'
+import { ATTRIBUTION_LABELS, DEFAULT_WINDOW, WINDOWS, galleryHeader, galleryLine, turnLine, WINDOW_LABELS, classify as classifyCalls, count, labOf, medianK, noPriceNote, pct, presetOf, priceOfCosting, share, usd, windowOf as labWindowOf, withPreset } from './cache-lab'
 import type { CacheLab, WindowPreset } from './cache-lab'
 import { anomaliesOf, anomalyLine, applySettings, colorOf, detectAgents, detectRun, diffAnomalies, edgeAgentOf, frontMatter, handoffsRoot, normDir, recordName, runsToRead, trackWaiting, worstOf } from './anomaly'
 
@@ -2047,6 +2047,28 @@ async function toggleLab($: EngineInterface) {
   if (opened) await loadLab($)
 }
 
+/** A sub-accordion of Cache Lab: collapsed until opened, whatever `collapsedByDefault` says (its key is its own). */
+function labSub($: EngineInterface, t: any, open: Record<string, boolean>, key: string, heading: string, body: () => any) {
+  const { Box, Text, Button } = t
+  const o = open[key] ?? false
+  return (
+    <Box key={key} flexDirection="column" marginTop={1}>
+      <Box flexDirection="row" flexWrap="wrap">
+        <Button key={`${key}-open`} label={o ? '[-]' : '[+]'} onPress={() => update($, cardOpenA, m => ({ ...(m as Record<string, boolean>), [key]: !((m as Record<string, boolean>)[key] ?? false) }))} />
+        <Text bold wrap="wrap">
+          {' '}
+          {heading}
+        </Text>
+      </Box>
+      {o && (
+        <Box flexDirection="column" paddingLeft={2}>
+          {body()}
+        </Box>
+      )}
+    </Box>
+  )
+}
+
 /** The Cache Lab accordion of the lens view: window row, savings row, cards row (AC-22.2.1 order). */
 async function cacheLabSection($: EngineInterface, t: any, open: Record<string, boolean>, s: LensSettings) {
   const { Box, Text, Button } = t
@@ -2075,6 +2097,17 @@ async function cacheLabSection($: EngineInterface, t: any, open: Record<string, 
       kv(t, '5m', `${count(lab.ttlMix.m5)}${share(lab.ttlMix.m5, lab.ttlMix.total)}`),
       kv(t, '1h', `${count(lab.ttlMix.h1)}${share(lab.ttlMix.h1, lab.ttlMix.total)}`),
       kv(t, 'unknown', `${count(lab.ttlMix.unknown)}${share(lab.ttlMix.unknown, lab.ttlMix.total)}`),
+      // ITEM-072: the busts, newest first, at most 50; text only (no API links to a turn).
+      labSub($, t, open, `${CACHE_LAB}:gallery`, `Invalidation Gallery (${galleryHeader(lab.gallery)})`, () =>
+        lab.gallery.rows.map((r, i) => (
+          <Box key={`cachelab-g-${i}`} flexDirection="column">
+            <Text wrap="wrap">{galleryLine(r, lab.priced)}</Text>
+            <Text dimColor wrap="wrap">
+              {turnLine(r)}
+            </Text>
+          </Box>
+        )),
+      ),
       <Text dimColor wrap="wrap">
         base prices, from {s.costingPath}{state.status === 'loading' ? ' · reading transcripts...' : ''}
       </Text>,

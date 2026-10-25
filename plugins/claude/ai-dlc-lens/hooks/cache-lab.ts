@@ -81,6 +81,11 @@ export function classify(calls: readonly Call[]): Classified[] {
   return out
 }
 
+/** One bust of the Invalidation Gallery; `lossUsd` null when unpriced; `pid`/`turn` when the bust resolves to its prompt. */
+export type GalleryRow = { at: number; model: string; session: string; stream: string; attribution: Attribution; cacheWrite: number; lossUsd: number | null; pid?: string; turn?: number }
+/** The gallery shows at most this many busts, newest first. */
+export const GALLERY_CAP = 50
+
 export type CacheLab = {
   savedUsd: number
   lostUsd: number
@@ -94,6 +99,7 @@ export type CacheLab = {
   attribution: { ttlLapse: number; prefixChange: number; unknown: number }
   /** Cache writes by TTL: `unknown` is what no 5m/1h split covers; the parts sum to `total`. */
   ttlMix: { m5: number; h1: number; unknown: number; total: number }
+  gallery: { rows: GalleryRow[]; total: number; truncated: boolean }
   /** False when there is no price file, or no model of the window is in it. */
   priced: boolean
 }
@@ -142,6 +148,7 @@ export function labOf(all: readonly Classified[], priceOf: PriceOf | null, w: Wi
   let busts = 0
   const attribution = { ttlLapse: 0, prefixChange: 0, unknown: 0 }
   const ttlMix = { m5: 0, h1: 0, unknown: 0, total: 0 }
+  const bustRows: GalleryRow[] = []
   for (const c of W) {
     const p = price(c.model)
     if (p !== null) anyPrice = true
@@ -156,6 +163,10 @@ export function labOf(all: readonly Classified[], priceOf: PriceOf | null, w: Wi
     if (c.bust) {
       busts += 1
       attribution[c.attribution ?? 'unknown'] += 1
+      const row: GalleryRow = { at: c.at, model: c.model, session: c.session, stream: c.stream, attribution: c.attribution ?? 'unknown', cacheWrite: c.cc, lossUsd: l }
+      if (c.pid !== undefined) row.pid = c.pid
+      if (c.turn !== undefined) row.turn = c.turn
+      bustRows.push(row)
     }
     const split = c.cc5m !== undefined || c.cc1h !== undefined
     ttlMix.m5 += c.cc5m ?? 0
@@ -179,6 +190,7 @@ export function labOf(all: readonly Classified[], priceOf: PriceOf | null, w: Wi
     medianBaseline: median(baselines),
     attribution,
     ttlMix,
+    gallery: { rows: bustRows.sort((a, b) => b.at - a.at).slice(0, GALLERY_CAP), total: bustRows.length, truncated: bustRows.length > GALLERY_CAP },
     priced: priceOf !== null && (W.length === 0 || anyPrice),
   }
 }
@@ -240,6 +252,15 @@ export const medianK = (n: number | null): string => (n === null ? '—' : `${Ma
 export const ATTRIBUTION_LABELS: Record<Attribution, string> = { ttlLapse: 'TTL lapse', prefixChange: 'Prefix change', unknown: 'Unknown' }
 /** A part of a total as a percent, one decimal; none when the total is 0. */
 export const share = (part: number, total: number): string => (total === 0 ? '' : ` (${((part / total) * 100).toFixed(1)}%)`)
+/** `3 busts`, or `50 of 51 busts` when truncated. */
+export const galleryHeader = (g: CacheLab['gallery']): string => (g.truncated ? `${g.rows.length} of ${g.total} busts` : `${g.total} bust${g.total === 1 ? '' : 's'}`)
+/** A gallery row: `HH:MM · model · session · stream? · attribution · 12,000 · $0.07` (a main stream names none). */
+export function galleryLine(r: GalleryRow, priced: boolean, tz?: string): string {
+  const money = !priced || r.lossUsd === null ? 'no price' : usd(r.lossUsd)
+  return [hhmm(r.at, tz), r.model, r.session.slice(0, 8), ...(r.stream === 'main' ? [] : [r.stream]), ATTRIBUTION_LABELS[r.attribution], count(r.cacheWrite), money].join(' · ')
+}
+/** `prompt <first 8 of the id> · turn <n>`, or `No turn attribution`. */
+export const turnLine = (r: GalleryRow): string => (r.pid === undefined || r.turn === undefined ? 'No turn attribution' : `prompt ${r.pid.slice(0, 8)} · turn ${r.turn}`)
 export const noPriceNote = (n: number): string => `${n} call${n === 1 ? '' : 's'} with no price`
 
 /** `HH:MM` in the time zone (default: the machine's). */
