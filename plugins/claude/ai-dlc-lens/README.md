@@ -1,9 +1,9 @@
 # ai-dlc-lens
 
-A Claude Code plugin that shows an AI-DLC run while it happens. When the orchestrator spawns agents, the **AI-DLC workflow** view appears: one workflow per run (the work item, its `docs/handoffs/<run>/` folder), each a collapsible panel holding one flowchart per top-level step of the run (**in progress**, see [Panels and controls](#panels-and-controls)), with its agents drawn as avatars (persona name, model, role and a status dot). A new run never hides an earlier one, and agents of a different run never join an earlier run's workflow. Pressing an avatar opens the agent's panel (usage, tokens, context window, cost, tool calls, background tasks, thinking); pressing an arrow opens the hand-off panel (the handoff record and the hand-back, or the prompt). The chat card of a workflow's first spawn names the workflow, draws its flowchart and opens the view.
+A Claude Code plugin that shows an AI-DLC run while it happens. When the orchestrator spawns agents, the **AI-DLC Lens** view appears: one workflow per run (the work item, its `docs/handoffs/<run>/` folder), each a collapsible panel holding one flowchart per top-level step of the run (**in progress**, see [Panels and controls](#panels-and-controls)), with its agents drawn as avatars (persona name, model, role and a status dot). A new run never hides an earlier one, and agents of a different run never join an earlier run's workflow. Pressing an avatar opens the agent's panel (usage, tokens, context window, cost, tool calls, background tasks, thinking); pressing an arrow opens the hand-off panel (the handoff record and the hand-back, or the prompt). The chat card of a workflow's first spawn names the workflow, draws its flowchart and opens the view.
 
 - **Drill-in or tab.** An avatar or arrow opens its panel inside the card or view it was pressed in, with `< Back` (`drill-in`, `panelOpenMode`'s default), or as a separate pane (a tab, `tab`). The **Panel Type** switch `◉ Drill in  ○ Tab` changes it for the session (see [Panels and controls](#panels-and-controls)).
-- **Pinned or docked.** Pinned (`workflowPlace`, the default) draws the view in the band above the prompt on the terminal and the desktop app; VS Code has no such band, so there it stays a pane. Docked draws it in the pane, which the surface places. The view's first row also has full screen, minimise and restore (back to the size before); no mod can make a pane full screen or minimise it, so these are drawn by the lens itself, as [MANUAL-CHECKS.md](MANUAL-CHECKS.md) (*Step 1.5*) explains. [Full screen](#full-screen) shows one step of one run alone.
+- **Pinned or docked.** Pinned (`workflowPlace`, the default) draws the view in the band above the prompt on the terminal and the desktop app; VS Code has no such band, so there it stays a pane. Docked draws it in the pane, which the surface places. The view has one form: the older "AI-DLC lens" card is gone, and an older build's card is closed on the first draw after `/reload-plugins`. No mod can make a pane full screen or minimise it, so the lens draws those controls itself, as [MANUAL-CHECKS.md](MANUAL-CHECKS.md) (*Step 1.5*) explains; see [The band and the pane](#the-band-and-the-pane). [Full screen](#full-screen) shows one step of one run alone.
 - **Wide or narrow.** From `wideColumns` columns (70) the runs are stacked as collapsible panels on the right, with the selected run's step charts beside them; narrower, the view lists the runs, one row each, and opens the one you choose.
 
 **In progress:** this plugin is being built in the run `FEAT-20261020-ai-dlc-lens`, and its reviews are still open. It started as spike ITEM-027 (round 6) and has since been extended (steps 8.1.2 to 8.6.1.l1 of that run: robot avatars, keep-alive figures, the anomaly detector, Panel Type, full screen, one chart per step). It still goes through that run's scope pass and gates G1, G2 and G3 before it is released. Until then the commands, settings and panes can change. This README describes only what exists now.
@@ -27,23 +27,23 @@ The commands are named by thin skills of the `ai-dlc` plugin, so Claude Code lis
 
 | Command | What it does |
 |---|---|
-| `/ai-dlc:lens` | Opens the lens pane (the older single-pane view). The workflow view appears on its own at the first spawn. |
+| `/ai-dlc:lens` | Opens or brings forward the AI-DLC Lens view (see [The band and the pane](#the-band-and-the-pane)). The view also appears on its own at the first spawn. |
 | `/ai-dlc:lens-init [--force]` | Writes `.ai-dlc/lens.json` with every default, and its schema. |
 | `/ai-dlc:lens-configure [<key> [<value>\|--unset]]` | Shows the lens settings and the level each comes from, or sets or unsets one in `.ai-dlc/lens.json`. |
-| `/ai-dlc:lens-keepalive [on\|off]` | Shows or hides the **Cache keep-alive** section of the agent panes (setting `keepaliveSection`, on by default), then reports its figures. |
+| `/ai-dlc:lens-keepalive [on\|off]` | Shows or hides the **Cache keep-alive** section of the agent panes and the Keep Alive sub-accordion of Cache Lab (setting `keepaliveSection`, on by default), then reports its figures. |
 | `/ai-dlc:lens-gate [on\|off]` | Turns anomaly reporting on or off (setting `gateAlert`); bare, it lists the current anomalies, then the runs it read and the `anomalyRunScope` in force. See [Anomaly alert](#anomaly-alert). |
 | `/ai-dlc:lens-kit` | Opens the round-0 kit pane (manual checks K1 to K5). |
 
-The **Cache keep-alive** section, after Usage in every agent pane and collapsed like every section, shows how long keep-alive kept the prompt cache warm on the 5m and 1h tracks (from each arming to the cache's expiry, read from the state `ai-dlc` publishes; `0s` without it) and what cache reads saved, for the agent and for the session: cache-read tokens times the input price minus the cache-read price, from the model metadata file (`costingPath`), `—` when a price is missing.
+The **Cache keep-alive** section, after Context Lab (the former Usage section) in every agent pane and collapsed like every section, shows how long keep-alive kept the prompt cache warm on the 5m and 1h tracks (from each arming to the cache's expiry, read from the state `ai-dlc` publishes; `0s` without it) and what cache reads saved, for the agent and for the session: cache-read tokens times the input price minus the cache-read price, from the model metadata file (`costingPath`), `—` when a price is missing.
 
 The spike's experiments E1, E2, E4, E5, E7, E9 and E10 log to `PROBE-LOG.jsonl` in the plugin's folder while the `probes` setting is on (off by default). The pane ids are `ai-dlc-lens`, `ai-dlc-lens-chart`, `ai-dlc-lens-edge`, `ai-dlc-lens-agent` and `ai-dlc-lens-kit` (a pane id takes no `:`).
 
 ## Panels and controls
 
-- **Workflow view** (title "AI-DLC workflow"). One collapsible panel per run; the selected run's step charts are drawn beside the list (wide) or under the run (narrow): see *Step charts* below. The first row has the pinned/docked switch, full screen, minimise and restore; below it is the **Panel Type** switch `◉ Drill in  ○ Tab` (drill-in by default; `◉` marks the current choice and each choice is its own button). The switch also appears in the `/ai-dlc:lens` pane, changes the session only and never writes `.ai-dlc/lens.json`. Every `[+]`/`[-]` section starts collapsed unless `collapsedByDefault` is off. Below each step chart are `Avatars:` and `Arrows:` button rows. The workflow's orchestrator thinking and gathered context are sections of the view.
+- **Workflow view** (title "AI-DLC Lens"). One collapsible panel per run; the selected run's step charts are drawn beside the list (wide) or under the run (narrow): see *Step charts* below. The first row has the pinned/docked switch, full screen, minimise and restore; below it is the **Panel Type** switch `◉ Drill in  ○ Tab` (drill-in by default; `◉` marks the current choice and each choice is its own button). The switch also appears in the `/ai-dlc:lens` pane, changes the session only and never writes `.ai-dlc/lens.json`. Every `[+]`/`[-]` section starts collapsed unless `collapsedByDefault` is off. Below each step chart are `Avatars:` and `Arrows:` button rows. The workflow's orchestrator thinking and gathered context are sections of the view.
 - **Chat card.** The first spawn of a workflow leaves a card that names it and draws its flowchart (`chartInChat`), or a chip with an "Open flowchart" button when the row is narrower than `chartMode` allows. **In progress:** when the card's agents work on unrelated tasks (a task is a run plus a feature root), the card draws one titled chart per task, with an agent that has no record (or a gone one) joining the first task's chart; with one task the card is unchanged.
-- **Agent panel** ("Agent: ..."). A header with the avatar, persona name, model and role, then these sections: Usage (context, input, output, cache read and write, uncached, cost, the model it ran on, limits from the metadata file), Cache keep-alive (see above; `keepaliveSection`), Tool calls, Background tasks (each task listed once, starting collapsed, and toggling on its own), Thinking; and the buttons View transcript and Refresh.
-- **Hand-off panel** ("Hand-off: ..."). The arrow's Handoff section, Hand-back section and Prompt section (the prompt when the brief names no record), and Usage.
+- **Agent panel** ("Agent: ..."). A header with the avatar, persona name, model and role, then these sections: Context Lab (context, input, output, cache read and write, uncached, cost, the model it ran on, limits from the metadata file; renamed from Usage), Cache keep-alive (see above; `keepaliveSection`), Tool calls, Background tasks (each task listed once, starting collapsed, and toggling on its own), Thinking; and the buttons View transcript and Refresh.
+- **Hand-off panel** ("Hand-off: ..."). The arrow's Handoff section, Hand-back section and Prompt section (the prompt when the brief names no record), and Context Lab.
 - **Status.** A dot per run and a ring per agent. Colours (settings, hex): in progress `statusInProgressColor` (blinks, `statusBlink`), pending `statusPendingColor`, halted `statusHaltedColor` (an agent failed or was killed, or the run is blocked), waiting `statusWaitingColor`, completed `statusCompletedColor`.
 - **Keep-alive line.** One dim line under the controls row, `keep-alive: 5m ping 1/20, next 14:05:07`, only while `ai-dlc`'s keep-alive runs a track. The minimised one-line view has none.
 - **Layout.** Wide (from `wideColumns`): runs stacked on the right, the selected run's step charts on the left, `runListColumns` wide. Narrow: a list of runs, one row each; choosing one opens it and `< Runs` goes back. Every run stays listed; finished runs are dimmed. **In progress:** the list (wide and narrow) and the full-screen `Runs:` row are ordered newest first by each run's start: its first spawn, else the date in its folder name, else `started:` in its `run.md`. A run resumed later keeps its place, and the selected run stays selected.
@@ -63,6 +63,29 @@ The spike's experiments E1, E2, E4, E5, E7, E9 and E10 log to `PROBE-LOG.jsonl` 
 - **Live markers.** The ▲ anomaly markers on the chat card and in the `/ai-dlc:lens` pane update while they are shown, and clear when the cause is gone.
 - **Pollers.** The lens's blink and poll timers stop when the session ends, but not at `/clear` (no new session start follows a `/clear`, so stopping there would leave the lens without them).
 
+### The band and the pane
+
+Pinned, the view is a band across the full width above the prompt, and the pane never hides it.
+
+- **Minimised.** The band starts minimised and shows one line: the latest workflow in progress and `(n)`, else the waiting, pending or halted one, else "Nothing Here". `□` brings back the list; `–` minimises it again. These two change only the band, never the pane.
+- **Close.** The band has a `×` only while no workflow is in progress. Closed, it stays away until the next spawn, `/ai-dlc:lens` or a new session.
+- **The pane.** `⤢` opens the pane beside the band, or switches it; the pane is at its normal size, never the band's minimised size. While a workflow is in progress the band stays above the prompt at its own size.
+- **`/ai-dlc:lens` cycles:** restore the list; open the pane and minimise the band; switch the pane; minimise the band.
+
+### Cache Lab
+
+**In progress:** built and under review. A section at the head of the pane (not in the chat card or the agent panes), collapsed until opened; nothing is read from disk while it is closed. It reads the session transcripts when opened, when the window changes, on `↻` and when a turn ends.
+
+- **Window.** Buttons `This session`, `Today`, `7d` (default), `30d` and `All`; the chosen one is shown in brackets. `This session` covers the whole automatic handoff chain, from the chain `ai-dlc`'s keep-alive publishes. The window resets to `7d` at `/reload-plugins` unless `cacheLabKeepWindowOnReload` is on.
+- **Figures.** Saved by cache, Lost to busts, NET, Cache Hit %, Tokens Saved, Bust events and Median baseline; money figures need prices from `costingPath` and read `no price` without them.
+- **Miss attribution.** Busts counted as TTL lapse, Prefix change or Unknown. **TTL mix:** cache writes by lifetime (5m, 1h, unknown) with their share.
+- **Invalidation Gallery.** A sub-accordion of the busts, newest first, at most 50, each as one line of text (time, model, 8-character session id, stream if not the main one, attribution, tokens written, cost) and the turn it happened in.
+- **Keep Alive.** The last sub-accordion: the same figures as the agent panes' Cache keep-alive section for the session. `/ai-dlc:lens-keepalive` / `keepaliveSection` show or hide both.
+
+### Diagrams
+
+**In progress:** a closed `mermaid` fence in an assistant message is drawn as a picture right after its source (a PNG on the terminal, an SVG elsewhere), offline, by a renderer process in `renderer/` with its vendored code in `renderer/vendor/` (see [renderer/BUILD.md](renderer/BUILD.md) and [NOTICE.md](NOTICE.md)). A picture that takes over 300 ms shows `rendering…` and is drawn at the next redraw; pictures are cached in memory and on disk (the disk cache stops writing at 200 files). A diagram type the renderer cannot draw offline (for example `pie`) shows its source and a one-line reason. Other fence kinds (math, PlantUML) are found but still drawn as source. `diagramMermaid` turns this off; the check is row D1 of [MANUAL-CHECKS.md](MANUAL-CHECKS.md).
+
 ### Full screen
 
 `⤢` brings the pane to the front and shows one step of the selected run alone: a note, a `Runs:` row to switch runs (with several runs), a `Steps:` row to switch steps (with several steps), and the step's chart 1.5 times larger. `⤢` on a step chart picks that step; from the pane's own `⤢` the first step, the highest code, is shown. The run list, notices, keep-alive line and Anomalies section are hidden until `⤡` restores the view.
@@ -71,7 +94,7 @@ VS Code sizes its own panel: maximise it for more room. In the terminal, full sc
 
 ## Settings
 
-Every lens setting comes from the first level that holds a valid value: `AI_DLC_LENS_*` in the `env` of `.claude/settings.local.json`, then of `.claude/settings.json`, then `.ai-dlc/lens.json`, then the default; an invalid value is skipped. The process environment is never read. `/ai-dlc:lens-configure` lists them with the level each comes from, and `/ai-dlc:lens-init` writes the file and its schema (`hooks/settings.ts` is the source of this table, which lists its 61 keys and the per-agent `avatarImage.<agent>` pattern). An env name is the key in capitals with `_` between words: `chartMode` is `AI_DLC_LENS_CHART_MODE`.
+Every lens setting comes from the first level that holds a valid value: `AI_DLC_LENS_*` in the `env` of `.claude/settings.local.json`, then of `.claude/settings.json`, then `.ai-dlc/lens.json`, then the default; an invalid value is skipped. The process environment is never read. `/ai-dlc:lens-configure` lists them with the level each comes from, and `/ai-dlc:lens-init` writes the file and its schema (`hooks/settings.ts` is the source of this table, which lists its keys and the per-agent `avatarImage.<agent>` pattern). An env name is the key in capitals with `_` between words: `chartMode` is `AI_DLC_LENS_CHART_MODE`.
 
 | Key | Default | Values | What it does |
 |---|---|---|---|
@@ -135,6 +158,8 @@ Every lens setting comes from the first level that holds a valid value: `AI_DLC_
 | `anomalyAgentWaitingLongColor` | `#c62828` | hex colour | Marker colour: agent waiting too long (red). |
 | `anomalyHandbackFailed` | `true` | boolean | Check: a hand-back failed its check (`verification: failed` in its front matter, or a first line `handoff <file>: failed`), in the newest round of its step. |
 | `anomalyHandbackFailedColor` | `#f9a825` | hex colour | Marker colour: hand-back that failed its check (yellow). |
+| `diagramMermaid` | `true` | boolean | **In progress.** Draw closed `mermaid` fences as pictures (offline); off: the reply is drawn as without the lens. Env: `AI_DLC_LENS_DIAGRAM_MERMAID`. |
+| `cacheLabKeepWindowOnReload` | `false` | boolean | **In progress.** Keep the Cache Lab window across `/reload-plugins` (for development and testing); off resets it to `7d`. Env: `AI_DLC_LENS_CACHE_LAB_KEEP_WINDOW_ON_RELOAD`. |
 | `probes` | `false` | boolean | Log the spike's experiments E1, E2, E4, E5, E7, E9 and E10 to `PROBE-LOG.jsonl` in the plugin folder (diagnostics). |
 | `avatarImage.<agent>` | unset | `data:` URI or file path | One agent's image. Env: `AI_DLC_LENS_AVATAR_IMAGE__<AGENT>`. |
 
