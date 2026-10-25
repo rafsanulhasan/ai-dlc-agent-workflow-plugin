@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'claude-code/testing'
-import { DEFAULTS, SETTINGS, TRUST_GATED, baseName, check, normPath, repoConfig, resolveConfig, sessionName, settingsEnv, transcriptTitle, trustOf, trustRoot, withoutGated, withoutKeys, parseBool, PREVIEW_CHARS, previewValue, keysWithValues } from '../config.ts'
+import { DEFAULTS, DEFAULT_SESSION_PREFIX, SETTINGS, TRUST_GATED, baseName, numbering, numberingNotice, parseTitle, check, normPath, repoConfig, resolveConfig, sessionName, settingsEnv, transcriptTitle, trustOf, trustRoot, withoutGated, withoutKeys, parseBool, PREVIEW_CHARS, previewValue, keysWithValues } from '../config.ts'
 import { parseAddress } from '../server.ts'
 import type { Level } from '../config.ts'
 
@@ -110,6 +110,12 @@ describe('session names', () => {
     expect(sessionName(P, 'Fix it', 3)).toBe('[ai-dlc:auto-handoff]: Fix it (Session 3)')
   })
 
+  test('AC-16.3.4 baseName takes off nested wrappers', () => {
+    expect(baseName(`${P}: B`, P)).toBe('B')
+    expect(baseName(`${P}: B (Session 2)`, P)).toBe('B')
+    expect(baseName(`${P}: B (Session 1) (Session 2)`, P)).toBe('B')
+  })
+
   test('baseName takes off every chain wrapper, so names never nest', () => {
     expect(baseName('Fix it', P)).toBe('Fix it')
     expect(baseName('[ai-dlc:auto-handoff]: Fix it (Session 2)', P)).toBe('Fix it')
@@ -124,6 +130,69 @@ describe('session names', () => {
     expect(transcriptTitle([line({ type: 'ai-title', aiTitle: 'A1' }), line({ type: 'custom-title', customTitle: 'C1' }), line({ type: 'ai-title', aiTitle: 'A2' }), line({ type: 'custom-title', customTitle: 'C2' })].join('\n'))).toBe('C2')
     expect(transcriptTitle([line({ type: 'ai-title', aiTitle: 'A1' }), line({ type: 'ai-title', aiTitle: 'A2' })].join('\n'))).toBe('A2')
     expect(transcriptTitle('{"type":"user"}\nnot json -title"')).toBeUndefined()
+  })
+})
+
+describe('session numbering (root 16)', () => {
+  const P = DEFAULT_SESSION_PREFIX
+  test('the default prefix is the one the settings default to', () => {
+    expect(P).toBe('[ai-dlc:auto-handoff]')
+    expect(P).toBe(DEFAULTS.sessionNamePrefix)
+  })
+
+  test('AC-16.2.2 parseTitle reads the number of a trailing (Session n)', () => {
+    expect(parseTitle(`${P}: B (Session 7)`, P)).toEqual({ base: 'B', number: 7 })
+    expect(parseTitle(`${P}: B (Session 1) (Session 2)`, P)).toEqual({ base: 'B', number: 2 })
+    expect(parseTitle(`${P}: B (Session 3)  `, P)).toEqual({ base: 'B', number: 3 })
+  })
+
+  test('AC-16.3.5 parseTitle reads a numbered title without the prefix', () => {
+    expect(parseTitle('B (Session 3)', P)).toEqual({ base: 'B', number: 3 })
+  })
+
+  test('AC-16.3.1 parseTitle strips the prefix of a title without a number', () => {
+    expect(parseTitle(`${P}: B`, P)).toEqual({ base: 'B' })
+    expect(parseTitle('B', P)).toEqual({ base: 'B' })
+  })
+
+  test('AC-16.3.3 parseTitle strips the default prefix and the one in force, and keeps any other X:', () => {
+    expect(parseTitle(`${P}: B (Session 3)`, '[handoff]')).toEqual({ base: 'B', number: 3 })
+    expect(parseTitle('[handoff]: B (Session 3)', '[handoff]')).toEqual({ base: 'B', number: 3 })
+    expect(parseTitle('X: B (Session 3)', P)).toEqual({ base: 'X: B', number: 3 })
+    expect(sessionName('[handoff]', parseTitle('X: B (Session 3)', '[handoff]').base!, 4)).toBe('[handoff]: X: B (Session 4)')
+  })
+
+  test('parseTitle edge cases: only wrappers, Session 0, huge numbers, blanks, regex characters', () => {
+    expect(parseTitle(`${P}: (Session 3)`, P)).toEqual({ number: 3 })
+    expect(parseTitle('Fix (Session 0)', P)).toEqual({ base: 'Fix' })
+    expect(parseTitle(`Fix (Session ${'9'.repeat(30)})`, P)).toEqual({ base: 'Fix' })
+    expect(parseTitle('   ', P)).toEqual({})
+    expect(parseTitle(undefined, P)).toEqual({})
+    expect(parseTitle('a.b*: B (Session 2)', 'a.b*')).toEqual({ base: 'B', number: 2 })
+    expect(parseTitle('aXb*: B (Session 2)', 'a.b*')).toEqual({ base: 'aXb*: B', number: 2 })
+  })
+
+  test('AC-16.2.8 numbering: the title number, else the lineage depth, else 1 (the main session)', () => {
+    expect(numbering(7, 2)).toEqual({ current: 7, next: 8, isMain: false, source: 'title' })
+    expect(numbering(3, undefined)).toEqual({ current: 3, next: 4, isMain: false, source: 'title' })
+    expect(numbering(undefined, 3)).toEqual({ current: 3, next: 4, isMain: false, source: 'lineage' })
+    expect(numbering(undefined, undefined)).toEqual({ current: 1, next: 2, isMain: true, source: 'default' })
+  })
+
+  test('AC-16.2.5b numbering after a failed read is never the main session', () => {
+    expect(numbering(undefined, undefined, true)).toEqual({ current: 1, next: 2, isMain: false, source: 'default' })
+    expect(numbering(3, undefined, true)).toEqual({ current: 3, next: 4, isMain: false, source: 'title' })
+  })
+
+  test('AC-16.2.5 numberingNotice text for both sources', () => {
+    const t = numberingNotice('s1', 'Error: boom', numbering(3, undefined, true))
+    expect(t.log).toBe('numbering fallback: lineage read failed session=s1 (Error: boom); number 3 taken from the title (Session 3), chain id restarted')
+    expect(t.step).toEqual({ mark: 'warn', text: 'numbering: store unreadable, number taken from the title, chain id restarted' })
+    expect(t.toast).toBe(t.step.text)
+    const d = numberingNotice('s1', 'Error: boom', numbering(undefined, undefined, true))
+    expect(d.log).toBe('numbering fallback: lineage read failed session=s1 (Error: boom); number defaulted to 1, the title has none, chain id restarted, session not renamed')
+    expect(d.step.text).toBe('numbering: store unreadable, number defaulted to 1, chain id restarted, session not renamed')
+    expect(d.log.split('numbering fallback:').length - 1).toBe(1)
   })
 })
 

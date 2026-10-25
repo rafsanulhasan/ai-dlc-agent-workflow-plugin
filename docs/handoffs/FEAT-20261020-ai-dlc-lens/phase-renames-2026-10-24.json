@@ -1,0 +1,3213 @@
+{
+ "dir": "docs/handoffs/FEAT-20261020-ai-dlc-lens",
+ "tags": {
+  "S1": "The two oldest records (2026-10-20, never sent) have no .handoff.md suffix; they gain it, since the rule's name format requires it.",
+  "A1": "A later, separate change (a new human request or work item) to an agent the sub-root already handed off to, not a send-back, is a follow-up: the next loop of that sub-root, round 1.",
+  "A2": "A further pass that is not a new request and not a send-back of a review (a retry of a stalled or lost agent, a post-PASS fix, a Docs-update re-run, a request carried from the agent's own previous hand-back, a brief that supersedes a never-sent one) is the next round of the sub-root's latest loop (loop 1 when none is open).",
+  "A3": "Hand-offs to agent-manager in consecutive in-progress rows of the run state, for one human message, were spawned together: one loop, .1/.2/.3 in spawn (row) order.",
+  "A4": "A brief that both answers review findings and carries a new human follow-up (11.11, 11.18) is numbered as the follow-up, in the N.2 loop; the review loop it also answers names it in the run state.",
+  "A5": "brutal-critique of a planning document goes to N.1 (the brief says so; the rule's N.1 agents column does not list brutal-critique); its critique of CHECK.md (7.2.1, a manual-check list) is documentation critique, N.5.",
+  "A6": "One handoff record briefed both code-review axes; it is named at the standards code (.1); the spec axis keeps only its hand-back.",
+  "A7": "The re-test 8.2.2.l1 was spawned in the code-review fix round, so it goes in the N.4 loop (the rule's worked example), though it also covered the follow-up 8.1.6.1.l3.",
+  "A8": "A critique covering the docs of several follow-up loops (8.6.4: items 8.4 to 8.6) goes in the latest of them."
+ },
+ "codeMap": {
+  "1.1": "1.1",
+  "1.2": "1.1",
+  "1.3.1": "1.1.l1.1.1",
+  "1.3.2": "1.1.l1.1.2",
+  "1.3.3": "1.1.l1.1.3",
+  "1.3.4": "1.1.l1.1.4",
+  "1.3.5": "1.1.l1.1.5",
+  "1.4.1": "1.1.l1.2",
+  "1.4.2": "1.1.l1.2.1",
+  "1.4.3": "1.1.l1.2.2",
+  "1.4.4": "1.1.l1.2.3",
+  "1.4.5": "1.1.l1.2.4",
+  "10.1": "10.2",
+  "10.1.1": "10.2.l1.2",
+  "10.1.2": "10.5",
+  "10.1.2.l1": "10.5.l1.1",
+  "10.1.2.l2": "10.5.l1.2",
+  "10.1.l1": "10.2.l1.1",
+  "10.1.l2": "10.5.l1.1",
+  "10.1.l3": "10.5.l1.2",
+  "10.2": "10.5",
+  "10.2.l1": "10.5.l1.1",
+  "11.1": "11.2",
+  "11.1.1": "11.5",
+  "11.1.1.l1": "11.5.l1.1",
+  "11.1.1.l2": "11.5.l1.2",
+  "11.1.l1": "11.2.l1.1",
+  "11.1.l2": "11.2.l2.1",
+  "11.1.l3": "11.5.l1.1",
+  "11.1.l4": "11.5.l1.2",
+  "11.10": "11.4.2",
+  "11.11": "11.2.l4.1.1",
+  "11.11.l1": "11.5.l3.2",
+  "11.12": "11.2.l4.1.2",
+  "11.13": "11.5.l3.1",
+  "11.13.l1": "11.5.l3.2",
+  "11.14": "11.2.l4.2",
+  "11.15": "11.3.l1.1",
+  "11.16": "11.4.l1.1.1",
+  "11.17": "11.4.l1.1.2",
+  "11.18": "11.2.l5.1.1",
+  "11.18.l1": "11.5.l4.2",
+  "11.19": "11.2.l5.1.2",
+  "11.2": "11.2.l3.1.1",
+  "11.20": "11.2.l5.1.3",
+  "11.21": "11.5.l4.1",
+  "11.21.l1": "11.5.l4.2",
+  "11.22": "11.5.l4.1",
+  "11.3": "11.2.l3.1.2",
+  "11.4": "11.2.l3.2",
+  "11.5": "11.5.l2.1",
+  "11.6": "11.2.l3.3",
+  "11.7": "11.5",
+  "11.8": "11.3",
+  "11.9": "11.4.1",
+  "12.1.1": "12.2",
+  "12.1.1.l1": "12.2.l1.1",
+  "12.1.1.l2": "12.2.l2.1",
+  "12.1.1.l3": "12.4.l1.1",
+  "12.1.2": "12.5",
+  "12.1.3": "12.3",
+  "12.1.4": "12.4.1",
+  "12.1.4.l1": "12.4.l1.1.1",
+  "12.1.5": "12.4.2",
+  "12.1.5.l1": "12.4.l1.1.2",
+  "12.1.6": "12.5.l1.1",
+  "2.1": "2.1",
+  "2.1.l1": "2.1.l2.1",
+  "2.2": "2.1.l1.1",
+  "2.3": "2.1",
+  "2.3.l1": "2.1.l2.1",
+  "3.1": "3.1",
+  "3.1.l1": "3.1.l1.1",
+  "3.1.l2": "3.1.l1.2",
+  "3.2.1": "3.1",
+  "3.2.1.l1": "3.1.l1.1",
+  "3.2.2": "3.1",
+  "3.3": "3.1",
+  "4.1": "4",
+  "5.1": "5.1",
+  "5.2.1": "5.2.1",
+  "5.2.2": "5.2.2",
+  "5.2.3": "5.2.3",
+  "5.3": "5.2.l1.1",
+  "5.4": "5.2.l2.1",
+  "6.1.1": "6.1.1",
+  "6.1.2": "6.1.2",
+  "6.2": "6.1.l1.1",
+  "7.1": "7.2",
+  "7.1.l1": "7.2.l1.1",
+  "7.1.l2": "7.2.l1.2",
+  "7.1.l3": "7.2.l1.3",
+  "7.1.l4": "7.2.l1.4",
+  "7.1.l5": "7.2.l1.5",
+  "7.2.1": "7.5",
+  "7.2.2": "7.3",
+  "7.2.3": "7.4.1",
+  "7.2.4": "7.4.2",
+  "8.1": "8.2",
+  "8.1.2": "8.2.l1.1",
+  "8.1.3": "8.2.l2.1",
+  "8.1.4": "8.2.l3.1",
+  "8.1.5": "8.2.l4.1",
+  "8.1.6.1": "8.2.l5.1",
+  "8.1.6.1.l1": "8.2.l6.1",
+  "8.1.6.1.l2": "8.2.l7.1",
+  "8.1.6.1.l2.1": "8.2.l7.2",
+  "8.1.6.1.l3": "8.2.l8.1",
+  "8.1.6.2": "8.5",
+  "8.1.6.2.l1": "8.5.l1.1",
+  "8.1.6.2.l2": "8.5.l2.1",
+  "8.1.7": "8.5.l2.1",
+  "8.1.l1": "8.4.l1.1",
+  "8.2.1": "8.5",
+  "8.2.1.l1": "8.5.l2.1",
+  "8.2.2": "8.3",
+  "8.2.2.l1": "8.4.l1.1",
+  "8.3.1": "8.4.1",
+  "8.3.1.l1": "8.4.l1.1.1",
+  "8.3.2": "8.4.2",
+  "8.3.2.l1": "8.4.l1.1.2",
+  "8.4.1": "8.2.l10.1",
+  "8.4.2": "8.2.l11.1",
+  "8.4.3": "8.5.l3.1",
+  "8.4.4": "8.3.l1.1",
+  "8.5.1": "8.2.l9.1",
+  "8.6.1": "8.2.l12.1",
+  "8.6.1.l1": "8.2.l13.1",
+  "8.6.1.l2": "8.5.l4.2",
+  "8.6.2": "8.5.l4.1",
+  "8.6.2.l1": "8.5.l4.2",
+  "8.6.3": "8.3.l1.2",
+  "8.6.4": "8.5.l4.1",
+  "8.6.4.l1": "8.5.l4.2",
+  "8.6.5": "8.2.l14.1",
+  "8.6.5.l1": "8.4.l2.2",
+  "8.6.6": "8.5.l4.3",
+  "8.6.6.l1": "8.5.l4.4",
+  "8.6.7": "8.4.l2.1.1",
+  "8.6.7.l1": "8.4.l2.2.1",
+  "8.6.8": "8.4.l2.1.2",
+  "8.6.8.l1": "8.4.l2.2.2",
+  "9.1": "9.2",
+  "9.1.1": "9.2.l1.1",
+  "9.1.l2": "9.5.l1.1",
+  "9.2.1": "9.5",
+  "9.2.1.l1": "9.5.l1.1"
+ },
+ "renames": [
+  {
+   "old": "1.1-orchestrator-to-product-manager.md",
+   "new": "1.1-orchestrator-to-product-manager.handoff.md",
+   "kind": "old-suffixless",
+   "tracked": true,
+   "oldCode": "1.1",
+   "newCode": "1.1",
+   "reason": "product-manager breakdown 2026-10-20 (never sent): first planning pass",
+   "tags": [
+    "S1"
+   ]
+  },
+  {
+   "old": "1.2-orchestrator-to-research-assistant.md",
+   "new": "1.1-orchestrator-to-research-assistant.handoff.md",
+   "kind": "old-suffixless",
+   "tracked": true,
+   "oldCode": "1.2",
+   "newCode": "1.1",
+   "reason": "research 2026-10-20 (never sent): first planning pass, another agent shares the code",
+   "tags": [
+    "S1"
+   ]
+  },
+  {
+   "old": "1.3.1-orchestrator-to-research-assistant.handoff.md",
+   "new": "1.1.l1.1.1-orchestrator-to-research-assistant.handoff.md",
+   "kind": "handoff",
+   "tracked": true,
+   "oldCode": "1.3.1",
+   "newCode": "1.1.l1.1.1",
+   "reason": "widened scope 2026-10-22 is a follow-up: planning loop 1, round 1; five research spawns together, R1",
+   "tags": []
+  },
+  {
+   "old": "1.3.1-research-assistant-to-orchestrator.handback.md",
+   "new": "1.1.l1.1.1-research-assistant-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": true,
+   "oldCode": "1.3.1",
+   "newCode": "1.1.l1.1.1",
+   "reason": "widened scope 2026-10-22 is a follow-up: planning loop 1, round 1; five research spawns together, R1",
+   "tags": []
+  },
+  {
+   "old": "1.3.2-orchestrator-to-research-assistant.handoff.md",
+   "new": "1.1.l1.1.2-orchestrator-to-research-assistant.handoff.md",
+   "kind": "handoff",
+   "tracked": true,
+   "oldCode": "1.3.2",
+   "newCode": "1.1.l1.1.2",
+   "reason": "as 1.3.1, R2",
+   "tags": []
+  },
+  {
+   "old": "1.3.2-research-assistant-to-orchestrator.handback.md",
+   "new": "1.1.l1.1.2-research-assistant-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": true,
+   "oldCode": "1.3.2",
+   "newCode": "1.1.l1.1.2",
+   "reason": "as 1.3.1, R2",
+   "tags": []
+  },
+  {
+   "old": "1.3.3-orchestrator-to-research-assistant.handoff.md",
+   "new": "1.1.l1.1.3-orchestrator-to-research-assistant.handoff.md",
+   "kind": "handoff",
+   "tracked": true,
+   "oldCode": "1.3.3",
+   "newCode": "1.1.l1.1.3",
+   "reason": "as 1.3.1, R3",
+   "tags": []
+  },
+  {
+   "old": "1.3.3-research-assistant-to-orchestrator.handback.md",
+   "new": "1.1.l1.1.3-research-assistant-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": true,
+   "oldCode": "1.3.3",
+   "newCode": "1.1.l1.1.3",
+   "reason": "as 1.3.1, R3",
+   "tags": []
+  },
+  {
+   "old": "1.3.4-orchestrator-to-research-assistant.handoff.md",
+   "new": "1.1.l1.1.4-orchestrator-to-research-assistant.handoff.md",
+   "kind": "handoff",
+   "tracked": true,
+   "oldCode": "1.3.4",
+   "newCode": "1.1.l1.1.4",
+   "reason": "as 1.3.1, R4",
+   "tags": []
+  },
+  {
+   "old": "1.3.4-research-assistant-to-orchestrator.handback.md",
+   "new": "1.1.l1.1.4-research-assistant-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": true,
+   "oldCode": "1.3.4",
+   "newCode": "1.1.l1.1.4",
+   "reason": "as 1.3.1, R4",
+   "tags": []
+  },
+  {
+   "old": "1.3.5-orchestrator-to-research-assistant.handoff.md",
+   "new": "1.1.l1.1.5-orchestrator-to-research-assistant.handoff.md",
+   "kind": "handoff",
+   "tracked": true,
+   "oldCode": "1.3.5",
+   "newCode": "1.1.l1.1.5",
+   "reason": "as 1.3.1, R5",
+   "tags": []
+  },
+  {
+   "old": "1.3.5-research-assistant-to-orchestrator.handback.md",
+   "new": "1.1.l1.1.5-research-assistant-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": true,
+   "oldCode": "1.3.5",
+   "newCode": "1.1.l1.1.5",
+   "reason": "as 1.3.1, R5",
+   "tags": []
+  },
+  {
+   "old": "1.4.1-orchestrator-to-product-manager.handoff.md",
+   "new": "1.1.l1.2-orchestrator-to-product-manager.handoff.md",
+   "kind": "handoff",
+   "tracked": true,
+   "oldCode": "1.4.1",
+   "newCode": "1.1.l1.2",
+   "reason": "breakdown and research asked again: round 2 of planning loop 1; product-manager",
+   "tags": []
+  },
+  {
+   "old": "1.4.1-product-manager-to-orchestrator.handback.md",
+   "new": "1.1.l1.2-product-manager-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": true,
+   "oldCode": "1.4.1",
+   "newCode": "1.1.l1.2",
+   "reason": "breakdown and research asked again: round 2 of planning loop 1; product-manager",
+   "tags": []
+  },
+  {
+   "old": "1.4.2-orchestrator-to-research-assistant.handoff.md",
+   "new": "1.1.l1.2.1-orchestrator-to-research-assistant.handoff.md",
+   "kind": "handoff",
+   "tracked": true,
+   "oldCode": "1.4.2",
+   "newCode": "1.1.l1.2.1",
+   "reason": "round 2, research spawned with the breakdown, 1 of 4",
+   "tags": []
+  },
+  {
+   "old": "1.4.2-research-assistant-to-orchestrator.handback.md",
+   "new": "1.1.l1.2.1-research-assistant-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": true,
+   "oldCode": "1.4.2",
+   "newCode": "1.1.l1.2.1",
+   "reason": "round 2, research spawned with the breakdown, 1 of 4",
+   "tags": []
+  },
+  {
+   "old": "1.4.3-orchestrator-to-research-assistant.handoff.md",
+   "new": "1.1.l1.2.2-orchestrator-to-research-assistant.handoff.md",
+   "kind": "handoff",
+   "tracked": true,
+   "oldCode": "1.4.3",
+   "newCode": "1.1.l1.2.2",
+   "reason": "round 2, research 2 of 4",
+   "tags": []
+  },
+  {
+   "old": "1.4.3-research-assistant-to-orchestrator.handback.md",
+   "new": "1.1.l1.2.2-research-assistant-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": true,
+   "oldCode": "1.4.3",
+   "newCode": "1.1.l1.2.2",
+   "reason": "round 2, research 2 of 4",
+   "tags": []
+  },
+  {
+   "old": "1.4.4-orchestrator-to-research-assistant.handoff.md",
+   "new": "1.1.l1.2.3-orchestrator-to-research-assistant.handoff.md",
+   "kind": "handoff",
+   "tracked": true,
+   "oldCode": "1.4.4",
+   "newCode": "1.1.l1.2.3",
+   "reason": "round 2, research 3 of 4",
+   "tags": []
+  },
+  {
+   "old": "1.4.4-research-assistant-to-orchestrator.handback.md",
+   "new": "1.1.l1.2.3-research-assistant-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": true,
+   "oldCode": "1.4.4",
+   "newCode": "1.1.l1.2.3",
+   "reason": "round 2, research 3 of 4",
+   "tags": []
+  },
+  {
+   "old": "1.4.5-orchestrator-to-research-assistant.handoff.md",
+   "new": "1.1.l1.2.4-orchestrator-to-research-assistant.handoff.md",
+   "kind": "handoff",
+   "tracked": true,
+   "oldCode": "1.4.5",
+   "newCode": "1.1.l1.2.4",
+   "reason": "round 2, research 4 of 4",
+   "tags": []
+  },
+  {
+   "old": "1.4.5-research-assistant-to-orchestrator.handback.md",
+   "new": "1.1.l1.2.4-research-assistant-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": true,
+   "oldCode": "1.4.5",
+   "newCode": "1.1.l1.2.4",
+   "reason": "round 2, research 4 of 4",
+   "tags": []
+  },
+  {
+   "old": "10.1-orchestrator-to-agent-manager.handoff.md",
+   "new": "10.2-orchestrator-to-agent-manager.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "10.1",
+   "newCode": "10.2",
+   "reason": "the change (hand-back lost): implementation, first pass",
+   "tags": []
+  },
+  {
+   "old": "10.1.1-agent-manager-to-orchestrator.handback.md",
+   "new": "10.2.l1.2-agent-manager-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "10.1.1",
+   "newCode": "10.2.l1.2",
+   "reason": "plugin-management request carried from 10.1.l1 (fresh agent): loop 1, round 2",
+   "tags": [
+    "A2"
+   ]
+  },
+  {
+   "old": "10.1.1-orchestrator-to-agent-manager.handoff.md",
+   "new": "10.2.l1.2-orchestrator-to-agent-manager.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "10.1.1",
+   "newCode": "10.2.l1.2",
+   "reason": "plugin-management request carried from 10.1.l1 (fresh agent): loop 1, round 2",
+   "tags": [
+    "A2"
+   ]
+  },
+  {
+   "old": "10.1.2-documentation-writer-to-orchestrator.handback.md",
+   "new": "10.5-documentation-writer-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "10.1.2",
+   "newCode": "10.5",
+   "reason": "docs (documentation-writer): first pass",
+   "tags": []
+  },
+  {
+   "old": "10.1.2-orchestrator-to-documentation-writer.handoff.md",
+   "new": "10.5-orchestrator-to-documentation-writer.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "10.1.2",
+   "newCode": "10.5",
+   "reason": "docs (documentation-writer): first pass",
+   "tags": []
+  },
+  {
+   "old": "10.1.2.l1-documentation-writer-to-orchestrator.handback.md",
+   "new": "10.5.l1.1-documentation-writer-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "10.1.2.l1",
+   "newCode": "10.5.l1.1",
+   "reason": "docs fix: loop 1 round 1",
+   "tags": []
+  },
+  {
+   "old": "10.1.2.l1-orchestrator-to-documentation-writer.handoff.md",
+   "new": "10.5.l1.1-orchestrator-to-documentation-writer.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "10.1.2.l1",
+   "newCode": "10.5.l1.1",
+   "reason": "docs fix: loop 1 round 1",
+   "tags": []
+  },
+  {
+   "old": "10.1.2.l2-documentation-writer-to-orchestrator.handback.md",
+   "new": "10.5.l1.2-documentation-writer-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "10.1.2.l2",
+   "newCode": "10.5.l1.2",
+   "reason": "markers removed after the last review (Docs-update re-run): loop 1, round 2",
+   "tags": [
+    "A2"
+   ]
+  },
+  {
+   "old": "10.1.2.l2-orchestrator-to-documentation-writer.handoff.md",
+   "new": "10.5.l1.2-orchestrator-to-documentation-writer.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "10.1.2.l2",
+   "newCode": "10.5.l1.2",
+   "reason": "markers removed after the last review (Docs-update re-run): loop 1, round 2",
+   "tags": [
+    "A2"
+   ]
+  },
+  {
+   "old": "10.1.l1-agent-manager-to-orchestrator.handback.md",
+   "new": "10.2.l1.1-agent-manager-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "10.1.l1",
+   "newCode": "10.2.l1.1",
+   "reason": "retry after the lost hand-back: implementation loop 1, round 1",
+   "tags": [
+    "A2"
+   ]
+  },
+  {
+   "old": "10.1.l1-orchestrator-to-agent-manager.handoff.md",
+   "new": "10.2.l1.1-orchestrator-to-agent-manager.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "10.1.l1",
+   "newCode": "10.2.l1.1",
+   "reason": "retry after the lost hand-back: implementation loop 1, round 1",
+   "tags": [
+    "A2"
+   ]
+  },
+  {
+   "old": "10.1.l2-agent-manager-to-orchestrator.handback.md",
+   "new": "10.5.l1.1-agent-manager-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "10.1.l2",
+   "newCode": "10.5.l1.1",
+   "reason": "fix for the critique: documentation loop 1, round 1",
+   "tags": []
+  },
+  {
+   "old": "10.1.l2-orchestrator-to-agent-manager.handoff.md",
+   "new": "10.5.l1.1-orchestrator-to-agent-manager.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "10.1.l2",
+   "newCode": "10.5.l1.1",
+   "reason": "fix for the critique: documentation loop 1, round 1",
+   "tags": []
+  },
+  {
+   "old": "10.1.l3-agent-manager-to-orchestrator.handback.md",
+   "new": "10.5.l1.2-agent-manager-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "10.1.l3",
+   "newCode": "10.5.l1.2",
+   "reason": "post-PASS closing fix (Minor 1): loop 1, round 2",
+   "tags": [
+    "A2"
+   ]
+  },
+  {
+   "old": "10.1.l3-orchestrator-to-agent-manager.handoff.md",
+   "new": "10.5.l1.2-orchestrator-to-agent-manager.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "10.1.l3",
+   "newCode": "10.5.l1.2",
+   "reason": "post-PASS closing fix (Minor 1): loop 1, round 2",
+   "tags": [
+    "A2"
+   ]
+  },
+  {
+   "old": "10.2-brutal-critique-to-orchestrator.handback.md",
+   "new": "10.5-brutal-critique-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "10.2",
+   "newCode": "10.5",
+   "reason": "critique: first critique",
+   "tags": []
+  },
+  {
+   "old": "10.2-orchestrator-to-brutal-critique.handoff.md",
+   "new": "10.5-orchestrator-to-brutal-critique.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "10.2",
+   "newCode": "10.5",
+   "reason": "critique: first critique",
+   "tags": []
+  },
+  {
+   "old": "10.2.l1-brutal-critique-to-orchestrator.handback.md",
+   "new": "10.5.l1.1-brutal-critique-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "10.2.l1",
+   "newCode": "10.5.l1.1",
+   "reason": "loop 1 round 1, the re-critique (PASS)",
+   "tags": []
+  },
+  {
+   "old": "10.2.l1-orchestrator-to-brutal-critique.handoff.md",
+   "new": "10.5.l1.1-orchestrator-to-brutal-critique.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "10.2.l1",
+   "newCode": "10.5.l1.1",
+   "reason": "loop 1 round 1, the re-critique (PASS)",
+   "tags": []
+  },
+  {
+   "old": "11.1-agent-manager-to-orchestrator.handback.md",
+   "new": "11.2-agent-manager-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "11.1",
+   "newCode": "11.2",
+   "reason": "the rule: implementation, first pass",
+   "tags": []
+  },
+  {
+   "old": "11.1-orchestrator-to-agent-manager.handoff.md",
+   "new": "11.2-orchestrator-to-agent-manager.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "11.1",
+   "newCode": "11.2",
+   "reason": "the rule: implementation, first pass",
+   "tags": []
+  },
+  {
+   "old": "11.1.1-brutal-critique-to-orchestrator.handback.md",
+   "new": "11.5-brutal-critique-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "11.1.1",
+   "newCode": "11.5",
+   "reason": "critique: first critique",
+   "tags": []
+  },
+  {
+   "old": "11.1.1-orchestrator-to-brutal-critique.handoff.md",
+   "new": "11.5-orchestrator-to-brutal-critique.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "11.1.1",
+   "newCode": "11.5",
+   "reason": "critique: first critique",
+   "tags": []
+  },
+  {
+   "old": "11.1.1.l1-brutal-critique-to-orchestrator.handback.md",
+   "new": "11.5.l1.1-brutal-critique-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "11.1.1.l1",
+   "newCode": "11.5.l1.1",
+   "reason": "loop 1 round 1, the re-critique",
+   "tags": []
+  },
+  {
+   "old": "11.1.1.l1-orchestrator-to-brutal-critique.handoff.md",
+   "new": "11.5.l1.1-orchestrator-to-brutal-critique.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "11.1.1.l1",
+   "newCode": "11.5.l1.1",
+   "reason": "loop 1 round 1, the re-critique",
+   "tags": []
+  },
+  {
+   "old": "11.1.1.l2-brutal-critique-to-orchestrator.handback.md",
+   "new": "11.5.l1.2-brutal-critique-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "11.1.1.l2",
+   "newCode": "11.5.l1.2",
+   "reason": "loop 1 round 2, the re-critique (PASS)",
+   "tags": []
+  },
+  {
+   "old": "11.1.1.l2-orchestrator-to-brutal-critique.handoff.md",
+   "new": "11.5.l1.2-orchestrator-to-brutal-critique.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "11.1.1.l2",
+   "newCode": "11.5.l1.2",
+   "reason": "loop 1 round 2, the re-critique (PASS)",
+   "tags": []
+  },
+  {
+   "old": "11.1.l1-agent-manager-to-orchestrator.handback.md",
+   "new": "11.2.l1.1-agent-manager-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "11.1.l1",
+   "newCode": "11.2.l1.1",
+   "reason": "one top-level step per item (human): implementation loop 1",
+   "tags": [
+    "A1"
+   ]
+  },
+  {
+   "old": "11.1.l1-orchestrator-to-agent-manager.handoff.md",
+   "new": "11.2.l1.1-orchestrator-to-agent-manager.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "11.1.l1",
+   "newCode": "11.2.l1.1",
+   "reason": "one top-level step per item (human): implementation loop 1",
+   "tags": [
+    "A1"
+   ]
+  },
+  {
+   "old": "11.1.l2-agent-manager-to-orchestrator.handback.md",
+   "new": "11.2.l2.1-agent-manager-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "11.1.l2",
+   "newCode": "11.2.l2.1",
+   "reason": "joined items, pre-item hand-offs (human): implementation loop 2",
+   "tags": [
+    "A1"
+   ]
+  },
+  {
+   "old": "11.1.l2-orchestrator-to-agent-manager.handoff.md",
+   "new": "11.2.l2.1-orchestrator-to-agent-manager.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "11.1.l2",
+   "newCode": "11.2.l2.1",
+   "reason": "joined items, pre-item hand-offs (human): implementation loop 2",
+   "tags": [
+    "A1"
+   ]
+  },
+  {
+   "old": "11.1.l3-agent-manager-to-orchestrator.handback.md",
+   "new": "11.5.l1.1-agent-manager-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "11.1.l3",
+   "newCode": "11.5.l1.1",
+   "reason": "fix for critique 11.1.1 (+ human decisions): documentation loop 1, round 1",
+   "tags": []
+  },
+  {
+   "old": "11.1.l3-orchestrator-to-agent-manager.handoff.md",
+   "new": "11.5.l1.1-orchestrator-to-agent-manager.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "11.1.l3",
+   "newCode": "11.5.l1.1",
+   "reason": "fix for critique 11.1.1 (+ human decisions): documentation loop 1, round 1",
+   "tags": []
+  },
+  {
+   "old": "11.1.l4-agent-manager-to-orchestrator.handback.md",
+   "new": "11.5.l1.2-agent-manager-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "11.1.l4",
+   "newCode": "11.5.l1.2",
+   "reason": "last fix (limit raised): loop 1, round 2",
+   "tags": []
+  },
+  {
+   "old": "11.1.l4-orchestrator-to-agent-manager.handoff.md",
+   "new": "11.5.l1.2-orchestrator-to-agent-manager.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "11.1.l4",
+   "newCode": "11.5.l1.2",
+   "reason": "last fix (limit raised): loop 1, round 2",
+   "tags": []
+  },
+  {
+   "old": "11.10-orchestrator-to-code-reviewer.handoff.md",
+   "new": "11.4.2-orchestrator-to-code-reviewer.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "11.10",
+   "newCode": "11.4.2",
+   "reason": "code review, spec (never sent)",
+   "tags": []
+  },
+  {
+   "old": "11.11-agent-manager-to-orchestrator.handback.md",
+   "new": "11.2.l4.1.1-agent-manager-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "11.11",
+   "newCode": "11.2.l4.1.1",
+   "reason": "human numbering/versioning answers + the 11.5 fix round: implementation loop 4, spawned with 11.12, 1 of 2",
+   "tags": [
+    "A3",
+    "A4"
+   ]
+  },
+  {
+   "old": "11.11-orchestrator-to-agent-manager.handoff.md",
+   "new": "11.2.l4.1.1-orchestrator-to-agent-manager.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "11.11",
+   "newCode": "11.2.l4.1.1",
+   "reason": "human numbering/versioning answers + the 11.5 fix round: implementation loop 4, spawned with 11.12, 1 of 2",
+   "tags": [
+    "A3",
+    "A4"
+   ]
+  },
+  {
+   "old": "11.11.l1-agent-manager-to-orchestrator.handback.md",
+   "new": "11.5.l3.2-agent-manager-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "11.11.l1",
+   "newCode": "11.5.l3.2",
+   "reason": "fix for critique 11.13: loop 3, round 2",
+   "tags": []
+  },
+  {
+   "old": "11.11.l1-orchestrator-to-agent-manager.handoff.md",
+   "new": "11.5.l3.2-orchestrator-to-agent-manager.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "11.11.l1",
+   "newCode": "11.5.l3.2",
+   "reason": "fix for critique 11.13: loop 3, round 2",
+   "tags": []
+  },
+  {
+   "old": "11.12-agent-manager-to-orchestrator.handback.md",
+   "new": "11.2.l4.1.2-agent-manager-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "11.12",
+   "newCode": "11.2.l4.1.2",
+   "reason": "auto-handoff reads major/minor versions: loop 4, 2 of 2",
+   "tags": [
+    "A3"
+   ]
+  },
+  {
+   "old": "11.12-orchestrator-to-agent-manager.handoff.md",
+   "new": "11.2.l4.1.2-orchestrator-to-agent-manager.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "11.12",
+   "newCode": "11.2.l4.1.2",
+   "reason": "auto-handoff reads major/minor versions: loop 4, 2 of 2",
+   "tags": [
+    "A3"
+   ]
+  },
+  {
+   "old": "11.13-brutal-critique-to-orchestrator.handback.md",
+   "new": "11.5.l3.1-brutal-critique-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "11.13",
+   "newCode": "11.5.l3.1",
+   "reason": "critique of 11.11 (a new critique loop, round 1 of 2 in the run state): documentation loop 3, round 1",
+   "tags": []
+  },
+  {
+   "old": "11.13-orchestrator-to-brutal-critique.handoff.md",
+   "new": "11.5.l3.1-orchestrator-to-brutal-critique.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "11.13",
+   "newCode": "11.5.l3.1",
+   "reason": "critique of 11.11 (a new critique loop, round 1 of 2 in the run state): documentation loop 3, round 1",
+   "tags": []
+  },
+  {
+   "old": "11.13.l1-brutal-critique-to-orchestrator.handback.md",
+   "new": "11.5.l3.2-brutal-critique-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "11.13.l1",
+   "newCode": "11.5.l3.2",
+   "reason": "loop 3 round 2, the re-critique (PASS)",
+   "tags": []
+  },
+  {
+   "old": "11.13.l1-orchestrator-to-brutal-critique.handoff.md",
+   "new": "11.5.l3.2-orchestrator-to-brutal-critique.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "11.13.l1",
+   "newCode": "11.5.l3.2",
+   "reason": "loop 3 round 2, the re-critique (PASS)",
+   "tags": []
+  },
+  {
+   "old": "11.14-agent-manager-to-orchestrator.handback.md",
+   "new": "11.2.l4.2-agent-manager-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "11.14",
+   "newCode": "11.2.l4.2",
+   "reason": "auto-handoff round codes, request carried from 11.11: loop 4, round 2",
+   "tags": [
+    "A2"
+   ]
+  },
+  {
+   "old": "11.14-orchestrator-to-agent-manager.handoff.md",
+   "new": "11.2.l4.2-orchestrator-to-agent-manager.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "11.14",
+   "newCode": "11.2.l4.2",
+   "reason": "auto-handoff round codes, request carried from 11.11: loop 4, round 2",
+   "tags": [
+    "A2"
+   ]
+  },
+  {
+   "old": "11.15-orchestrator-to-sqa-engineer.handoff.md",
+   "new": "11.3.l1.1-orchestrator-to-sqa-engineer.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "11.15",
+   "newCode": "11.3.l1.1",
+   "reason": "tests of 11.12 + 11.14 (follow-up): testing loop 1",
+   "tags": []
+  },
+  {
+   "old": "11.15-sqa-engineer-to-orchestrator.handback.md",
+   "new": "11.3.l1.1-sqa-engineer-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "11.15",
+   "newCode": "11.3.l1.1",
+   "reason": "tests of 11.12 + 11.14 (follow-up): testing loop 1",
+   "tags": []
+  },
+  {
+   "old": "11.16-code-reviewer-to-orchestrator.handback.md",
+   "new": "11.4.l1.1.1-code-reviewer-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "11.16",
+   "newCode": "11.4.l1.1.1",
+   "reason": "review superseding the never-sent 11.9: review loop 1, round 1, standards",
+   "tags": [
+    "A2"
+   ]
+  },
+  {
+   "old": "11.16-orchestrator-to-code-reviewer.handoff.md",
+   "new": "11.4.l1.1.1-orchestrator-to-code-reviewer.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "11.16",
+   "newCode": "11.4.l1.1.1",
+   "reason": "review superseding the never-sent 11.9: review loop 1, round 1, standards",
+   "tags": [
+    "A2"
+   ]
+  },
+  {
+   "old": "11.17-code-reviewer-to-orchestrator.handback.md",
+   "new": "11.4.l1.1.2-code-reviewer-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "11.17",
+   "newCode": "11.4.l1.1.2",
+   "reason": "review superseding the never-sent 11.10: review loop 1, round 1, spec",
+   "tags": [
+    "A2"
+   ]
+  },
+  {
+   "old": "11.17-orchestrator-to-code-reviewer.handoff.md",
+   "new": "11.4.l1.1.2-orchestrator-to-code-reviewer.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "11.17",
+   "newCode": "11.4.l1.1.2",
+   "reason": "review superseding the never-sent 11.10: review loop 1, round 1, spec",
+   "tags": [
+    "A2"
+   ]
+  },
+  {
+   "old": "11.18-agent-manager-to-orchestrator.handback.md",
+   "new": "11.2.l5.1.1-agent-manager-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "11.18",
+   "newCode": "11.2.l5.1.1",
+   "reason": "final rule edit (human answers + review/critique leftovers): implementation loop 5, 1 of 3",
+   "tags": [
+    "A3",
+    "A4"
+   ]
+  },
+  {
+   "old": "11.18-orchestrator-to-agent-manager.handoff.md",
+   "new": "11.2.l5.1.1-orchestrator-to-agent-manager.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "11.18",
+   "newCode": "11.2.l5.1.1",
+   "reason": "final rule edit (human answers + review/critique leftovers): implementation loop 5, 1 of 3",
+   "tags": [
+    "A3",
+    "A4"
+   ]
+  },
+  {
+   "old": "11.18.l1-agent-manager-to-orchestrator.handback.md",
+   "new": "11.5.l4.2-agent-manager-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "11.18.l1",
+   "newCode": "11.5.l4.2",
+   "reason": "fix for critique 11.21: documentation loop 4, round 2",
+   "tags": []
+  },
+  {
+   "old": "11.18.l1-orchestrator-to-agent-manager.handoff.md",
+   "new": "11.5.l4.2-orchestrator-to-agent-manager.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "11.18.l1",
+   "newCode": "11.5.l4.2",
+   "reason": "fix for critique 11.21: documentation loop 4, round 2",
+   "tags": []
+  },
+  {
+   "old": "11.19-agent-manager-to-orchestrator.handback.md",
+   "new": "11.2.l5.1.2-agent-manager-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "11.19",
+   "newCode": "11.2.l5.1.2",
+   "reason": "auto-handoff to-human etc.: loop 5, 2 of 3",
+   "tags": [
+    "A3"
+   ]
+  },
+  {
+   "old": "11.19-orchestrator-to-agent-manager.handoff.md",
+   "new": "11.2.l5.1.2-orchestrator-to-agent-manager.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "11.19",
+   "newCode": "11.2.l5.1.2",
+   "reason": "auto-handoff to-human etc.: loop 5, 2 of 3",
+   "tags": [
+    "A3"
+   ]
+  },
+  {
+   "old": "11.2-agent-manager-to-orchestrator.handback.md",
+   "new": "11.2.l3.1.1-agent-manager-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "11.2",
+   "newCode": "11.2.l3.1.1",
+   "reason": "feature-root numbering (human): implementation loop 3, spawned with 11.3, 1 of 2",
+   "tags": [
+    "A3"
+   ]
+  },
+  {
+   "old": "11.2-orchestrator-to-agent-manager.handoff.md",
+   "new": "11.2.l3.1.1-orchestrator-to-agent-manager.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "11.2",
+   "newCode": "11.2.l3.1.1",
+   "reason": "feature-root numbering (human): implementation loop 3, spawned with 11.3, 1 of 2",
+   "tags": [
+    "A3"
+   ]
+  },
+  {
+   "old": "11.20-agent-manager-to-orchestrator.handback.md",
+   "new": "11.2.l5.1.3-agent-manager-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "11.20",
+   "newCode": "11.2.l5.1.3",
+   "reason": "this renaming plan: loop 5, 3 of 3",
+   "tags": [
+    "A3"
+   ]
+  },
+  {
+   "old": "11.20-orchestrator-to-agent-manager.handoff.md",
+   "new": "11.2.l5.1.3-orchestrator-to-agent-manager.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "11.20",
+   "newCode": "11.2.l5.1.3",
+   "reason": "this renaming plan: loop 5, 3 of 3",
+   "tags": [
+    "A3"
+   ]
+  },
+  {
+   "old": "11.21-brutal-critique-to-orchestrator.handback.md",
+   "new": "11.5.l4.1-brutal-critique-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "11.21",
+   "newCode": "11.5.l4.1",
+   "reason": "critique of 11.18 (follow-up): documentation loop 4, round 1",
+   "tags": []
+  },
+  {
+   "old": "11.21-orchestrator-to-brutal-critique.handoff.md",
+   "new": "11.5.l4.1-orchestrator-to-brutal-critique.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "11.21",
+   "newCode": "11.5.l4.1",
+   "reason": "critique of 11.18 (follow-up): documentation loop 4, round 1",
+   "tags": []
+  },
+  {
+   "old": "11.21.l1-brutal-critique-to-orchestrator.handback.md",
+   "new": "11.5.l4.2-brutal-critique-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "11.21.l1",
+   "newCode": "11.5.l4.2",
+   "reason": "loop 4 round 2, the re-critique",
+   "tags": []
+  },
+  {
+   "old": "11.21.l1-orchestrator-to-brutal-critique.handoff.md",
+   "new": "11.5.l4.2-orchestrator-to-brutal-critique.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "11.21.l1",
+   "newCode": "11.5.l4.2",
+   "reason": "loop 4 round 2, the re-critique",
+   "tags": []
+  },
+  {
+   "old": "11.22-documentation-writer-to-orchestrator.handback.md",
+   "new": "11.5.l4.1-documentation-writer-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "11.22",
+   "newCode": "11.5.l4.1",
+   "reason": "docs for the numbering and versions rule, spawned with 11.21: documentation loop 4, round 1",
+   "tags": []
+  },
+  {
+   "old": "11.22-orchestrator-to-documentation-writer.handoff.md",
+   "new": "11.5.l4.1-orchestrator-to-documentation-writer.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "11.22",
+   "newCode": "11.5.l4.1",
+   "reason": "docs for the numbering and versions rule, spawned with 11.21: documentation loop 4, round 1",
+   "tags": []
+  },
+  {
+   "old": "11.3-agent-manager-to-orchestrator.handback.md",
+   "new": "11.2.l3.1.2-agent-manager-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "11.3",
+   "newCode": "11.2.l3.1.2",
+   "reason": "versioned run state (human, same message): loop 3, 2 of 2",
+   "tags": [
+    "A3"
+   ]
+  },
+  {
+   "old": "11.3-orchestrator-to-agent-manager.handoff.md",
+   "new": "11.2.l3.1.2-orchestrator-to-agent-manager.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "11.3",
+   "newCode": "11.2.l3.1.2",
+   "reason": "versioned run state (human, same message): loop 3, 2 of 2",
+   "tags": [
+    "A3"
+   ]
+  },
+  {
+   "old": "11.4-agent-manager-to-orchestrator.handback.md",
+   "new": "11.2.l3.2-agent-manager-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "11.4",
+   "newCode": "11.2.l3.2",
+   "reason": "agent-manager.md pointer, request carried from 11.2: loop 3, round 2",
+   "tags": [
+    "A2"
+   ]
+  },
+  {
+   "old": "11.4-orchestrator-to-agent-manager.handoff.md",
+   "new": "11.2.l3.2-orchestrator-to-agent-manager.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "11.4",
+   "newCode": "11.2.l3.2",
+   "reason": "agent-manager.md pointer, request carried from 11.2: loop 3, round 2",
+   "tags": [
+    "A2"
+   ]
+  },
+  {
+   "old": "11.5-brutal-critique-to-orchestrator.handback.md",
+   "new": "11.5.l2.1-brutal-critique-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "11.5",
+   "newCode": "11.5.l2.1",
+   "reason": "critique of 11.2-11.4 (follow-up): documentation loop 2, round 1",
+   "tags": []
+  },
+  {
+   "old": "11.5-orchestrator-to-brutal-critique.handoff.md",
+   "new": "11.5.l2.1-orchestrator-to-brutal-critique.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "11.5",
+   "newCode": "11.5.l2.1",
+   "reason": "critique of 11.2-11.4 (follow-up): documentation loop 2, round 1",
+   "tags": []
+  },
+  {
+   "old": "11.6-agent-manager-to-orchestrator.handback.md",
+   "new": "11.2.l3.3-agent-manager-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "11.6",
+   "newCode": "11.2.l3.3",
+   "reason": "auto-handoff code requests carried from 11.3: loop 3, round 3",
+   "tags": [
+    "A2"
+   ]
+  },
+  {
+   "old": "11.6-orchestrator-to-agent-manager.handoff.md",
+   "new": "11.2.l3.3-orchestrator-to-agent-manager.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "11.6",
+   "newCode": "11.2.l3.3",
+   "reason": "auto-handoff code requests carried from 11.3: loop 3, round 3",
+   "tags": [
+    "A2"
+   ]
+  },
+  {
+   "old": "11.7-documentation-writer-to-orchestrator.handback.md",
+   "new": "11.5-documentation-writer-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "11.7",
+   "newCode": "11.5",
+   "reason": "docs (documentation-writer): first documentation-writer pass",
+   "tags": []
+  },
+  {
+   "old": "11.7-orchestrator-to-documentation-writer.handoff.md",
+   "new": "11.5-orchestrator-to-documentation-writer.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "11.7",
+   "newCode": "11.5",
+   "reason": "docs (documentation-writer): first documentation-writer pass",
+   "tags": []
+  },
+  {
+   "old": "11.8-orchestrator-to-sqa-engineer.handoff.md",
+   "new": "11.3-orchestrator-to-sqa-engineer.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "11.8",
+   "newCode": "11.3",
+   "reason": "tests of 11.6: testing, first pass",
+   "tags": []
+  },
+  {
+   "old": "11.8-sqa-engineer-to-orchestrator.handback.md",
+   "new": "11.3-sqa-engineer-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "11.8",
+   "newCode": "11.3",
+   "reason": "tests of 11.6: testing, first pass",
+   "tags": []
+  },
+  {
+   "old": "11.9-orchestrator-to-code-reviewer.handoff.md",
+   "new": "11.4.1-orchestrator-to-code-reviewer.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "11.9",
+   "newCode": "11.4.1",
+   "reason": "code review, standards (never sent)",
+   "tags": []
+  },
+  {
+   "old": "12.1.1-agent-manager-to-orchestrator.handback.md",
+   "new": "12.2-agent-manager-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "12.1.1",
+   "newCode": "12.2",
+   "reason": "the change: implementation, first pass",
+   "tags": []
+  },
+  {
+   "old": "12.1.1-orchestrator-to-agent-manager.handoff.md",
+   "new": "12.2-orchestrator-to-agent-manager.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "12.1.1",
+   "newCode": "12.2",
+   "reason": "the change: implementation, first pass",
+   "tags": []
+  },
+  {
+   "old": "12.1.1.l1-agent-manager-to-orchestrator.handback.md",
+   "new": "12.2.l1.1-agent-manager-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "12.1.1.l1",
+   "newCode": "12.2.l1.1",
+   "reason": "re-read settings per turn (human): implementation loop 1",
+   "tags": [
+    "A1"
+   ]
+  },
+  {
+   "old": "12.1.1.l1-orchestrator-to-agent-manager.handoff.md",
+   "new": "12.2.l1.1-orchestrator-to-agent-manager.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "12.1.1.l1",
+   "newCode": "12.2.l1.1",
+   "reason": "re-read settings per turn (human): implementation loop 1",
+   "tags": [
+    "A1"
+   ]
+  },
+  {
+   "old": "12.1.1.l2-agent-manager-to-orchestrator.handback.md",
+   "new": "12.2.l2.1-agent-manager-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "12.1.1.l2",
+   "newCode": "12.2.l2.1",
+   "reason": "cache the re-read (human): implementation loop 2",
+   "tags": [
+    "A1"
+   ]
+  },
+  {
+   "old": "12.1.1.l2-orchestrator-to-agent-manager.handoff.md",
+   "new": "12.2.l2.1-orchestrator-to-agent-manager.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "12.1.1.l2",
+   "newCode": "12.2.l2.1",
+   "reason": "cache the re-read (human): implementation loop 2",
+   "tags": [
+    "A1"
+   ]
+  },
+  {
+   "old": "12.1.1.l3-agent-manager-to-orchestrator.handback.md",
+   "new": "12.4.l1.1-agent-manager-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "12.1.1.l3",
+   "newCode": "12.4.l1.1",
+   "reason": "fix for the review: review loop 1, round 1",
+   "tags": []
+  },
+  {
+   "old": "12.1.1.l3-orchestrator-to-agent-manager.handoff.md",
+   "new": "12.4.l1.1-orchestrator-to-agent-manager.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "12.1.1.l3",
+   "newCode": "12.4.l1.1",
+   "reason": "fix for the review: review loop 1, round 1",
+   "tags": []
+  },
+  {
+   "old": "12.1.2-documentation-writer-to-orchestrator.handback.md",
+   "new": "12.5-documentation-writer-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "12.1.2",
+   "newCode": "12.5",
+   "reason": "README: documentation, first pass",
+   "tags": []
+  },
+  {
+   "old": "12.1.2-orchestrator-to-documentation-writer.handoff.md",
+   "new": "12.5-orchestrator-to-documentation-writer.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "12.1.2",
+   "newCode": "12.5",
+   "reason": "README: documentation, first pass",
+   "tags": []
+  },
+  {
+   "old": "12.1.3-orchestrator-to-sqa-engineer.handoff.md",
+   "new": "12.3-orchestrator-to-sqa-engineer.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "12.1.3",
+   "newCode": "12.3",
+   "reason": "tests: testing, first pass",
+   "tags": []
+  },
+  {
+   "old": "12.1.3-sqa-engineer-to-orchestrator.handback.md",
+   "new": "12.3-sqa-engineer-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "12.1.3",
+   "newCode": "12.3",
+   "reason": "tests: testing, first pass",
+   "tags": []
+  },
+  {
+   "old": "12.1.4-code-reviewer-to-orchestrator.handback.md",
+   "new": "12.4.1-code-reviewer-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "12.1.4",
+   "newCode": "12.4.1",
+   "reason": "code review, standards (the one brief for both axes)",
+   "tags": [
+    "A6"
+   ]
+  },
+  {
+   "old": "12.1.4-orchestrator-to-code-reviewer.handoff.md",
+   "new": "12.4.1-orchestrator-to-code-reviewer.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "12.1.4",
+   "newCode": "12.4.1",
+   "reason": "code review, standards (the one brief for both axes)",
+   "tags": [
+    "A6"
+   ]
+  },
+  {
+   "old": "12.1.4.l1-code-reviewer-to-orchestrator.handback.md",
+   "new": "12.4.l1.1.1-code-reviewer-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "12.1.4.l1",
+   "newCode": "12.4.l1.1.1",
+   "reason": "review loop 1 round 1, standards (one brief for both axes)",
+   "tags": [
+    "A6"
+   ]
+  },
+  {
+   "old": "12.1.4.l1-orchestrator-to-code-reviewer.handoff.md",
+   "new": "12.4.l1.1.1-orchestrator-to-code-reviewer.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "12.1.4.l1",
+   "newCode": "12.4.l1.1.1",
+   "reason": "review loop 1 round 1, standards (one brief for both axes)",
+   "tags": [
+    "A6"
+   ]
+  },
+  {
+   "old": "12.1.5-code-reviewer-to-orchestrator.handback.md",
+   "new": "12.4.2-code-reviewer-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "12.1.5",
+   "newCode": "12.4.2",
+   "reason": "code review, spec (hand-back only)",
+   "tags": []
+  },
+  {
+   "old": "12.1.5.l1-code-reviewer-to-orchestrator.handback.md",
+   "new": "12.4.l1.1.2-code-reviewer-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "12.1.5.l1",
+   "newCode": "12.4.l1.1.2",
+   "reason": "review loop 1 round 1, spec",
+   "tags": []
+  },
+  {
+   "old": "12.1.6-documentation-writer-to-orchestrator.handback.md",
+   "new": "12.5.l1.1-documentation-writer-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "12.1.6",
+   "newCode": "12.5.l1.1",
+   "reason": "markers removed, item done (Docs-update re-run): documentation loop 1",
+   "tags": [
+    "A2"
+   ]
+  },
+  {
+   "old": "12.1.6-orchestrator-to-documentation-writer.handoff.md",
+   "new": "12.5.l1.1-orchestrator-to-documentation-writer.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "12.1.6",
+   "newCode": "12.5.l1.1",
+   "reason": "markers removed, item done (Docs-update re-run): documentation loop 1",
+   "tags": [
+    "A2"
+   ]
+  },
+  {
+   "old": "2.1-orchestrator-to-product-owner.handoff.md",
+   "new": "2.1-orchestrator-to-product-owner.handoff.md",
+   "kind": "handoff",
+   "tracked": true,
+   "oldCode": "2.1",
+   "newCode": "2.1",
+   "reason": "product-owner brief: first planning pass",
+   "tags": []
+  },
+  {
+   "old": "2.1-product-owner-to-orchestrator.handback.md",
+   "new": "2.1-product-owner-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": true,
+   "oldCode": "2.1",
+   "newCode": "2.1",
+   "reason": "product-owner brief: first planning pass",
+   "tags": []
+  },
+  {
+   "old": "2.1.l1-orchestrator-to-product-owner.handoff.md",
+   "new": "2.1.l2.1-orchestrator-to-product-owner.handoff.md",
+   "kind": "handoff",
+   "tracked": true,
+   "oldCode": "2.1.l1",
+   "newCode": "2.1.l2.1",
+   "reason": "critique REVISE opens loop 2; round 1, the fix",
+   "tags": []
+  },
+  {
+   "old": "2.1.l1-product-owner-to-orchestrator.handback.md",
+   "new": "2.1.l2.1-product-owner-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": true,
+   "oldCode": "2.1.l1",
+   "newCode": "2.1.l2.1",
+   "reason": "critique REVISE opens loop 2; round 1, the fix",
+   "tags": []
+  },
+  {
+   "old": "2.2-orchestrator-to-product-owner.handoff.md",
+   "new": "2.1.l1.1-orchestrator-to-product-owner.handoff.md",
+   "kind": "handoff",
+   "tracked": true,
+   "oldCode": "2.2",
+   "newCode": "2.1.l1.1",
+   "reason": "brief revised with the C1-C3 answers: Clarify loop 1, round 1",
+   "tags": []
+  },
+  {
+   "old": "2.2-product-owner-to-orchestrator.handback.md",
+   "new": "2.1.l1.1-product-owner-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": true,
+   "oldCode": "2.2",
+   "newCode": "2.1.l1.1",
+   "reason": "brief revised with the C1-C3 answers: Clarify loop 1, round 1",
+   "tags": []
+  },
+  {
+   "old": "2.3-brutal-critique-to-orchestrator.handback.md",
+   "new": "2.1-brutal-critique-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": true,
+   "oldCode": "2.3",
+   "newCode": "2.1",
+   "reason": "brief critique: first hand-off to brutal-critique in planning",
+   "tags": [
+    "A5"
+   ]
+  },
+  {
+   "old": "2.3-orchestrator-to-brutal-critique.handoff.md",
+   "new": "2.1-orchestrator-to-brutal-critique.handoff.md",
+   "kind": "handoff",
+   "tracked": true,
+   "oldCode": "2.3",
+   "newCode": "2.1",
+   "reason": "brief critique: first hand-off to brutal-critique in planning",
+   "tags": [
+    "A5"
+   ]
+  },
+  {
+   "old": "2.3.l1-brutal-critique-to-orchestrator.handback.md",
+   "new": "2.1.l2.1-brutal-critique-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": true,
+   "oldCode": "2.3.l1",
+   "newCode": "2.1.l2.1",
+   "reason": "loop 2 round 1, the re-critique (PASS)",
+   "tags": []
+  },
+  {
+   "old": "2.3.l1-orchestrator-to-brutal-critique.handoff.md",
+   "new": "2.1.l2.1-orchestrator-to-brutal-critique.handoff.md",
+   "kind": "handoff",
+   "tracked": true,
+   "oldCode": "2.3.l1",
+   "newCode": "2.1.l2.1",
+   "reason": "loop 2 round 1, the re-critique (PASS)",
+   "tags": []
+  },
+  {
+   "old": "3.1-orchestrator-to-requirement-analyst.handoff.md",
+   "new": "3.1-orchestrator-to-requirement-analyst.handoff.md",
+   "kind": "handoff",
+   "tracked": true,
+   "oldCode": "3.1",
+   "newCode": "3.1",
+   "reason": "requirement-analyst stories: first planning pass",
+   "tags": []
+  },
+  {
+   "old": "3.1-requirement-analyst-to-orchestrator.handback.md",
+   "new": "3.1-requirement-analyst-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": true,
+   "oldCode": "3.1",
+   "newCode": "3.1",
+   "reason": "requirement-analyst stories: first planning pass",
+   "tags": []
+  },
+  {
+   "old": "3.1.l1-orchestrator-to-requirement-analyst.handoff.md",
+   "new": "3.1.l1.1-orchestrator-to-requirement-analyst.handoff.md",
+   "kind": "handoff",
+   "tracked": true,
+   "oldCode": "3.1.l1",
+   "newCode": "3.1.l1.1",
+   "reason": "critique REVISE and Q1-Q12 answers: loop 1, round 1, the fix",
+   "tags": []
+  },
+  {
+   "old": "3.1.l1-requirement-analyst-to-orchestrator.handback.md",
+   "new": "3.1.l1.1-requirement-analyst-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": true,
+   "oldCode": "3.1.l1",
+   "newCode": "3.1.l1.1",
+   "reason": "critique REVISE and Q1-Q12 answers: loop 1, round 1, the fix",
+   "tags": []
+  },
+  {
+   "old": "3.1.l2-orchestrator-to-requirement-analyst.handoff.md",
+   "new": "3.1.l1.2-orchestrator-to-requirement-analyst.handoff.md",
+   "kind": "handoff",
+   "tracked": true,
+   "oldCode": "3.1.l2",
+   "newCode": "3.1.l1.2",
+   "reason": "post-PASS fixes M1-M6: round 2 of loop 1",
+   "tags": [
+    "A2"
+   ]
+  },
+  {
+   "old": "3.1.l2-requirement-analyst-to-orchestrator.handback.md",
+   "new": "3.1.l1.2-requirement-analyst-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": true,
+   "oldCode": "3.1.l2",
+   "newCode": "3.1.l1.2",
+   "reason": "post-PASS fixes M1-M6: round 2 of loop 1",
+   "tags": [
+    "A2"
+   ]
+  },
+  {
+   "old": "3.2.1-brutal-critique-to-orchestrator.handback.md",
+   "new": "3.1-brutal-critique-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": true,
+   "oldCode": "3.2.1",
+   "newCode": "3.1",
+   "reason": "stories critique, spawned with the backlog: first brutal-critique pass",
+   "tags": [
+    "A5"
+   ]
+  },
+  {
+   "old": "3.2.1-orchestrator-to-brutal-critique.handoff.md",
+   "new": "3.1-orchestrator-to-brutal-critique.handoff.md",
+   "kind": "handoff",
+   "tracked": true,
+   "oldCode": "3.2.1",
+   "newCode": "3.1",
+   "reason": "stories critique, spawned with the backlog: first brutal-critique pass",
+   "tags": [
+    "A5"
+   ]
+  },
+  {
+   "old": "3.2.1.l1-brutal-critique-to-orchestrator.handback.md",
+   "new": "3.1.l1.1-brutal-critique-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": true,
+   "oldCode": "3.2.1.l1",
+   "newCode": "3.1.l1.1",
+   "reason": "loop 1 round 1, the re-critique (PASS)",
+   "tags": []
+  },
+  {
+   "old": "3.2.1.l1-orchestrator-to-brutal-critique.handoff.md",
+   "new": "3.1.l1.1-orchestrator-to-brutal-critique.handoff.md",
+   "kind": "handoff",
+   "tracked": true,
+   "oldCode": "3.2.1.l1",
+   "newCode": "3.1.l1.1",
+   "reason": "loop 1 round 1, the re-critique (PASS)",
+   "tags": []
+  },
+  {
+   "old": "3.2.2-orchestrator-to-product-manager.handoff.md",
+   "new": "3.1-orchestrator-to-product-manager.handoff.md",
+   "kind": "handoff",
+   "tracked": true,
+   "oldCode": "3.2.2",
+   "newCode": "3.1",
+   "reason": "product-manager backlog: first pass",
+   "tags": []
+  },
+  {
+   "old": "3.2.2-product-manager-to-orchestrator.handback.md",
+   "new": "3.1-product-manager-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": true,
+   "oldCode": "3.2.2",
+   "newCode": "3.1",
+   "reason": "product-manager backlog: first pass",
+   "tags": []
+  },
+  {
+   "old": "3.3-orchestrator-to-product-owner.handoff.md",
+   "new": "3.1-orchestrator-to-product-owner.handoff.md",
+   "kind": "handoff",
+   "tracked": true,
+   "oldCode": "3.3",
+   "newCode": "3.1",
+   "reason": "product-owner accept: first product-owner pass",
+   "tags": []
+  },
+  {
+   "old": "3.3-product-owner-to-orchestrator.handback.md",
+   "new": "3.1-product-owner-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": true,
+   "oldCode": "3.3",
+   "newCode": "3.1",
+   "reason": "product-owner accept: first product-owner pass",
+   "tags": []
+  },
+  {
+   "old": "4.1-orchestrator-to-human.handoff.md",
+   "new": "4-orchestrator-to-human.handoff.md",
+   "kind": "handoff",
+   "tracked": true,
+   "oldCode": "4.1",
+   "newCode": "4",
+   "reason": "G1 gate record: a gate takes the bare root",
+   "tags": []
+  },
+  {
+   "old": "5.1-orchestrator-to-research-assistant.handoff.md",
+   "new": "5.1-orchestrator-to-research-assistant.handoff.md",
+   "kind": "handoff",
+   "tracked": true,
+   "oldCode": "5.1",
+   "newCode": "5.1",
+   "reason": "research (A14): planning, unchanged",
+   "tags": []
+  },
+  {
+   "old": "5.1-research-assistant-to-orchestrator.handback.md",
+   "new": "5.1-research-assistant-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": true,
+   "oldCode": "5.1",
+   "newCode": "5.1",
+   "reason": "research (A14): planning, unchanged",
+   "tags": []
+  },
+  {
+   "old": "5.2.1-agent-manager-to-orchestrator.handback.md",
+   "new": "5.2.1-agent-manager-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": true,
+   "oldCode": "5.2.1",
+   "newCode": "5.2.1",
+   "reason": "spike (a): implementation, three agent-manager spawns together, unchanged",
+   "tags": []
+  },
+  {
+   "old": "5.2.1-orchestrator-to-agent-manager.handoff.md",
+   "new": "5.2.1-orchestrator-to-agent-manager.handoff.md",
+   "kind": "handoff",
+   "tracked": true,
+   "oldCode": "5.2.1",
+   "newCode": "5.2.1",
+   "reason": "spike (a): implementation, three agent-manager spawns together, unchanged",
+   "tags": []
+  },
+  {
+   "old": "5.2.2-agent-manager-to-orchestrator.handback.md",
+   "new": "5.2.2-agent-manager-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": true,
+   "oldCode": "5.2.2",
+   "newCode": "5.2.2",
+   "reason": "spike (c), unchanged",
+   "tags": []
+  },
+  {
+   "old": "5.2.2-orchestrator-to-agent-manager.handoff.md",
+   "new": "5.2.2-orchestrator-to-agent-manager.handoff.md",
+   "kind": "handoff",
+   "tracked": true,
+   "oldCode": "5.2.2",
+   "newCode": "5.2.2",
+   "reason": "spike (c), unchanged",
+   "tags": []
+  },
+  {
+   "old": "5.2.3-agent-manager-to-orchestrator.handback.md",
+   "new": "5.2.3-agent-manager-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": true,
+   "oldCode": "5.2.3",
+   "newCode": "5.2.3",
+   "reason": "spike (b), unchanged",
+   "tags": []
+  },
+  {
+   "old": "5.2.3-orchestrator-to-agent-manager.handoff.md",
+   "new": "5.2.3-orchestrator-to-agent-manager.handoff.md",
+   "kind": "handoff",
+   "tracked": true,
+   "oldCode": "5.2.3",
+   "newCode": "5.2.3",
+   "reason": "spike (b), unchanged",
+   "tags": []
+  },
+  {
+   "old": "5.3-agent-manager-to-orchestrator.handback.md",
+   "new": "5.2.l1.1-agent-manager-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": true,
+   "oldCode": "5.3",
+   "newCode": "5.2.l1.1",
+   "reason": "spikes into the branch (orchestrator's next step, not a send-back): implementation loop 1, round 1",
+   "tags": [
+    "A2"
+   ]
+  },
+  {
+   "old": "5.3-orchestrator-to-agent-manager.handoff.md",
+   "new": "5.2.l1.1-orchestrator-to-agent-manager.handoff.md",
+   "kind": "handoff",
+   "tracked": true,
+   "oldCode": "5.3",
+   "newCode": "5.2.l1.1",
+   "reason": "spikes into the branch (orchestrator's next step, not a send-back): implementation loop 1, round 1",
+   "tags": [
+    "A2"
+   ]
+  },
+  {
+   "old": "5.4-agent-manager-to-orchestrator.handback.md",
+   "new": "5.2.l2.1-agent-manager-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": true,
+   "oldCode": "5.4",
+   "newCode": "5.2.l2.1",
+   "reason": "spikes into the root marketplace (human request): implementation loop 2",
+   "tags": [
+    "A1"
+   ]
+  },
+  {
+   "old": "5.4-orchestrator-to-agent-manager.handoff.md",
+   "new": "5.2.l2.1-orchestrator-to-agent-manager.handoff.md",
+   "kind": "handoff",
+   "tracked": true,
+   "oldCode": "5.4",
+   "newCode": "5.2.l2.1",
+   "reason": "spikes into the root marketplace (human request): implementation loop 2",
+   "tags": [
+    "A1"
+   ]
+  },
+  {
+   "old": "6.1.1-orchestrator-to-research-assistant.handoff.md",
+   "new": "6.1.1-orchestrator-to-research-assistant.handoff.md",
+   "kind": "handoff",
+   "tracked": true,
+   "oldCode": "6.1.1",
+   "newCode": "6.1.1",
+   "reason": "research spawned together, 1 of 2, unchanged",
+   "tags": []
+  },
+  {
+   "old": "6.1.1-research-assistant-to-orchestrator.handback.md",
+   "new": "6.1.1-research-assistant-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": true,
+   "oldCode": "6.1.1",
+   "newCode": "6.1.1",
+   "reason": "research spawned together, 1 of 2, unchanged",
+   "tags": []
+  },
+  {
+   "old": "6.1.2-orchestrator-to-research-assistant.handoff.md",
+   "new": "6.1.2-orchestrator-to-research-assistant.handoff.md",
+   "kind": "handoff",
+   "tracked": true,
+   "oldCode": "6.1.2",
+   "newCode": "6.1.2",
+   "reason": "research 2 of 2, unchanged",
+   "tags": []
+  },
+  {
+   "old": "6.1.2-research-assistant-to-orchestrator.handback.md",
+   "new": "6.1.2-research-assistant-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": true,
+   "oldCode": "6.1.2",
+   "newCode": "6.1.2",
+   "reason": "research 2 of 2, unchanged",
+   "tags": []
+  },
+  {
+   "old": "6.2-orchestrator-to-research-assistant.handoff.md",
+   "new": "6.1.l1.1-orchestrator-to-research-assistant.handoff.md",
+   "kind": "handoff",
+   "tracked": true,
+   "oldCode": "6.2",
+   "newCode": "6.1.l1.1",
+   "reason": "research asked again later: planning loop 1, round 1",
+   "tags": []
+  },
+  {
+   "old": "6.2-research-assistant-to-orchestrator.handback.md",
+   "new": "6.1.l1.1-research-assistant-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": true,
+   "oldCode": "6.2",
+   "newCode": "6.1.l1.1",
+   "reason": "research asked again later: planning loop 1, round 1",
+   "tags": []
+  },
+  {
+   "old": "7.1-agent-manager-to-orchestrator.handback.md",
+   "new": "7.2-agent-manager-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": true,
+   "oldCode": "7.1",
+   "newCode": "7.2",
+   "reason": "rework round 1: implementation, first pass",
+   "tags": []
+  },
+  {
+   "old": "7.1-orchestrator-to-agent-manager.handoff.md",
+   "new": "7.2-orchestrator-to-agent-manager.handoff.md",
+   "kind": "handoff",
+   "tracked": true,
+   "oldCode": "7.1",
+   "newCode": "7.2",
+   "reason": "rework round 1: implementation, first pass",
+   "tags": []
+  },
+  {
+   "old": "7.1.l1-agent-manager-to-orchestrator.handback.md",
+   "new": "7.2.l1.1-agent-manager-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": true,
+   "oldCode": "7.1.l1",
+   "newCode": "7.2.l1.1",
+   "reason": "human check missed: rework loop 1, round 1",
+   "tags": []
+  },
+  {
+   "old": "7.1.l1-orchestrator-to-agent-manager.handoff.md",
+   "new": "7.2.l1.1-orchestrator-to-agent-manager.handoff.md",
+   "kind": "handoff",
+   "tracked": true,
+   "oldCode": "7.1.l1",
+   "newCode": "7.2.l1.1",
+   "reason": "human check missed: rework loop 1, round 1",
+   "tags": []
+  },
+  {
+   "old": "7.1.l2-agent-manager-to-orchestrator.handback.md",
+   "new": "7.2.l1.2-agent-manager-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": true,
+   "oldCode": "7.1.l2",
+   "newCode": "7.2.l1.2",
+   "reason": "rework loop 1, round 2",
+   "tags": []
+  },
+  {
+   "old": "7.1.l2-orchestrator-to-agent-manager.handoff.md",
+   "new": "7.2.l1.2-orchestrator-to-agent-manager.handoff.md",
+   "kind": "handoff",
+   "tracked": true,
+   "oldCode": "7.1.l2",
+   "newCode": "7.2.l1.2",
+   "reason": "rework loop 1, round 2",
+   "tags": []
+  },
+  {
+   "old": "7.1.l3-agent-manager-to-orchestrator.handback.md",
+   "new": "7.2.l1.3-agent-manager-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": true,
+   "oldCode": "7.1.l3",
+   "newCode": "7.2.l1.3",
+   "reason": "rework loop 1, round 3",
+   "tags": []
+  },
+  {
+   "old": "7.1.l3-orchestrator-to-agent-manager.handoff.md",
+   "new": "7.2.l1.3-orchestrator-to-agent-manager.handoff.md",
+   "kind": "handoff",
+   "tracked": true,
+   "oldCode": "7.1.l3",
+   "newCode": "7.2.l1.3",
+   "reason": "rework loop 1, round 3",
+   "tags": []
+  },
+  {
+   "old": "7.1.l4-agent-manager-to-orchestrator.handback.md",
+   "new": "7.2.l1.4-agent-manager-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": true,
+   "oldCode": "7.1.l4",
+   "newCode": "7.2.l1.4",
+   "reason": "rework loop 1, round 4",
+   "tags": []
+  },
+  {
+   "old": "7.1.l4-orchestrator-to-agent-manager.handoff.md",
+   "new": "7.2.l1.4-orchestrator-to-agent-manager.handoff.md",
+   "kind": "handoff",
+   "tracked": true,
+   "oldCode": "7.1.l4",
+   "newCode": "7.2.l1.4",
+   "reason": "rework loop 1, round 4",
+   "tags": []
+  },
+  {
+   "old": "7.1.l5-agent-manager-to-orchestrator.handback.md",
+   "new": "7.2.l1.5-agent-manager-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": true,
+   "oldCode": "7.1.l5",
+   "newCode": "7.2.l1.5",
+   "reason": "rework loop 1, round 5 (also answers 7.2.x findings; N.2 is the earliest phase)",
+   "tags": []
+  },
+  {
+   "old": "7.1.l5-orchestrator-to-agent-manager.handoff.md",
+   "new": "7.2.l1.5-orchestrator-to-agent-manager.handoff.md",
+   "kind": "handoff",
+   "tracked": true,
+   "oldCode": "7.1.l5",
+   "newCode": "7.2.l1.5",
+   "reason": "rework loop 1, round 5 (also answers 7.2.x findings; N.2 is the earliest phase)",
+   "tags": []
+  },
+  {
+   "old": "7.2.1-brutal-critique-to-orchestrator.handback.md",
+   "new": "7.5-brutal-critique-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": true,
+   "oldCode": "7.2.1",
+   "newCode": "7.5",
+   "reason": "critique of CHECK.md X1-X7: documentation critique, first pass",
+   "tags": [
+    "A5"
+   ]
+  },
+  {
+   "old": "7.2.1-orchestrator-to-brutal-critique.handoff.md",
+   "new": "7.5-orchestrator-to-brutal-critique.handoff.md",
+   "kind": "handoff",
+   "tracked": true,
+   "oldCode": "7.2.1",
+   "newCode": "7.5",
+   "reason": "critique of CHECK.md X1-X7: documentation critique, first pass",
+   "tags": [
+    "A5"
+   ]
+  },
+  {
+   "old": "7.2.2-orchestrator-to-sqa-engineer.handoff.md",
+   "new": "7.3-orchestrator-to-sqa-engineer.handoff.md",
+   "kind": "handoff",
+   "tracked": true,
+   "oldCode": "7.2.2",
+   "newCode": "7.3",
+   "reason": "sqa-engineer: testing, first pass",
+   "tags": []
+  },
+  {
+   "old": "7.2.2-sqa-engineer-to-orchestrator.handback.md",
+   "new": "7.3-sqa-engineer-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": true,
+   "oldCode": "7.2.2",
+   "newCode": "7.3",
+   "reason": "sqa-engineer: testing, first pass",
+   "tags": []
+  },
+  {
+   "old": "7.2.3-code-reviewer-to-orchestrator.handback.md",
+   "new": "7.4.1-code-reviewer-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": true,
+   "oldCode": "7.2.3",
+   "newCode": "7.4.1",
+   "reason": "code review, axis standards",
+   "tags": []
+  },
+  {
+   "old": "7.2.3-orchestrator-to-code-reviewer.handoff.md",
+   "new": "7.4.1-orchestrator-to-code-reviewer.handoff.md",
+   "kind": "handoff",
+   "tracked": true,
+   "oldCode": "7.2.3",
+   "newCode": "7.4.1",
+   "reason": "code review, axis standards",
+   "tags": []
+  },
+  {
+   "old": "7.2.4-code-reviewer-to-orchestrator.handback.md",
+   "new": "7.4.2-code-reviewer-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": true,
+   "oldCode": "7.2.4",
+   "newCode": "7.4.2",
+   "reason": "code review, axis spec",
+   "tags": []
+  },
+  {
+   "old": "7.2.4-orchestrator-to-code-reviewer.handoff.md",
+   "new": "7.4.2-orchestrator-to-code-reviewer.handoff.md",
+   "kind": "handoff",
+   "tracked": true,
+   "oldCode": "7.2.4",
+   "newCode": "7.4.2",
+   "reason": "code review, axis spec",
+   "tags": []
+  },
+  {
+   "old": "8.1-agent-manager-to-orchestrator.handback.md",
+   "new": "8.2-agent-manager-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "8.1",
+   "newCode": "8.2",
+   "reason": "create the plugin: implementation, first pass",
+   "tags": []
+  },
+  {
+   "old": "8.1-orchestrator-to-agent-manager.handoff.md",
+   "new": "8.2-orchestrator-to-agent-manager.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "8.1",
+   "newCode": "8.2",
+   "reason": "create the plugin: implementation, first pass",
+   "tags": []
+  },
+  {
+   "old": "8.1.2-agent-manager-to-orchestrator.handback.md",
+   "new": "8.2.l1.1-agent-manager-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "8.1.2",
+   "newCode": "8.2.l1.1",
+   "reason": "spike 029 + robot avatars (human addendum): follow-up, implementation loop 1",
+   "tags": [
+    "A1"
+   ]
+  },
+  {
+   "old": "8.1.2-orchestrator-to-agent-manager.handoff.md",
+   "new": "8.2.l1.1-orchestrator-to-agent-manager.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "8.1.2",
+   "newCode": "8.2.l1.1",
+   "reason": "spike 029 + robot avatars (human addendum): follow-up, implementation loop 1",
+   "tags": [
+    "A1"
+   ]
+  },
+  {
+   "old": "8.1.3-agent-manager-to-orchestrator.handback.md",
+   "new": "8.2.l2.1-agent-manager-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "8.1.3",
+   "newCode": "8.2.l2.1",
+   "reason": "spike 028 (human): implementation loop 2",
+   "tags": [
+    "A1"
+   ]
+  },
+  {
+   "old": "8.1.3-orchestrator-to-agent-manager.handoff.md",
+   "new": "8.2.l2.1-orchestrator-to-agent-manager.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "8.1.3",
+   "newCode": "8.2.l2.1",
+   "reason": "spike 028 (human): implementation loop 2",
+   "tags": [
+    "A1"
+   ]
+  },
+  {
+   "old": "8.1.4-agent-manager-to-orchestrator.handback.md",
+   "new": "8.2.l3.1-agent-manager-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "8.1.4",
+   "newCode": "8.2.l3.1",
+   "reason": "commands under /ai-dlc: (human table): implementation loop 3",
+   "tags": [
+    "A1"
+   ]
+  },
+  {
+   "old": "8.1.4-orchestrator-to-agent-manager.handoff.md",
+   "new": "8.2.l3.1-orchestrator-to-agent-manager.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "8.1.4",
+   "newCode": "8.2.l3.1",
+   "reason": "commands under /ai-dlc: (human table): implementation loop 3",
+   "tags": [
+    "A1"
+   ]
+  },
+  {
+   "old": "8.1.5-agent-manager-to-orchestrator.handback.md",
+   "new": "8.2.l4.1-agent-manager-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "8.1.5",
+   "newCode": "8.2.l4.1",
+   "reason": "panel modes, pane controls (human): implementation loop 4",
+   "tags": [
+    "A1"
+   ]
+  },
+  {
+   "old": "8.1.5-orchestrator-to-agent-manager.handoff.md",
+   "new": "8.2.l4.1-orchestrator-to-agent-manager.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "8.1.5",
+   "newCode": "8.2.l4.1",
+   "reason": "panel modes, pane controls (human): implementation loop 4",
+   "tags": [
+    "A1"
+   ]
+  },
+  {
+   "old": "8.1.6.1-agent-manager-to-orchestrator.handback.md",
+   "new": "8.2.l5.1-agent-manager-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "8.1.6.1",
+   "newCode": "8.2.l5.1",
+   "reason": "lens-gate anomalies (human): implementation loop 5",
+   "tags": [
+    "A1"
+   ]
+  },
+  {
+   "old": "8.1.6.1-orchestrator-to-agent-manager.handoff.md",
+   "new": "8.2.l5.1-orchestrator-to-agent-manager.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "8.1.6.1",
+   "newCode": "8.2.l5.1",
+   "reason": "lens-gate anomalies (human): implementation loop 5",
+   "tags": [
+    "A1"
+   ]
+  },
+  {
+   "old": "8.1.6.1.l1-agent-manager-to-orchestrator.handback.md",
+   "new": "8.2.l6.1-agent-manager-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "8.1.6.1.l1",
+   "newCode": "8.2.l6.1",
+   "reason": "blocked steps, runs setting, A5-A7 (human): implementation loop 6",
+   "tags": [
+    "A1"
+   ]
+  },
+  {
+   "old": "8.1.6.1.l1-orchestrator-to-agent-manager.handoff.md",
+   "new": "8.2.l6.1-orchestrator-to-agent-manager.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "8.1.6.1.l1",
+   "newCode": "8.2.l6.1",
+   "reason": "blocked steps, runs setting, A5-A7 (human): implementation loop 6",
+   "tags": [
+    "A1"
+   ]
+  },
+  {
+   "old": "8.1.6.1.l2-orchestrator-to-agent-manager.handoff.md",
+   "new": "8.2.l7.1-orchestrator-to-agent-manager.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "8.1.6.1.l2",
+   "newCode": "8.2.l7.1",
+   "reason": "full screen task panels, glyphs (human; agent stalled): implementation loop 7, round 1",
+   "tags": [
+    "A1"
+   ]
+  },
+  {
+   "old": "8.1.6.1.l2.1-agent-manager-to-orchestrator.handback.md",
+   "new": "8.2.l7.2-agent-manager-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "8.1.6.1.l2.1",
+   "newCode": "8.2.l7.2",
+   "reason": "fresh agent finishes 8.1.6.1.l2: round 2 of loop 7",
+   "tags": [
+    "A2"
+   ]
+  },
+  {
+   "old": "8.1.6.1.l2.1-orchestrator-to-agent-manager.handoff.md",
+   "new": "8.2.l7.2-orchestrator-to-agent-manager.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "8.1.6.1.l2.1",
+   "newCode": "8.2.l7.2",
+   "reason": "fresh agent finishes 8.1.6.1.l2: round 2 of loop 7",
+   "tags": [
+    "A2"
+   ]
+  },
+  {
+   "old": "8.1.6.1.l3-agent-manager-to-orchestrator.handback.md",
+   "new": "8.2.l8.1-agent-manager-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "8.1.6.1.l3",
+   "newCode": "8.2.l8.1",
+   "reason": "bug: steps split across charts (human): implementation loop 8",
+   "tags": [
+    "A1"
+   ]
+  },
+  {
+   "old": "8.1.6.1.l3-orchestrator-to-agent-manager.handoff.md",
+   "new": "8.2.l8.1-orchestrator-to-agent-manager.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "8.1.6.1.l3",
+   "newCode": "8.2.l8.1",
+   "reason": "bug: steps split across charts (human): implementation loop 8",
+   "tags": [
+    "A1"
+   ]
+  },
+  {
+   "old": "8.1.6.2-documentation-writer-to-orchestrator.handback.md",
+   "new": "8.5-documentation-writer-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "8.1.6.2",
+   "newCode": "8.5",
+   "reason": "README (documentation-writer): documentation, first pass",
+   "tags": []
+  },
+  {
+   "old": "8.1.6.2-orchestrator-to-documentation-writer.handoff.md",
+   "new": "8.5-orchestrator-to-documentation-writer.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "8.1.6.2",
+   "newCode": "8.5",
+   "reason": "README (documentation-writer): documentation, first pass",
+   "tags": []
+  },
+  {
+   "old": "8.1.6.2.l1-documentation-writer-to-orchestrator.handback.md",
+   "new": "8.5.l1.1-documentation-writer-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "8.1.6.2.l1",
+   "newCode": "8.5.l1.1",
+   "reason": "README re-run after the gate alert landed (Docs-update re-run): documentation loop 1",
+   "tags": [
+    "A2"
+   ]
+  },
+  {
+   "old": "8.1.6.2.l1-orchestrator-to-documentation-writer.handoff.md",
+   "new": "8.5.l1.1-orchestrator-to-documentation-writer.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "8.1.6.2.l1",
+   "newCode": "8.5.l1.1",
+   "reason": "README re-run after the gate alert landed (Docs-update re-run): documentation loop 1",
+   "tags": [
+    "A2"
+   ]
+  },
+  {
+   "old": "8.1.6.2.l2-documentation-writer-to-orchestrator.handback.md",
+   "new": "8.5.l2.1-documentation-writer-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "8.1.6.2.l2",
+   "newCode": "8.5.l2.1",
+   "reason": "lens docs fix for the critique: loop 2 round 1",
+   "tags": []
+  },
+  {
+   "old": "8.1.6.2.l2-orchestrator-to-documentation-writer.handoff.md",
+   "new": "8.5.l2.1-orchestrator-to-documentation-writer.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "8.1.6.2.l2",
+   "newCode": "8.5.l2.1",
+   "reason": "lens docs fix for the critique: loop 2 round 1",
+   "tags": []
+  },
+  {
+   "old": "8.1.7-agent-manager-to-orchestrator.handback.md",
+   "new": "8.5.l2.1-agent-manager-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "8.1.7",
+   "newCode": "8.5.l2.1",
+   "reason": "plugin-management fix for critique Major 5 alone: documentation loop 2 (critique REVISE), round 1",
+   "tags": []
+  },
+  {
+   "old": "8.1.7-orchestrator-to-agent-manager.handoff.md",
+   "new": "8.5.l2.1-orchestrator-to-agent-manager.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "8.1.7",
+   "newCode": "8.5.l2.1",
+   "reason": "plugin-management fix for critique Major 5 alone: documentation loop 2 (critique REVISE), round 1",
+   "tags": []
+  },
+  {
+   "old": "8.1.l1-agent-manager-to-orchestrator.handback.md",
+   "new": "8.4.l1.1-agent-manager-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "8.1.l1",
+   "newCode": "8.4.l1.1",
+   "reason": "fix for critique 8.2.1 and review 8.3.1: answers N.4 and N.5, so the earliest, review loop 1, round 1",
+   "tags": []
+  },
+  {
+   "old": "8.1.l1-orchestrator-to-agent-manager.handoff.md",
+   "new": "8.4.l1.1-orchestrator-to-agent-manager.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "8.1.l1",
+   "newCode": "8.4.l1.1",
+   "reason": "fix for critique 8.2.1 and review 8.3.1: answers N.4 and N.5, so the earliest, review loop 1, round 1",
+   "tags": []
+  },
+  {
+   "old": "8.2.1-brutal-critique-to-orchestrator.handback.md",
+   "new": "8.5-brutal-critique-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "8.2.1",
+   "newCode": "8.5",
+   "reason": "critique of the docs: brutal-critique's first critique, N.5",
+   "tags": []
+  },
+  {
+   "old": "8.2.1-orchestrator-to-brutal-critique.handoff.md",
+   "new": "8.5-orchestrator-to-brutal-critique.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "8.2.1",
+   "newCode": "8.5",
+   "reason": "critique of the docs: brutal-critique's first critique, N.5",
+   "tags": []
+  },
+  {
+   "old": "8.2.1.l1-brutal-critique-to-orchestrator.handback.md",
+   "new": "8.5.l2.1-brutal-critique-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "8.2.1.l1",
+   "newCode": "8.5.l2.1",
+   "reason": "loop 2 round 1, the re-critique (PASS)",
+   "tags": []
+  },
+  {
+   "old": "8.2.1.l1-orchestrator-to-brutal-critique.handoff.md",
+   "new": "8.5.l2.1-orchestrator-to-brutal-critique.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "8.2.1.l1",
+   "newCode": "8.5.l2.1",
+   "reason": "loop 2 round 1, the re-critique (PASS)",
+   "tags": []
+  },
+  {
+   "old": "8.2.2-orchestrator-to-sqa-engineer.handoff.md",
+   "new": "8.3-orchestrator-to-sqa-engineer.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "8.2.2",
+   "newCode": "8.3",
+   "reason": "tests (code): testing, first pass",
+   "tags": []
+  },
+  {
+   "old": "8.2.2-sqa-engineer-to-orchestrator.handback.md",
+   "new": "8.3-sqa-engineer-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "8.2.2",
+   "newCode": "8.3",
+   "reason": "tests (code): testing, first pass",
+   "tags": []
+  },
+  {
+   "old": "8.2.2.l1-orchestrator-to-sqa-engineer.handoff.md",
+   "new": "8.4.l1.1-orchestrator-to-sqa-engineer.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "8.2.2.l1",
+   "newCode": "8.4.l1.1",
+   "reason": "re-test in the review fix round",
+   "tags": [
+    "A7"
+   ]
+  },
+  {
+   "old": "8.2.2.l1-sqa-engineer-to-orchestrator.handback.md",
+   "new": "8.4.l1.1-sqa-engineer-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "8.2.2.l1",
+   "newCode": "8.4.l1.1",
+   "reason": "re-test in the review fix round",
+   "tags": [
+    "A7"
+   ]
+  },
+  {
+   "old": "8.3.1-code-reviewer-to-orchestrator.handback.md",
+   "new": "8.4.1-code-reviewer-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "8.3.1",
+   "newCode": "8.4.1",
+   "reason": "code review round 1, standards (the one brief for both axes)",
+   "tags": [
+    "A6"
+   ]
+  },
+  {
+   "old": "8.3.1-orchestrator-to-code-reviewer.handoff.md",
+   "new": "8.4.1-orchestrator-to-code-reviewer.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "8.3.1",
+   "newCode": "8.4.1",
+   "reason": "code review round 1, standards (the one brief for both axes)",
+   "tags": [
+    "A6"
+   ]
+  },
+  {
+   "old": "8.3.1.l1-code-reviewer-to-orchestrator.handback.md",
+   "new": "8.4.l1.1.1-code-reviewer-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "8.3.1.l1",
+   "newCode": "8.4.l1.1.1",
+   "reason": "review loop 1 round 1, standards (one brief for both axes)",
+   "tags": [
+    "A6"
+   ]
+  },
+  {
+   "old": "8.3.1.l1-orchestrator-to-code-reviewer.handoff.md",
+   "new": "8.4.l1.1.1-orchestrator-to-code-reviewer.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "8.3.1.l1",
+   "newCode": "8.4.l1.1.1",
+   "reason": "review loop 1 round 1, standards (one brief for both axes)",
+   "tags": [
+    "A6"
+   ]
+  },
+  {
+   "old": "8.3.2-code-reviewer-to-orchestrator.handback.md",
+   "new": "8.4.2-code-reviewer-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "8.3.2",
+   "newCode": "8.4.2",
+   "reason": "code review round 1, spec (hand-back only)",
+   "tags": []
+  },
+  {
+   "old": "8.3.2.l1-code-reviewer-to-orchestrator.handback.md",
+   "new": "8.4.l1.1.2-code-reviewer-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "8.3.2.l1",
+   "newCode": "8.4.l1.1.2",
+   "reason": "review loop 1 round 1, spec",
+   "tags": []
+  },
+  {
+   "old": "8.4.1-agent-manager-to-orchestrator.handback.md",
+   "new": "8.2.l10.1-agent-manager-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "8.4.1",
+   "newCode": "8.2.l10.1",
+   "reason": "item 27: parent: runs + addendum L1 (human): implementation loop 10",
+   "tags": [
+    "A1"
+   ]
+  },
+  {
+   "old": "8.4.1-orchestrator-to-agent-manager.handoff.md",
+   "new": "8.2.l10.1-orchestrator-to-agent-manager.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "8.4.1",
+   "newCode": "8.2.l10.1",
+   "reason": "item 27: parent: runs + addendum L1 (human): implementation loop 10",
+   "tags": [
+    "A1"
+   ]
+  },
+  {
+   "old": "8.4.2-agent-manager-to-orchestrator.handback.md",
+   "new": "8.2.l11.1-agent-manager-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "8.4.2",
+   "newCode": "8.2.l11.1",
+   "reason": "item 27.2: avatars-per-row setting (human): implementation loop 11",
+   "tags": [
+    "A1"
+   ]
+  },
+  {
+   "old": "8.4.2-orchestrator-to-agent-manager.handoff.md",
+   "new": "8.2.l11.1-orchestrator-to-agent-manager.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "8.4.2",
+   "newCode": "8.2.l11.1",
+   "reason": "item 27.2: avatars-per-row setting (human): implementation loop 11",
+   "tags": [
+    "A1"
+   ]
+  },
+  {
+   "old": "8.4.3-documentation-writer-to-orchestrator.handback.md",
+   "new": "8.5.l3.1-documentation-writer-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "8.4.3",
+   "newCode": "8.5.l3.1",
+   "reason": "README for items 27/29 (follow-up): documentation loop 3",
+   "tags": []
+  },
+  {
+   "old": "8.4.3-orchestrator-to-documentation-writer.handoff.md",
+   "new": "8.5.l3.1-orchestrator-to-documentation-writer.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "8.4.3",
+   "newCode": "8.5.l3.1",
+   "reason": "README for items 27/29 (follow-up): documentation loop 3",
+   "tags": []
+  },
+  {
+   "old": "8.4.4-orchestrator-to-sqa-engineer.handoff.md",
+   "new": "8.3.l1.1-orchestrator-to-sqa-engineer.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "8.4.4",
+   "newCode": "8.3.l1.1",
+   "reason": "tests of items 27/29 (stopped): the follow-up's testing loop 1, round 1",
+   "tags": []
+  },
+  {
+   "old": "8.5.1-agent-manager-to-orchestrator.handback.md",
+   "new": "8.2.l9.1-agent-manager-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "8.5.1",
+   "newCode": "8.2.l9.1",
+   "reason": "item 29: runs newest first (human): implementation loop 9",
+   "tags": [
+    "A1"
+   ]
+  },
+  {
+   "old": "8.5.1-orchestrator-to-agent-manager.handoff.md",
+   "new": "8.2.l9.1-orchestrator-to-agent-manager.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "8.5.1",
+   "newCode": "8.2.l9.1",
+   "reason": "item 29: runs newest first (human): implementation loop 9",
+   "tags": [
+    "A1"
+   ]
+  },
+  {
+   "old": "8.6.1-agent-manager-to-orchestrator.handback.md",
+   "new": "8.2.l12.1-agent-manager-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "8.6.1",
+   "newCode": "8.2.l12.1",
+   "reason": "item 30: one chart per step (human): implementation loop 12",
+   "tags": [
+    "A1"
+   ]
+  },
+  {
+   "old": "8.6.1-orchestrator-to-agent-manager.handoff.md",
+   "new": "8.2.l12.1-orchestrator-to-agent-manager.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "8.6.1",
+   "newCode": "8.2.l12.1",
+   "reason": "item 30: one chart per step (human): implementation loop 12",
+   "tags": [
+    "A1"
+   ]
+  },
+  {
+   "old": "8.6.1.l1-agent-manager-to-orchestrator.handback.md",
+   "new": "8.2.l13.1-agent-manager-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "8.6.1.l1",
+   "newCode": "8.2.l13.1",
+   "reason": "step charts on the renumbered folder, addenda A/B (human): implementation loop 13",
+   "tags": [
+    "A1"
+   ]
+  },
+  {
+   "old": "8.6.1.l1-orchestrator-to-agent-manager.handoff.md",
+   "new": "8.2.l13.1-orchestrator-to-agent-manager.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "8.6.1.l1",
+   "newCode": "8.2.l13.1",
+   "reason": "step charts on the renumbered folder, addenda A/B (human): implementation loop 13",
+   "tags": [
+    "A1"
+   ]
+  },
+  {
+   "old": "8.6.1.l2-agent-manager-to-orchestrator.handback.md",
+   "new": "8.5.l4.2-agent-manager-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "8.6.1.l2",
+   "newCode": "8.5.l4.2",
+   "reason": "MANUAL-CHECKS fix for critique 8.6.4: loop 4, round 2",
+   "tags": []
+  },
+  {
+   "old": "8.6.1.l2-orchestrator-to-agent-manager.handoff.md",
+   "new": "8.5.l4.2-orchestrator-to-agent-manager.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "8.6.1.l2",
+   "newCode": "8.5.l4.2",
+   "reason": "MANUAL-CHECKS fix for critique 8.6.4: loop 4, round 2",
+   "tags": []
+  },
+  {
+   "old": "8.6.2-documentation-writer-to-orchestrator.handback.md",
+   "new": "8.5.l4.1-documentation-writer-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "8.6.2",
+   "newCode": "8.5.l4.1",
+   "reason": "README for item 30 (follow-up): documentation loop 4, round 1",
+   "tags": []
+  },
+  {
+   "old": "8.6.2-orchestrator-to-documentation-writer.handoff.md",
+   "new": "8.5.l4.1-orchestrator-to-documentation-writer.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "8.6.2",
+   "newCode": "8.5.l4.1",
+   "reason": "README for item 30 (follow-up): documentation loop 4, round 1",
+   "tags": []
+  },
+  {
+   "old": "8.6.2.l1-documentation-writer-to-orchestrator.handback.md",
+   "new": "8.5.l4.2-documentation-writer-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "8.6.2.l1",
+   "newCode": "8.5.l4.2",
+   "reason": "README fix for critique 8.6.4: loop 4, round 2",
+   "tags": []
+  },
+  {
+   "old": "8.6.2.l1-orchestrator-to-documentation-writer.handoff.md",
+   "new": "8.5.l4.2-orchestrator-to-documentation-writer.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "8.6.2.l1",
+   "newCode": "8.5.l4.2",
+   "reason": "README fix for critique 8.6.4: loop 4, round 2",
+   "tags": []
+  },
+  {
+   "old": "8.6.3-orchestrator-to-sqa-engineer.handoff.md",
+   "new": "8.3.l1.2-orchestrator-to-sqa-engineer.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "8.6.3",
+   "newCode": "8.3.l1.2",
+   "reason": "tests of 8.4-8.6, taking over the stopped 8.4.4: round 2 of testing loop 1",
+   "tags": [
+    "A2"
+   ]
+  },
+  {
+   "old": "8.6.3-sqa-engineer-to-orchestrator.handback.md",
+   "new": "8.3.l1.2-sqa-engineer-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "8.6.3",
+   "newCode": "8.3.l1.2",
+   "reason": "tests of 8.4-8.6, taking over the stopped 8.4.4: round 2 of testing loop 1",
+   "tags": [
+    "A2"
+   ]
+  },
+  {
+   "old": "8.6.4-brutal-critique-to-orchestrator.handback.md",
+   "new": "8.5.l4.1-brutal-critique-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "8.6.4",
+   "newCode": "8.5.l4.1",
+   "reason": "critique of the docs of 8.4-8.6: loop 4, round 1",
+   "tags": [
+    "A8"
+   ]
+  },
+  {
+   "old": "8.6.4-orchestrator-to-brutal-critique.handoff.md",
+   "new": "8.5.l4.1-orchestrator-to-brutal-critique.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "8.6.4",
+   "newCode": "8.5.l4.1",
+   "reason": "critique of the docs of 8.4-8.6: loop 4, round 1",
+   "tags": [
+    "A8"
+   ]
+  },
+  {
+   "old": "8.6.4.l1-brutal-critique-to-orchestrator.handback.md",
+   "new": "8.5.l4.2-brutal-critique-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "8.6.4.l1",
+   "newCode": "8.5.l4.2",
+   "reason": "loop 4 round 2, the re-critique (PASS)",
+   "tags": []
+  },
+  {
+   "old": "8.6.4.l1-orchestrator-to-brutal-critique.handoff.md",
+   "new": "8.5.l4.2-orchestrator-to-brutal-critique.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "8.6.4.l1",
+   "newCode": "8.5.l4.2",
+   "reason": "loop 4 round 2, the re-critique (PASS)",
+   "tags": []
+  },
+  {
+   "old": "8.6.5-agent-manager-to-orchestrator.handback.md",
+   "new": "8.2.l14.1-agent-manager-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "8.6.5",
+   "newCode": "8.2.l14.1",
+   "reason": "lens reads major/minor run-state versions (human answer): implementation loop 14",
+   "tags": [
+    "A1"
+   ]
+  },
+  {
+   "old": "8.6.5-orchestrator-to-agent-manager.handoff.md",
+   "new": "8.2.l14.1-orchestrator-to-agent-manager.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "8.6.5",
+   "newCode": "8.2.l14.1",
+   "reason": "lens reads major/minor run-state versions (human answer): implementation loop 14",
+   "tags": [
+    "A1"
+   ]
+  },
+  {
+   "old": "8.6.5.l1-agent-manager-to-orchestrator.handback.md",
+   "new": "8.4.l2.2-agent-manager-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "8.6.5.l1",
+   "newCode": "8.4.l2.2",
+   "reason": "fix for reviews 8.6.7/8.6.8: review loop 2, round 2",
+   "tags": []
+  },
+  {
+   "old": "8.6.5.l1-orchestrator-to-agent-manager.handoff.md",
+   "new": "8.4.l2.2-orchestrator-to-agent-manager.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "8.6.5.l1",
+   "newCode": "8.4.l2.2",
+   "reason": "fix for reviews 8.6.7/8.6.8: review loop 2, round 2",
+   "tags": []
+  },
+  {
+   "old": "8.6.6-documentation-writer-to-orchestrator.handback.md",
+   "new": "8.5.l4.3-documentation-writer-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "8.6.6",
+   "newCode": "8.5.l4.3",
+   "reason": "README after 8.6.5 (Docs-update re-run): loop 4, round 3",
+   "tags": [
+    "A2"
+   ]
+  },
+  {
+   "old": "8.6.6-orchestrator-to-documentation-writer.handoff.md",
+   "new": "8.5.l4.3-orchestrator-to-documentation-writer.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "8.6.6",
+   "newCode": "8.5.l4.3",
+   "reason": "README after 8.6.5 (Docs-update re-run): loop 4, round 3",
+   "tags": [
+    "A2"
+   ]
+  },
+  {
+   "old": "8.6.6.l1-documentation-writer-to-orchestrator.handback.md",
+   "new": "8.5.l4.4-documentation-writer-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "8.6.6.l1",
+   "newCode": "8.5.l4.4",
+   "reason": "README after 8.6.5.l1 (Docs-update re-run): loop 4, round 4",
+   "tags": [
+    "A2"
+   ]
+  },
+  {
+   "old": "8.6.6.l1-orchestrator-to-documentation-writer.handoff.md",
+   "new": "8.5.l4.4-orchestrator-to-documentation-writer.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "8.6.6.l1",
+   "newCode": "8.5.l4.4",
+   "reason": "README after 8.6.5.l1 (Docs-update re-run): loop 4, round 4",
+   "tags": [
+    "A2"
+   ]
+  },
+  {
+   "old": "8.6.7-code-reviewer-to-orchestrator.handback.md",
+   "new": "8.4.l2.1.1-code-reviewer-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "8.6.7",
+   "newCode": "8.4.l2.1.1",
+   "reason": "review of follow-ups 8.4-8.6: review loop 2, round 1, standards",
+   "tags": []
+  },
+  {
+   "old": "8.6.7-orchestrator-to-code-reviewer.handoff.md",
+   "new": "8.4.l2.1.1-orchestrator-to-code-reviewer.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "8.6.7",
+   "newCode": "8.4.l2.1.1",
+   "reason": "review of follow-ups 8.4-8.6: review loop 2, round 1, standards",
+   "tags": []
+  },
+  {
+   "old": "8.6.7.l1-code-reviewer-to-orchestrator.handback.md",
+   "new": "8.4.l2.2.1-code-reviewer-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "8.6.7.l1",
+   "newCode": "8.4.l2.2.1",
+   "reason": "review loop 2 round 2, standards",
+   "tags": []
+  },
+  {
+   "old": "8.6.7.l1-orchestrator-to-code-reviewer.handoff.md",
+   "new": "8.4.l2.2.1-orchestrator-to-code-reviewer.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "8.6.7.l1",
+   "newCode": "8.4.l2.2.1",
+   "reason": "review loop 2 round 2, standards",
+   "tags": []
+  },
+  {
+   "old": "8.6.8-code-reviewer-to-orchestrator.handback.md",
+   "new": "8.4.l2.1.2-code-reviewer-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "8.6.8",
+   "newCode": "8.4.l2.1.2",
+   "reason": "review loop 2 round 1, spec",
+   "tags": []
+  },
+  {
+   "old": "8.6.8-orchestrator-to-code-reviewer.handoff.md",
+   "new": "8.4.l2.1.2-orchestrator-to-code-reviewer.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "8.6.8",
+   "newCode": "8.4.l2.1.2",
+   "reason": "review loop 2 round 1, spec",
+   "tags": []
+  },
+  {
+   "old": "8.6.8.l1-code-reviewer-to-orchestrator.handback.md",
+   "new": "8.4.l2.2.2-code-reviewer-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "8.6.8.l1",
+   "newCode": "8.4.l2.2.2",
+   "reason": "review loop 2 round 2, spec",
+   "tags": []
+  },
+  {
+   "old": "8.6.8.l1-orchestrator-to-code-reviewer.handoff.md",
+   "new": "8.4.l2.2.2-orchestrator-to-code-reviewer.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "8.6.8.l1",
+   "newCode": "8.4.l2.2.2",
+   "reason": "review loop 2 round 2, spec",
+   "tags": []
+  },
+  {
+   "old": "9.1-agent-manager-to-orchestrator.handback.md",
+   "new": "9.2-agent-manager-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "9.1",
+   "newCode": "9.2",
+   "reason": "the change: implementation, first pass",
+   "tags": []
+  },
+  {
+   "old": "9.1-orchestrator-to-agent-manager.handoff.md",
+   "new": "9.2-orchestrator-to-agent-manager.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "9.1",
+   "newCode": "9.2",
+   "reason": "the change: implementation, first pass",
+   "tags": []
+  },
+  {
+   "old": "9.1.1-agent-manager-to-orchestrator.handback.md",
+   "new": "9.2.l1.1-agent-manager-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "9.1.1",
+   "newCode": "9.2.l1.1",
+   "reason": "Requests A/B carried from 9.1 (fresh agent): implementation loop 1",
+   "tags": [
+    "A2"
+   ]
+  },
+  {
+   "old": "9.1.1-orchestrator-to-agent-manager.handoff.md",
+   "new": "9.2.l1.1-orchestrator-to-agent-manager.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "9.1.1",
+   "newCode": "9.2.l1.1",
+   "reason": "Requests A/B carried from 9.1 (fresh agent): implementation loop 1",
+   "tags": [
+    "A2"
+   ]
+  },
+  {
+   "old": "9.1.l2-agent-manager-to-orchestrator.handback.md",
+   "new": "9.5.l1.1-agent-manager-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "9.1.l2",
+   "newCode": "9.5.l1.1",
+   "reason": "fix for the critique: documentation loop 1, round 1",
+   "tags": []
+  },
+  {
+   "old": "9.1.l2-orchestrator-to-agent-manager.handoff.md",
+   "new": "9.5.l1.1-orchestrator-to-agent-manager.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "9.1.l2",
+   "newCode": "9.5.l1.1",
+   "reason": "fix for the critique: documentation loop 1, round 1",
+   "tags": []
+  },
+  {
+   "old": "9.2.1-brutal-critique-to-orchestrator.handback.md",
+   "new": "9.5-brutal-critique-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "9.2.1",
+   "newCode": "9.5",
+   "reason": "critique of the docs: first critique",
+   "tags": []
+  },
+  {
+   "old": "9.2.1-orchestrator-to-brutal-critique.handoff.md",
+   "new": "9.5-orchestrator-to-brutal-critique.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "9.2.1",
+   "newCode": "9.5",
+   "reason": "critique of the docs: first critique",
+   "tags": []
+  },
+  {
+   "old": "9.2.1.l1-brutal-critique-to-orchestrator.handback.md",
+   "new": "9.5.l1.1-brutal-critique-to-orchestrator.handback.md",
+   "kind": "handback",
+   "tracked": false,
+   "oldCode": "9.2.1.l1",
+   "newCode": "9.5.l1.1",
+   "reason": "loop 1 round 1, the re-critique (PASS)",
+   "tags": []
+  },
+  {
+   "old": "9.2.1.l1-orchestrator-to-brutal-critique.handoff.md",
+   "new": "9.5.l1.1-orchestrator-to-brutal-critique.handoff.md",
+   "kind": "handoff",
+   "tracked": false,
+   "oldCode": "9.2.1.l1",
+   "newCode": "9.5.l1.1",
+   "reason": "loop 1 round 1, the re-critique (PASS)",
+   "tags": []
+  },
+  {
+   "old": "run.md",
+   "new": "run.v1.md",
+   "kind": "run-state",
+   "tracked": true,
+   "oldCode": null,
+   "newCode": null,
+   "reason": "run state: this session continues 5bbdde00's version, v1; references to renamed records rewritten",
+   "tags": []
+  }
+ ]
+}

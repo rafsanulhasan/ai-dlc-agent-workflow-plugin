@@ -9,4 +9,4 @@ Map skills to agents only in the agent body's `## Skills` section (one line on w
 
 **Why:** `skills:` frontmatter preloads the full skill text into the agent's context on every spawn (user decision, 2026-10-10).
 
-**How to apply:** When adding or changing which skills an agent uses, edit the body section and keep the skill → agent matrix in `docs/plugins.md` in sync. Read-only users (e.g. brutal-critique) are told to read a skill's standard, not run its workflow.
+**How to apply:** When adding or changing which skills an agent uses, edit the body section, and ask `documentation-writer` (a *Docs update* request in the hand-back, [[docs-written-by-documentation-writer]]) to bring the skill → agent matrix in `docs/plugins.md` in sync. Read-only users (e.g. brutal-critique) are told to read a skill's standard, not run its workflow.

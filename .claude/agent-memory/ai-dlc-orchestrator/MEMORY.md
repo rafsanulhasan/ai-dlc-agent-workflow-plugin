@@ -3,6 +3,11 @@
 - [VS Code plugin reload](project_vscode-plugin-reload.md) — missing skill in VS Code extension: ask for a restart before changing the plugin
 - [Auto-handoff decisions](project_auto-handoff-decisions.md) — chain by run state; local env wins; trust gate; keepalive 1h/5m tracks, 26 settings
 - [Lens decisions](project_lens-decisions.md) — 2026-10-22: merge 4 mods, no dup fields; /ai-dlc:lens via thin skills; no keepwarm; never hide responses
+- [Tests belong to SQA](feedback_tests-belong-to-sqa.md) — never run test suites myself; sqa-engineer runs them, I check its report
 - [Review budget](feedback_review-budget.md) — few review rounds; per-loop maxRounds/maxFailures 2/1; take limits from rounds --json
 - [Plugin command naming](feedback_plugin-command-naming.md) — /ai-dlc:<feature>[-action]; no /config rows; settings via .ai-dlc/*.json + env
 - [Harness sync decisions](project_harness-sync-decisions.md) — consumers: user-only /ai-dlc:harness-sync, no hook; plugin repo syncs on Stop; agents ask on conflicts
+- [Related work joins parent run](feedback_related-work-parent-run.md) — follow-ups to an active feature run are its next top-level steps; ask if unsure
+- [Lens: one chart per step](feedback_lens-chart-per-step.md) — one flowchart per top-level step, sub-steps under their parent; confirm layout requests in the human's terms
+- [Feature-root numbering](feedback_feature-root-numbering.md) — root N, phase sub-roots N.1–N.5, `l<k>` loops with round sub-numbers; run state major.minor versions
+- [Pause after reload request](feedback_pause-after-reload-request.md) — after asking for /reload-plugins, spawn nothing more until the human reports back

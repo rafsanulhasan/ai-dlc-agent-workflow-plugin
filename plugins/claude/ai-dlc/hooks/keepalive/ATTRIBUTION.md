@@ -404,3 +404,319 @@ Made by Rafsanul Hasan, 2026-10-23 (run AAW-20261023-keepalive-cleanup-sync):
   `keepWarmFor` recomputes its `maxPings` even when the keep-warm time is
   unchanged, overwriting a lower hand-set limit, and that naming `maxPings`
   in the same change keeps it. No code in this folder changed.
+
+Made by Rafsanul Hasan, 2026-10-23 (run AAW-20261023-lens-plugin-from-spike, step 1.3; spike 028's
+provider, `spike028-ka`, moved into this folder):
+
+- **Published state.** `keepalive.ts` publishes the tracks as the `$.state`
+  value `{ plugin: 'ai-dlc', key: 'keepalive' }`: `{ enabled, updatedAt,
+  sessionId, tracks }`, each track with `name`, `running`, `armedAt`,
+  `warmUntil`, `nextPingAt`, `pingEvery`, `keepWarmMs`, `pings`, `cap` and
+  `line`. `render` publishes on every status change, and `turn.start`, the
+  Stop with keep-alive turned off and `session.end` publish too, whether or
+  not the status line is shown. Writes are chained so they land in order; a
+  failed write goes to the debug log only. To say when the next ping is due,
+  a track keeps `nextPingAt` (set by `arm`, which now takes the time the timer
+  is set, cleared by `stopTrack`) and `keep`, the keep-warm time last worked
+  out for it. After a ping, the track is re-armed before the render, after
+  one more `$.clock.now()` and generation check. No ping, limit or stop
+  decision changed.
+- **Contract.** New `../../types/index.d.ts` declares
+  `PluginState['ai-dlc'].keepalive`; `ai-dlc`'s `plugin.json` gains
+  `"types": "./types/index.d.ts"`. Neither reaches the Copilot plugin (the
+  build's manifest is an allow-list, and `types/` is not copied).
+- **README.** New section *State for other plugins*.
+- **Tests.** `tests/keepalive.test.ts`: the test engine records each
+  `state.set` of that value; new block *the published state (read by
+  ai-dlc-lens)*, seven tests (arming, a ping, a stopped track, a new turn and
+  the session ending, status line off, keep-alive off, nothing published
+  without background work).
+
+Made by Rafsanul Hasan, 2026-10-23 (run FEAT-20261020-ai-dlc-lens, work item 28, step 28.1; from
+code review 21.1):
+
+- **The published keep-warm time is the one in force.** `keepalive.ts`: a
+  track's `keep` was set only at arming and at each ping, so a stopped or
+  reset track went on publishing the last `/ai-dlc:cache-keepalive`
+  override's `keepWarmMs` (and the `cap` it lifted) after that override was
+  cleared or its session ended, and a track never armed published its
+  setting even while an override stood. New `refreshKeep` re-reads the
+  keep-warm time of every track that is not running, the one its next arming
+  would take, at `turn.start`, at `session.end` and after the command sets or
+  clears an override, then publishes. `stopTrack` is unchanged: `arm` calls
+  it before every arming. A running track is left alone: its tick reads the
+  time again before each ping, and a change made while it runs takes effect
+  at that ping (README), so it publishes the new time then. A track armed
+  while `refreshKeep` waits on the store is left alone (its generation moved
+  on); a store that cannot be read publishes the setting and says so in the
+  debug log. `keepWarm` gains `{ session: false }`: this session's override
+  is left out and nothing is warned, the time an ended session leaves in
+  force. A session's override still outlives its turns; only the end of the
+  session drops it from what is published. No ping, limit or stop decision
+  changed.
+- **Tests.** `tests/keepalive.test.ts`: the test engine answers `state.get`
+  of that value with the last write; new block *the published keep-warm
+  time*, nine tests (re-arming after a ping and after a second Stop, a track
+  stopped while the override stands, a clear while stopped, a new turn with a
+  session override and on a track never armed, a new turn reading a machine
+  override, the session ending, an override set while a track runs, a reader
+  plugin's `$.state.get`, a store that cannot be read).
+
+Made by Rafsanul Hasan, 2026-10-23 (run FEAT-20261020-ai-dlc-lens, work item 28, step 28.1.l1; the
+human's answer to 28.1's open questions, "re-read each turn"):
+
+- **Settings re-read at every new turn.** `keepalive.ts`: `turn.start` now
+  reads the settings again (`load` with `atTurn`: the env of
+  `.claude/settings.local.json` and `.claude/settings.json` and
+  `.ai-dlc/cache-keepalive.json`, with the same precedence and trust rules
+  as at a Stop) before `refreshKeep` re-reads the overrides, then publishes.
+  A fresh session publishes its real settings from its first turn, and a
+  machine override another session changed is published at this session's
+  next turn. Nothing is read while the session is idle (no polling). At a
+  turn, a settings file that is not valid JSON or not an object, or a read
+  that fails, keeps the settings last read (the defaults when none was read
+  yet) and goes to the debug log; nothing is warned in the transcript, and
+  the other problems (an invalid value, a setting skipped in an untrusted
+  folder) are left to the next Stop or command, which warn as before. A
+  Stop or command still reads as before. A running track is untouched: no
+  track runs during a turn. No ping, limit or stop decision changed.
+- **Tests.** `tests/keepalive.test.ts`: the test engine returns its
+  `files`, takes a shared `storeMap` and counts `fs.read` and `store.get`
+  calls; new block *settings re-read at each new turn*, six tests (a fresh
+  session's first turn, also after a file changes; keep-alive turned off in
+  a file; a machine override written by another session, published at the
+  next turn and not before; a broken file at a turn; a broken file at the
+  first turn; nothing read or published while idle).
+
+Made by Rafsanul Hasan, 2026-10-23 (run FEAT-20261020-ai-dlc-lens, work item 28, step 28.1.l2; the
+human's answer to 28.1.l1's open questions, "cache it"):
+
+- **The turn read reads only what changed.** `keepalive.ts`: `load` with
+  `atTurn` now reads through a turn cache. Each settings file
+  (`.claude/settings.local.json`, `.claude/settings.json`,
+  `.ai-dlc/cache-keepalive.json`) is stat-ed at every turn and read again
+  only when its size or modified time changed (a missing file that stays
+  missing is not read again). The repository root and the trust target come
+  from git once per working directory: they are dropped when the session's
+  working directory changes, at `session.end` and at every full read, so a
+  turn is never behind the last full read, which runs git itself; nothing
+  cheaper than the `rev-parse` signals a `git init` or a moved worktree.
+  Claude Code's trust answer is kept with the size and modified time of
+  `~/.claude.json`, stat-ed at each turn that needs it (only when a
+  trust-gated setting differs from its default) and read again when it
+  changed, because trust fails closed and a trust withdrawn there must count
+  at the next turn. A Stop and `/ai-dlc:cache-keepalive` read every file,
+  run git and ask trust in full as before, with their warnings and
+  fall-through unchanged. An unchanged broken file still keeps the settings
+  last read and logs at every turn. Two edits in one modified-time tick that
+  leave the size the same go unseen until the next full read. The machine
+  override is still read from the store at every turn (`refreshKeep`).
+- **Tests.** `tests/keepalive.test.ts`: the test engine answers `fs.stat`
+  (size, and a modified time that moves at each write a test makes through
+  `files`, exposed as `mtimes`), records each `fs.read` and `fs.stat` path
+  and takes a `cwd` that can move; new block *the turn read reads only what
+  changed*, ten tests (an unchanged file read once over three turns and git
+  run once; a size change; a modified-time change at the same size; an edit
+  keeping both, seen at the next Stop; a file created and deleted; an
+  unchanged broken file, read once and logged at each turn; a Stop and the
+  command reading in full and the next turn running git once again; a
+  changed working directory; the trust answer reused, then withdrawn in
+  `~/.claude.json`; a new session after `session.end`).
+
+Made by Rafsanul Hasan, 2026-10-23 (run FEAT-20261020-ai-dlc-lens, work item 28, step 28.1.l3; code
+review round 1, hand-backs 28.4 and 28.5):
+
+- **A file that stats but cannot be read is not absent.** `keepalive.ts`:
+  at a turn, `cachedRead` no longer caches a failed read of a path that
+  stats as a file (a lock or a transient error while an editor saves it);
+  it throws, so `load` counts it as a failure and the turn keeps the
+  settings last read, logging to the debug log only, as for a broken file.
+  The next turn reads it again. `turnTrust` does the same for
+  `~/.claude.json`, instead of caching the fail-closed answer. A path that
+  stats as a folder still reads as absent; a full read (a Stop, the
+  command) is unchanged.
+- **The keep-warm time published after a full read is the one in force.**
+  The Stop (each branch: keep-alive off, overage, and the tracks that do not
+  arm), the command and `showSeedCache` call `refreshKeep` after `load`, and
+  the command and `showSeedCache` publish.
+- **A track that stops re-reads its keep-warm time.** `end()` (expired, kept
+  warm, missed, the ping limit, an error) is async and calls `refreshKeep`
+  before it renders; so do the spend limit, the Stop's "work done", the
+  Stop's and `session.measure`'s overage stops, and `stopForHandoff`, which
+  answers at once and re-reads in the background (`republishKeep`, which
+  publishes only when no track was stopped or armed meanwhile).
+- **One source for a running track's `pingEvery` and limit.** `arm` keeps the
+  settings it took on the track (`cfg`); the published state and the status
+  line of a running track use them (`cfgOf`), so they match what its tick
+  uses until it arms again. The line is written after `arm`.
+- **Smaller fixes.** `publish` ends its chain with a second catch, so a
+  failing debug log cannot stop every later write. `turnRoot` and the trust
+  target keep git's answer only in the turn cache they asked for, through a
+  local, after the await. A comment at `turnTrust`'s getter says why
+  `trustGate` uses the cached answer. The command's reply to a duration or
+  `clear` says, for a running track, that it takes the new time at its next
+  ping.
+- **Tests.** `tests/keepalive.test.ts`: the test engine takes `failRead` (paths
+  that stat but fail to read) and `failStateSets`; new block *[28.1.l3]
+  review fixes*, twelve tests (a settings file and `~/.claude.json` that
+  cannot be read at a turn; `trustGate` using the turn cache; the time
+  published after a Stop, a Stop with keep-alive off and the ping command;
+  an override cleared while a track runs, then the track expiring, missing
+  and the work done; the command reply with and without a running track; a
+  running track's `pingEvery`; a failed state write).
+
+Made by Rafsanul Hasan, 2026-10-25 (run FEAT-20261020-ai-dlc-lens, feature root 17, step 17.2,
+task T17.1 / ITEM-032; spec and LLD `keepalive-cache-status`):
+
+- **The cache ledger.** New file `cache-state.ts`, pure and engine-free: one
+  entry per source (`main` or a subagent's id) and cache lifetime, each
+  saying until when that cache is warm (`observe`, `observePing`,
+  `seedMain`, `cacheView`, `armUntil` for main, `isEmpty`), and the line
+  pieces `hhmm` (the former `until`), `reasonText`, `cachePart` and
+  `lineOf`. A read refreshes the 5m entry only when it can only be a 5m read
+  (the 5m entry is warm, the response wrote no 1h tokens, no 1h entry is
+  warm) and never moves a 1h entry; a landed 5m ping refreshes the 5m entry
+  whatever else exists, a landed 1h ping moves the 1h entry only when it
+  wrote 1h tokens.
+- **The ledger replaces the last split.** `keepalive.ts`: `lastSplit` is
+  gone. `noteUsage($, usage)` records each main-conversation response at the
+  clock's time; each ping's usage is recorded too. At a Stop, a track arms
+  only from a warm main entry of its lifetime, warm until that entry's time,
+  so a later 1h write no longer switches the 5m track off, and an expired
+  cache no longer arms. With no usage seen, the transcript's last write
+  seeds main from its row's `timestamp` (`splitFromTranscript` and
+  `transcriptSplit` now return `{ split, at? }`). The ledger is cleared at
+  `session.end` and before a handoff, not at a turn start.
+- **`Track.part`.** A track keeps the text after `keepalive <track>: `; the
+  line is built when shown (`lineFor`). The rendered and published text is
+  unchanged: the cache part joins the line with T17.2.
+- **`../auto-handoff/register.tsx`.** Awaits `noteUsage($, usage)` for main
+  usage only, as before, through `orLog`; the seed line reads `.split`.
+- **Tests.** New `tests/cache-state.test.ts` (the pure table: AC-17.1.1,
+  17.1.3, 17.1.4, 17.1.5, 17.3.4, the landed ping, the transcript seed, D2a,
+  the reason texts). `tests/keepalive.test.ts`: the transcript split with
+  its row time, and a block *[T17.1] the cache ledger arms the tracks* (the
+  same ACs at a Stop with background tasks, through `turn.step` usage and
+  the mock clock).
+- **Arming after landed pings** (clarify round 1, step 17.2.l1.1; LLD 3.1
+  and 3.4). A track keeps `pingWarmUntil`, its last landed ping's time
+  plus its ttl. A Stop arms the track until the later of the ledger's
+  time and `pingWarmUntil` while that is still ahead, so a 1h track whose
+  landed pings wrote no 1h tokens is no longer ended as expired at its
+  first tick after the next Stop. The ledger and the cache part do not
+  read it. It is cleared when the track ends as expired, missed or with
+  an error, at `session.end` and before a handoff. The test pinned as
+  *[pending LLD clarify]* now checks the new rule, under a name that
+  cites the LLD; the test engine's `cacheRead` may be a function, so a
+  test can miss a ping after earlier pings landed.
+
+Made by Rafsanul Hasan, 2026-10-25 (run FEAT-20261020-ai-dlc-lens, feature
+root 17, step 17.2.2, task T17.2 / ITEM-033; spec keepalive-cache-status D3,
+D4, D8; LLD 2.2, 3.3, 3.4, 3.6, 7):
+
+- **The cache part on every line.** `keepalive.ts`: `lineFor(t, now)` builds
+  each track's line as `keepalive <track>: <cache part>; <keep-alive part>`,
+  the cache part being the ledger's view of the track's lifetime at `now`
+  (`cacheView`, `cachePart` from `cache-state.ts`, wired in here). `render`
+  and `publish` take the caller's clock reading; every caller passes one.
+  Before a handoff the ledger is emptied first, so `stopForHandoff` still
+  renders synchronously.
+- **A reason for every `off`.** Every `off` the module writes is a
+  `reasonText`: no background tasks, no `<track>` cache write seen, cache
+  expired, turn running (published at a turn start), session ended
+  (published at `session.end`), disabled, no split, overage. A new track
+  starts as `off (no <track> cache write seen)`. With keep-alive turned off,
+  a Stop now publishes each track as `off (disabled)` instead of leaving
+  the turn's text.
+- **A Stop with no background task renders.** It used to render only when
+  a track was running; now it seeds main from the transcript when no main
+  usage was seen, stops a running track as `work done, stopped` (unchanged)
+  and shows every other track's cache and reason (AC-17.2.2). With tasks,
+  the transcript seed runs right after the full read, so the disabled and
+  overage lines carry the cache part too. The seed's guard is
+  `hasMain(ledger)`, a new `cache-state.ts` helper that `seedMain` uses as
+  well (17.4.1 review follow-up).
+- **Published state.** `../../types/index.d.ts`: `KeepaliveTrackState`
+  gains the optional `caches` (one entry per source, `main` and
+  `subagents`, with `warmUntil` and `expired`; omitted when there is none),
+  and `pings` reads "landed (cache hits)". `line` is the line as shown, with
+  its cache part.
+- **Tests.** `tests/keepalive.test.ts`: a `part(track)` helper (the text
+  after the cache part); 48 anchored line assertions moved to it, the bare
+  `off` ones to their reasons, and the published lines to the full line
+  with its cache part; `usageOf` and `responder` are shared at file level;
+  the fork double takes `forkWrites`, a ping's 1h/5m write. A block
+  *[T17.2] the cache part and the reasons*: AC-17.2.2 (red before this
+  change), E1, E4 to E7 (E6 without its first-ping clause, which is
+  T17.4), AC-17.1.3, AC-17.2.3, each row of AC-17.2.1's table and a sweep
+  that no rendered or published line ends `: off`. The test "a Stop with
+  no background task and nothing armed publishes nothing" became AC-17.2.2's
+  published form. `tests/cache-state.test.ts`: E2 and E3, and `hasMain`.
+
+Made by Rafsanul Hasan, 2026-10-25 (run FEAT-20261020-ai-dlc-lens, feature
+root 17, step 17.2.3, task T17.4 / ITEM-035; spec keepalive-cache-status D6;
+LLD 3.5, 7):
+
+- **The first ping time.** `keepalive.ts`: `pingsOf` follows `ping 0/m`
+  with `, first ping at H:MM`, the time of the armed timer's first tick
+  (`t.nextPingAt`), until a ping lands; after that the counter is `ping k/m`
+  as before. A track armed at 10:00 on the 1h track reads `ping 0/9, first
+  ping at 10:50` (stories E6, AC-17.4.5).
+- **Tests.** `tests/keepalive.test.ts`: a block *[T17.4] the first ping
+  time* (AC-17.4.5, red before this change: both tracks, a re-arm by a
+  later Stop, the clause gone after a landed ping, none on a track that is
+  not armed); E6 pinned in full; the five assertions on `ping 0/m, keep
+  warm …` and the two anchored armed lines take the clause; the
+  characterisation tests of AC-17.4.1, 17.4.2, 17.4.3 and 17.4.6 renamed
+  to cite their AC ids, their assertions unchanged.
+- **Manual check.** New `MANUAL-CHECKS.md`: row P1, the host repaint check
+  of AC-17.4.4 in the terminal and VS Code.
+
+Made by Rafsanul Hasan, 2026-10-25 (run FEAT-20261020-ai-dlc-lens, feature
+root 17, step 17.2.4; spec keepalive-cache-status line 82, D2a; LLD rev 5,
+2, 2.1 step 3, 3.2, 3.4, 7):
+
+- **A main write with no split.** `cache-state.ts`: the ledger gains
+  `pendingMain`, set (the later time wins) when a main response or a ping
+  reply wrote to the cache with no 1h/5m split; nothing is recorded as a
+  time. `needsMainSeed` (no main entry, or a write pending) and
+  `dropPending` are new; `seedMain` merges the later warm-until, so it never
+  lowers a live entry, and clears the pending write. `keepalive.ts`:
+  `seedFromTranscript` reads the transcript when `needsMainSeed`, so once
+  per Stop with a pending write and never per response; a row with no
+  timestamp takes the pending write's time; a transcript with no split row
+  forgets the write and logs `keepalive: main write without split,
+  transcript has none` to the debug log, and the next Stop does not read
+  again. Before, a no-split main write after a first main entry left the
+  line `main expired` while the cache was warm.
+- **Tests.** `tests/keepalive.test.ts`: a block *[17.2.4] D2a main (rev
+  5)* (AC-17.1.4 red before this change, with and without background
+  tasks; the merge never lowers a live entry; no split in the transcript,
+  one read, none at the next Stop; no pending write, no read; a ping reply
+  with no split; a row with no timestamp). The LLD 3.4 `pingWarmUntil` test
+  gets a transcript with no split row, so its missed ping's write is not
+  resolved and the test still covers `pingWarmUntil` alone.
+  `tests/cache-state.test.ts`: the pending marker, the ping reply,
+  `needsMainSeed`/`dropPending` and the `seedMain` merge.
+- **Manual check.** `MANUAL-CHECKS.md` row P1: a new step 3 confirms on
+  the 1h status line that the session wrote a 1h cache before the check
+  starts (AC-17.4.4 precondition); the later steps are renumbered.
+- **The 034.c observation lines (T17.3c / ITEM-034.c; LLD 3.7 rev 6).**
+  `keepalive.ts`: `logAgentUsage` writes `keepalive: agent usage agent=<id>
+  split=present|absent writes=<n>` to the debug log for a subagent
+  response; `logSubagentTranscript` writes `keepalive: subagent transcript
+  agent=<id> rows=<n> split=present|absent` for a finished subagent, from
+  its transcript read whole, else its tail (`rows=0 split=absent` when it
+  cannot be read); a log-only `classic.SubagentStop` handler calls it and
+  always passes the event on. `splitFromAgentTranscript` is
+  `splitFromTranscript` keeping sidechain rows; both, and `transcriptSplit`,
+  now share one reader. None of it touches the cache ledger, pings or
+  changes a line; no `SubagentStart` or `TeammateIdle` handler (T17.3).
+- **Tests.** `tests/keepalive.test.ts`: a block *[17.2.4] ITEM-034.c the
+  observation debug lines* (each line with and without a split, a missing
+  path, a failed read and tail, the handler passing the event on, the
+  ledger unchanged, no ping or send, and `splitFromAgentTranscript`); the
+  test responder takes an agent id; the engine double answers
+  `classic.SubagentStop`.
+- **Manual check.** `MANUAL-CHECKS.md` row P2, the live 034.c check in the
+  terminal: one subagent run with `claude --debug-file`, then the two lines.

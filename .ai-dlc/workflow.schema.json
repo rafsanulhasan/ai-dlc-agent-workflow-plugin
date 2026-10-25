@@ -5,7 +5,7 @@
   "description": "The AI-DLC team's workflow for this repository: lifecycles and their stages, who hands off to whom, gates and their approvers, the clarify matrix and request routing. The orchestrator reads it on every request; when it is absent the plugin default applies. Check it with `node .ai-dlc/workflow.mjs validate`; change it with `/ai-dlc:workflow edit <change>`. Fixed guardrails (agent-manager's exclusive authority over agent artifacts, a freshly spawned agent-manager for changes to its own definition and skills, trust-but-verify, a handoff record at every boundary and every hand-back stored, the test gate hooks and the workflow gate, an orchestrator that only delegates, stage owners that never do another agent's job) are not configurable here.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["version", "agents", "gates", "lifecycles", "routing", "clarify", "documents", "review", "artifacts"],
+  "required": ["version", "agents", "gates", "lifecycles", "routing", "clarify", "documents", "review", "handoffReview", "artifacts"],
   "properties": {
     "$schema": {
       "type": "string",
@@ -68,8 +68,37 @@
         "byType": {
           "type": "object",
           "required": ["Agent Artifact"],
-          "description": "Request type (Feature, Bug Fix, Security Fix, TechDebt, Testing, Review, Release, Agent Artifact) -> lifecycle code it runs by default. Custom lifecycles are also picked by their `pickWhen`. `Agent Artifact` is required: its lifecycle (default `AAW`) must start with `agent-manager` and have stages that loop back to it: `brutal-critique` (docs, on REVISE), `sqa-engineer` (code, on failing tests) and `code-reviewer` (code, on Blockers or Warnings, after the `sqa-engineer` stage), each with its own `loop.maxRounds` and `loop.maxFailures`. A review stage's `when` is omitted or exactly `the change set contains docs` (`brutal-critique`) / `the change set contains code` (`sqa-engineer`, `code-reviewer`), case and spacing ignored; `code-reviewer` lists the `sqa-engineer` stage directly in `after`. The rules: the workflow skill's references/aaw-review.md.",
+          "description": "Request type (Feature, Bug Fix, Security Fix, TechDebt, Testing, Review, Release, Agent Artifact) -> lifecycle code it runs by default. Custom lifecycles are also picked by their `pickWhen`. Every value is one lifecycle code except `Agent Artifact`, which is required and is a list of lifecycle codes (default `[\"AAWH\", \"AAWP\"]`): exactly one with `variant: \"plugin\"` and at most one with `variant: \"harness\"`; the orchestrator picks one per change set by the variant rule (with no harness lifecycle, every change set runs the plugin one). The older single string `AAW` is refused: run `/ai-dlc:workflow upgrade`. The listed lifecycles are guarded by role: no `software-engineer` stage; at least one `agent-manager` stage; every starting stage is `product-owner`, `software-architect` or `agent-manager`; a `brutal-critique` stage loops back to an `agent-manager` stage (docs, on REVISE). The plugin variant also has a `sqa-engineer` stage (code, on failing tests) and a `code-reviewer` stage (code, on Blockers or Warnings, listing the `sqa-engineer` stage directly in its `after`) that loop back to `agent-manager`, and a `software-architect` and a `system-engineer` stage the `agent-manager` stage follows through `after`. A review stage's `when` is omitted or exactly `the change set contains docs` (`brutal-critique`) / `the change set contains code` (`sqa-engineer`, `code-reviewer`), case and spacing ignored. A disabled agent may own no stage of a listed lifecycle. The rules: the workflow skill's references/aaw-review.md.",
+          "properties": {
+            "Agent Artifact": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1 },
+              "description": "The lifecycles of agent-artifact work, one per variant (default `AAWH` harness, `AAWP` plugin / mod)."
+            }
+          },
           "additionalProperties": { "type": "string", "minLength": 1 }
+        },
+        "agentArtifact": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["harnessPaths", "pluginPaths"],
+          "description": "The folder lists the variant rule reads to pick the agent-artifact lifecycle for a change set: any code, or any path in `pluginPaths`, runs the plugin variant; docs only, every path in `harnessPaths`, the harness variant; anything else is asked. A path in both lists counts as a plugin path. The rule: the workflow skill's references/aaw-review.md.",
+          "properties": {
+            "harnessPaths": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1 },
+              "description": "Path globs, relative to the repository root, of the harness: agents, skills, rules, instructions, commands, prompts, the workflow file, AGENTS.md. `**` matches any characters including `/`, `*` any except `/`, `?` one character except `/`."
+            },
+            "pluginPaths": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1 },
+              "description": "Path globs, relative to the repository root, of plugin and mod code: plugins, tools, tests (same glob forms as `harnessPaths`)."
+            }
+          }
         },
         "handOff": {
           "type": "object",
@@ -138,7 +167,7 @@
         },
         "critic": {
           "anyOf": [{ "$ref": "#/$defs/agentId" }, { "type": "null" }],
-          "description": "The agent that critiques documents in parallel with the writer before a gate (default `brutal-critique`). `null` skips document critique — documents then reach gates unreviewed. It never removes the review of agent-artifact changes (the `AAW` lifecycle)."
+          "description": "The agent that critiques documents in parallel with the writer before a gate (default `brutal-critique`). `null` skips document critique — documents then reach gates unreviewed. It never removes the review of agent-artifact changes (the `AAWH` and `AAWP` lifecycles) or the handoff review (`handoffReview`)."
         }
       }
     },
@@ -157,6 +186,33 @@
         }
       }
     },
+    "handoffReview": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["lifecycles"],
+      "description": "The handoff review: `brutal-critique` reviews each handoff record of these lifecycles before its receiver starts (PASS / REVISE), under its own limits, row `handoff-review` of `node .ai-dlc/workflow.mjs rounds`. The reviewer is always `brutal-critique`, so it is not a setting. Independent of `documents.critic` and of the gate critique.",
+      "properties": {
+        "lifecycles": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 },
+          "description": "The lifecycles whose hand-offs are reviewed (default `AAWH`, `AAWP`); each must be a key of `lifecycles`."
+        },
+        "maxRounds": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 2,
+          "description": "The most review passes of one handoff record. Omitted: 2. Overridden by `AI_DLC_HANDOFF_REVIEW_MAX_ROUNDS` (`env` in `.claude/settings.local.json`, then `.claude/settings.json`, then the process environment), never by the `AI_DLC_CRITIQUE_*` variables."
+        },
+        "maxFailures": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 1,
+          "description": "How many REVISE verdicts one handoff record may get before the review stops and the human decides. Overridden by `AI_DLC_HANDOFF_REVIEW_MAX_FAILURES` at the same levels. Must be below `maxRounds`. Omitted: 1, or `maxRounds` - 1 when that is lower."
+        }
+      }
+    },
     "artifacts": {
       "type": "object",
       "additionalProperties": false,
@@ -169,7 +225,7 @@
         "decisions": { "type": "string", "minLength": 1, "description": "Folder for ADRs." },
         "narratives": { "type": "string", "minLength": 1, "description": "Architecture narrative per feature." },
         "plans": { "type": "string", "minLength": 1, "description": "Task plan per feature." },
-        "handoffs": { "type": "string", "minLength": 1, "description": "Folder for one run's records; `{LIFECYCLE}` (a key of `lifecycles`), `{YYYYMMDD}` (the run's start date) and `{feature-slug}` (kebab-case) are replaced. Braces here, angle brackets in `specs`, `narratives` and `plans`: `{feature-slug}` and `<feature-slug>` are the same slug. The folder holds the run state, `run.md`; each handoff record, `{step}[.{sub}][.l{loop}]-{from-agent}-to-{to-agent}.handoff.md`; and each hand-back, the same pattern ending `.handback.md` with the two agents swapped. Agent IDs only, never persona names. Who writes each file in each orchestration mode, step numbering and verification: the `handoff` skill." }
+        "handoffs": { "type": "string", "minLength": 1, "description": "Folder for one run's records; `{LIFECYCLE}` (a key of `lifecycles`), `{YYYYMMDD}` (the run's start date) and `{feature-slug}` (kebab-case) are replaced. Braces here, angle brackets in `specs`, `narratives` and `plans`: `{feature-slug}` and `<feature-slug>` are the same slug. The folder holds the run state, one current version per session, named `run.v<major>.md` or `run.v<major>.<minor>.md` (`run.v1.md`, `run.v1.1.md`, `run.v1.2.md`, `run.v2.md`…, the highest current; `run.md` in a run from before versions); each handoff record, `{step}[.{sub}][.l{loop}[.{round}]][.{n}][.h{round}]-{from-agent}-to-{to-agent}.handoff.md` (`.h{round}` marks `brutal-critique`'s review of the record with the same step code, `handoffReview`); and each hand-back, the same pattern ending `.handback.md` with the two agents swapped. Agent IDs only, never persona names. Who writes each file in each orchestration mode, step numbering and verification: the `handoff` skill." }
       }
     }
   },
@@ -203,6 +259,10 @@
       ],
       "properties": {
         "name": { "type": "string", "minLength": 1, "description": "Human-readable name, e.g. `Feature Development`." },
+        "variant": {
+          "enum": ["harness", "plugin"],
+          "description": "Only for the lifecycles named in `routing.byType[\"Agent Artifact\"]`, where it is required: `harness` for docs-only changes to the harness (default `AAWH`), `plugin` for plugin and mod changes and any code (default `AAWP`)."
+        },
         "kind": {
           "enum": ["primary", "segment", "focused", "custom"],
           "description": "`primary`: the full lifecycle (AI-DLC). `segment`: a part of the primary lifecycle that can also run alone. `focused`: an entry point for bugs, refactors, tests or reviews. `custom`: a lifecycle this project added."
@@ -255,7 +315,7 @@
         "when": {
           "type": "string",
           "minLength": 1,
-          "description": "Run this stage only under this condition, in plain words (e.g. `the change touches UI`). The orchestrator decides and records the decision in the handoff. On the review stages of the Agent Artifact lifecycle only one phrase is accepted per reviewer: `the change set contains docs` for `brutal-critique`, `the change set contains code` for `sqa-engineer` and `code-reviewer` (case and spacing ignored), or no `when` at all."
+          "description": "Run this stage only under this condition, in plain words (e.g. `the change touches UI`). The orchestrator decides and records the decision in the handoff. On the review stages of the Agent Artifact lifecycles (`AAWH`, `AAWP`) only one phrase is accepted per reviewer: `the change set contains docs` for `brutal-critique`, `the change set contains code` for `sqa-engineer` and `code-reviewer` (case and spacing ignored), or no `when` at all."
         },
         "gate": {
           "type": "string",
@@ -277,7 +337,7 @@
             "maxFailures": {
               "type": "integer",
               "minimum": 0,
-              "description": "How many failing verdicts this step's reviewer may return before the loop stops and escalates, even with rounds left. A failing verdict is what the loop's `on` names (`brutal-critique`: REVISE or Majors on a PASS; `sqa-engineer`: a test that fails because the code is wrong; `code-reviewer`: what the loop's `on` names; Blocker or Warning in `AAW`). Must be below `maxRounds`. Omitted: 1, or `maxRounds` - 1 when that is lower."
+              "description": "How many failing verdicts this step's reviewer may return before the loop stops and escalates, even with rounds left. A failing verdict is what the loop's `on` names (`brutal-critique`: REVISE or Majors on a PASS; `sqa-engineer`: a test that fails because the code is wrong; `code-reviewer`: what the loop's `on` names; Blocker or Warning in `AAWP`). Must be below `maxRounds`. Omitted: 1, or `maxRounds` - 1 when that is lower."
             }
           }
         },

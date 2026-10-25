@@ -194,3 +194,26 @@ describe("whole-setting resolution and JSONC comments agree", { skip: skipReason
     });
   }
 });
+
+// AC-16.5.3: the repository's copy of the schema is the template, byte for byte, and its naming
+// description states the numbering rule (the title number wins; only the main session is renamed).
+describe("the auto-handoff schema copies agree", () => {
+  const TEMPLATE = path.join(REPO, "plugins", "claude", "ai-dlc", "skills", "configure-auto-handoff", "templates", "auto-handoff.schema.json");
+  const COPY = path.join(REPO, ".ai-dlc", "auto-handoff.schema.json");
+
+  test("AC-16.5.3: .ai-dlc/auto-handoff.schema.json is byte-identical to the template", () => {
+    assert.ok(fs.readFileSync(TEMPLATE).equals(fs.readFileSync(COPY)), `${COPY} differs from ${TEMPLATE}`);
+  });
+
+  test("AC-16.5.3: the renameSessions description states the title-number rule and the main-session rule", () => {
+    const description = JSON.parse(fs.readFileSync(TEMPLATE, "utf8")).properties.renameSessions.description;
+    assert.match(description, /title/);
+    assert.match(description, /main session/);
+  });
+
+  test("AC-16.5.3: the renameSessions description states that the title number wins and that names never nest", () => {
+    const description = JSON.parse(fs.readFileSync(TEMPLATE, "utf8")).properties.renameSessions.description;
+    assert.match(description, /title number wins/);
+    assert.match(description, /never nest/);
+  });
+});

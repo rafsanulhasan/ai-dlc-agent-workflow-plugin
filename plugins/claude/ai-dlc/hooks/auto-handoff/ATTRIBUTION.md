@@ -145,12 +145,24 @@ Made by Rafsanul Hasan, 2026-10-22 (run `AAW-20261022-auto-handoff-chain`):
   `<sessionNamePrefix>: <original name> (Session N)`. The original name comes
   from the classic SessionStart / UserPromptSubmit `session_title`, else the
   transcript's last `custom-title`, else its `ai-title`, else the short id; it
-  is carried in the lineage record (`baseName`) and any wrapper is stripped
-  (`baseName` in `config.ts`), so names never nest. The old session is renamed
-  with `$.command.run({ command: 'rename' })` before `/clear`, only when
-  `$.command.list()` includes `rename`; the seeded session's name is the
-  `sessionTitle` of the classic SessionStart answer. Failures are logged and
-  never block the handoff. Open runtime checks, not provable in unit tests:
+  is carried in the lineage record (`baseName`). `parseTitle` in `config.ts`
+  takes every leading `<prefix>:` (the default and the one in force) and every
+  trailing `(Session n)` off it, again and again, so names never nest; any
+  other `X:` stays in the base. The number (`numbering` in `config.ts`): the
+  title's number wins (its last trailing `(Session n)`); the lineage depth is
+  used only when the title has no number; else 1. The new session is that
+  number + 1, and the seed step stores it as the new lineage's `depth`,
+  without reading the old lineage again. Only the main session (no title
+  number, no lineage depth, and a lineage read that did not fail) is renamed:
+  to `(Session 1)` with `$.command.run({ command: 'rename' })` before
+  `/clear`, only when `$.command.list()` includes `rename`. A numbered session
+  keeps its title and gets no rename call. The seeded session's name is the
+  `sessionTitle` of the classic SessionStart answer. A lineage read that fails
+  gives one notice per handoff (one `numbering fallback:` log line, one panel
+  step, one toast where the band is not drawn): the number comes from the
+  title, or defaults to 1 with no rename, and the chain id restarts. Rename
+  failures are logged and never block the handoff. Open runtime checks, not
+  provable in unit tests:
   whether Claude Code honours `sessionTitle` returned by a hooks module, and
   whether `/rename` exists and renames the current session when a hook runs it.
 - **Capabilities record.** At each startup or resume (and once per process),
@@ -303,8 +315,9 @@ Made by Rafsanul Hasan, 2026-10-22 (run `AAW-20261022-fold-cache-keepalive`):
   usage when it carries `cache_creation`, else from the new session's
   transcript. `config.ts` gained `creationSplit`, `SeedCache`,
   `seedCacheFields` and `seedCacheLine`. Every main-conversation response's
-  usage is also handed to keep-alive (`noteUsage`), whose tracks follow the
-  split. The header comment of `register.tsx` records why the handoff keeps
+  usage is also handed to keep-alive (`noteUsage`), whose tracks then
+  followed the split (since 2026-10-25, T17.1 below, it records the usage in
+  keep-alive's cache ledger instead). The header comment of `register.tsx` records why the handoff keeps
   the shared prefix stable (same model and effort; the brief and the seed as
   messages only).
 - **Tests.** `tests/auto-handoff.test.tsx` adds: the keep-alive timers stopped
@@ -418,3 +431,146 @@ Made by Rafsanul Hasan, 2026-10-23 (same run, review follow-up):
   check moved to `../keepalive/tests/keepalive.test.ts`, which now checks both
   settings tables, so `claude plugin test` holds one such check. No code in
   this folder changed.
+
+Made by Rafsanul Hasan, 2026-10-24 (FEAT-20261020-ai-dlc-lens, step 11.6):
+
+- **Versioned run states.** The `handoff` skill keeps a run's state as
+  `run.v1.md`, `run.v2.md`… (one per session; the highest `N` is current; a
+  folder from before versions keeps a `run.md`). `run.ts`: new
+  `currentRunStateFile(names)` picks the highest `run.v<N>.md`, compared as
+  numbers, else `run.md`; `RunTarget.runMd` is renamed `runState`;
+  `openRecords`, `parseStages` and `withNextAction` take the run state's
+  text as `state`; `recordsSection` takes the run-state path and names it in
+  its text instead of `run.md`. `register.tsx`: the run lookup lists each run
+  folder and reads only its current run state; the automatic handoff writes
+  *Next action* into that same file and never a new version; the step names
+  and log lines name the actual file.
+- **Tests.** `tests/run.test.ts`: `currentRunStateFile` (highest numeric `N`,
+  `run.v10.md` over `run.v9.md`, a legacy `run.md`, names that are not run
+  states, an empty folder), and a `run.v<N>.md` in a *Stages* cell never
+  counted as a handoff record. `tests/auto-handoff.test.tsx`: a versioned run
+  read and updated in place with no new version, `run.v10.md` over
+  `run.v9.md`, a `done` newest version ending the run over an older `active`
+  one, and a failed write naming the versioned file.
+- **Tests, round 2 (11.8).** `tests/auto-handoff.test.tsx` and `tests/run.test.ts`: a version beside a stray `run.md`, near-named files and sub-folder files never the run state, the takeover guard on a version another session wrote, only `updated` and *Next action* changed; the test engine's `fs.list` mock reports folders as `dir`, as the engine does.
+
+Made by Rafsanul Hasan, 2026-10-24 (FEAT-20261020-ai-dlc-lens, step 11.12):
+
+- **Minor and major run-state versions.** A change of direction now writes a
+  minor pair (`run.v1.1.md`, `run.v1.2.md`) and a new request scope the next
+  major (`run.v2.md`). `run.ts`: `currentRunStateFile` accepts
+  `run.v<major>.md` and `run.v<major>.<minor>.md` and picks the highest by
+  major, then minor, each compared as a number (a bare major counts as minor
+  0: `run.v2.md` over `run.v1.2.md` over `run.v1.1.md` over `run.v1.md`;
+  `run.v1.10.md` over `run.v1.9.md`). Each part is a whole number from 1 with
+  no leading zero, so `run.v0.md`, `run.v01.md`, `run.v1.0.md` and
+  `run.v1.01.md` are not run states and no two names can mean the same
+  version. Comments in `run.ts` and `register.tsx` name the new shape.
+- **Tests.** `tests/run.test.ts`: the minor pair, a new major over the old
+  one's minors, numeric minors, a minor version over a stray `run.md`,
+  near-names (`run.v1.md.bak`, `run.v1..2.md`, `run.v1.2.3.md` and others),
+  zero and zero-padded parts rejected, and a minor version in a *Stages* cell
+  never taken for a handoff record. `tests/auto-handoff.test.tsx`: `v1.2` read
+  and updated with `v1.1` and `v1` untouched, `v2` over `v1.10` and `v1.9`, a
+  `done` minor ending the run over its active bare major, and zero-padded
+  names never outranking `run.v1.md`.
+
+Made by Rafsanul Hasan, 2026-10-24 (FEAT-20261020-ai-dlc-lens, step 11.14):
+
+- **Round codes.** The `handoff` skill now numbers a loop's rounds after it
+  (`1.3.l1.1`, `1.4.l1.1.2`, a loop inside a loop `8.2.l1.1.l1.2`). `run.ts`:
+  one step-code pattern, `CODE`, shared by `pairOf` and `stepOf`, accepts
+  numbers, then any number of `.l<k>` loops each followed by its numbers, so
+  `last-record`'s pair and the header's step are found for round records;
+  the codes of earlier rules (`3.1.l2`, `01`) still match. `stepOf` also reads
+  a name with a folder.
+- **Open work of an open row.** A *Stages* row is now a sub-root listing all
+  its records, rounds included, oldest first. `openInRow` keeps, of an open
+  row, every record of its latest pass (`passOf`: a loop's code up to its
+  round number, else the sub-root; the pass of the last handoff the row
+  names) and every earlier handoff whose hand-back the row does not name; a
+  record with no step code is kept. Notes name the record's own code and the
+  row's step (`step 1.3.l1.1 in 1.3`), and the *Handoff records* text says
+  what an open stage lists.
+- **Tests.** `tests/run.test.ts` (*round codes (11.14)*): `stepOf`, `pairOf`
+  and `passOf` on round, nested-loop, pre-cut-off and old codes and on
+  near-codes; `openInRow` on a testing row with a done first pass, a nested
+  spawn, a done round and an unanswered handoff, on a first pass with two
+  axes, and on names with no code; `openRecords` with a round `last-record`,
+  and a done row. `tests/auto-handoff.test.tsx`: a round `last-record` in a
+  run state with *Sessions* and *Agents* columns lists the round first and
+  leaves the done first pass and the done row out.
+
+- **Tests, round 3 (11.15).** `tests/run.test.ts` (*round codes: gaps*): `openInRow` with Handoff and Handback in either column order, empty cells, bare names, a nested spawn under a round, two loops in one row, a `-to-human` handoff (pinned as it behaves today), `passOf` on earlier-rule codes, and run-state versions above 9 in both parts. No code changed.
+
+Made by Rafsanul Hasan, 2026-10-24 (FEAT-20261020-ai-dlc-lens, step 11.19):
+
+- **Handoffs to the human.** The human ruled on 11.14's open question (a):
+  a `-to-human` handoff inside a sub-root row is not unanswered work, since
+  the human answers it and no hand-back record follows. `openInRow` no longer
+  keeps such a handoff from an earlier pass; one in the row's latest pass is
+  still listed with that pass. Whole-run gate rows are unchanged.
+- **Run-state names in the log.** `run.ts`: `runStateNote` names what is odd
+  about a run folder's names: version-like names (`run.v….md`) none of which
+  is valid, or a `run.md` beside versions (the highest version is read).
+  `register.tsx` logs it once per folder and note. `VERSION_NAME` carries a
+  comment that it must stay the same as `RUN_VERSION` in the ai-dlc-lens
+  plugin's `hooks/lens.ts`.
+- **One kind predicate.** The run lookup takes run folders with
+  `kind === 'dir'` and run states with `kind === 'file'`; a link (`other`) is
+  neither, at both levels (before, a link counted as a folder and as a file).
+- **Tests.** `tests/run.test.ts`: the earlier-pass `-to-human` test flipped
+  to the new behaviour, a near-name (`-to-humanizer`, `human-to-`) still
+  kept, and `runStateNote`. `tests/auto-handoff.test.tsx`: an unreadable run
+  folder (new `failList` option of the fake engine) is skipped and the
+  readable run handed off; the rejected-names note is logged once across two
+  handoffs; `run.md` beside a version is logged. The `fs.list` double is typed
+  with the host's `FsEntry['kind']` instead of `as never`.
+
+Made by Rafsanul Hasan, 2026-10-25 (run FEAT-20261020-ai-dlc-lens, feature
+root 17, step 17.2, task T17.1 / ITEM-032; see `../keepalive/ATTRIBUTION.md`,
+same date):
+
+- **Keep-alive's cache ledger.** `register.tsx` hands each main-conversation
+  response's usage to keep-alive as before (subagent usage still not), now as
+  `await orLog($, 'keepalive usage', () => noteUsage($, usage))`: `noteUsage`
+  takes `$` and records the usage in keep-alive's cache ledger at the clock's
+  time, and a failure is logged, never thrown into the handoff path.
+- **The seed line's split.** `transcriptSplit` now returns `{ split, at? }`,
+  so the seed turn's `floor` line and handed-off panel read its `.split`
+  (`transcriptSplit(...)?.split`); what they show is unchanged.
+- **Tests.** `tests/auto-handoff.test.tsx`: the handoff clears the keep-alive
+  cache ledger, so the new session's Stop with a transcript that shows no
+  cache write reports `keepalive 5m: off (no cache write seen yet, ...)`
+  (a gap found by mutation testing, step 17.3).
+
+Made by Rafsanul Hasan, 2026-10-25 (run FEAT-20261020-ai-dlc-lens, feature
+root 17, step 17.2.2, task T17.2 / ITEM-033; see `../keepalive/ATTRIBUTION.md`,
+same date):
+
+- **Tests only.** `tests/auto-handoff.test.tsx`: keep-alive's lines now carry
+  the cache part before the keep-alive part, so the four assertions on an
+  armed track read `keepalive <track>: main warm until H:MM; armed`, and an
+  unwritten 5m track reads `keepalive 5m: off (no 5m cache write seen)`.
+  `register.tsx` is unchanged.
+
+Made by Rafsanul Hasan, 2026-10-25 (run FEAT-20261020-ai-dlc-lens, feature
+root 17, step 17.2.4, task T17.3c / ITEM-034.c; see
+`../keepalive/ATTRIBUTION.md`, same date):
+
+- **A subagent's usage to the debug log.** `register.tsx`, `turn.step`: a
+  response with an agent id and a usage is handed to keep-alive's
+  `logAgentUsage`, which only writes a debug line; it is not given to
+  `noteUsage`, and the main-loop accounting (`!e.agentId`) is unchanged.
+  T17.3 replaces this one line with the forwarding to `noteUsage`.
+
+Made by Rafsanul Hasan, 2026-10-25 (run FEAT-20261020-ai-dlc-lens, feature
+root 17, step 17.3.4.l1.1, code-review fix round 1 for 17.2.4; see
+`../keepalive/ATTRIBUTION.md`, same date):
+
+- **Tests only.** `tests/auto-handoff.test.tsx`: two register-level tests for
+  the `turn.step` line that hands a subagent response's usage to
+  `logAgentUsage` (a subagent response logs `keepalive: agent usage ...` and
+  leaves the cache ledger alone; a main-loop response reaches the ledger and
+  logs no agent line), and a `stepSplit` option on the fake engine so a step's
+  usage can carry the 1h/5m split. `register.tsx` is unchanged.

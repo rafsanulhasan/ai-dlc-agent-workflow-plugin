@@ -161,7 +161,7 @@ When these are unresolved, return targeted clarification questions with one reco
 
 ## Example Invocations
 
-The stack test gates are not hand-built here: `init` installs them through `dotnet-test-gate` (.NET, enforces `dotnet test`) and `node-test-gate` (JS / TS, enforces the repository's test command, e.g. `npm test`). Use this skill to repair or customise an installed gate, or for hooks those skills do not cover.
+The stack test gates are not hand-built here: `init` installs them through `dotnet-test-gate` (.NET, enforces `dotnet test`) and `node-test-gate` (JS / TS, enforces the repository's test command, e.g. `npm test`). Likewise `init` installs the model metadata hook in every repository, whatever the stack, through the `model-metadata` skill: it refreshes `.ai-dlc/model-metadata.json` on Claude `Stop` and `PreToolUse` (`git commit`), and on Copilot `agentStop` and `preToolUse`. It is a project hook, never a plugin-wide one. Use this skill to repair or customise an installed hook, or for hooks those skills do not cover.
 
 - `Skill("ai-dlc:hook-management", args: "create claude pre-stop hook to enforce the project's test command before finish")`
 - `Skill("ai-dlc:hook-management", args: "modify the installed dotnet-test-gate or node-test-gate Stop hook to also run the type-check")`

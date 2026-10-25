@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'claude-code/testing'
-import { AUTO_MARK, assembleSessionHandoff, handoffsRoot, inRepo, isOpen, openRecords, pairOf, parseRunState, parseStages, pickRun, recordsSection, scratchRoot, sessionHandoffName, sessionHandoffPath, stepOf, withNextAction } from '../run.ts'
+import { AUTO_MARK, assembleSessionHandoff, currentRunStateFile, handoffsRoot, inRepo, isOpen, openInRow, openRecords, pairOf, passOf, parseRunState, parseStages, pickRun, recordsSection, runStateNote, scratchRoot, sessionHandoffName, sessionHandoffPath, stepOf, withNextAction } from '../run.ts'
 import type { RunState, RunTarget } from '../run.ts'
 
 const RUN = `---
@@ -117,7 +117,7 @@ describe('run state', () => {
 
 describe('assembleSessionHandoff', () => {
   const target: RunTarget = {
-    id: 'AAW-1-demo', folder: 'docs/handoffs/AAW-1-demo', root: '/r', runMd: 'docs/handoffs/AAW-1-demo/run.md',
+    id: 'AAW-1-demo', folder: 'docs/handoffs/AAW-1-demo', root: '/r', runState: 'docs/handoffs/AAW-1-demo/run.md',
     sessionHandoff: '.scratch/AAW-1-demo/session-20261021-0905.md', branchName: 'feat/x', commit: 'abc1234',
     lifecycle: 'AAW', stage: 'change', owner: 'agent-manager', lastRecord: '2.l1-orchestrator-to-agent-manager.handoff.md', summary: 'absorb the demo mod',
   }
@@ -155,7 +155,7 @@ describe('assembleSessionHandoff', () => {
   })
 
   test('missing run fields fall back to unknown / orchestrator / continue the run', () => {
-    const bare: RunTarget = { id: 'r', folder: 'f', root: '/r', runMd: 'f/run.md', sessionHandoff: 's.md', branchName: 'b' }
+    const bare: RunTarget = { id: 'r', folder: 'f', root: '/r', runState: 'f/run.md', sessionHandoff: 's.md', branchName: 'b' }
     const out = assembleSessionHandoff({ ...ctx, run: bare }, facts, undefined)
     expect(out).toContain('# Session handoff: r — continue the run')
     expect(out).toContain('unknown / unknown / unknown, agent `orchestrator`')
@@ -308,7 +308,7 @@ describe('handoff records', () => {
   })
 
   test('openRecords lists run.md, the session handoff, then last-record and its pair, then the other open stages', () => {
-    const out = openRecords(STAGES_MD, { folder: 'docs/handoffs/AAW-1', runMd: 'docs/handoffs/AAW-1/run.md', lastRecord: '2-orchestrator-to-agent-manager.handoff.md' }, '.scratch/AAW-1/session-1.md')
+    const out = openRecords(STAGES_MD, { folder: 'docs/handoffs/AAW-1', runState: 'docs/handoffs/AAW-1/run.md', lastRecord: '2-orchestrator-to-agent-manager.handoff.md' }, '.scratch/AAW-1/session-1.md')
     expect(out.map(r => r.path)).toEqual([
       'docs/handoffs/AAW-1/run.md',
       '.scratch/AAW-1/session-1.md',
@@ -324,21 +324,304 @@ describe('handoff records', () => {
 
   test('openRecords leaves last-record out when its stage is done', () => {
     const md = STAGES_MD.replace('last-record: 2-orchestrator-to-agent-manager.handoff.md', 'last-record: 1-research-assistant-to-orchestrator.handback.md')
-    const out = openRecords(md, { folder: 'f', runMd: 'f/run.md', lastRecord: '1-research-assistant-to-orchestrator.handback.md' }, 's.md')
+    const out = openRecords(md, { folder: 'f', runState: 'f/run.md', lastRecord: '1-research-assistant-to-orchestrator.handback.md' }, 's.md')
     expect(out.some(r => r.path.includes('research-assistant'))).toBe(false)
     expect(out[2]!.path).toBe('f/2-orchestrator-to-agent-manager.handoff.md')
   })
 
   test('openRecords matches last-record by its whole file name, not a suffix', () => {
     const md = STAGES_MD.replace('`2-orchestrator-to-agent-manager.handoff.md`', '`12-orchestrator-to-agent-manager.handoff.md`')
-    const out = openRecords(md, { folder: 'f', runMd: 'f/run.md', lastRecord: '2-orchestrator-to-agent-manager.handoff.md' }, 's.md')
+    const out = openRecords(md, { folder: 'f', runState: 'f/run.md', lastRecord: '2-orchestrator-to-agent-manager.handoff.md' }, 's.md')
     expect(out.some(r => r.note.startsWith('last record'))).toBe(false)
   })
 
   test('recordsSection marks the missing ones', () => {
-    const text = recordsSection([{ path: 'a.md', note: 'run state', exists: true }, { path: 'b.md', note: 'its pair', exists: false }])
+    const text = recordsSection([{ path: 'a.md', note: 'run state', exists: true }, { path: 'b.md', note: 'its pair', exists: false }], 'f/run.v2.md')
     expect(text.startsWith('## Handoff records\n')).toBe(true)
+    expect(text).toContain('from the *Stages* table of `f/run.v2.md`')
+    expect(text).not.toContain('`run.md`')
     expect(text).toContain('- `a.md` — run state')
     expect(text).toContain('- `b.md` (missing) — its pair')
+  })
+})
+
+describe('currentRunStateFile', () => {
+  test('the highest run.v<N>.md wins, compared as numbers', () => {
+    expect(currentRunStateFile(['run.v1.md', 'run.v2.md'])).toBe('run.v2.md')
+    expect(currentRunStateFile(['run.v9.md', 'run.v10.md', 'run.v2.md'])).toBe('run.v10.md')
+    expect(currentRunStateFile(['run.v10.md', 'run.v9.md'])).toBe('run.v10.md')
+  })
+
+  test('a folder from before versions gives its run.md', () => {
+    expect(currentRunStateFile(['run.md', '1.1-orchestrator-to-agent-manager.handoff.md'])).toBe('run.md')
+  })
+
+  test('a version wins over a stray run.md, and other names are ignored', () => {
+    expect(currentRunStateFile(['run.md', 'run.v1.md'])).toBe('run.v1.md')
+    expect(currentRunStateFile(['run.vx.md', 'run.v.md', 'run.v2.md.bak', 'myrun.v3.md', 'run.V4.md'])).toBeUndefined()
+  })
+
+  test('a real version among near-names is still found, wherever it sits in the list', () => {
+    const near = ['run.v3.md.bak', 'run.V9.md', 'xrun.v8.md', 'run.v7.md~', 'run.v.md', 'run.v1.md ', 'run.md']
+    expect(currentRunStateFile([...near, 'run.v2.md'])).toBe('run.v2.md')
+    expect(currentRunStateFile(['run.v2.md', ...near])).toBe('run.v2.md')
+  })
+
+  test('a minor pair: run.v1.2.md over run.v1.1.md over run.v1.md, in any order', () => {
+    expect(currentRunStateFile(['run.v1.md', 'run.v1.1.md'])).toBe('run.v1.1.md')
+    expect(currentRunStateFile(['run.v1.1.md', 'run.v1.md'])).toBe('run.v1.1.md')
+    expect(currentRunStateFile(['run.v1.md', 'run.v1.1.md', 'run.v1.2.md'])).toBe('run.v1.2.md')
+    expect(currentRunStateFile(['run.v1.2.md', 'run.v1.1.md', 'run.v1.md'])).toBe('run.v1.2.md')
+  })
+
+  test('a newer major beats every minor of an older one: run.v2.md over run.v1.9.md', () => {
+    expect(currentRunStateFile(['run.v1.9.md', 'run.v2.md'])).toBe('run.v2.md')
+    expect(currentRunStateFile(['run.v2.md', 'run.v1.9.md', 'run.v1.md'])).toBe('run.v2.md')
+    expect(currentRunStateFile(['run.v1.1.md', 'run.v1.2.md', 'run.v2.md', 'run.v1.md'])).toBe('run.v2.md')
+    // A minor of the newer major beats its bare major.
+    expect(currentRunStateFile(['run.v2.md', 'run.v1.9.md', 'run.v2.1.md'])).toBe('run.v2.1.md')
+  })
+
+  test('minors compare as numbers, not text: run.v1.10.md over run.v1.9.md', () => {
+    expect(currentRunStateFile(['run.v1.9.md', 'run.v1.10.md'])).toBe('run.v1.10.md')
+    expect(currentRunStateFile(['run.v1.10.md', 'run.v1.9.md', 'run.v1.2.md'])).toBe('run.v1.10.md')
+    expect(currentRunStateFile(['run.v9.9.md', 'run.v10.md'])).toBe('run.v10.md')
+  })
+
+  test('a minor version wins over a stray run.md', () => {
+    expect(currentRunStateFile(['run.md', 'run.v1.1.md'])).toBe('run.v1.1.md')
+  })
+
+  test('near-names of a minor version are not run states', () => {
+    const near = ['run.v1.md.bak', 'run.v1..2.md', 'run.v1.2.3.md', 'run.v1.md.md', 'run.v1.2.md.bak', 'run.v.1.md', 'run.v1.x.md', 'run.v1.-1.md', 'run.v1.2.MD']
+    expect(currentRunStateFile(near)).toBeUndefined()
+    expect(currentRunStateFile([...near, 'run.v1.1.md'])).toBe('run.v1.1.md')
+    expect(currentRunStateFile(['run.v1.1.md', ...near])).toBe('run.v1.1.md')
+  })
+
+  test('versions start at 1 with no leading zero: v0, v01, v1.0 and v1.01 are not run states', () => {
+    const zero = ['run.v0.md', 'run.v01.md', 'run.v00.md', 'run.v1.0.md', 'run.v1.01.md', 'run.v0.1.md', 'run.v02.1.md']
+    expect(currentRunStateFile(zero)).toBeUndefined()
+    // A real version beside them is found, and a zero-padded name can never outrank or tie it.
+    expect(currentRunStateFile([...zero, 'run.v1.md'])).toBe('run.v1.md')
+    expect(currentRunStateFile(['run.v01.md', 'run.v1.md'])).toBe('run.v1.md')
+    expect(currentRunStateFile(['run.v1.md', 'run.v1.01.md'])).toBe('run.v1.md')
+    // Only legacy run.md is left once the zero-padded names are rejected.
+    expect(currentRunStateFile([...zero, 'run.md'])).toBe('run.md')
+  })
+
+  test('a folder with no run state gives undefined', () => {
+    expect(currentRunStateFile([])).toBeUndefined()
+    expect(currentRunStateFile(['1-orchestrator-to-x.handoff.md'])).toBeUndefined()
+  })
+
+  test('a run.v<N>.md named in a Stages cell is never taken for a handoff record', () => {
+    const md = '## Stages\n| Step | Status | Handoff | Handback |\n|---|---|---|---|\n| 1 | in-progress | `run.v2.md` | `run.v1.md` |\n'
+    expect(parseStages(md)[0]!.records).toEqual([])
+    const out = openRecords(md, { folder: 'f', runState: 'f/run.v2.md' }, 's.md')
+    expect(out.map(r => r.path)).toEqual(['f/run.v2.md', 's.md'])
+    expect(pairOf('run.v2.md')).toBeUndefined()
+  })
+
+  test('a run.v<major>.<minor>.md named in a Stages cell is never taken for a handoff record', () => {
+    const md = '## Stages\n| Step | Status | Handoff | Handback |\n|---|---|---|---|\n| 1 | in-progress | `run.v1.2.md` | `run.v1.1.md` |\n'
+    expect(parseStages(md)[0]!.records).toEqual([])
+    expect(openRecords(md, { folder: 'f', runState: 'f/run.v1.2.md' }, 's.md').map(r => r.path)).toEqual(['f/run.v1.2.md', 's.md'])
+    expect(pairOf('run.v1.2.md')).toBeUndefined()
+  })
+})
+
+describe('round codes (11.14)', () => {
+  const ROUND_MD = (status = 'in-progress') => `## Stages
+| Step | Stage | Owner | Mode | Status | Sessions | Agents | Handoff | Handback | Updated |
+|---|---|---|---|---|---|---|---|---|---|
+| 1.3 | testing, loop \`1.3.l1\` round 2 | sqa-engineer | subagent | ${status} | \`s1\` | sqa-engineer, software-engineer | \`1.3-orchestrator-to-sqa-engineer.handoff.md\`, \`1.3.1-sqa-engineer-to-sqa-engineer.handoff.md\`, \`1.3.l1.1-orchestrator-to-software-engineer.handoff.md\`, \`1.3.l1.1-orchestrator-to-sqa-engineer.handoff.md\`, \`1.3.l1.2-orchestrator-to-software-engineer.handoff.md\` | \`1.3-sqa-engineer-to-orchestrator.handback.md\`, \`1.3.1-sqa-engineer-to-sqa-engineer.handback.md\`, \`1.3.l1.1-software-engineer-to-orchestrator.handback.md\` | 2026-10-24 |
+| 1.4 | review | code-reviewer | subagent | in-progress | \`s1\` | code-reviewer | \`1.4.1-orchestrator-to-code-reviewer.handoff.md\`, \`1.4.2-orchestrator-to-code-reviewer.handoff.md\` | \`1.4.1-code-reviewer-to-orchestrator.handback.md\`, \`1.4.2-code-reviewer-to-orchestrator.handback.md\` | 2026-10-24 |
+`
+
+  test('stepOf reads every code the rule allows, old codes too, with or without a folder', () => {
+    expect(stepOf('1.3.l1.1-orchestrator-to-x.handoff.md')).toBe('1.3.l1.1')
+    expect(stepOf('1.4.l1.1.2-orchestrator-to-code-reviewer.handoff.md')).toBe('1.4.l1.1.2')
+    expect(stepOf('8.1.6.1.l2.1-orchestrator-to-x.handback.md')).toBe('8.1.6.1.l2.1')
+    expect(stepOf('8.2.l1.1.l1.2-orchestrator-to-x.handoff.md')).toBe('8.2.l1.1.l1.2')
+    expect(stepOf('5.0.1-orchestrator-to-research-assistant.handoff.md')).toBe('5.0.1')
+    expect(stepOf('3.1.l2-agent-manager-to-orchestrator.handback.md')).toBe('3.1.l2')
+    expect(stepOf('01-orchestrator-to-product-manager.md')).toBe('01')
+    expect(stepOf('docs/handoffs/R/1.3.l1.2-a-to-b.handoff.md')).toBe('1.3.l1.2')
+    // Not codes: a loop with no number, a letter other than l, a dot before the dash.
+    expect(stepOf('1.3.l-a-to-b.handoff.md')).toBeUndefined()
+    expect(stepOf('1.3.x1-a-to-b.handoff.md')).toBeUndefined()
+    expect(stepOf('1.3.-a-to-b.handoff.md')).toBeUndefined()
+    expect(stepOf('l1.1-a-to-b.handoff.md')).toBeUndefined()
+  })
+
+  test('pairOf finds the pair of a round record', () => {
+    expect(pairOf('1.3.l1.1-orchestrator-to-sqa-engineer.handoff.md')).toBe('1.3.l1.1-sqa-engineer-to-orchestrator.handback.md')
+    expect(pairOf('docs/x/1.4.l1.1.2-code-reviewer-to-orchestrator.handback.md')).toBe('docs/x/1.4.l1.1.2-orchestrator-to-code-reviewer.handoff.md')
+    expect(pairOf('8.1.6.1.l2.1-orchestrator-to-x.handoff.md')).toBe('8.1.6.1.l2.1-x-to-orchestrator.handback.md')
+    expect(pairOf('1.3.l-orchestrator-to-x.handoff.md')).toBeUndefined()
+  })
+
+  test('passOf: a loop round up to its round number, else the sub-root', () => {
+    expect(passOf('1.4.l1.1.2')).toBe('1.4.l1.1')
+    expect(passOf('1.3.l1.2')).toBe('1.3.l1.2')
+    expect(passOf('8.1.6.1.l2.1')).toBe('8.1.6.1.l2.1')
+    expect(passOf('8.2.l1.1.l1.2.3')).toBe('8.2.l1.1.l1.2')
+    expect(passOf('3.1.l2')).toBe('3.1.l2')
+    expect(passOf('1.4.2')).toBe('1.4')
+    expect(passOf('1.3.1')).toBe('1.3')
+    expect(passOf('1.3')).toBe('1.3')
+    expect(passOf('4')).toBe('4')
+  })
+
+  test('openInRow keeps the latest round and earlier handoffs never answered, not the done passes', () => {
+    const [testing, review] = parseStages(ROUND_MD())
+    expect(openInRow(testing!)).toEqual([
+      '1.3.l1.1-orchestrator-to-sqa-engineer.handoff.md',
+      '1.3.l1.2-orchestrator-to-software-engineer.handoff.md',
+    ])
+    // The first pass with its parallel axes: both pairs, nothing left out.
+    expect(openInRow(review!)).toEqual(review!.records)
+  })
+
+  test('openInRow keeps a record with no step code, and every record when the newest has none', () => {
+    expect(openInRow({ step: '1', status: 'in-progress', records: ['1.2-a-to-b.handoff.md', 'notes.handback.md'] })).toEqual(['1.2-a-to-b.handoff.md', 'notes.handback.md'])
+    expect(openInRow({ step: '1', status: 'in-progress', records: ['1.2-a-to-b.handoff.md', '1.2-b-to-a.handback.md', 'x.handoff.md'] })).toEqual(['1.2-a-to-b.handoff.md', '1.2-b-to-a.handback.md', 'x.handoff.md'])
+    expect(openInRow({ step: '1', status: 'in-progress', records: [] })).toEqual([])
+  })
+
+  test('openRecords: a round last-record and its pair first, then only the open work of each open row', () => {
+    const last = '1.3.l1.1-software-engineer-to-orchestrator.handback.md'
+    const out = openRecords(ROUND_MD(), { folder: 'f', runState: 'f/run.v1.md', lastRecord: last }, 's.md')
+    expect(out.map(r => r.path)).toEqual([
+      'f/run.v1.md',
+      's.md',
+      `f/${last}`,
+      'f/1.3.l1.1-orchestrator-to-software-engineer.handoff.md',
+      'f/1.3.l1.1-orchestrator-to-sqa-engineer.handoff.md',
+      'f/1.3.l1.2-orchestrator-to-software-engineer.handoff.md',
+      'f/1.4.1-orchestrator-to-code-reviewer.handoff.md',
+      'f/1.4.2-orchestrator-to-code-reviewer.handoff.md',
+      'f/1.4.1-code-reviewer-to-orchestrator.handback.md',
+      'f/1.4.2-code-reviewer-to-orchestrator.handback.md',
+    ])
+    expect(out[2]!.note).toBe('last record, step 1.3.l1.1 in 1.3, in-progress')
+    expect(out[3]!.note).toBe('its pair')
+    expect(out[5]!.note).toBe('step 1.3.l1.2 in 1.3, in-progress')
+    expect(out.some(r => /\/1\.3(\.1)?-/.test(r.path))).toBe(false)
+  })
+
+  test('openRecords: a done row with round records lists none of them', () => {
+    const out = openRecords(ROUND_MD('done'), { folder: 'f', runState: 'f/run.v1.md', lastRecord: '1.3.l1.2-orchestrator-to-software-engineer.handoff.md' }, 's.md')
+    expect(out.some(r => r.path.includes('/1.3'))).toBe(false)
+    expect(out.some(r => r.note.startsWith('last record'))).toBe(false)
+  })
+})
+
+describe('round codes: gaps (11.15)', () => {
+  const table = (rows: string, head = '| Step | Status | Handoff | Handback |') => `## Stages\n${head}\n|---|---|---|---|\n${rows}\n`
+  const rec = (state: string) => parseStages(state)[0]!
+
+  test('openInRow reads Handoff and Handback in either column order', () => {
+    const row = rec(table('| 1.3 | in-progress | `1.3.l1.1-b-to-o.handback.md` | `1.3-o-to-b.handoff.md`, `1.3.l1.1-o-to-b.handoff.md` |', '| Step | Status | Handback | Handoff |'))
+    expect(openInRow(row)).toEqual(['1.3.l1.1-b-to-o.handback.md', '1.3-o-to-b.handoff.md', '1.3.l1.1-o-to-b.handoff.md'])
+  })
+
+  test('openInRow: empty Handoff and Handback cells give no records', () => {
+    expect(openInRow(rec(table('| 1.3 | in-progress | | |')))).toEqual([])
+  })
+
+  test('openInRow: bare names, several in one cell, a done first pass dropped', () => {
+    const row = rec(table('| 1.3 | in-progress | 1.3-o-to-b.handoff.md, 1.3.l1.1-o-to-b.handoff.md | 1.3-b-to-o.handback.md |'))
+    expect(openInRow(row)).toEqual(['1.3.l1.1-o-to-b.handoff.md'])
+  })
+
+  test('openInRow: a nested spawn under a round (1.3.l1.1.1) belongs to that round', () => {
+    const row = rec(table('| 1.3 | in-progress | `1.3-o-to-b.handoff.md`, `1.3.l1.1-o-to-b.handoff.md`, `1.3.l1.1.1-b-to-b.handoff.md`, `1.3.l1.1.2-b-to-b.handoff.md` | `1.3-b-to-o.handback.md`, `1.3.l1.1.1-b-to-b.handback.md` |'))
+    expect(openInRow(row)).toEqual(['1.3.l1.1-o-to-b.handoff.md', '1.3.l1.1.1-b-to-b.handoff.md', '1.3.l1.1.2-b-to-b.handoff.md', '1.3.l1.1.1-b-to-b.handback.md'])
+  })
+
+  test('openInRow: with two loops in one row only the latest loop round stays', () => {
+    const row = rec(table('| 1.3 | in-progress | `1.3-o-to-b.handoff.md`, `1.3.l1.1-o-to-b.handoff.md`, `1.3.l2.1-o-to-b.handoff.md` | `1.3-b-to-o.handback.md`, `1.3.l1.1-b-to-o.handback.md` |'))
+    expect(openInRow(row)).toEqual(['1.3.l2.1-o-to-b.handoff.md'])
+  })
+
+  test('openInRow: an earlier loop round left unanswered stays beside the latest one', () => {
+    const row = rec(table('| 1.3 | in-progress | `1.3.l1.1-o-to-b.handoff.md`, `1.3.l2.1-o-to-b.handoff.md` | |'))
+    expect(openInRow(row)).toEqual(['1.3.l1.1-o-to-b.handoff.md', '1.3.l2.1-o-to-b.handoff.md'])
+  })
+
+  test('openInRow: the latest pass is that of the last handoff, even when a handback has a later code', () => {
+    const row = rec(table('| 1.3 | in-progress | `1.3.l1.1-o-to-b.handoff.md` | `1.3.l1.1-b-to-o.handback.md`, `1.3.l1.2-b-to-o.handback.md` |'))
+    expect(openInRow(row)).toEqual(['1.3.l1.1-o-to-b.handoff.md', '1.3.l1.1-b-to-o.handback.md'])
+  })
+
+  test('openInRow: a handback-only row takes its pass from its last record', () => {
+    const row = rec(table('| 1.3 | in-progress | | `1.3-b-to-o.handback.md`, `1.3.l1.1-b-to-o.handback.md` |'))
+    expect(openInRow(row)).toEqual(['1.3.l1.1-b-to-o.handback.md'])
+  })
+
+  test('openInRow: a -to-human handoff in the latest pass of a sub-root row stays, as part of that pass', () => {
+    const row = rec(table('| 1.3 | in-progress | `1.3.1-o-to-b.handoff.md`, `1.3.2-o-to-human.handoff.md` | `1.3.1-b-to-o.handback.md` |'))
+    expect(openInRow(row)).toEqual(['1.3.1-o-to-b.handoff.md', '1.3.2-o-to-human.handoff.md', '1.3.1-b-to-o.handback.md'])
+  })
+
+  test('openInRow: a -to-human handoff of an earlier pass is not unanswered work, so it is dropped (11.19, the human ruling on 11.14 open question a)', () => {
+    const row = rec(table('| 1.3 | in-progress | `1.3.1-o-to-human.handoff.md`, `1.3.l1.1-o-to-b.handoff.md` | `1.3.l1.1-b-to-o.handback.md` |'))
+    expect(openInRow(row)).toEqual(['1.3.l1.1-o-to-b.handoff.md', '1.3.l1.1-b-to-o.handback.md'])
+  })
+
+  test('openInRow: only -to-human is exempt; an unanswered earlier handoff to an agent named like it stays', () => {
+    const row = rec(table('| 1.3 | in-progress | `1.3.1-o-to-humanizer.handoff.md`, `1.3.2-human-to-o.handoff.md`, `1.3.l1.1-o-to-b.handoff.md` | |'))
+    expect(openInRow(row)).toEqual(['1.3.1-o-to-humanizer.handoff.md', '1.3.2-human-to-o.handoff.md', '1.3.l1.1-o-to-b.handoff.md'])
+  })
+
+  test('openInRow: an earlier answered handoff is dropped with its hand-back, even when the hand-back is only in the Handback column', () => {
+    const row = rec(table('| 1.3 | in-progress | `1.3.1-o-to-b.handoff.md`, `1.3.l1.1-o-to-b.handoff.md` | `1.3.1-b-to-o.handback.md` |'))
+    expect(openInRow(row)).toEqual(['1.3.l1.1-o-to-b.handoff.md'])
+  })
+
+  test('openInRow: a folder in a cell does not stop a pair being found by file name', () => {
+    const row = rec(table('| 1.3 | in-progress | `docs/h/1.3.1-o-to-b.handoff.md`, `docs/h/1.3.l1.1-o-to-b.handoff.md` | `1.3.1-b-to-o.handback.md` |'))
+    expect(openInRow(row)).toEqual(['docs/h/1.3.l1.1-o-to-b.handoff.md'])
+  })
+
+  test('passOf on earlier-rule codes keeps the loop round, and drops a nested number after it', () => {
+    expect(passOf('8.1.6.1.l2.1')).toBe('8.1.6.1.l2.1')
+    expect(passOf('8.1.6.1.l2')).toBe('8.1.6.1.l2')
+    expect(passOf('8.1.6.1.l2.1.3')).toBe('8.1.6.1.l2.1')
+    expect(passOf('8.1.6.1')).toBe('8.1')
+    expect(passOf('8.1.6.1.1')).toBe('8.1')
+    expect(passOf('1.3.l1.1.1')).toBe('1.3.l1.1')
+  })
+
+  test('versions above 9 in either part compare as numbers', () => {
+    expect(currentRunStateFile(['run.v9.99.md', 'run.v10.md'])).toBe('run.v10.md')
+    expect(currentRunStateFile(['run.v10.md', 'run.v10.1.md', 'run.v9.99.md'])).toBe('run.v10.1.md')
+    expect(currentRunStateFile(['run.v10.9.md', 'run.v10.10.md', 'run.v10.2.md'])).toBe('run.v10.10.md')
+    expect(currentRunStateFile(['run.v1.10.md', 'run.v10.1.md', 'run.v1.100.md'])).toBe('run.v10.1.md')
+    expect(currentRunStateFile(['run.v1.100.md', 'run.v1.99.md', 'run.v1.20.md'])).toBe('run.v1.100.md')
+    expect(currentRunStateFile(['run.v99.99.md', 'run.v100.md'])).toBe('run.v100.md')
+  })
+
+  test('the same version listed twice gives that name', () => {
+    expect(currentRunStateFile(['run.v1.1.md', 'run.v1.1.md'])).toBe('run.v1.1.md')
+  })
+})
+
+describe('run state names for the log (11.19)', () => {
+  test('nothing odd: no version-like names, or valid versions alone', () => {
+    expect(runStateNote([])).toBeUndefined()
+    expect(runStateNote(['run.md', '1-o-to-a.handoff.md'])).toBeUndefined()
+    expect(runStateNote(['run.v1.md', 'run.v1.2.md'])).toBeUndefined()
+  })
+
+  test('version-like names that are all rejected: the folder is ignored, or run.md is read', () => {
+    expect(runStateNote(['run.v0.md', 'run.v01.md'])).toBe('no valid run-state version among run.v0.md, run.v01.md; folder ignored')
+    expect(runStateNote(['run.md', 'run.v1.01.md'])).toBe('no valid run-state version among run.v1.01.md; run.md read')
+  })
+
+  test('run.md beside valid versions: the highest version is named as the file read', () => {
+    expect(runStateNote(['run.md', 'run.v1.md', 'run.v2.md', 'run.v02.md'])).toBe('run.md beside run-state versions; run.v2.md read')
   })
 })

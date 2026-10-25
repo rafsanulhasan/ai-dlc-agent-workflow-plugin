@@ -2,5 +2,11 @@
   "cache-keepalive",
   "cache-keepalive-configure",
   "cache-keepalive-install",
-  "cache-keepalive-merge"
+  "cache-keepalive-merge",
+  "lens",
+  "lens-configure",
+  "lens-gate",
+  "lens-init",
+  "lens-keepalive",
+  "lens-kit"
 ]

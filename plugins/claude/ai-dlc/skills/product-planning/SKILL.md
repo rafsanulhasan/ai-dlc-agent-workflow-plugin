@@ -74,6 +74,7 @@ Read the backlog, find the highest existing `ITEM-NNN` number, increment by 1. S
 - **Status**: Backlog | In Progress | Review | Done | Cancelled
 - **Milestone**: <version or "Unplanned">
 - **Added**: YYYY-MM-DD
+- **Parent**: <ITEM-NNN of the feature this item continues; omit the line when there is none>
 - **Agent Chain**: <e.g., requirement-analyst → software-architect → software-engineer → sqa-engineer>
 
 **Acceptance Criteria**
@@ -110,8 +111,8 @@ Read the backlog, find the highest existing `ITEM-NNN` number, increment by 1. S
 1. Identify all items for the target milestone.
 2. Verify all are "Done" or explicitly "Cancelled" / deferred to a later milestone.
 3. Check for open P0 items — any P0 blocks the release; surface the blocker and stop.
-4. Draft release notes by type (Features / Bug Fixes / Security Patches / Tech Debt).
-5. Present draft to the calling agent for user approval before handing off to `devops-engineer` for deployment.
+4. List what changed for the release notes by type (Features / Bug Fixes / Security Patches / Tech Debt), and put a *Docs update* request in the hand-back so **Daniele Procida** (`documentation-writer`) writes the release notes from it (the documentation rule, `docs-status`).
+5. Present the list to the calling agent for user approval before handing off to `devops-engineer` for deployment.
 6. After approval: move all included items to "Completed Items" section with status "Done" and date.
 
 ### Action: update-status

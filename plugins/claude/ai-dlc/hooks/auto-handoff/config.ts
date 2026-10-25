@@ -408,18 +408,84 @@ export function seedCacheLine(c: SeedCache): string {
 /** The handoff line in tokens: thresholdPercent of the window, rounded down. */
 export const contextLine = (thresholdPercent: number, window: number) => Math.floor(window * thresholdPercent / 100)
 
+/** The chain's session suffix, "(Session <n>)": written by sessionSuffix, read by parseTitle through
+ * the one pattern below (its group captures n). Change the two together. */
+export const sessionSuffix = (n: number) => `(Session ${n})`
+const SESSION_SUFFIX = String.raw`\(Session (\d+)\)`
+const TRAILING_NUMBER = new RegExp(String.raw`${SESSION_SUFFIX}\s*$`)
+const TRAILING_SUFFIX = new RegExp(String.raw`\s*${SESSION_SUFFIX}$`)
+
 /** A session name in a handoff chain: "<prefix>: <base> (Session <n>)". */
-export const sessionName = (prefix: string, base: string, n: number) => `${prefix}: ${base} (Session ${n})`
+export const sessionName = (prefix: string, base: string, n: number) => `${prefix}: ${base} ${sessionSuffix(n)}`
 
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-/** The base name of a session title: the title with a "<prefix>: … (Session N)" wrapper taken off,
- * however many times it was applied, so names never nest. Undefined for a blank title. */
-export function baseName(title: string | undefined, prefix: string): string | undefined {
+
+/** The default session-name prefix: always stripped from a title, besides the prefix in force, so a
+ * chain started under the default keeps its base name after the prefix changes (Q16-2). */
+export const DEFAULT_SESSION_PREFIX: string = DEFAULTS.sessionNamePrefix
+
+/** A title read into its base name (no prefix, no "(Session n)") and its session number. */
+export type TitleParts = { base?: string; number?: number }
+
+/**
+ * Reads a session title into its base name and its number. Pure and total.
+ * The number is that of the last trailing "(Session n)", n a whole number from 1
+ * (`P: B (Session 1) (Session 2)` is 2). The base is the title with every trailing "(Session n)" and
+ * every leading "<prefix>:" taken off, again and again, so names never nest. Only two prefixes are
+ * taken off: the default and the one in force; any other `X:` stays in the base (AC-16.3.3).
+ * A blank title, or one that is only wrappers, has no base.
+ */
+export function parseTitle(title: string | undefined, prefix: string): TitleParts {
   let t = title?.trim()
-  if (!t) return undefined
-  const wrapped = new RegExp(`^${escapeRe(prefix)}:\\s*(.*?)\\s*\\(Session \\d+\\)$`)
-  for (let m = wrapped.exec(t); m?.[1]; m = wrapped.exec(t)) t = m[1].trim()
-  return t || undefined
+  if (!t) return {}
+  const parts: TitleParts = {}
+  const n = Number(TRAILING_NUMBER.exec(t)?.[1])
+  if (Number.isSafeInteger(n) && n >= 1) parts.number = n
+  const lead = new RegExp(`^(?:${escapeRe(DEFAULT_SESSION_PREFIX)}|${escapeRe(prefix)}):\\s*`)
+  for (let before = ''; before !== t;) {
+    before = t
+    t = t.replace(TRAILING_SUFFIX, '').replace(lead, '').trim()
+  }
+  if (t) parts.base = t
+  return parts
+}
+
+/** The base name of a session title (parseTitle), undefined when it has none. */
+export function baseName(title: string | undefined, prefix: string): string | undefined {
+  return parseTitle(title, prefix).base
+}
+
+/** A session's number in its chain, the next session's, whether it is the main session (the one
+ * renamed Session 1), and where the number came from. */
+export type Numbering = { current: number; next: number; isMain: boolean; source: 'title' | 'lineage' | 'default' }
+
+/**
+ * The current and the next number of a session handing off: the title's number, else the lineage
+ * depth (`depth`: from a lineage read that found a record, else undefined), else 1. Only a session
+ * with neither, whose lineage read did not fail, is the main session: a read that failed is never
+ * trusted to rename (`readFailed`).
+ */
+export function numbering(titleNumber: number | undefined, depth: number | undefined, readFailed = false): Numbering {
+  const current = titleNumber ?? depth ?? 1
+  const source = titleNumber !== undefined ? 'title' : depth !== undefined ? 'lineage' : 'default'
+  return { current, next: current + 1, isMain: source === 'default' && !readFailed, source }
+}
+
+/** The one notice of a handoff whose lineage read failed: its log line (marked `numbering fallback:`),
+ * its panel step and the toast shown where the band is not drawn. */
+export function numberingNotice(session: string, error: string, n: Numbering): { log: string; step: { mark: 'warn'; text: string }; toast: string } {
+  const fromTitle = n.source === 'title'
+  // One set of fragments for both forms: the log adds the details (the number, why it defaulted).
+  const outcome = (detail: boolean) => fromTitle
+    ? `number${detail ? ` ${n.current}` : ''} taken from the title${detail ? ` ${sessionSuffix(n.current)}` : ''}`
+    : `number defaulted to 1${detail ? ', the title has none' : ''}`
+  const tail = `, chain id restarted${fromTitle ? '' : ', session not renamed'}`
+  const text = `numbering: store unreadable, ${outcome(false)}${tail}`
+  return {
+    log: `numbering fallback: lineage read failed session=${session} (${error}); ${outcome(true)}${tail}`,
+    step: { mark: 'warn', text },
+    toast: text,
+  }
 }
 
 /** The session's title from its transcript: the last `custom-title` line (a name the person or

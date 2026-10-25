@@ -1,0 +1,6 @@
+# Run-time output of the lens: written while it runs, never committed.
+PROBE-LOG.jsonl
+.tsc/*.jsonl
+.tsc/*.err
+# Local copy of the Claude Code engine types, for tsc only (see README.md).
+.tsc/claude-code.d.ts
