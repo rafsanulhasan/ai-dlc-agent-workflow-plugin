@@ -233,7 +233,6 @@ export function presetOf(pairs: unknown, id: string): WindowPreset {
   return DEFAULT_WINDOW
 }
 
-/** The pairs with `[id, preset]` last, bounded by WINDOW_SESSIONS_MAX. */
 /** The chain ai-dlc's keep-alive publishes (`chain` of its state, ITEM-076; LLD 7.2), checked at run
  * time: its id and its sessions, newest first; null when absent or malformed. */
 export function chainFrom(value: unknown): { id: string; sessions: string[] } | null {
@@ -249,6 +248,7 @@ export function chainFrom(value: unknown): { id: string; sessions: string[] } | 
 export const chainNowOf = (published: { id: string; sessions: string[] } | null, transcriptSession: string | null): { id: string; sessions: string[] } | null =>
   published ?? (transcriptSession === null ? null : { id: transcriptSession, sessions: [transcriptSession] })
 
+/** The pairs with `[id, preset]` last, bounded by WINDOW_SESSIONS_MAX. */
 export function withPreset(pairs: unknown, id: string, preset: WindowPreset): [string, WindowPreset][] {
   const kept = (Array.isArray(pairs) ? pairs : []).filter((p): p is [string, WindowPreset] => Array.isArray(p) && typeof p[0] === 'string' && p[0] !== id && isPreset(p[1]))
   return [...kept, [id, preset] as [string, WindowPreset]].slice(-WINDOW_SESSIONS_MAX)

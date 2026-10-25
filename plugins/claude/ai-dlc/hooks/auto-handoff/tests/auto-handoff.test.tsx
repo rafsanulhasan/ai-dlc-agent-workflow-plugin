@@ -84,7 +84,7 @@ const files = (written: Record<string, string>) => Object.keys(written).filter(p
 // commands: the slash commands the engine lists (default: clear and rename); failRename: /rename rejects.
 // failList: listing a folder whose path matches it fails, as an unreadable folder does.
 // failStore: $.store.get of a key that matches it rejects, as an unreadable store does.
-function engine(on: On, opts: { tokens: number; files?: Record<string, string>; env?: Record<string, string>; brief?: string | null; messages?: SessionMessage[]; toolChars?: number; streamToolChars?: number; store?: Record<string, unknown>; stepUsage?: boolean; surfaces?: ('terminal' | 'desktop' | 'mobile' | 'vscode')[]; noSh?: boolean; git?: Git; failWrite?: RegExp; failList?: RegExp; failStore?: RegExp; window?: number | null; percent?: number; breakdown?: Record<string, unknown> | 'throw'; commands?: string[]; failRename?: boolean; hold?: Promise<unknown>; stepRead?: number; stepSplit?: { h: number; m: number } }): Calls {
+function engine(on: On, opts: { endOnClear?: boolean; beneath?: string; tokens: number; files?: Record<string, string>; env?: Record<string, string>; brief?: string | null; messages?: SessionMessage[]; toolChars?: number; streamToolChars?: number; store?: Record<string, unknown>; stepUsage?: boolean; surfaces?: ('terminal' | 'desktop' | 'mobile' | 'vscode')[]; noSh?: boolean; git?: Git; failWrite?: RegExp; failList?: RegExp; failStore?: RegExp; window?: number | null; percent?: number; breakdown?: Record<string, unknown> | 'throw'; commands?: string[]; failRename?: boolean; hold?: Promise<unknown>; stepRead?: number; stepSplit?: { h: number; m: number } }): Calls {
   const calls: Calls = { compacts: 0, steps: 0, cleared: 0, seeded: [], written: {}, completes: 0, tokens: opts.tokens, prompts: [], toasts: [], ran: 0, clearedAtWrite: {}, renamed: [], commandOrder: [], branchQueries: 0, usageArgs: [], store: new Map(Object.entries(opts.store ?? {})) }
   let sessionId = 'old-session'
   let clears = 0
@@ -92,8 +92,9 @@ function engine(on: On, opts: { tokens: number; files?: Record<string, string>; 
   clock = mock.clock(on) // the panel's spinner and collapse timers
   on('session.surfaces', async () => ({ value: opts.surfaces ?? ['terminal'] }))
   on('ui.render', { component: 'AbovePrompt' }, async ($, e) => { // the engine draws nothing in the band
-    const { Box } = $.ui.resolve(e)
-    return <Box />
+    const { Box, Text } = $.ui.resolve(e)
+    // `beneath`: a band another plugin draws beneath ours (the lens's), to see that ours lets it through
+    return opts.beneath ? <Text>{opts.beneath}</Text> : <Box />
   })
   // The test's $ has no store noun: what the mod finds in its store is seeded here. The four handlers
   // answer as mock.store does (claude-code/testing), over calls.store, so a test can read what was
@@ -218,6 +219,8 @@ function engine(on: On, opts: { tokens: number; files?: Record<string, string>; 
     return { text: e.text }
   })
   on('classic.SessionStart', async () => ({}))
+  // endOnClear: a test ends the old session itself while the handoff is under way, as /clear does
+  if (opts.endOnClear) on('session.end', async (_$, e) => ({ sessionId: e.sessionId }) as never)
   on('session.compact', async (_$, e) => {
     calls.compacts++
     return { messages: e.messages }
@@ -2579,4 +2582,310 @@ describe('the handoff and the prompt cache', () => {
     expect(creationSplit({ cache_creation: { ephemeral_1h_input_tokens: 0, ephemeral_5m_input_tokens: 0 } })).toEqual({ '1h': 0, '5m': 0 })
     expect(creationSplit({ input_tokens: 1 })).toBeUndefined()
   })
+})
+
+// T17.7 (ITEM-076): at the seed of an automatic handoff, handoff.onWhenOff (default true) turns keep-alive on
+// for the chain when its master is off. It is trust-gated: from a file a cloned repository controls it applies
+// only in a folder Claude Code trusts. The seed line (keepalive seed: cache hit, ...) shows only while keep-alive is on.
+describe('handoff.onWhenOff at the seed of an automatic handoff', () => {
+  const PROJ = '/home/test/proj'
+  const LOCAL = `${PROJ}/.claude/settings.local.json`
+  const SETTINGS_JSON = `${PROJ}/.claude/settings.json`
+  const REPO = `${PROJ}/.ai-dlc/cache-keepalive.json`
+  const TRUSTED = { '/home/test/.claude.json': JSON.stringify({ projects: { [PROJ]: { hasTrustDialogAccepted: true } } }) }
+  const env = (vars: Record<string, string>) => JSON.stringify({ env: vars })
+  const OFF = { AI_DLC_KEEPALIVE_ENABLED: 'false' }
+
+  // One handoff with keep-alive's master off in the settings; whether the seeded session's status line shows the seed line.
+  async function seedShown($: Parameters<TestBody>[0], on: On, files: Record<string, string>): Promise<{ shown: boolean; log: string }> {
+    const calls = engine(on, { tokens: 165_000, stepUsage: true, files })
+    const statuses: (string | undefined)[] = []
+    on('ui.status', async (_$, e) => (statuses.push(e.text), { value: undefined }) as never)
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    await $.classic.SessionStart({ source: 'clear' })
+    await settle(() => calls.seeded.length > 0)
+    calls.tokens = 47_000
+    await step($, 0)
+    return { shown: statuses.some(s => s?.includes('keepalive seed:')), log: calls.written['/home/test/.claude/state/auto-handoff/auto-handoff.log'] ?? '' }
+  }
+
+  test('master off in the settings, onWhenOff on (the default): the seeded session has keep-alive on, so the seed line shows', async ($, on) => {
+    expect((await seedShown($, on, { [LOCAL]: env(OFF) })).shown).toBe(true)
+  })
+
+  test('onWhenOff false in the env of settings.local.json: the seeded session stays off, no seed line', async ($, on) => {
+    expect((await seedShown($, on, { [LOCAL]: env({ ...OFF, AI_DLC_KEEPALIVE_HANDOFF_ON_WHEN_OFF: 'false' }) })).shown).toBe(false)
+  })
+
+  test('master on: the seed line shows as before, whatever onWhenOff says', async ($, on) => {
+    expect((await seedShown($, on, { [LOCAL]: env({ AI_DLC_KEEPALIVE_HANDOFF_ON_WHEN_OFF: 'false' }) })).shown).toBe(true)
+  })
+
+  test('the trust gate, untrusted: false in the env of settings.json is skipped, the default applies, so keep-alive is turned on', async ($, on) => {
+    expect((await seedShown($, on, { [LOCAL]: env(OFF), [SETTINGS_JSON]: env({ AI_DLC_KEEPALIVE_HANDOFF_ON_WHEN_OFF: 'false' }) })).shown).toBe(true)
+  })
+
+  test('the trust gate, untrusted: false in the repository file is skipped, so keep-alive is turned on', async ($, on) => {
+    expect((await seedShown($, on, { [LOCAL]: env(OFF), [REPO]: JSON.stringify({ handoff: { onWhenOff: false } }) })).shown).toBe(true)
+  })
+
+  test('the trust gate, trusted: false in the env of settings.json applies, so keep-alive stays off', async ($, on) => {
+    expect((await seedShown($, on, { ...TRUSTED, [LOCAL]: env(OFF), [SETTINGS_JSON]: env({ AI_DLC_KEEPALIVE_HANDOFF_ON_WHEN_OFF: 'false' }) })).shown).toBe(false)
+  })
+
+  test('the trust gate, trusted: false in the repository file applies, so keep-alive stays off', async ($, on) => {
+    expect((await seedShown($, on, { ...TRUSTED, [LOCAL]: env(OFF), [REPO]: JSON.stringify({ handoff: { onWhenOff: false } }) })).shown).toBe(false)
+  })
+})
+
+// Step 40, fix 3 (human: "the lens band is gone"): the band above the prompt draws auto-handoff's panel and
+// keep-alive's rows and then the hooks beneath it (another plugin's band, such as ai-dlc-lens's, then the
+// engine's). A hook that returns its own tree without calling next hides everything beneath it.
+describe('the band above the prompt draws the hooks beneath it', () => {
+  const KA = '⚠ ai-dlc cache-keepalive:'
+
+  test('keep-alive\'s rows are drawn and so is the band of a hook beneath (the lens band)', async ($, on) => {
+    engine(on, { tokens: 10_000, beneath: 'LENS BAND BENEATH' })
+    const ui = await mountBand($)
+    const text = textOf(await ui.drawn())
+    expect(text).toContain(KA)
+    expect(text).toContain('LENS BAND BENEATH')
+    expect(text.indexOf(KA)).toBeLessThan(text.indexOf('LENS BAND BENEATH'))
+    await ui.unmount()
+  })
+
+  test('with a handoff panel showing too: panel, keep-alive rows, then the hook beneath, in that order', async ($, on) => {
+    const calls = engine(on, { tokens: 165_000, stepUsage: true, beneath: 'LENS BAND BENEATH' })
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    const ui = await mountBand($)
+    const text = textOf(await ui.drawn())
+    expect(text).toContain(KA)
+    expect(text).toContain('LENS BAND BENEATH')
+    expect(text.indexOf(KA)).toBeLessThan(text.indexOf('LENS BAND BENEATH'))
+    await ui.unmount()
+  })
+
+  test('a survey in progress yields the whole band to the hooks beneath: nothing of ours is drawn', async ($, on) => {
+    engine(on, { tokens: 10_000, beneath: 'BENEATH' })
+    const ui = await $.ui.mount({ plugin: 'ai-dlc', surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey: true, isWorking: false, maxRows: 20, bodyColumns: 120 } as never })
+    const text = textOf(await ui.drawn())
+    expect(text).toContain('BENEATH')
+    expect(text).not.toContain(KA)
+    await ui.unmount()
+  })
+
+})
+
+// ITEM-068 (T17.6, AC-17.6.x): the band above the prompt (Terminal and Desktop) draws keep-alive's rows with a
+// master button and one button per track; a press affects the current session only (no settings file written).
+describe('keep-alive in the band: master and track buttons (T17.6)', () => {
+  const press = async (ui: Awaited<ReturnType<typeof mountBand>>, key: string) => {
+    await ui.press({ key })
+    await settle(() => false) // the presses write the store and redraw after the handler returns
+  }
+  const rows = (text: string) => ({
+    master: /⚠ ai-dlc cache-keepalive: (on|off)keepalive/.exec(text)?.[1],
+    five: /(?:)keepalive 5m:[^]*?(on|off)keepalive 1h/.exec(text)?.[1],
+    one: /(?:)keepalive 1h:[^]*?(on|off)$/.exec(text)?.[1],
+  })
+
+  test('the title row with the master button, then the 5m row, then the 1h row, each with its button', async ($, on) => {
+    engine(on, { tokens: 10_000 })
+    const ui = await mountBand($)
+    const text = textOf(await ui.drawn())
+    expect(text.indexOf('⚠ ai-dlc cache-keepalive:')).toBe(0)
+    expect(text.indexOf('keepalive 5m:')).toBeGreaterThan(text.indexOf('⚠ ai-dlc cache-keepalive:'))
+    expect(text.indexOf('keepalive 1h:')).toBeGreaterThan(text.indexOf('keepalive 5m:'))
+    expect(await ui.find({ type: 'Button', key: 'ka-master' })).toBeDefined()
+    expect(await ui.find({ type: 'Button', key: 'ka-5m' })).toBeDefined()
+    expect(await ui.find({ type: 'Button', key: 'ka-1h' })).toBeDefined()
+    await ui.unmount()
+  })
+
+  test('both track lines are drawn even when nothing runs: off, with the ping limit and keep-warm time (AC-17.6.1)', async ($, on) => {
+    engine(on, { tokens: 10_000 })
+    const ui = await mountBand($)
+    const text = textOf(await ui.drawn())
+    expect(text).toContain('keepalive 5m: off (no 5m cache write seen), ping 0/20, keep warm 1h (default)')
+    expect(text).toContain('keepalive 1h: off (no 1h cache write seen), ping 0/9, keep warm 8h (default)')
+    await ui.unmount()
+  })
+
+  test('the master button [off] disables both tracks for this session, and then reads [on]', async ($, on) => {
+    const calls = engine(on, { tokens: 10_000 })
+    const ui = await mountBand($)
+    expect(rows(textOf(await ui.drawn())).master).toBe('off')
+    await press(ui, 'ka-master')
+    const text = textOf(await ui.drawn())
+    expect(rows(text)).toMatchObject({ master: 'on', five: 'on', one: 'on' })
+    expect(text).toContain('keepalive 5m: off (disabled)')
+    expect(text).toContain('keepalive 1h: off (disabled)')
+    expect(Object.keys(calls.written).filter(p => p.endsWith('settings.json') || p.endsWith('settings.local.json') || p.endsWith('cache-keepalive.json'))).toEqual([])
+    await ui.unmount()
+  })
+
+  test('the master button [on] turns the master and both tracks back on, with no ping', async ($, on) => {
+    engine(on, { tokens: 10_000 })
+    let forks = 0
+    on('model.fork', async () => (forks++, { value: { isAnswered: true, text: 'ok', usage: USAGE } }) as never)
+    const ui = await mountBand($)
+    await press(ui, 'ka-master')
+    await press(ui, 'ka-master')
+    const text = textOf(await ui.drawn())
+    expect(rows(text)).toMatchObject({ master: 'off', five: 'off', one: 'off' })
+    expect(text).not.toContain('(disabled)')
+    expect(forks).toBe(0)
+    await ui.unmount()
+  })
+
+  test('a track button switches that track alone: the master and the other track are untouched', async ($, on) => {
+    engine(on, { tokens: 10_000 })
+    const ui = await mountBand($)
+    await press(ui, 'ka-5m')
+    const text = textOf(await ui.drawn())
+    expect(rows(text)).toMatchObject({ master: 'off', five: 'on', one: 'off' })
+    expect(text).toContain('keepalive 5m: off (disabled)')
+    expect(text).not.toContain('keepalive 1h: off (disabled)')
+    await press(ui, 'ka-5m')
+    expect(rows(textOf(await ui.drawn()))).toMatchObject({ master: 'off', five: 'off', one: 'off' })
+    await ui.unmount()
+  })
+
+  test('a track [on] overrides a master that is off: the button follows "allowed", not "running"', async ($, on) => {
+    engine(on, { tokens: 10_000 })
+    const ui = await mountBand($)
+    await press(ui, 'ka-master') // master off, both tracks disabled
+    await press(ui, 'ka-1h') // 1h [on]
+    const text = textOf(await ui.drawn())
+    expect(rows(text)).toMatchObject({ master: 'on', five: 'on', one: 'off' })
+    expect(text).not.toContain('keepalive 1h: off (disabled)')
+    await ui.unmount()
+  })
+
+})
+
+// T17.7 (ITEM-076, AC-17.7.1 to 17.7.9): an automatically handed-off chain is one keep-alive session. The
+// switches and the --session overrides are kept under the chain id, so they survive the /clear (session.end
+// during a handoff) and are read by the seeded session; a session started by hand is its own chain.
+describe('keep-alive across an automatic handoff (T17.7)', () => {
+  const KA_TASK = { id: 'b1', type: 'shell', status: 'running', description: 'build' }
+  const LOCAL = '/home/test/proj/.claude/settings.local.json'
+  const env = (vars: Record<string, string>) => JSON.stringify({ env: vars })
+  // a low threshold, so each seeded session can hand off again after its seed turn (chainRounds, above)
+  const MANY = { ...LOW, AI_DLC_AUTO_HANDOFF_MAX_CONSECUTIVE_HANDOFFS: '5' }
+  const cacheRow = JSON.stringify({ type: 'assistant', message: { usage: { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 2000, cache_creation: { ephemeral_1h_input_tokens: 0, ephemeral_5m_input_tokens: 2000 } } } })
+  const bandOf = async ($: Parameters<TestBody>[0]) => { const ui = await mountBand($); try { return textOf(await ui.drawn()) } finally { await ui.unmount() } }
+  const pressKey = async ($: Parameters<TestBody>[0], key: string) => { const ui = await mountBand($); await ui.press({ key }); await settle(() => false); await ui.unmount() }
+  // One automatic handoff: the old session ends during it (as /clear does), the fresh session starts.
+  async function handOff($: Parameters<TestBody>[0], calls: Calls) {
+    const before = calls.cleared
+    const ended = before === 0 ? 'old-session' : `new-session-${before}`
+    if (before > 0) { await $.turn.complete(TURN); calls.tokens += 60_000 } // the seed turn sets the floor, then the context grows
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > before)
+    expect(calls.cleared).toBe(before + 1)
+    // /clear ends the old session while the handoff is under way: keep-alive must keep the chain's switches
+    await $.session.end({ reason: 'clear', sessionId: ended } as never)
+    await $.classic.SessionStart({ source: 'clear' })
+    await settle(() => calls.seeded.length >= calls.cleared)
+  }
+
+  test('[AC-17.7.1] a track switched off in S1 stays off in the seeded session S2, and S3 after it', async ($, on) => {
+    const calls = engine(on, { tokens: 31_000, stepUsage: true, endOnClear: true, env: MANY })
+    await pressKey($, 'ka-5m')
+    expect(await bandOf($)).toContain('keepalive 5m: off (disabled)')
+    await handOff($, calls)
+    const s2 = await bandOf($)
+    expect(s2).toContain('keepalive 5m: off (disabled)')
+    expect(s2).not.toContain('keepalive 1h: off (disabled)')
+    await handOff($, calls)
+    expect(await bandOf($)).toContain('keepalive 5m: off (disabled)')
+  })
+
+  test('[AC-17.7.1] the --session keep-warm override carries too: keep warm 2h (session) in S2', async ($, on) => {
+    const calls = engine(on, { tokens: 31_000, stepUsage: true, endOnClear: true, env: MANY })
+    await $.command.run({ command: 'ai-dlc:cache-keepalive', args: '2h --session' } as never)
+    expect(await bandOf($)).toContain('keep warm 2h (session)')
+    await handOff($, calls)
+    expect(await bandOf($)).toContain('keep warm 2h (session)')
+  })
+
+  test('[AC-17.7.2] no track runs in S2 and nothing of the ledger is carried: the old session\'s arming is gone', async ($, on) => {
+    const calls = engine(on, { tokens: 31_000, stepUsage: true, endOnClear: true, env: MANY, files: { '/home/test/old.jsonl': cacheRow } })
+    on('classic.Stop', async () => ({}) as never)
+    on('model.fork', async () => ({ value: { isAnswered: true, text: 'ok', usage: USAGE } }) as never)
+    await $.classic.Stop({ background_tasks: [KA_TASK], transcript_path: '/home/test/old.jsonl' } as never)
+    expect(await bandOf($)).toContain('armed')
+    await handOff($, calls)
+    const text = await bandOf($)
+    expect(text).not.toContain('armed')
+    expect(text).toMatch(/ping 0\/20/)
+  })
+
+  test('[AC-17.7.5] handoff.carryOver false: S2 starts clean, from the settings alone', async ($, on) => {
+    const calls = engine(on, { tokens: 31_000, stepUsage: true, endOnClear: true, env: MANY, files: { [LOCAL]: env({ AI_DLC_KEEPALIVE_HANDOFF_CARRY_OVER: 'false' }) } })
+    await pressKey($, 'ka-5m')
+    expect(await bandOf($)).toContain('keepalive 5m: off (disabled)')
+    await handOff($, calls)
+    expect(await bandOf($)).not.toContain('(disabled)')
+  })
+
+  test('[AC-17.7.6] carryOver false and the master off in the settings: the exception applies (onWhenOff on), keep-alive is on in S2', async ($, on) => {
+    const calls = engine(on, { tokens: 31_000, stepUsage: true, endOnClear: true, env: MANY, files: { [LOCAL]: env({ AI_DLC_KEEPALIVE_HANDOFF_CARRY_OVER: 'false', AI_DLC_KEEPALIVE_ENABLED: 'false' }) } })
+    await handOff($, calls)
+    expect(await bandOf($)).toMatch(/cache-keepalive: off/) // after: it offers to turn it off, so it is on
+  })
+
+  test('[AC-17.7.4] master [off] pressed in S2 stays off for S2, and the exception turns keep-alive on again at S3', async ($, on) => {
+    const calls = engine(on, { tokens: 31_000, stepUsage: true, endOnClear: true, env: MANY, files: { [LOCAL]: env({ AI_DLC_KEEPALIVE_ENABLED: 'false' }) } })
+    await handOff($, calls) // S2: the exception turned it on
+    expect(await bandOf($)).toMatch(/cache-keepalive: off/)
+    await pressKey($, 'ka-master') // S2: off
+    const s2 = await bandOf($)
+    expect(s2).toMatch(/cache-keepalive: on/)
+    expect(s2).toContain('(disabled)')
+    await handOff($, calls) // S3: the settings still say master off, so the exception applies again
+    expect(await bandOf($)).toMatch(/cache-keepalive: off/)
+  })
+
+  test('[AC-17.7.9] a session started by hand is its own chain: the earlier session switches are not there', async ($, on) => {
+    engine(on, { tokens: 10_000, endOnClear: true })
+    on('classic.Stop', async () => ({}) as never)
+    await pressKey($, 'ka-5m')
+    expect(await bandOf($)).toContain('keepalive 5m: off (disabled)')
+    await $.session.end({ reason: 'clear', sessionId: 'old-session' } as never) // not a handoff: the entry goes with the session
+    await $.classic.Stop({ background_tasks: [KA_TASK], transcript_path: '/home/test/none.jsonl' } as never)
+    expect(await bandOf($)).not.toContain('keepalive 5m: off (disabled)')
+  })
+
+  test('[AC-17.7.9] a session started by hand gets no onWhenOff exception: with the master off in the settings it stays off', async ($, on) => {
+    engine(on, { tokens: 10_000, endOnClear: true, files: { [LOCAL]: env({ AI_DLC_KEEPALIVE_ENABLED: 'false' }) } })
+    on('classic.Stop', async () => ({}) as never)
+    await $.session.end({ reason: 'clear', sessionId: 'old-session' } as never)
+    await $.classic.Stop({ background_tasks: [KA_TASK], transcript_path: '/home/test/none.jsonl' } as never)
+    expect(await bandOf($)).toMatch(/cache-keepalive: on/) // the master button offers to turn it on: it is off
+  })
+
+  test('[AC-17.7.9] a lineage that cannot be read counts as a session started by hand, with a debug line', async ($, on) => {
+    const calls = engine(on, { tokens: 31_000, stepUsage: true, endOnClear: true, env: MANY, failStore: /^lineage:/ })
+    const logs: string[] = []
+    on('ui.log', async (_$, e) => (logs.push(e.text), { value: undefined }) as never)
+    await pressKey($, 'ka-5m')
+    await handOff($, calls)
+    expect(await bandOf($)).not.toContain('keepalive 5m: off (disabled)')
+    expect(logs.some(l => l.startsWith('chain: lineage of '))).toBe(true)
+  })
+
+  for (const [carry, whenOff] of [['true', 'true'], ['true', 'false'], ['false', 'true'], ['false', 'false']] as const) {
+    test(`[AC-17.7.8] carryOver ${carry}, onWhenOff ${whenOff}: no settings file is written and no ping goes out at the handoff`, async ($, on) => {
+      const calls = engine(on, { tokens: 31_000, stepUsage: true, endOnClear: true, env: MANY, files: { [LOCAL]: env({ AI_DLC_KEEPALIVE_ENABLED: 'false', AI_DLC_KEEPALIVE_HANDOFF_CARRY_OVER: carry, AI_DLC_KEEPALIVE_HANDOFF_ON_WHEN_OFF: whenOff }) } })
+      let forks = 0
+      on('model.fork', async () => (forks++, { value: { isAnswered: true, text: 'ok', usage: USAGE } }) as never)
+      await handOff($, calls)
+      expect(forks).toBe(0)
+      expect(Object.keys(calls.written).filter(p => /settings|cache-keepalive\.json|CLAUDE\.md|AGENTS\.md/.test(p))).toEqual([])
+    })
+  }
 })

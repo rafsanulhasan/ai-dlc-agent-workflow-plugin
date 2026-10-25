@@ -760,8 +760,20 @@ Setup: install or update the plugin (see *Install*), `/reload-plugins`.
 | O10 | Close the pane (`×`), the band minimised. Press the band's `□`; then `–`; then the band's `⤢`; then, the band in its list, `⤢` again with a second workflow running. | `□` brings back the band's list; no pane opens. `⤢` opens the pane beside the band on the latest workflow in progress and the band stays minimised; the second `⤢` switches the pane to the newer workflow and the band stays a list. The band is never hidden. | |
 | O11 | Look at the band, minimised and in its list view, in a wide terminal. | It takes the full width above the prompt (its controls at the right edge); core's own rows under it still draw. | |
 | O12 | A workflow in progress, the band minimised and the pane open beside it: switch the view to docked (`pinned` on the band). Press the band's `□`, then `–`. Then back to pinned (`docked` on the pane). | Step 36.4: docked, the pane stays open at its normal size (`–`, its runs' buttons), never minimised, on the workflow it showed; the band stays above the prompt, minimised, and its `□` / `–` change the band only. Back to pinned, the pane closes and the band appears minimised. With no workflow in progress, docking leaves no band. | |
-| O14 | Terminal, pinned, every workflow finished (or none yet): look at the band, press its `×`. Then spawn an agent. Then, with that workflow in progress, look for the `×`. | Step 36.4: the band has a `×` while no workflow is in progress; pressing it removes the band. The spawn (or `/ai-dlc:lens`, or a new session) brings it back; while a workflow is in progress the band has no `×`. | |
 | O13 | With a workflow in the band, run `/clear` or resume the session. | The band appears minimised. | |
+| O14 | Terminal, pinned, every workflow finished (or none yet): look at the band, press its `×`. Then spawn an agent. Then, with that workflow in progress, look for the `×`. | Step 36.4: the band has a `×` while no workflow is in progress; pressing it removes the band. The spawn (or `/ai-dlc:lens`, or a new session) brings it back; while a workflow is in progress the band has no `×`. | |
+
+## Cache Lab (steps 37 and 38, T22.a to T22.g)
+
+Added on 2026-10-25 (run `FEAT-20261020-ai-dlc-lens`, step 41). The headless tests check the figures, the window choice and the store; they cannot show the section on screen, a real handoff chain or what survives `/reload-plugins` on a host. Setup: install or update the plugin (see *Install*), `/reload-plugins`, and open the AI-DLC Lens pane (`/ai-dlc:lens`); Cache Lab is the section at the head of the pane.
+
+| # | Do | Expect | Result |
+|---|---|---|---|
+| CL1 | Look at Cache Lab before opening it; then press its `[+]`. | Closed, it is one row with `[+]` and no figures. Opened, it shows the window buttons `This session`, `Today`, `7d`, `30d`, `All` with `[7d]` chosen, the figures (Saved by cache, Lost to busts, NET, Cache Hit %, Tokens Saved, Bust events, Median baseline), the miss attribution and the TTL mix; with no prices in `costingPath` the money figures read `no price`. | Terminal: ; VS Code: |
+| CL2 | Press each window button in turn, then `↻`. | Each press moves the brackets to that button and the figures change to that window within a few seconds; `↻` reads the transcripts again with the window kept. | Terminal: ; VS Code: |
+| CL3 | Needs the automatic handoff (keep-alive's P7 setup). Choose `This session`, note Bust events and Tokens Saved, work until the automatic handoff runs, then open Cache Lab in the seeded session with `This session`. | The window is still `This session` and its figures cover both sessions of the chain (at least what the first session showed). | Terminal: |
+| CL4 | With at least one bust in the window, open the Invalidation Gallery sub-accordion. | Collapsed until opened. Newest first, at most 50 lines, each one line of text: time, model, 8-character session id, the stream when it is not the main one, the attribution, tokens written, cost (`no price` without prices) and the turn it happened in. | Terminal: ; VS Code: |
+| CL5 | Choose `30d`, run `/reload-plugins`, open Cache Lab. Then set `AI_DLC_LENS_CACHE_LAB_KEEP_WINDOW_ON_RELOAD=true` in the `env` of `.claude/settings.local.json`, `/reload-plugins`, choose `30d`, `/reload-plugins` again. Remove the variable after. | With the setting off the window is back to `[7d]` after the reload. With it on, `[30d]` is kept across the reload. | Terminal: |
 
 ## Diagrams (ITEM-053, AC-20.8.1)
 
@@ -773,7 +785,12 @@ Setup: install or update the plugin (see *Install*), `/reload-plugins`.
 
 - `.claude-plugin/plugin.json`: the manifest. Its marketplace entry is in `<REPO>\.claude-plugin\marketplace.json`, after `ai-dlc`; the Copilot marketplace does not list it.
 - `hooks/hooks.json`: the module (step 8.1.6.1 removed the command `Stop` hook).
-- `hooks/register.tsx`: the hooks module: the chat card (R1 to R9, C1 to C6), the AI-DLC Lens view (the pane and the band; `/ai-dlc:lens`, O1 to O14), the settings commands (S1 to S4), the probes (E1 to E9) and the round-0 kit (K1 to K5). The lens pane (L1 to L6) was removed in step 36.2.
+- `hooks/register.tsx`: the hooks module: the chat card (R1 to R9, C1 to C6), the AI-DLC Lens view (the pane and the band; `/ai-dlc:lens`, O1 to O14), Cache Lab's section (CL1 to CL5), the diagrams in assistant messages (D1), the settings commands (S1 to S4), the probes (E1 to E9) and the round-0 kit (K1 to K5). The lens pane (L1 to L6) was removed in step 36.2.
+- `hooks/cache-lab.ts`: Cache Lab's pure parts: the windows and the kept window choice, the chain, the figures, the miss attribution, the TTL mix and the gallery lines.
+- `hooks/cache-reader.mjs`: the process Cache Lab runs to list and read the transcripts (`list`, `read`), one JSON envelope on stdout.
+- `hooks/transcripts.ts`: the reader's envelope check and the batching of file names per `read` call.
+- `hooks/diagram.ts`: the diagrams' pure parts: finding fences, the source clean-up, the cache key, the SVG strip, the caps and the reason lines.
+- `renderer/`: the diagram renderer, run as a process: `render.mjs` (entry), `flatten.mjs` (the SVG made plain for rasterising), `scrub.mjs` (the renderer's copy of the SVG strip), `BUILD.md` (how `vendor/` was built, with versions) and `vendor/` (beautiful-mermaid, elkjs, entities, `@resvg/resvg-wasm` and the Inter font; see `NOTICE.md`).
 - `hooks/lens.ts`: pure helpers of the card: names, models and roles, the cost and window from the model metadata file, record matching, the flowchart Svg, the width rule, the batching of parallel Agent calls and the terminal's text chart.
 - `hooks/settings.ts`: the lens settings, their levels, the schema and the `lens.json` edits.
 - `hooks/avatar.ts`: the avatars: the robots and how each agent type gets one, the image checks (type by magic bytes, size, the trust check) and the Svg cap.

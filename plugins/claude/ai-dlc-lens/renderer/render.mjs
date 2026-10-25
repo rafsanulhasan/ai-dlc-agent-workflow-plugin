@@ -21,11 +21,26 @@ globalThis.fetch = () => { throw new Error('the diagram renderer is offline') }
 
 // The colours beautiful-mermaid is given explicitly, so every color-mix() has known inputs (LLD 3.1).
 export const COLOURS = { bg: '#FFFFFF', fg: '#27272A', line: '#71717A', accent: '#27272A', muted: '#52525B', surface: '#F4F4F5', border: '#D4D4D8' }
-// The PNG is drawn at twice the SVG's size, so the terminal's picture stays sharp.
+// The PNG is drawn at twice the SVG's size, so the terminal's picture stays sharp. Its background is
+// painted COLOURS.bg (resvg leaves it transparent otherwise, and a CSS background on the root is not drawn).
 const PNG_ZOOM = 2
 
 /** The SVG handed to the rasteriser (LLD 6, the PNG half of AC-20.5.4): flattened, then scrubbed. Throws `flatten: ...`. */
 export const svgForRaster = svg => scrubSvg(flattenSvg(svg))
+
+// resvg's WebAssembly, loaded once per process: a second initWasm throws. A failed load is not kept, so
+// the next render tries again.
+let resvgReady
+function rasteriser() {
+  resvgReady ??= import('./vendor/index.mjs').then(async m => {
+    await m.initWasm(readFileSync(join(here, 'vendor', 'index_bg.wasm')))
+    return m
+  }).catch(err => {
+    resvgReady = undefined
+    throw err
+  })
+  return resvgReady
+}
 
 const envelope = (data, error = null) => `${JSON.stringify({ data, error })}\n`
 const firstLine = err => String(err instanceof Error ? err.message : err).split(/\r?\n/)[0].trim().slice(0, 200) || 'unknown error'
@@ -62,8 +77,7 @@ export async function render(kind, format, source) {
   }
   let resvg
   try {
-    resvg = await import('./vendor/index.mjs')
-    await resvg.initWasm(readFileSync(join(here, 'vendor', 'index_bg.wasm')))
+    resvg = await rasteriser()
   } catch {
     return { code: 0, line: envelope(null, 'no PNG rasteriser') }
   }
@@ -74,7 +88,7 @@ export async function render(kind, format, source) {
     return { code: 0, line: envelope(null, 'no font') }
   }
   try {
-    const png = new resvg.Resvg(flat, { font: { fontBuffers: [font], loadSystemFonts: false, defaultFontFamily: 'Inter' }, fitTo: { mode: 'zoom', value: PNG_ZOOM } }).render().asPng()
+    const png = new resvg.Resvg(flat, { background: COLOURS.bg, font: { fontBuffers: [font], loadSystemFonts: false, defaultFontFamily: 'Inter' }, fitTo: { mode: 'zoom', value: PNG_ZOOM } }).render().asPng()
     return { code: 0, line: envelope({ format: 'png', body: Buffer.from(png).toString('base64'), width, height }) }
   } catch (err) {
     return { code: 0, line: envelope(null, `renderer failed: ${firstLine(err)}`) }

@@ -25,7 +25,9 @@ export type Envelope<T> = { data: T | null; error: string | null }
 export type ListData = { files: FileEntry[] }
 export type ReadData = { files: FileRecord[]; next?: number }
 
-/** File names per `read` call: about 40 characters each keeps a Windows command line under 8,191. */
+/** File names per `read` call, relative to `--folder`: a subagent's `<uuid>/subagents/agent-<id>.jsonl` is about
+ * 77 characters with its comma, so 80 of them are about 6,200, which leaves room under the 8,191 of a Windows
+ * command line for the node and script paths and the folder. */
 export const READ_BATCH = 80
 
 const oneLine = (s: string) => s.split(/\r?\n/)[0]!.trim()

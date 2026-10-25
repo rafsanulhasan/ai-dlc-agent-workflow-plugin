@@ -332,6 +332,16 @@ const trackEnabled = (n: TrackName, key: TrackKey): boolean => trackOn(curSwitch
 const anyOn = (): boolean => TRACKS.some(([n, k]) => trackEnabled(n, k))
 const keyOf = (n: TrackName): TrackKey => TRACKS.find(([m]) => m === n)![1]
 
+/** Why nothing pings, as the command says it: the session's master switch, the master setting with
+ * its source, or each track that is off (its session switch, else its setting with its source). */
+function offCause(): string {
+  const sw = curSwitch()
+  if (!masterNow()) return sw.master === 'off' ? 'switched off for this session' : `enabled=false, ${sources.enabled ?? 'default'}`
+  return TRACKS.map(([n, k]) => (sw[n] === 'off'
+    ? `${n} track switched off for this session`
+    : `${k}.enabled=false, ${sources[`${k}.enabled`] ?? 'default'}`)).join('; ')
+}
+
 /** The set switches as the command reports them (AC-17.6.21): master, then 5m, then 1h; '' when none. */
 function switchText(): string {
   const sw = curSwitch()
@@ -1055,10 +1065,10 @@ export async function applyHandoffSeed($: EngineInterface): Promise<void> {
     await load($)
     switchMirror = undefined
     const sw = await loadSwitch($)
-    if (settings.handoff.onWhenOff && !masterNow()) {
-      await saveSwitch($, afterMasterPress(sw, settings.enabled))
-      for (const [n] of TRACKS) if (tracks[n].timer === undefined && isDisabledPart(tracks[n])) setOff(tracks[n], idleReason(n))
-    }
+    if (settings.handoff.onWhenOff && !masterNow()) await saveSwitch($, afterMasterPress(sw, settings.enabled))
+    // The ended session left every track `session ended`; the seeded session starts from the switches in force
+    // (carried with the chain, or none), as a press would: `disabled` for a track that is off, else its idle reason
+    for (const [n, key] of TRACKS) if (tracks[n].timer === undefined) setOff(tracks[n], trackEnabled(n, key) ? idleReason(n) : 'disabled')
     await refreshChain($)
     await refreshKeep($)
     publish($, await $.clock.now())
@@ -1329,7 +1339,7 @@ export function registerKeepalive(on: Parameters<Register>[0], deps: KeepaliveDe
     // In VS Code the command also opens the keep-alive Pane, the buttons' only place there (LLD 13);
     // the Terminal and Desktop have the band.
     const pane = await openPane($)
-    if (!anyOn()) return { text: withSwitches(`keepalive: off (enabled=false, ${sources.enabled ?? 'default'}); nothing pinged${pane}`) }
+    if (!anyOn()) return { text: withSwitches(`keepalive: off (${offCause()}); nothing pinged${pane}`) }
     const { context: ctx } = await $.session.usage()
     if (!budget) budget = settings.budgetMultiplier > 0 ? settings.budgetMultiplier * (ctx.tokens ?? 0) : Infinity
     const { ok, line } = await ping($, await $.clock.now())

@@ -1992,7 +1992,9 @@ const labChain = (): { id: string; sessions: string[] } | null => chainNowOf(pub
 
 /** The window preset of the current chain: `$.store` when `cacheLabKeepWindowOnReload` is on, else module memory.
  * When the chain's id changed since a press (the published chain arrived after it), the press wins: it is
- * saved under the new id. */
+ * saved under the new id. That save is the one write in this read, run from the render path on purpose: the
+ * chain arrives only as a value read here, so no event marks the moment. It runs once per chain-id change,
+ * only while a press made before the chain is pending, and writes what was already shown. */
 async function windowPreset($: EngineInterface): Promise<WindowPreset> {
   publishedChain = chainFrom(await keepaliveValue($)) ?? publishedChain
   const c = labChain()
@@ -3172,15 +3174,15 @@ async function diagramOutcome($: EngineInterface, f: Fence, format: 'svg' | 'png
       return r
     })
     diagramInFlight.set(key, job)
-    // The redraw for this result: once, and only when it lands after this render stopped waiting
-    let late = false
-    void job.then(() => { if (late) $.ui.invalidate('ui.render') })
-    const left = Math.max(0, deadline - nowMs())
-    const done = await Promise.race([job.then(r => r as Rendered | undefined), new Promise<undefined>(r => { $.clock.after(left, () => { late = true; r(undefined) }) })])
-    if (done) return withRemoved(done)
-    return { reason: reasonFor('rendering') }
   }
-  // Another render of this key is under way: its own redraw follows; this one shows `rendering…`
+  // Every render of this key waits for the same job until its deadline, whether it started the job or found it
+  // under way (two identical fences, a concurrent re-render). A render that stops waiting first arms one redraw
+  // for the result, so no fence is left showing `rendering…` once the picture is there.
+  let late = false
+  void job.then(() => { if (late) $.ui.invalidate('ui.render') })
+  const left = Math.max(0, deadline - nowMs())
+  const done = await Promise.race([job.then(r => r as Rendered | undefined), new Promise<undefined>(r => { $.clock.after(left, () => { late = true; r(undefined) }) })])
+  if (done) return withRemoved(done)
   return { reason: reasonFor('rendering') }
 }
 

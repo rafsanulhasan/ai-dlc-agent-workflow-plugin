@@ -58,7 +58,7 @@ type Opts = {
 // otherwise, the transcript at TRANSCRIPT, and the repository at ROOT with `files` in it. The clock
 // moves only on `fire(minutes)`, and every timer due by then fires at that time, as after a sleep.
 function engine(on: On, o: Opts = {}) {
-  const seen = { statuses: [] as (string | undefined)[], forks: 0, subagentStops: 0, logs: [] as string[], prompts: [] as string[], compacts: 0, runs: [] as string[][], states: [] as Published[], reads: 0, storeGets: 0, readPaths: [] as string[], stats: [] as string[] }
+  const seen = { statuses: [] as (string | undefined)[], forks: 0, subagentStops: 0, logs: [] as string[], prompts: [] as string[], compacts: 0, runs: [] as string[][], states: [] as Published[], reads: 0, storeGets: 0, readPaths: [] as string[], stats: [] as string[], writes: [] as [string, string][] }
   let now = START
   let timers: { due: number; resolve: () => void }[] = []
   const cacheReadOf = () => (typeof o.cacheRead === 'function' ? o.cacheRead() : o.cacheRead) ?? 1_000_000
@@ -146,7 +146,8 @@ function engine(on: On, o: Opts = {}) {
     const path = e.path.replace(/^[A-Za-z]:/, '').replace(/\\/g, '/')
     return { value: files[path] !== undefined || (o.tooBig === true && path === TRANSCRIPT) } as never
   })
-  on('fs.write', () => ({ value: undefined }) as never)
+  // A write lands in `files`, as a real one does: the next settings read finds it (step 40)
+  on('fs.write', (_, e) => { const path = e.path.replace(/^[A-Za-z]:/, '').replace(/\\/g, '/'); seen.writes.push([path, e.text]); files[path] = e.text; return { value: undefined } as never })
   on('process.run', (_, e) => {
     seen.runs.push([...e.argv])
     if (e.argv[0] === 'node' && e.argv[1] === '-e') {
@@ -2613,5 +2614,341 @@ describe('[17.2.4] ITEM-034.c the observation debug lines', () => {
     expect(splitFromAgentTranscript('')).toBeUndefined()
     // A main row counts too, as in splitFromTranscript
     expect(splitFromAgentTranscript(row(0, 500))).toEqual({ split: { '1h': 0, '5m': 500 } })
+  })
+})
+
+// Step 40 (human, 2026-10-25: "/ai-dlc:cache-keepalive off does not turn it off after a reload"): on and
+// off write the env of .claude/settings.local.json, the one level that outranks the repository's files;
+// the status line is hidden while the master is off.
+describe('[step 40] /ai-dlc:cache-keepalive on|off writes the env of .claude/settings.local.json', () => {
+  const LOCAL = `${ROOT}/.claude/settings.local.json`
+  const REPO = `${ROOT}/.ai-dlc/cache-keepalive.json`
+  const written = (seen: { writes: [string, string][] }) => JSON.parse(seen.writes.filter(([p]) => p === LOCAL).at(-1)![1])
+
+  test('off writes AI_DLC_KEEPALIVE_ENABLED=false into a missing file, says where, and hides the status line', async ($, on) => {
+    const { seen, status } = engine(on)
+    await $.classic.Stop(stop())
+    expect(status()).toBeDefined()
+    const { text } = await keepalive($, 'off')
+    expect(seen.writes.map(([p]) => p)).toEqual([LOCAL])
+    expect(written(seen)).toEqual({ env: { AI_DLC_KEEPALIVE_ENABLED: 'false' } })
+    expect(text).toContain('AI_DLC_KEEPALIVE_ENABLED=false written to the env of .claude/settings.local.json')
+    expect(text).toContain('wins over .claude/settings.json and .ai-dlc/cache-keepalive.json')
+    expect(status()).toBeUndefined()
+    await settle()
+    expect(seen.states.at(-1)?.enabled).toBe(false)
+  })
+
+  test('off stops a running track: no ping goes out afterwards', async ($, on) => {
+    const { seen, clock } = engine(on)
+    await $.classic.Stop(stop())
+    await keepalive($, 'off')
+    await clock.fire(120)
+    expect(seen.forks).toBe(0)
+  })
+
+  test('on after off writes true; the next Stop with tasks arms the tracks and shows the status line again', async ($, on) => {
+    const { seen, status, line } = engine(on)
+    await keepalive($, 'off')
+    await keepalive($, 'on')
+    expect(written(seen)).toEqual({ env: { AI_DLC_KEEPALIVE_ENABLED: 'true' } })
+    await settle()
+    expect(seen.states.at(-1)?.enabled).toBe(true)
+    await $.classic.Stop(stop())
+    expect(status()).toBeDefined()
+    expect(line('1h')).toContain('armed')
+  })
+
+  test('every other key of the file stays, in order: other settings, other env variables', async ($, on) => {
+    const { seen } = engine(on, { files: { [LOCAL]: JSON.stringify({ permissions: { allow: ['Bash(ls)'] }, env: { FOO: '1', AI_DLC_KEEPALIVE_ENABLED: 'true' }, model: 'x' }, null, 2) } })
+    await keepalive($, 'off')
+    const doc = written(seen)
+    expect(doc).toEqual({ permissions: { allow: ['Bash(ls)'] }, env: { FOO: '1', AI_DLC_KEEPALIVE_ENABLED: 'false' }, model: 'x' })
+    expect(Object.keys(doc)).toEqual(['permissions', 'env', 'model'])
+  })
+
+  test('a CRLF file stays CRLF, and the file ends with one newline', async ($, on) => {
+    const { seen } = engine(on, { files: { [LOCAL]: JSON.stringify({ env: {} }, null, 2).replace(/\n/g, '\r\n') + '\r\n' } })
+    await keepalive($, 'off')
+    const text = seen.writes.at(-1)![1]
+    expect(text).toContain('\r\n')
+    expect(text.replace(/\r\n/g, '')).not.toContain('\n')
+    expect(text.endsWith('}\r\n')).toBe(true)
+  })
+
+  test('--track 5m off writes only the 5m switch: the master and the 1h track stay on', async ($, on) => {
+    const { seen, status, line } = engine(on, { split: [1_000, 2_000] })
+    await keepalive($, 'off --track 5m')
+    expect(written(seen)).toEqual({ env: { AI_DLC_KEEPALIVE_5M_ENABLED: 'false' } })
+    await $.classic.Stop(stop())
+    expect(line('1h')).toContain('armed')
+    expect(line('5m')).toContain('off')
+    expect(status()).toBeDefined()
+  })
+
+  test('--track both writes both track variables and not the master', async ($, on) => {
+    const { seen } = engine(on)
+    await keepalive($, 'off --track both')
+    expect(written(seen)).toEqual({ env: { AI_DLC_KEEPALIVE_1H_ENABLED: 'false', AI_DLC_KEEPALIVE_5M_ENABLED: 'false' } })
+  })
+
+  test('the written value outranks the repository file that says the opposite (the reload that "did nothing")', async ($, on) => {
+    const { seen, status } = engine(on, { trusted: true, files: { [REPO]: JSON.stringify({ enabled: true }) } })
+    await keepalive($, 'off')
+    await $.classic.Stop(stop())
+    expect(status()).toBeUndefined()
+    await settle()
+    expect(seen.states.at(-1)?.enabled).toBe(false)
+    expect((await keepalive($)).text).toMatch(/^keepalive: off \(/)
+    expect(seen.forks).toBe(0)
+  })
+
+  test('a session switch is dropped, because it outranks every settings file: on after off --session applies the file', async ($, on) => {
+    const { seen } = engine(on)
+    await keepalive($, 'off --session')
+    await settle()
+    expect(seen.states.at(-1)).toMatchObject({ enabled: false, sessionMaster: 'off' })
+    await keepalive($, 'on')
+    expect(written(seen)).toEqual({ env: { AI_DLC_KEEPALIVE_ENABLED: 'true' } })
+    await settle()
+    expect(seen.states.at(-1)?.enabled).toBe(true)
+    await settle()
+    expect(seen.states.at(-1)?.sessionMaster).toBeUndefined()
+  })
+
+  test('--session writes no file, touches only this session, and says so', async ($, on) => {
+    const { seen, status } = engine(on)
+    await $.classic.Stop(stop())
+    const { text } = await keepalive($, 'off --session')
+    expect(seen.writes).toEqual([])
+    expect(text).toContain('keep-alive off for this session; no settings file written')
+    await settle()
+    expect(seen.states.at(-1)).toMatchObject({ enabled: false, sessionMaster: 'off' })
+    expect(status()).toBeUndefined()
+  })
+
+  test('--session with --track switches only that track for this session', async ($, on) => {
+    const { seen } = engine(on, { split: [1_000, 2_000] })
+    await keepalive($, 'off --session --track 1h')
+    await settle()
+    expect(seen.writes).toEqual([])
+    const t = (n: string) => seen.states.at(-1)!.tracks.find(x => x.name === n) as { sessionSwitch?: string }
+    expect(t('1h').sessionSwitch).toBe('off')
+    expect(t('5m').sessionSwitch).toBeUndefined()
+  })
+
+  test('--machine with on or off is refused with the usage text and writes nothing', async ($, on) => {
+    const { seen } = engine(on)
+    const { text } = await keepalive($, 'off --machine')
+    expect(text).toContain('Usage: /ai-dlc:cache-keepalive')
+    expect(seen.writes).toEqual([])
+  })
+
+  test('a file with comments is not rewritten (the comments would be lost): nothing written, the reason given', async ($, on) => {
+    const { seen } = engine(on, { files: { [LOCAL]: '{ // mine\n "env": {} }' } })
+    const { text } = await keepalive($, 'off')
+    expect(seen.writes).toEqual([])
+    expect(text).toContain('is not plain JSON')
+    expect(text).toContain('nothing written')
+  })
+
+  for (const [title, content, reason] of [
+    ['a top level that is not an object', '[1]', 'the top level is not an object'],
+    ['an env that is not an object', JSON.stringify({ env: 'x' }), 'env is not an object'],
+  ] as const) {
+    test(`${title}: nothing written, the reason given`, async ($, on) => {
+      const { seen } = engine(on, { files: { [LOCAL]: content } })
+      const { text } = await keepalive($, 'off')
+      expect(seen.writes).toEqual([])
+      expect(text).toContain(reason)
+    })
+  }
+
+  test('a file that exists but cannot be read is not overwritten', async ($, on) => {
+    const { seen } = engine(on, { files: { [LOCAL]: '{"env":{}}' }, failRead: new Set([LOCAL]) })
+    const { text } = await keepalive($, 'off')
+    expect(seen.writes).toEqual([])
+    expect(text).toContain('exists but could not be read; nothing written')
+  })
+
+  test('an empty file is treated as an empty object', async ($, on) => {
+    const { seen } = engine(on, { files: { [LOCAL]: '  \n' } })
+    await keepalive($, 'off')
+    expect(written(seen)).toEqual({ env: { AI_DLC_KEEPALIVE_ENABLED: 'false' } })
+  })
+})
+
+describe('[step 40] the status line is hidden while the master is off', () => {
+  const local = (env: Record<string, string>) => ({ [`${ROOT}/.claude/settings.local.json`]: JSON.stringify({ env }) })
+
+  test('master off in the settings: a Stop with tasks shows no status line, and the state says disabled', async ($, on) => {
+    const { seen, status } = engine(on, { files: local({ AI_DLC_KEEPALIVE_ENABLED: 'false' }) })
+    await $.classic.Stop(stop())
+    expect(status()).toBeUndefined()
+    expect(seen.statuses.every(s => s === undefined)).toBe(true)
+    await settle()
+    expect(seen.states.at(-1)?.enabled).toBe(false)
+  })
+
+  test('both tracks off in the settings: no status line either (no track allowed)', async ($, on) => {
+    const { status } = engine(on, { files: local({ AI_DLC_KEEPALIVE_1H_ENABLED: 'false', AI_DLC_KEEPALIVE_5M_ENABLED: 'false' }) })
+    await $.classic.Stop(stop())
+    expect(status()).toBeUndefined()
+  })
+
+  test('one track allowed is enough to show it', async ($, on) => {
+    const { status } = engine(on, { files: local({ AI_DLC_KEEPALIVE_5M_ENABLED: 'false' }) })
+    await $.classic.Stop(stop())
+    expect(status()).toBeDefined()
+  })
+
+  test('status off keeps hiding it with the master on (AC-17.6.5)', async ($, on) => {
+    const { status } = engine(on, { files: local({ AI_DLC_KEEPALIVE_STATUS: 'off' }) })
+    await $.classic.Stop(stop())
+    expect(status()).toBeUndefined()
+  })
+
+  test('the command still answers while the master is off, so it can be turned back on', async ($, on) => {
+    engine(on, { files: local({ AI_DLC_KEEPALIVE_ENABLED: 'false' }) })
+    const { text } = await keepalive($)
+    expect(text).toMatch(/^keepalive: off \(/)
+    expect(text).toContain('nothing pinged')
+  })
+})
+
+// The reply of a bare /ai-dlc:cache-keepalive while nothing may ping says why (offCause, keepalive.ts): the
+// session's master switch, the master setting with its source, or each track that is off.
+describe('[step 40] the reason keep-alive is off, as the command says it (offCause)', () => {
+  const local = (env: Record<string, string>) => ({ [`${ROOT}/.claude/settings.local.json`]: JSON.stringify({ env }) })
+  const reply = async ($: Parameters<TestBody>[0]) => (await keepalive($)).text
+
+  test('the session master switched off: "switched off for this session"', async ($, on) => {
+    engine(on)
+    await keepalive($, 'off --session')
+    const text = await reply($)
+    expect(text.startsWith('keepalive: off (switched off for this session); nothing pinged')).toBe(true)
+    expect(text).toContain('keep-alive: off for this session') // and the switches in force are listed after it
+  })
+
+  test('the master setting false: "enabled=false, <where it came from>"', async ($, on) => {
+    engine(on, { files: local({ AI_DLC_KEEPALIVE_ENABLED: 'false' }) })
+    const text = await reply($)
+    expect(text).toMatch(/^keepalive: off \(enabled=false, [^)]+\); nothing pinged/)
+    expect(text).toContain('settings.local.json')
+  })
+
+  test('the master setting false from the repository file names that file', async ($, on) => {
+    engine(on, { trusted: true, files: { [`${ROOT}/.ai-dlc/cache-keepalive.json`]: JSON.stringify({ enabled: false }) } })
+    expect(await reply($)).toMatch(/^keepalive: off \(enabled=false, [^)]*cache-keepalive\.json[^)]*\); nothing pinged/)
+  })
+
+  test('both tracks switched off for this session: each says so, joined by "; "', async ($, on) => {
+    engine(on)
+    await keepalive($, 'off --session --track both')
+    const text = await reply($)
+    expect(text).toContain('1h track switched off for this session')
+    expect(text).toContain('5m track switched off for this session')
+    expect(text).toMatch(/^keepalive: off \(1h track switched off for this session; 5m track switched off for this session\); nothing pinged/)
+  })
+
+  test('both tracks false in the settings: "<track>.enabled=false, <source>" for each', async ($, on) => {
+    engine(on, { files: local({ AI_DLC_KEEPALIVE_1H_ENABLED: 'false', AI_DLC_KEEPALIVE_5M_ENABLED: 'false' }) })
+    const text = await reply($)
+    expect(text).toMatch(/^keepalive: off \(oneHour\.enabled=false, [^;]+; fiveMinute\.enabled=false, [^)]+\); nothing pinged/)
+  })
+
+  test('one track off by its session switch and the other by its setting: each its own reason', async ($, on) => {
+    engine(on, { files: local({ AI_DLC_KEEPALIVE_5M_ENABLED: 'false' }) })
+    await keepalive($, 'off --session --track 1h')
+    expect(await reply($)).toMatch(/^keepalive: off \(1h track switched off for this session; fiveMinute\.enabled=false, [^)]+\); nothing pinged/)
+  })
+
+  test('with one track still allowed the command does not report off at all', async ($, on) => {
+    engine(on, { files: local({ AI_DLC_KEEPALIVE_5M_ENABLED: 'false' }) })
+    expect(await reply($)).not.toMatch(/^keepalive: off \(/)
+  })
+})
+
+// T17.7 (ITEM-076): handoff.onWhenOff is read from the same levels as every gated key. Its effect at the seed
+// of an automatic handoff is tested where the handoff runs (auto-handoff.test.tsx, 'handoff.onWhenOff').
+describe('[T17.7] handoff.onWhenOff, the setting', () => {
+  test('it is a gated boolean that defaults to true, with its variable', () => {
+    expect(TRUST_GATED).toContain('handoff.onWhenOff')
+    expect(SETTINGS.find(s => s.key === 'handoff.onWhenOff')).toMatchObject({ env: 'AI_DLC_KEEPALIVE_HANDOFF_ON_WHEN_OFF', kind: 'boolean', default: true })
+    expect(defaults().handoff).toEqual({ carryOver: true, onWhenOff: true })
+  })
+
+  test('a value equal to the default (true) is not "differing": no trust warning, whatever the folder', async ($, on) => {
+    const { seen } = engine(on, { files: { [`${ROOT}/.claude/settings.json`]: JSON.stringify({ env: { AI_DLC_KEEPALIVE_HANDOFF_ON_WHEN_OFF: 'true' } }) } })
+    await keepalive($)
+    expect(seen.logs.some(l => l.includes('does not trust'))).toBe(false)
+  })
+
+  test('untrusted, false from the env of settings.json and from the repository file is skipped with a warning naming it', async ($, on) => {
+    const { seen } = engine(on, { files: { [`${ROOT}/.claude/settings.json`]: JSON.stringify({ env: { AI_DLC_KEEPALIVE_HANDOFF_ON_WHEN_OFF: 'false' } }), [`${ROOT}/.ai-dlc/cache-keepalive.json`]: JSON.stringify({ handoff: { onWhenOff: false } }) } })
+    await keepalive($)
+    expect(seen.logs.some(l => l.includes(`AI_DLC_KEEPALIVE_HANDOFF_ON_WHEN_OFF=${previewValue('false')} in the env of .claude/settings.json ignored: Claude Code does not trust this folder`))).toBe(true)
+    expect(seen.logs.some(l => l.includes(`handoff.onWhenOff=${previewValue(false)} in .ai-dlc/cache-keepalive.json ignored: Claude Code does not trust this folder`))).toBe(true)
+  })
+
+  test('untrusted, false from the env of settings.local.json still applies, with nothing logged as untrusted', async ($, on) => {
+    const { seen } = engine(on, { files: { [`${ROOT}/.claude/settings.local.json`]: JSON.stringify({ env: { AI_DLC_KEEPALIVE_HANDOFF_ON_WHEN_OFF: 'false' } }) } })
+    await keepalive($)
+    expect(seen.logs.some(l => l.includes('does not trust'))).toBe(false)
+  })
+
+  test('trusted, false from the env of settings.json applies with no warning', async ($, on) => {
+    const { seen } = engine(on, { trusted: true, files: { [`${ROOT}/.claude/settings.json`]: JSON.stringify({ env: { AI_DLC_KEEPALIVE_HANDOFF_ON_WHEN_OFF: 'false' } }) } })
+    await keepalive($)
+    expect(seen.logs.some(l => l.includes('does not trust'))).toBe(false)
+  })
+})
+
+// AC-17.6.9 and 17.6.10: in VS Code the command opens the keep-alive Pane, which draws the band's tree
+// (title, master button, a row and a button per track), and its rows follow the state without reopening.
+describe('[T17.6] the keep-alive Pane (VS Code)', () => {
+  const opened: { id: string; title?: string }[] = []
+  const withPane = (on: On, o: Opts = {}) => {
+    opened.length = 0
+    const e = engine(on, o)
+    on('ui.open', (_, ev) => (opened.push(ev as never), { value: { isPlaced: true } }) as never)
+    return e
+  }
+  const pane = ($: Parameters<TestBody>[0]) => $.ui.mount({ plugin: 'ai-dlc', surface: 'vscode', component: 'Pane', requestId: 'keepalive', props: { title: 'keepalive', isFocused: false, bodyColumns: 100, placement: 'dock', scroll: { offset: 0, bodyRows: 40 }, view: {} } } as never)
+  const textOf = (n: unknown): string => typeof n === 'string' ? n : Array.isArray(n) ? n.map(textOf).join('') : n && typeof n === 'object' ? Object.entries(n).map(([k, v]) => k === 'children' || k === 'text' || k === 'label' || k === 'props' ? textOf(v) : '').join('') : ''
+
+  test('[AC-17.6.9] the bare command opens the Pane with the title "ai-dlc cache-keepalive" when a VS Code surface is attached', async ($, on) => {
+    withPane(on)
+    await keepalive($)
+    expect(opened).toEqual([expect.objectContaining({ id: 'keepalive', title: 'ai-dlc cache-keepalive' })])
+  })
+
+  test('no Pane on the Terminal or Desktop alone (they have the band)', async ($, on) => {
+    withPane(on, { surfaces: ['terminal'] })
+    await keepalive($)
+    expect(opened).toEqual([])
+  })
+
+  test('[AC-17.6.9] the Pane draws the band\'s tree: the title with the master button, then the 5m row, then the 1h row, each with its button', async ($, on) => {
+    withPane(on)
+    const ui = await pane($)
+    const text = textOf(await ui.drawn())
+    expect(text.indexOf('⚠ ai-dlc cache-keepalive:')).toBe(0)
+    expect(text.indexOf('keepalive 5m:')).toBeGreaterThan(0)
+    expect(text.indexOf('keepalive 1h:')).toBeGreaterThan(text.indexOf('keepalive 5m:'))
+    for (const key of ['ka-master', 'ka-5m', 'ka-1h']) expect(await ui.find({ type: 'Button', key })).toBeDefined()
+    await ui.unmount()
+  })
+
+  test('[AC-17.6.10] a press in the Pane acts on this session and its rows change without reopening', async ($, on) => {
+    withPane(on)
+    const ui = await pane($)
+    expect(textOf(await ui.drawn())).not.toContain('(disabled)')
+    await ui.press({ key: 'ka-master' })
+    await settle()
+    const after = textOf(await ui.drawn())
+    expect(after).toContain('keepalive 5m: off (disabled)')
+    expect(after).toContain('keepalive 1h: off (disabled)')
+    await ui.unmount()
   })
 })

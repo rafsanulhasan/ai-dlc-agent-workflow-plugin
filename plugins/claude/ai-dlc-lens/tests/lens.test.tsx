@@ -6377,3 +6377,56 @@ describe('step 36.3: old view state, docked mode, and a place switch with the pa
     await wp.unmount()
   })
 })
+
+// ITEM-073 (T22.e, AC-22.6.1 to 22.6.4): the agent pane's Usage section is Context Lab; the arrow (hand-off) pane keeps Usage.
+describe('[AC-22.6] Context Lab in the agent pane, Usage in the arrow pane', () => {
+  const headings = async (ui: any) => ((await ui.findAll({ type: 'Text' })) as any[]).map((x: any) => String(x.text ?? '').trim())
+
+  test('[AC-22.6.1, 22.6.4] the agent pane section reads Context Lab (<used> / <window>), capital L, and no section there reads Usage', async ($, on) => {
+    await seed($, on)
+    const lp = await chartPane($)
+    await lp.press({ key: 'agent-a1' })
+    await lp.unmount()
+    const ag = await $.ui.mount({ ...pane('ai-dlc-lens-agent'), surface: 'vscode' })
+    const h = await headings(ag)
+    expect(h.some(t => /^Context Lab \(.+ \/ .+\)$/.test(t))).toBe(true)
+    expect(h.some(t => /^Context lab/.test(t))).toBe(false)
+    expect(h.some(t => /^Usage\b/.test(t))).toBe(false)
+    await ag.unmount()
+  })
+
+  test('[AC-22.6.1] it is collapsed by default, with the same button key as before the rename (agent-usage)', async ($, on) => {
+    await seed($, on)
+    const lp = await chartPane($)
+    await lp.press({ key: 'agent-a1' })
+    await lp.unmount()
+    const ag = await $.ui.mount({ ...pane('ai-dlc-lens-agent'), surface: 'vscode' })
+    expect((await ag.find({ type: 'Button', key: 'agent-usage' }))?.text).toBe('[+]')
+    await ag.unmount()
+  })
+
+  test('[AC-22.6.3] toggling it opens and closes the section: the rows appear and go', async ($, on) => {
+    await seed($, on)
+    const lp = await chartPane($)
+    await lp.press({ key: 'agent-a1' })
+    await lp.unmount()
+    const ag = await $.ui.mount({ ...pane('ai-dlc-lens-agent'), surface: 'vscode' })
+    await ag.press({ key: 'agent-usage' })
+    expect((await ag.find({ type: 'Button', key: 'agent-usage' }))?.text).toBe('[-]')
+    await ag.press({ key: 'agent-usage' })
+    expect((await ag.find({ type: 'Button', key: 'agent-usage' }))?.text).toBe('[+]')
+    await ag.unmount()
+  })
+
+  test('[AC-22.6.2] the arrow pane still reads Usage (in <n>, out <n>)', async ($, on) => {
+    await seed($, on)
+    const lp = await chartPane($)
+    await lp.press({ key: 'edge-a1' })
+    await lp.unmount()
+    const edge = await $.ui.mount({ ...pane('ai-dlc-lens-edge'), surface: 'vscode' })
+    const h = await headings(edge)
+    expect(h.some(t => /^Usage \(in .+, out .+\)$/.test(t))).toBe(true)
+    expect(h.some(t => /^Context Lab/.test(t))).toBe(false)
+    await edge.unmount()
+  })
+})

@@ -798,3 +798,16 @@ root 17, step 17.2.4; spec keepalive-cache-status line 82, D2a; LLD rev 5,
   buttons instead and write no file; `--machine` is refused. Durations are
   unchanged. Tests: the parse test gains the new forms; the usage text names
   `on|off`.
+- **The off reply names its cause (step 41, 2026-10-25).** With nothing on,
+  `/ai-dlc:cache-keepalive` no longer always says `enabled=false`: `offCause`
+  says `switched off for this session` for the session's master switch,
+  `enabled=false, <source>` for the master setting, and otherwise, per track,
+  `<n> track switched off for this session` or
+  `<track>.enabled=false, <source>`. Code review finding, cr-std-41.
+- **The seeded session's lines follow the carried switches (step 41,
+  2026-10-25).** `applyHandoffSeed` now sets every idle track from the
+  switches in force after the handoff: `disabled` when it is off, else its
+  idle reason, instead of keeping the `session ended` the ended session
+  left. A track switched off in S1 so reads `off (disabled)` in S2, in step
+  with its `[on]` button (AC-17.7.1). Test finding, sqa-41; spec blocker,
+  cr-spec-41.
