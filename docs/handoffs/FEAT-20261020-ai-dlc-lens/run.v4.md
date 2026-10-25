@@ -11,7 +11,7 @@ owner: orchestrator
 session: 7ac45d8b-a3fc-4480-94f2-9c445c6f33f2 (took over from 450673c8 via automatic handoff, 2026-10-25; same version kept)
 branch: feat/ai-dlc-lens (feat/wf-1 merged at 734b33d)
 commit: b5080ce
-last-record: 38-agent-manager-to-orchestrator.handback.md
+last-record: 39-documentation-writer-to-orchestrator.handback.md
 updated: 2026-10-25
 wave: 3 (Build)
 ---
@@ -264,3 +264,5 @@ T17.1 (51fedb5) and T17.2 (f9d29fe) committed by session 37788079. Human (2026-1
 2bk. Step 37 done (verified): T22.a-f, T17.3 committed (80f7642..5a6ee17); T17.3c skipped (H1). Continuing: step 38, fresh agent-manager for T17.6, T17.7, T22.g, T17.5, T20.3b, T20.3c, T20.6. Open: TS2345 keepalive.test.ts:1586; repo test fails only from the human's cache-keepalive.json edit.
 2bl. Human (2026-10-25): "don't pause, continue till you can": no reload pauses during the low-budget build; chain the remaining tasks without stopping.
 2bm. Step 38 done (verified): T17.6, T17.7, T22.g, T20.3b, T20.3c, T20.6 committed (8116c19..554c54c); T17.5 skipped (README-only ACs, docs deferred). Wave E1 build complete except T17.3c (H1 2026-10-29). Owed later: tests (no suites for Cache Lab, diagrams), reviews, docs (steps 36-38, T17.5), TS2345, README pin test PENDING_DOCS. Not pushed.
+2bn. Human (2026-10-25) after reload: "continue" -> chose Docs now. Step 39: documentation-writer writes the owed docs (steps 36-38, T17.5). commit=2800cb3.
+2bo. Step 39 done (verified, c986108): owed docs for steps 36-38 and T17.5 written (markers: 36 none; 37-38 in progress). T17.5 done by docs. Still owed: tests, reviews, critique for 37-39; README test PENDING_DOCS rows can now be re-enabled (sqa); TS2345 keepalive.test.ts:1593. Not pushed.
