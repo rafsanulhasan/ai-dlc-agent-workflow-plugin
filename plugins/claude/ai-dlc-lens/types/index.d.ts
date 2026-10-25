@@ -241,6 +241,8 @@ declare module 'claude-code' {
       stepSel: Record<string, string>
       /** Step 36.2, amendment 8: the band closed with its close, which it has only while no workflow is in progress. */
       bandClosed: boolean
+      /** ITEM-070: the Cache Lab load: `idle`, `loading`, `ready` or `error` (with its reason); `rev` grows with each new set of figures. */
+      cacheLab: { status: string; reason: string; rev: number }
     }
   }
 }

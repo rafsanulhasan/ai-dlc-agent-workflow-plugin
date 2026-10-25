@@ -69,6 +69,8 @@ export const SPEC = {
     def: true,
     doc: "Show the Cache keep-alive section in every agent pane (collapsed like every section): how long keep-alive kept the cache warm per track (5m, 1h) and what cache reads saved, priced from costingPath. /ai-dlc:lens-keepalive turns it off and on",
   },
+  // ITEM-070 (Q-CL19): keep the Cache Lab window across /reload-plugins.
+  cacheLabKeepWindowOnReload: { kind: 'bool', def: false, doc: 'Keep the Cache Lab window across /reload-plugins (development and testing); off resets it to 7d' },
   // Step 1.5: how panels open, where the chart is drawn, and the workflow view's place and layout.
   panelOpenMode: {
     kind: 'enum',

@@ -160,6 +160,8 @@ import { SVG_CAP, avatarKey, avatarSvg, checkBytes, classify, isInside, own, tru
 import type { AvatarImage, ChartAvatars } from './avatar'
 import { FileCache, batches, checkEnvelope, folderOf, mergeCalls, sessionOfTranscript } from './transcripts'
 import type { Call, FileRecord, ListData, ReadData } from './transcripts'
+import { DEFAULT_WINDOW, WINDOWS, WINDOW_LABELS, classify as classifyCalls, count, labOf, medianK, noPriceNote, pct, presetOf, priceOfCosting, usd, windowOf as labWindowOf, withPreset } from './cache-lab'
+import type { CacheLab, WindowPreset } from './cache-lab'
 import { anomaliesOf, anomalyLine, applySettings, colorOf, detectAgents, detectRun, diffAnomalies, edgeAgentOf, frontMatter, handoffsRoot, normDir, recordName, runsToRead, trackWaiting, worstOf } from './anomaly'
 
 // Pane ids: 1-64 of letters, digits, `_` and `-` (PaneOpenArgs.id, d.ts:7590; `$.ui.open`, d.ts:2524), so
@@ -264,6 +266,8 @@ const tabsMinA = atom({ plugin: 'ai-dlc-lens', key: 'tabsMin' } as const, {})
 /** Step 8.6.1: the step chart full screen shows, per workflow; absent: the first in order, the highest code. */
 const stepSelA = atom({ plugin: 'ai-dlc-lens', key: 'stepSel' } as const, {})
 const kaCyclesA = atom({ plugin: 'ai-dlc-lens', key: 'keepaliveCycles' } as const, {}, { shape: 'ka-cycles-1' })
+// ITEM-070: the Cache Lab load (its figures are module memory; `rev` redraws the accordion).
+const cacheLabA = atom({ plugin: 'ai-dlc-lens', key: 'cacheLab' } as const, { status: 'idle', reason: '', rev: 0 })
 /** The settings levels of the last load, highest first: per-agent keys are resolved from them. */
 let levelsNow: Level[] = []
 /** Avatar key -> its image as loaded, or why there is none, and the inputs it was loaded from. Module-local: images can be large. */
@@ -1963,6 +1967,146 @@ function edgeBody(
  * cache-read tokens. Derived: the kept-warm time (`keptWarm`) and the savings, priced from the metadata
  * file only (`savingsOfAgent`), `—` when a price is missing.
  */
+// ---- Cache Lab (ITEM-070, cache-lab LLD section 7): the accordion, its window and its load ----
+
+const CACHE_LAB = 'lens:cachelab'
+const WINDOW_STORE_KEY = 'lens:cachelab:window'
+/** The last figures read (module memory; the `cacheLab` atom's `rev` redraws the accordion when they change). */
+let labNow: CacheLab | null = null
+let labRunning = false
+let labAgain = false
+/** The window per chain while `cacheLabKeepWindowOnReload` is off: module memory, reset by /reload-plugins only. */
+const windowMemory = new Map<string, WindowPreset>()
+
+/** The id the window choice is kept under, and the sessions "This session" covers. */
+const labChain = (): { id: string; sessions: string[] } | null => (transcriptSession === null ? null : { id: transcriptSession, sessions: [transcriptSession] })
+
+/** The window preset of the current chain: `$.store` when `cacheLabKeepWindowOnReload` is on, else module memory. */
+async function windowPreset($: EngineInterface): Promise<WindowPreset> {
+  const c = labChain()
+  if (c === null) return DEFAULT_WINDOW
+  if (cfg.cacheLabKeepWindowOnReload === true) {
+    try {
+      return presetOf(await $.store.get(WINDOW_STORE_KEY), c.id)
+    } catch {
+      return DEFAULT_WINDOW
+    }
+  }
+  return windowMemory.get(c.id) ?? DEFAULT_WINDOW
+}
+
+async function setWindowPreset($: EngineInterface, preset: WindowPreset) {
+  const c = labChain()
+  const id = c === null ? '' : c.id
+  windowMemory.set(id, preset)
+  if (cfg.cacheLabKeepWindowOnReload === true) await $.store.set(WINDOW_STORE_KEY, withPreset(await $.store.get(WINDOW_STORE_KEY), id, preset))
+}
+
+/** Reads the transcripts and computes the figures of the current window; one load at a time (a press during one runs another after). Never throws. */
+async function loadLab($: EngineInterface) {
+  if (labRunning) {
+    labAgain = true
+    return
+  }
+  labRunning = true
+  try {
+    do {
+      labAgain = false
+      await update($, cacheLabA, x => ({ ...x, status: 'loading', reason: '' }))
+      const chain = labChain()
+      const preset = await windowPreset($)
+      const w = labWindowOf(preset, nowMs(), chain?.sessions ?? [])
+      const r = await readTranscriptCalls($, w.sessions !== undefined || w.from <= 0 ? null : w.from)
+      if (!r.ok) {
+        labNow = null
+        await update($, cacheLabA, x => ({ status: 'error', reason: r.reason, rev: x.rev + 1 }))
+        continue
+      }
+      labNow = labOf(classifyCalls(r.calls), priceOfCosting(await read($, costingA)), w)
+      await update($, cacheLabA, x => ({ status: 'ready', reason: '', rev: x.rev + 1 }))
+    } while (labAgain)
+  } catch (err) {
+    labNow = null
+    lensFail('cache lab', err)
+    await update($, cacheLabA, x => ({ status: 'error', reason: String(err).split(/\r?\n/)[0]!, rev: x.rev + 1 })).catch(() => undefined)
+  } finally {
+    labRunning = false
+  }
+}
+
+/** Cache Lab is collapsed until opened (its own default: the figures are never read while it is closed). */
+const labOpen = (open: Record<string, boolean>) => open[CACHE_LAB] ?? false
+
+async function toggleLab($: EngineInterface) {
+  let opened = false
+  await update($, cardOpenA, m => {
+    const o = m as Record<string, boolean>
+    opened = !(o[CACHE_LAB] ?? false)
+    return { ...o, [CACHE_LAB]: opened }
+  })
+  if (opened) await loadLab($)
+}
+
+/** The Cache Lab accordion of the lens view: window row, savings row, cards row (AC-22.2.1 order). */
+async function cacheLabSection($: EngineInterface, t: any, open: Record<string, boolean>, s: LensSettings) {
+  const { Box, Text, Button } = t
+  const state = await read($, cacheLabA)
+  const o = labOpen(open)
+  const preset = await windowPreset($)
+  const lab = labNow
+  const money = (n: number) => (lab !== null && lab.priced ? usd(n) : 'no price')
+  const figures = () => {
+    if (state.status === 'loading' && lab === null) return [<Text dimColor wrap="wrap">reading transcripts...</Text>]
+    if (state.status === 'error') return [<Text color="red" wrap="wrap">{state.reason}</Text>]
+    if (lab === null) return [<Text dimColor wrap="wrap">{transcriptFolder === null ? 'transcripts not located yet' : 'not read yet: press ↻'}</Text>]
+    return [
+      kv(t, 'Saved by cache', money(lab.savedUsd)),
+      kv(t, 'Lost to busts', money(lab.lostUsd)),
+      kv(t, 'NET', money(lab.netUsd)),
+      lab.priced && lab.unpricedCalls > 0 ? <Text dimColor wrap="wrap">{noPriceNote(lab.unpricedCalls)}</Text> : null,
+      kv(t, 'Cache Hit %', pct(lab.hitPct)),
+      kv(t, 'Tokens Saved', count(lab.tokensSaved)),
+      kv(t, 'Bust events', count(lab.bustEvents)),
+      kv(t, 'Median baseline', medianK(lab.medianBaseline)),
+      <Text dimColor wrap="wrap">
+        base prices, from {s.costingPath}{state.status === 'loading' ? ' · reading transcripts...' : ''}
+      </Text>,
+    ]
+  }
+  return (
+    <Box key="cachelab" flexDirection="column" marginTop={1}>
+      <Text dimColor wrap="truncate">
+        {DIVIDER}
+      </Text>
+      <Box flexDirection="row" flexWrap="wrap">
+        <Button key="cachelab-open" label={o ? '[-]' : '[+]'} onPress={() => toggleLab($)} />
+        <Text bold wrap="wrap">
+          {' '}
+          Cache Lab
+        </Text>
+      </Box>
+      {o && (
+        <Box flexDirection="column" paddingLeft={2}>
+          <Box flexDirection="row" flexWrap="wrap" columnGap={1}>
+            {WINDOWS.map(w => (
+              <Button
+                key={`cachelab-w-${w}`}
+                label={w === preset ? `[${WINDOW_LABELS[w]}]` : WINDOW_LABELS[w]}
+                onPress={async () => {
+                  await setWindowPreset($, w)
+                  await loadLab($)
+                }}
+              />
+            ))}
+            <Button key="cachelab-reload" label="↻" onPress={() => loadLab($)} />
+          </Box>
+          {figures()}
+        </Box>
+      )}
+    </Box>
+  )
+}
+
 function keepaliveSection($: EngineInterface, t: any, open: Record<string, boolean>, s: LensSettings, id: string, ka: KeepaliveFigures) {
   const { Text } = t
   const head = ka.warm.map(w => `${w.track} ${fmtSpan(w.ms)}`).join(' · ')
@@ -2527,7 +2671,7 @@ async function workflowBody($: EngineInterface, t: any, site: ViewSite) {
             </Box>
           )),
         )
-  const head = [controls, pinnedNote, keepalive, noticeList(t, 'pane', loose, open), anomalySection]
+  const head = [controls, pinnedNote, keepalive, noticeList(t, 'pane', loose, open), anomalySection, site.where === 'pane' ? await cacheLabSection($, t, open, s) : null]
 
   // Drill-in, pressed in this view: the details with "< Back", in place of the runs.
   const drilled = drills['pane']
@@ -3645,6 +3789,8 @@ export const register: Register = on => {
     const result = await next(e)
     await captureKeepalive($)
     stopEvents += 1
+    // ITEM-070: new transcripts while Cache Lab is open.
+    if (labOpen(await read($, cardOpenA))) await loadLab($)
     const tasks: LensTask[] = (e.background_tasks ?? []).map(b => stopTask(b, 'Stop'))
     await patchAgent($, 'main', a => ({ ...a, bg: stampTasks(a.bg, mergeStopTasks(a.bg, tasks), nowMs()) }))
     if (probeOn) await plog($, 'E7', { site: 'classic.Stop', background_tasks: e.background_tasks ?? null })
