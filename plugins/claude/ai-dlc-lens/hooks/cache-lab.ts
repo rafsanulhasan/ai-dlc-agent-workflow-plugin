@@ -30,7 +30,8 @@ export type Window = { from: number; to: number; sessions?: readonly string[] }
 export const BUST_THRESHOLD = 10_000
 export const TTL_MS = { '5m': 300_000, '1h': 3_600_000 } as const
 
-export type Classified = Call & { first: boolean; bust: boolean }
+export type Attribution = 'ttlLapse' | 'prefixChange' | 'unknown'
+export type Classified = Call & { first: boolean; bust: boolean; base: 'first' | 'modelSwitch' | 'compaction' | 'unexplained'; attribution?: Attribution }
 
 const byTime = (a: Call, b: Call) => a.at - b.at || a.order - b.order
 
@@ -46,13 +47,36 @@ function groups(calls: readonly Call[]): Call[][] {
   return [...m.values()].map(g => [...g].sort(byTime))
 }
 
-/** First call and bust of every call, over the WHOLE stream (never the window: a window's first call is not its stream's first). */
+/** claude-lens's compaction rule: the cache read of the two calls before the one classified falls by more than half. */
+export function isCompaction(bp: Call | undefined, prev: Call | undefined): boolean {
+  return bp !== undefined && prev !== undefined && bp.cr > 0 && Math.max(0, (bp.cr - prev.cr) / bp.cr) > 0.5
+}
+
+/** Why a bust missed the cache (the stories' Terms, Miss attribution; LLD 5.1 rule order). */
+export function attributionOf(cur: Call, prev: Call, base: Classified['base']): Attribution {
+  if (base === 'modelSwitch') return 'unknown'
+  const ttls: number[] = []
+  if ((cur.cc5m ?? 0) > 0) ttls.push(TTL_MS['5m'])
+  if ((cur.cc1h ?? 0) > 0) ttls.push(TTL_MS['1h'])
+  if (ttls.length === 0) return 'unknown'
+  const gap = cur.at - prev.at
+  if (ttls.every(t => gap > t)) return 'ttlLapse'
+  if (ttls.every(t => gap <= t)) return base === 'compaction' ? 'unknown' : 'prefixChange'
+  return 'unknown'
+}
+
+/** First call, bust, base and miss attribution of every call, over the WHOLE stream (never the window: a window's first call is not its stream's first). */
 export function classify(calls: readonly Call[]): Classified[] {
   const out: Classified[] = []
   for (const g of groups(calls))
     g.forEach((cur, i) => {
       const first = i === 0
-      out.push({ ...cur, first, bust: !first && cur.cc > BUST_THRESHOLD })
+      const prev = g[i - 1]
+      const bust = !first && cur.cc > BUST_THRESHOLD
+      const base: Classified['base'] = first || prev === undefined ? 'first' : cur.model !== prev.model ? 'modelSwitch' : isCompaction(g[i - 2], prev) ? 'compaction' : 'unexplained'
+      const c: Classified = { ...cur, first, bust, base }
+      if (bust && prev !== undefined) c.attribution = attributionOf(cur, prev, base)
+      out.push(c)
     })
   return out
 }
@@ -67,6 +91,9 @@ export type CacheLab = {
   tokensSaved: number
   bustEvents: number
   medianBaseline: number | null
+  attribution: { ttlLapse: number; prefixChange: number; unknown: number }
+  /** Cache writes by TTL: `unknown` is what no 5m/1h split covers; the parts sum to `total`. */
+  ttlMix: { m5: number; h1: number; unknown: number; total: number }
   /** False when there is no price file, or no model of the window is in it. */
   priced: boolean
 }
@@ -113,6 +140,8 @@ export function labOf(all: readonly Classified[], priceOf: PriceOf | null, w: Wi
   let cc = 0
   let inp = 0
   let busts = 0
+  const attribution = { ttlLapse: 0, prefixChange: 0, unknown: 0 }
+  const ttlMix = { m5: 0, h1: 0, unknown: 0, total: 0 }
   for (const c of W) {
     const p = price(c.model)
     if (p !== null) anyPrice = true
@@ -124,8 +153,16 @@ export function labOf(all: readonly Classified[], priceOf: PriceOf | null, w: Wi
     cr += c.cr
     cc += c.cc
     inp += c.in
-    if (c.bust) busts += 1
+    if (c.bust) {
+      busts += 1
+      attribution[c.attribution ?? 'unknown'] += 1
+    }
+    const split = c.cc5m !== undefined || c.cc1h !== undefined
+    ttlMix.m5 += c.cc5m ?? 0
+    ttlMix.h1 += c.cc1h ?? 0
+    ttlMix.unknown += split ? Math.max(0, c.cc - (c.cc5m ?? 0) - (c.cc1h ?? 0)) : c.cc
   }
+  ttlMix.total = ttlMix.m5 + ttlMix.h1 + ttlMix.unknown
   // Median baseline: per session, the first call of its main stream that wrote the cache, when that call is in the window.
   const base = new Map<string, Classified>()
   for (const c of [...all].sort(byTime)) if (c.stream === 'main' && c.cc > 0 && !base.has(c.session)) base.set(c.session, c)
@@ -140,6 +177,8 @@ export function labOf(all: readonly Classified[], priceOf: PriceOf | null, w: Wi
     tokensSaved: cr,
     bustEvents: busts,
     medianBaseline: median(baselines),
+    attribution,
+    ttlMix,
     priced: priceOf !== null && (W.length === 0 || anyPrice),
   }
 }
@@ -198,6 +237,9 @@ export function usd(n: number): string {
 export const count = (n: number): string => n.toLocaleString('en-US')
 export const pct = (x: number | null): string => (x === null ? '—' : `${x.toFixed(1)}%`)
 export const medianK = (n: number | null): string => (n === null ? '—' : `${Math.round(n / 1000)}k`)
+export const ATTRIBUTION_LABELS: Record<Attribution, string> = { ttlLapse: 'TTL lapse', prefixChange: 'Prefix change', unknown: 'Unknown' }
+/** A part of a total as a percent, one decimal; none when the total is 0. */
+export const share = (part: number, total: number): string => (total === 0 ? '' : ` (${((part / total) * 100).toFixed(1)}%)`)
 export const noPriceNote = (n: number): string => `${n} call${n === 1 ? '' : 's'} with no price`
 
 /** `HH:MM` in the time zone (default: the machine's). */

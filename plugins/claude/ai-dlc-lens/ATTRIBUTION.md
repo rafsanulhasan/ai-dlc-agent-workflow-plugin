@@ -19,3 +19,5 @@ Not taken (they deliberately differ): Cache Hit % (token-weighted), Tokens Saved
 ## Changes
 
 - 2026-10-25 (ITEM-069, step 37): the transcript reader (`hooks/cache-reader.mjs`), its lens side (`hooks/transcripts.ts`) and the price lookup (`hooks/cache-lab.ts`, `priceOfCosting`).
+- 2026-10-25 (ITEM-070, step 37): Saved by cache, Lost to busts (per-TTL write rates) and NET in `hooks/cache-lab.ts`.
+- 2026-10-25 (ITEM-071, step 37): the miss attribution with the compaction rule, and the TTL mix.

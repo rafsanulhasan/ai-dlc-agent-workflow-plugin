@@ -160,7 +160,7 @@ import { SVG_CAP, avatarKey, avatarSvg, checkBytes, classify, isInside, own, tru
 import type { AvatarImage, ChartAvatars } from './avatar'
 import { FileCache, batches, checkEnvelope, folderOf, mergeCalls, sessionOfTranscript } from './transcripts'
 import type { Call, FileRecord, ListData, ReadData } from './transcripts'
-import { DEFAULT_WINDOW, WINDOWS, WINDOW_LABELS, classify as classifyCalls, count, labOf, medianK, noPriceNote, pct, presetOf, priceOfCosting, usd, windowOf as labWindowOf, withPreset } from './cache-lab'
+import { ATTRIBUTION_LABELS, DEFAULT_WINDOW, WINDOWS, WINDOW_LABELS, classify as classifyCalls, count, labOf, medianK, noPriceNote, pct, presetOf, priceOfCosting, share, usd, windowOf as labWindowOf, withPreset } from './cache-lab'
 import type { CacheLab, WindowPreset } from './cache-lab'
 import { anomaliesOf, anomalyLine, applySettings, colorOf, detectAgents, detectRun, diffAnomalies, edgeAgentOf, frontMatter, handoffsRoot, normDir, recordName, runsToRead, trackWaiting, worstOf } from './anomaly'
 
@@ -2068,6 +2068,13 @@ async function cacheLabSection($: EngineInterface, t: any, open: Record<string, 
       kv(t, 'Tokens Saved', count(lab.tokensSaved)),
       kv(t, 'Bust events', count(lab.bustEvents)),
       kv(t, 'Median baseline', medianK(lab.medianBaseline)),
+      // ITEM-071: why the busts missed, and the cache writes by TTL.
+      <Text bold wrap="wrap">Miss attribution</Text>,
+      ...(['ttlLapse', 'prefixChange', 'unknown'] as const).map(k => kv(t, ATTRIBUTION_LABELS[k], count(lab.attribution[k]))),
+      <Text bold wrap="wrap">TTL mix</Text>,
+      kv(t, '5m', `${count(lab.ttlMix.m5)}${share(lab.ttlMix.m5, lab.ttlMix.total)}`),
+      kv(t, '1h', `${count(lab.ttlMix.h1)}${share(lab.ttlMix.h1, lab.ttlMix.total)}`),
+      kv(t, 'unknown', `${count(lab.ttlMix.unknown)}${share(lab.ttlMix.unknown, lab.ttlMix.total)}`),
       <Text dimColor wrap="wrap">
         base prices, from {s.costingPath}{state.status === 'loading' ? ' · reading transcripts...' : ''}
       </Text>,
