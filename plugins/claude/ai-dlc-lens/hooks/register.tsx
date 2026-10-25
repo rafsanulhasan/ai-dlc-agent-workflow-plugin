@@ -3094,8 +3094,10 @@ export const register: Register = on => {
       const { Box } = t
       const ours = await workflowBody($, t, { surface: String(e.surface), columns: e.props.bodyColumns, rows: e.props.maxRows, where: 'band' })
       const below = await next(e)
+      // No `width` on this Box: `below` can be core's own drawing (an engine node), and AbovePrompt refuses an
+      // engine node under a Box with `width` (the hook is skipped and the view never draws). `ours` sizes itself.
       return (
-        <Box flexDirection="column" width="100%">
+        <Box flexDirection="column">
           {ours}
           {below}
         </Box>

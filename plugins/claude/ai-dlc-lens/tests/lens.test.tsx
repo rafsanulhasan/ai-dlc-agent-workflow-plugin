@@ -2833,6 +2833,19 @@ describe('step 8.1.5: pane view controls', () => {
     await b.unmount()
   })
 
+  test('pinned band over core\'s own drawing (an engine node from next): the tree validates and the view draws above it', async ($, on) => {
+    // Beneath the band stands core's own drawing, `{ type: 'engine', ref: 0 }`, as in a session where nothing
+    // else draws there. A Box with `width` may not hold an engine node (repaint2.log, 2026-10-25): the hook was
+    // skipped and the view never drew.
+    on('ui.render', { component: 'AbovePrompt' }, () => ({ type: 'engine', ref: 0 }) as any)
+    on('session.surfaces', () => ({ value: ['terminal'] }))
+    await seed($, on)
+    const b = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 20, bodyColumns: 100, scroll: { offset: 0, bodyRows: 20 }, view: {} } } as any)
+    expect(await b.find({ type: 'Button', key: 'wf-toolu_1' })).toBeDefined()
+    expect(await b.find({ type: 'Text', text: 'NATIVE ROW' })).toBe(undefined)
+    await b.unmount()
+  })
+
   test('a survey holding the band: the view yields', async ($, on) => {
     on('session.surfaces', () => ({ value: ['terminal'] }))
     await seed($, on)
