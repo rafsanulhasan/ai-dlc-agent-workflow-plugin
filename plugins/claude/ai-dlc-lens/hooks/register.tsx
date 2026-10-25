@@ -2221,7 +2221,7 @@ function agentBody(
       {notStarted ? (
         <Text dimColor>Not started yet: no figures.</Text>
       ) : (
-        section($, t, open, s, `agent:${id}:usage`, 'agent-usage', `Usage (${fmtTokens(used)} / ${win})`, () => [
+        section($, t, open, s, `agent:${id}:usage`, 'agent-usage', `Context Lab (${fmtTokens(used)} / ${win})`, () => [
           bar !== '' ? <Text color="cyan">{bar}</Text> : null,
           kv(t, 'Context', `${fmtTokens(used)} / ${win}`),
           kv(t, 'Input', fmtTokens(sum.in + sum.cr + sum.cw)),

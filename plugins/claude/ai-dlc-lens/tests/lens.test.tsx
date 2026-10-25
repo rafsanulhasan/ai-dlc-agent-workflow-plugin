@@ -830,7 +830,7 @@ describe('panels', () => {
     await edge.unmount()
   })
 
-  test('3, 4: the avatar panel: header, then Usage with the figures, the window and the cost, with no source', async ($, on) => {
+  test('3, 4: the avatar panel: header, then Context Lab with the figures, the window and the cost, with no source', async ($, on) => {
     await seed($, on, { files: { '.ai-dlc/model-costing.json': COSTING_ARRAY } })
     const ui = await chartPane($)
     await ui.press({ key: 'agent-a1' })
@@ -840,7 +840,7 @@ describe('panels', () => {
     expect(await ag.find({ type: 'Text', text: /^\s*DF\s*$/ })).toBeDefined()
     expect(await ag.find({ type: 'Text', text: /^\s*done\s*$/ })).toBeDefined()
     expect(await ag.find({ type: 'Text', text: 'sonnet · Software Engineer' })).toBeDefined()
-    expect(await ag.find({ type: 'Text', text: /^\s*Usage \(300K \/ 200K\)$/ })).toBeDefined()
+    expect(await ag.find({ type: 'Text', text: /^\s*Context Lab \(300K \/ 200K\)$/ })).toBeDefined()
     await ag.press({ key: 'agent-usage' })
     expect(await ag.find({ type: 'Text', text: '300K / 200K' })).toBeDefined()
     expect(await ag.find({ type: 'Text', text: '████████████' })).toBeDefined()
@@ -951,9 +951,9 @@ describe('panels', () => {
     await ui.unmount()
     const ag = await $.ui.mount({ ...pane('ai-dlc-lens-agent', 'inline', 24), surface: 'vscode' })
     const all: any[] = await ag.findAll({})
-    const headings = all.filter((x: any) => x.type === 'Text' && /^\s*(Usage|Cache keep-alive|Tool calls|Background tasks|Thinking) \(/.test(String(x.text))).map((x: any) => String(x.text).trim().replace(/ \(.*$/, ''))
-    // Step 1.4: the Cache keep-alive section, on by default (keepaliveSection), comes after Usage.
-    expect(headings).toEqual(['Usage', 'Cache keep-alive', 'Tool calls', 'Background tasks', 'Thinking'])
+    const headings = all.filter((x: any) => x.type === 'Text' && /^\s*(Context Lab|Cache keep-alive|Tool calls|Background tasks|Thinking) \(/.test(String(x.text))).map((x: any) => String(x.text).trim().replace(/ \(.*$/, ''))
+    // Step 1.4: the Cache keep-alive section, on by default (keepaliveSection), comes after Context Lab (ITEM-073: the agent pane's Usage section renamed).
+    expect(headings).toEqual(['Context Lab', 'Cache keep-alive', 'Tool calls', 'Background tasks', 'Thinking'])
     expect(all.filter((x: any) => x.type === 'Text' && /^─+$/.test(String(x.text))).length).toBe(5)
     for (const k of ['agent-usage', 'agent-keepalive', 'agent-calls', 'agent-tasks', 'agent-thinking']) expect(await ag.find({ type: 'Button', key: k })).toBeDefined()
     // No raw JSON in the panel.
