@@ -10,7 +10,7 @@ integrations: [integration-2]
 items: [ITEM-037, ITEM-038, ITEM-039, ITEM-040, ITEM-041, ITEM-042, ITEM-043, ITEM-044.a, ITEM-044.b, ITEM-065, ITEM-066]
 author: software-architect
 date: 2026-10-24
-status: draft revision 2 (bc round 1 fixed), awaiting brutal-critique round 2 and G2
+status: draft revision 2.1 (17.1.45: the LENS merge order follows the human's one lane, root 22 then root 20; gate critique 20.1.l3.3 Minor 3), revision 2 (bc round 1 fixed), awaiting brutal-critique round 2 and G2
 stories: docs/product/active/multi-agent-workflow-foundations/sprint-1/taxonomy/stories.md (G1-approved)
 narrative: docs/architecture/narratives/taxonomy.md
 adrs: [ADR-0003, ADR-0004]
@@ -163,7 +163,7 @@ flowchart TD
 | Walk, sessions parse, resolve by id | `plugins/claude/ai-dlc-lens/hooks/register.tsx` (`runFolders`), `anomaly.ts` (`handoffsRoot`), `lens.ts` (`parseRun`, the id resolution beside `mergedHomeOf`) | 039, 041, 043 |
 | This repository's declaration and tags | `.ai-dlc/taxonomy.json`, run states, backlog, product tree | 044 |
 
-Build chains follow the run's override. Every change to a `workflow`-skill file is made by a freshly spawned `agent-manager`, in WF order after root 19 (045 → 050 → 046 → 047 → 037 → 038). The HS group handles the `handoff` skill (041 → 043 → 049). The RUN group handles `run.ts` and `lens.ts` (039 → 041 → 040). The lens changes join the LENS order (root 20 first, merged one at a time).
+Build chains follow the run's override. Every change to a `workflow`-skill file is made by a freshly spawned `agent-manager`, in WF order after root 19 (045 → 050 → 046 → 047 → 037 → 038). The HS group handles the `handoff` skill (041 → 043 → 049). The RUN group handles `run.ts` and `lens.ts` (039 → 041 → 040). The lens changes join the one LENS lane, merged one at a time; its order is the human's (run.v4.md 2e, 2f: root 22 fully first, then root 20) and the plan's (`docs/plans/tier-1-sprint-1.tasks.md`, Wave E1).
 
 ## Data shapes
 

@@ -10,7 +10,7 @@ integrations: [integration-1]
 items: [ITEM-032, ITEM-033, ITEM-034.c, ITEM-034, ITEM-034.a, ITEM-034.b, ITEM-035, ITEM-036]
 author: software-architect
 date: 2026-10-24
-status: draft revision 3 (bc rounds 1 and 2 fixed; 17.1.9: D1 transcript fallback also resolves a main write with no split, per LLD rev 5), awaiting brutal-critique round 2, product-owner acceptance and G2
+status: draft revision 3.2 (17.1.45, gate critique 17.1.l2.3 Majors 1 to 3: 034.c marked done in the AC map and AC-17.3.1, AC-17.3.7 gains the missing-transcript and unreadable-transcript cases). Revision 3.1 (17.1.40: AC-17.3.7 restated to the 034.c result, `split unknown` while the subagent runs, the transcript's split from its stop; see delta rev 4.6, *034.c result*). Revision 3 (bc rounds 1 and 2 fixed; 17.1.9: D1 transcript fallback also resolves a main write with no split, per LLD rev 5), awaiting brutal-critique round 2, product-owner acceptance and G2
 stories: docs/product/active/session-continuity-and-cache-visibility/sprint-1/keepalive-cache-status/stories.md (G1-approved)
 narrative: docs/architecture/narratives/keepalive-cache-status.md
 lld: docs/specs/keepalive-cache-status.lld.md (system-engineer)
@@ -39,12 +39,12 @@ Keep-alive arms each track (`5m`, `1h`) from one value: `lastSplit`, the 1h/5m s
 | AC | Design | Item | Firm / conditional |
 |---|---|---|---|
 | AC-17.1.1, 17.1.3, 17.1.4 | D1 (for 17.1.3, the read-attribution rule), D3 | 032, 033 | firm |
-| AC-17.1.2 | D1, D2, D3 | 034 | **CONDITIONAL** on ITEM-034.c (subagent split observable); otherwise D2a |
+| AC-17.1.2 | D1, D2, D3 | 034 | firm since 034.c (delta rev 4.6, *034.c result*): split from the transcript at `SubagentStop`, D2a while the subagent runs |
 | AC-17.1.5 | D1 (5m read refresh; 1h moves only on a write) | 032 | firm |
-| AC-17.3.4 | D1 | 032 (main, firm), 034 (subagents, **CONDITIONAL** on 034.c) | main firm; subagents conditional |
+| AC-17.3.4 | D1 | 032 (main), 034 (subagents) | main firm; subagents firm since 034.c (delta rev 4.6, *034.c result*): split from the transcript at `SubagentStop`, D2a while the subagent runs |
 | AC-17.2.1, 17.2.2, 17.2.3 | D3, D4 | 033 | firm |
-| AC-17.3.1 (restated below) | D2, D5 | 034.b | **CONDITIONAL** on 034.c, 034.a and `pingSubagents` on |
-| AC-17.3.7 (added after Q34) | D1, D2, D3 | 034 | **CONDITIONAL** on 034.c; otherwise D2a |
+| AC-17.3.1 (restated below) | D2, D5 | 034.b | **CONDITIONAL** on 034.a and `pingSubagents` on (034.c is done: see the AC's note) |
+| AC-17.3.7 (added after Q34; restated rev 3.1) | D1, D2, D2a, D3 | 034 | firm since 034.c (delta rev 4.6, *034.c result*): split from the transcript at `SubagentStop`, D2a while the subagent runs |
 | AC-17.3.8 (added: no useless main ping; po accepted OQ4) | D5 | 034 | firm |
 | AC-17.3.2, 17.3.5, 17.3.6 | D7 | 034.b | **CONDITIONAL** on 034.a and on the opt-in setting being on |
 | AC-17.3.3 | D7 (with the setting off, nothing is ever pinged for a subagent) | 034 (setting off), 034.b | firm: with the setting off, no subagent ping exists |
@@ -55,12 +55,12 @@ Keep-alive arms each track (`5m`, `1h`) from one value: `lastSplit`, the 1h/5m s
 
 **ACs restated after Q34.** The human's Q34 answer of 2026-10-24 (`run.v3.md`, *Gates and loops*) is binding and replaces the G1 default. `po` accepted the restatement on 2026-10-24. For build and test, the wording below replaces the stories' wording of the three ACs, and AC-17.3.7 is added:
 
-- **AC-17.3.7** `[PT]` *(CONDITIONAL on ITEM-034.c, the subagent split observable; otherwise D2a)*. Given a running subagent whose cache of a track's TTL was written at 10:02 and is not written again, when the line renders at 10:04 and again at 10:08, then the track's cache part reads `subagents warm until 10:07` at 10:04 and `subagents expired 10:07` at 10:08. Both readings are made with `pingSubagents` off, so the subagent's cache is shown going cold and is never pinged.
+- **AC-17.3.7** `[PT]` *(rev 3.1, 17.1.40: 034.c result, delta rev 4.6; was CONDITIONAL on ITEM-034.c)*. Given a subagent whose live write of a track's TTL at 10:02 carries no split, and whose transcript row at 10:02 carries it, when the line renders at 10:03 while the subagent still runs, then the track's cache part reads `subagents: split unknown` and the write arms nothing (D2a); and given the subagent stops at 10:03:30 (`classic.SubagentStop`, transcript readable), when the line renders at 10:04 and again at 10:08, then it reads `subagents warm until 10:07` at 10:04 and `subagents expired 10:07` at 10:08. Given the same stop with a transcript file that exists but has no readable text or no split, then the reading stays `subagents: split unknown` for the rest of that agent's life: no later event re-reads the file, and the write never arms a track (the safe side; LLD 3.7 c). Given a `SubagentStop` whose transcript file does not exist (a forked helper such as `prompt_suggestion` or `agent_summary`, as 034.c found, or a real agent whose file is not written yet), then the stop is ignored: no line changes, no agent is recorded and nothing arms; a real agent's earlier live writes keep their `subagents: split unknown` reading for the rest of its life. All readings are made with `pingSubagents` off, so the subagent's cache is shown going cold and is never pinged.
 - **AC-17.3.2** `[PT]` *(CONDITIONAL: ITEM-034.a passes, and `pingSubagents` is on)*. Given an armed track and a subagent running in the background with a warm cache of the track's TTL, when a ping round is due, then one message ping is sent for that subagent and one ping for the main loop. With `pingSubagents` off (the default), only the main-loop ping is sent.
 - **AC-17.3.5** `[PT]` *(CONDITIONAL, same two conditions)*. The same holds for an idle teammate with a warm cache.
 - **AC-17.3.6** `[PT]` *(CONDITIONAL, same two conditions)*. With the setting on, `ping k/9` counts rounds, the cap applies by round, and every ping counts toward the spend limit (Q17-3a). With the setting off, the counter and cap behave as they do today.
 - **AC-17.3.3** `[PT]` *(firm)*. A finished subagent is never pinged, whatever the setting.
-- **AC-17.3.1** `[PT]` *(CONDITIONAL: 034.c and 034.a pass, and `pingSubagents` is on)*. Given background tasks running and 5m writes only from subagents, when the turn's Stop runs, then the 5m track arms and pings only the subagents. A track arms only to ping, so with the setting off it does not arm (AC-17.3.8).
+- **AC-17.3.1** `[PT]` *(CONDITIONAL: 034.a passes, and `pingSubagents` is on; 034.c is done, rev 3.2)*. Given background tasks running and 5m writes only from subagents, when the turn's Stop runs, then the 5m track arms and pings only the subagents. A track arms only to ping, so with the setting off it does not arm (AC-17.3.8).
 - **AC-17.3.8** `[PT]` *(firm, added)*. Given background tasks running, warm entries of a track's TTL only from subagents, and `pingSubagents` off, when the Stop runs, then the track does not arm, no main-loop ping is sent, and the line reads `keepalive 5m: subagents warm until 10:07; off (only subagent caches; subagent pings off)`. A main-loop fork with no warm main cache would only write a new cache that nobody reads (C6, spend ceiling).
 
 The restatement of AC-17.3.1 and the new AC-17.3.8 follow from Q34 and bc's round 1 finding. `po` accepted both on 2026-10-24 (OQ4).
