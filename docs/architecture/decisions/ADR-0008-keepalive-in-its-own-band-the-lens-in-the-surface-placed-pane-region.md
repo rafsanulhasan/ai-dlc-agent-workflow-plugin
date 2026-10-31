@@ -1,7 +1,7 @@
 # ADR-0008: Keep-alive draws in its own band above the prompt, and the lens lives in the pane region the surface places
 
 **Date**: 2026-10-31
-**Status**: Accepted (the human, 2026-10-31, step 44; amended the same day for R44.11, R44.12 and R44.14 to R44.20; the human's live check of every build round passed on 2026-10-31; tests and reviews pending)
+**Status**: Accepted (the human, 2026-10-31, step 44; amended the same day for R44.11, R44.12 and R44.14 to R44.20; the human's live check of every build round passed on 2026-10-31 in VS Code; M33's terminal part not yet checked; tests done; critique and code review pending)
 **Deciders**: the human (step 44: R44.1, R44.4, R44.7 revised, R44.9 and R44.10 revised, R44.11, R44.12, R44.14 to R44.20, in `docs/handoffs/FEAT-20261020-ai-dlc-lens/44-live-findings.human.md`, `44-live-findings-2.human.md`, `44-live-findings-3.human.md` (option (a) for R44.16), `44-live-findings-4.human.md` and `44-live-findings-5.human.md` (R44.19, R44.20, with the human's answers after the build)); agent-manager (host research 44.2.l1.2, facts F1 to F6, and the probe of 44.2.l1.3, run.v4.3.md entry 2ff); software-architect (this record)
 
 ## Context

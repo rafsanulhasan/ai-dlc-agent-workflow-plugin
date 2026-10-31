@@ -4,7 +4,7 @@ kind: user-stories
 author: requirement-analyst
 date: 2026-10-22
 revision: 2.1 (2026-10-31, step 44: AC-12.12 to 12.16 revised, AC-12.17 to 12.23 added for R44.12 and R44.14 to R44.18; AC-12.15 and 12.22 revised and AC-12.24 to 12.26 added for R44.19 and R44.20); 2 (gate-critique round 1 findings applied; Q1–Q12 decided by the human 2026-10-22)
-status: draft, awaiting brutal-critique round 2, product-owner acceptance and G1; step 44 revisions (AC-1.6, AC-7.13, AC-12.12 to AC-12.26) in progress (building done, tests and reviews pending)
+status: draft, awaiting brutal-critique round 2, product-owner acceptance and G1; step 44 revisions (AC-1.6, AC-7.13, AC-12.12 to AC-12.26) in progress (building done, tests done; critique and code review pending)
 milestone: 1.0.0-preview1 (C1)
 inputs: brief.md (§13 delegation list), 00b-approved-plan-2026-10-22.md, run.md clarifications C1–C3, Q1–Q12 answers (8.l1 handoff), backlog ITEM-003…029, research 3.2, 4.2–4.5, handoff skill *Run state*
 ---

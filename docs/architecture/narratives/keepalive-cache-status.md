@@ -52,7 +52,7 @@ ADRs: none now. One is due if ITEM-034.b ships, because pinging subagents is the
 
 Risks:
 
-- **The host may not repaint the status line between events** (AC-17.4.4, a live check). If it does not, `po`'s Q17-4 applies: a README limitation and a backlog item.
+- **The host may not repaint the band row between events** (AC-17.4.4, a live check; the status line is retired in rev 4.8, so the band row is what is read). If it does not, `po`'s Q17-4 applies: a README limitation and a backlog item.
 - **E7 depends on what a ping's usage carries** (spec OQ2). It holds only if a 1h ping carries a 1h write.
 - **ITEM-034.a may fail.** Then the subagent-ping ACs go back to the human.
 
