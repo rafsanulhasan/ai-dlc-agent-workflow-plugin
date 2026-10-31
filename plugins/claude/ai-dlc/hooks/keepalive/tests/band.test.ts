@@ -212,6 +212,14 @@ describe('[42.2] the minimised keep-alive band', () => {
     expect(bandText(bandModel('off', rows, 'keepalive seed: cache miss'), true)).toBe('⚠ ai-dlc cache-keepalive: on [off]')
     expect(bandText(bandModel('on', rows), true)).toBe('⚠ ai-dlc cache-keepalive: off [on]')
   })
+  test('[live3 p4] m.on decides the minimised row: master off with a track on reads on; nothing on reads off; the master button keeps naming the press', () => {
+    const masterOff = bandModel('on', rows) // the master is off: its button offers on
+    expect(bandText({ ...masterOff, on: true }, true)).toBe('⚠ ai-dlc cache-keepalive: on [on]')
+    expect(bandText({ ...bandModel('off', rows), on: false }, true)).toBe('⚠ ai-dlc cache-keepalive: off [off]')
+    expect(masterState({ ...masterOff, on: true })).toBe('on')
+    expect(masterState({ ...masterOff, on: false })).toBe('off')
+    expect(masterState(masterOff)).toBe('off') // no `on`: the master button decides, as before
+  })
   test('not minimised (the default and the Pane) is the full band as before', () => {
     expect(bandText(bandModel('on', rows), false)).toBe(bandText(bandModel('on', rows)))
     expect(bandText(bandModel('on', rows)).split('\n')).toHaveLength(3)

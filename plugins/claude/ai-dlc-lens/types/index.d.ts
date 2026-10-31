@@ -94,8 +94,11 @@ export type LensDrill = { kind: string; id: string; snap: LensAgent }
  * beside the band); absent or '': the band's `selected`. `size` and `prev` are then the band's alone: that pane is never minimised.
  * Amendment 8: `band`, the band's own size (`normal` or `minimised`) while the view is docked, when the band is still
  * drawn above the prompt because a workflow is in progress; `size` and `prev` are then the docked pane's.
+ * Step 43: `bandMode`, what the band shows at its normal size: `list` (the default, the run list) or `workflow`
+ * (`selected`'s flow; narrow bands only, a wide band always draws its list); `paneMode`, what the pane shows (beside the
+ * band or docked): `list` (the default) or `workflow` (one run: `pane` beside the band, `selected` docked).
  */
-export type LensView = { place: string; size: string; prev: string[]; selected: string; pane?: string; band?: string }
+export type LensView = { place: string; size: string; prev: string[]; selected: string; pane?: string; band?: string; bandMode?: string; paneMode?: string }
 
 /** What `tool.call` saw of one Agent call before `agent.spawn` named its agent: the placeholder avatar. */
 export type LensPending = { type: string; description: string; name: string; prompt: string; model: string }
@@ -169,6 +172,8 @@ export type LensRun = {
    * (`locateRecord`, which applies this before the `renames` prefixes and composes the two).
    */
   codeMap?: Record<string, string>
+  /** Step 43 (C1): each *Stages* row's status by its step code, lower-cased (`stageStatuses`); present only when the table has one. */
+  stageStatus?: Record<string, string>
 }
 
 /**
@@ -242,6 +247,8 @@ declare module 'claude-code' {
       stepSel: Record<string, string>
       /** Step 36.2, amendment 8: the band closed with its close, which it has only while no workflow is in progress. */
       bandClosed: boolean
+      /** Step 43 (B4b): bumped while the pane beside the band is drawn, so both redraw and "the band is closed" stays current. */
+      bandPing: number
       /** ITEM-070: the Cache Lab load: `idle`, `loading`, `ready` or `error` (with its reason); `rev` grows with each new set of figures. */
       cacheLab: { status: string; reason: string; rev: number }
     }

@@ -100,7 +100,7 @@ function engine(on: any, o: { now?: number; prices?: string | null; chain?: { id
   })
   on('fs.write', (_: unknown, e: any) => (stub.fileWrites.push(String(e.path)), { value: undefined }))
   mock.env(on as never, { HOME: '/home/test', ...(o.env ?? {}) })
-  // Step 42: an avatar opens the agent panel; a Cache Lab keep-alive button runs the /ai-dlc:cache-keepalive command
+  // Step 42: an avatar opens the agent panel; a Cache Lab keep-alive button runs the /ai-dlc:cache-keepalive-configure command
   on('agent.list', () => ({ value: [] }))
   on('agent.spawn', () => ({ model: 'claude-sonnet-5-5', agentId: 'a1' }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
@@ -609,7 +609,7 @@ describe('[42.3] Cache Lab in the agent panel: the Keep Alive buttons', () => {
     await ui.unmount()
   })
 
-  test('each press runs /ai-dlc:cache-keepalive for this session only, with the opposite of its state', async ($, on) => {
+  test('each press runs /ai-dlc:cache-keepalive-configure for this session only, with the opposite of its state', async ($, on) => {
     const stub = engine(on, { keepalive: published(true, false, true) })
     await start($)
     const ui = await mount($)
@@ -619,9 +619,9 @@ describe('[42.3] Cache Lab in the agent panel: the Keep Alive buttons', () => {
     await ui.press({ key: 'cachelab-ka-5m-press' })
     await settle()
     expect(stub.commands).toEqual([
-      { command: 'ai-dlc:cache-keepalive', args: 'off --session' },
-      { command: 'ai-dlc:cache-keepalive', args: 'on --track 1h --session' },
-      { command: 'ai-dlc:cache-keepalive', args: 'off --track 5m --session' },
+      { command: 'ai-dlc:cache-keepalive-configure', args: 'off --session' },
+      { command: 'ai-dlc:cache-keepalive-configure', args: 'on --track 1h --session' },
+      { command: 'ai-dlc:cache-keepalive-configure', args: 'off --track 5m --session' },
     ])
     await ui.unmount()
   })
@@ -645,7 +645,7 @@ describe('[42.3] Cache Lab in the agent panel: the Keep Alive buttons', () => {
     expect(lines.some(t => t.startsWith('1h: off'))).toBe(true)
     expect(lines.some(t => t.startsWith('Master: on'))).toBe(true)
     expect(lines.some(t => t.startsWith('5m: on'))).toBe(true)
-    expect(stub.commands).toEqual([{ command: 'ai-dlc:cache-keepalive', args: 'off --track 1h --session' }])
+    expect(stub.commands).toEqual([{ command: 'ai-dlc:cache-keepalive-configure', args: 'off --track 1h --session' }])
     await ui.unmount()
   })
 

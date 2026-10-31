@@ -4,7 +4,7 @@ import type { On } from 'claude-code'
 import { formatDuration, parseCommandArgs, parseDuration } from '../duration.ts'
 import { NULL_IN_FILE, SETTINGS, TRUST_GATED, check, defaults, differsFromDefault, gatedDiffering, parsePrices, readMult, resolveSettings } from '../settings.ts'
 import type { Level } from '../settings.ts'
-import { pingCap, pingsWithin, seedLineOf, splitFromAgentTranscript, splitFromTranscript, splitOf } from '../keepalive.ts'
+import { grammarMistake, pingCap, pingsWithin, seedLineOf, splitFromAgentTranscript, splitFromTranscript, splitOf } from '../keepalive.ts'
 import { hhmm } from '../cache-state.ts'
 import { PREVIEW_CHARS, SETTINGS as HANDOFF_SETTINGS, previewValue } from '../../auto-handoff/config.ts'
 
@@ -52,6 +52,10 @@ type Opts = {
   // The surfaces the session draws on ($.session.surfaces); ['vscode'] by default, so the status line
   // shows the full text these tests assert (ITEM-068, D13: the summary is tested on its own)
   surfaces?: string[]
+  // Review round 5, W3: a fork stays out until the test calls `release()` (which also stops holding later forks); the
+  // fork is counted in seen.forks when it starts, so a test sees a ping that is under way. failFork: a fork is refused.
+  holdForks?: boolean
+  failFork?: boolean
 }
 
 // Stands in for the engine: a 1M-token context, cache hits on every fork unless cacheRead says
@@ -108,7 +112,16 @@ function engine(on: On, o: Opts = {}) {
   on('session.usage', () => ({ value: { context: { tokens: 1_000_000, window: 1_000_000, percent: 100 }, rateLimits: o.rateLimits ?? [] } }) as never)
   on('session.model', () => ({ value: 'claude-opus-5-5' }) as never)
   on('session.cwd', () => ({ value: typeof o.cwd === 'function' ? o.cwd() : o.cwd ?? ROOT }) as never)
-  on('model.fork', (_, e) => { const cacheRead = cacheReadOf(); return (seen.forks++, seen.prompts.push(e.prompt), { value: { isAnswered: true, text: 'ok', usage: { input_tokens: 10, output_tokens: o.forkOutput ?? 1, cache_read_input_tokens: cacheRead, cache_creation_input_tokens: cacheRead === 1_000_000 ? (o.forkWrites ? o.forkWrites[0] + o.forkWrites[1] : 0) : 1_000_000, ...(o.forkWrites ? { cache_creation: { ephemeral_1h_input_tokens: o.forkWrites[0], ephemeral_5m_input_tokens: o.forkWrites[1] } } : {}) } } }) as never })
+  let holding = o.holdForks === true
+  const holds: (() => void)[] = []
+  const release = () => { holding = false; for (const h of holds.splice(0)) h() }
+  on('model.fork', async (_, e) => {
+    if (o.failFork) { seen.forks++; return { deny: 'fork refused' } as never }
+    const cacheRead = cacheReadOf()
+    const out = (seen.forks++, seen.prompts.push(e.prompt), { value: { isAnswered: true, text: 'ok', usage: { input_tokens: 10, output_tokens: o.forkOutput ?? 1, cache_read_input_tokens: cacheRead, cache_creation_input_tokens: cacheRead === 1_000_000 ? (o.forkWrites ? o.forkWrites[0] + o.forkWrites[1] : 0) : 1_000_000, ...(o.forkWrites ? { cache_creation: { ephemeral_1h_input_tokens: o.forkWrites[0], ephemeral_5m_input_tokens: o.forkWrites[1] } } : {}) } } })
+    if (holding) await new Promise<void>(r => holds.push(r))
+    return out as never
+  })
   on('ui.status', (_, e) => (seen.statuses.push(e.text), { value: undefined }) as never)
   // The state keep-alive publishes for other plugins (ai-dlc-lens): each write, in order.
   let stateSetFailures = o.failStateSets ?? 0
@@ -166,7 +179,7 @@ function engine(on: On, o: Opts = {}) {
   // The keep-alive part of a track's line: the text after its cache part (LLD 7, T17.2)
   const part = (track: '1h' | '5m') => partOf(line(track))
   // `files` is the engine's file system: a test changes a file between turns by writing to it
-  return { seen, clock, status, line, part, files, mtimes }
+  return { seen, clock, status, line, part, files, mtimes, release }
 }
 
 // A line's keep-alive part: what follows `keepalive <track>: ` and the cache part, when the line has one
@@ -196,6 +209,15 @@ async function runChain(clock: { fire(m: number): Promise<void> }, seen: { forks
 }
 
 const keepalive = ($: Parameters<TestBody>[0], args = '') => $.command.run({ command: 'ai-dlc:cache-keepalive', args } as never)
+// The old argument grammar (a duration, clear, on or off, --track, --session, --machine) moved here (live findings 3, point 5)
+const configure = ($: Parameters<TestBody>[0], args = '') => $.command.run({ command: 'ai-dlc:cache-keepalive-configure', args } as never)
+// Review round 4, W2: a mistake in that grammar is answered by the module with the problem and the usage text, which has --for in it
+const usageHead = (problem: string) => `keepalive: ${problem}. Usage: /ai-dlc:cache-keepalive-configure `
+const expectUsage = (text: string, problem: string) => {
+  expect(text.slice(0, usageHead(problem).length)).toBe(usageHead(problem))
+  expect(text).toContain('[--session|--machine|--for just-me|team|global]')
+  expect(text).not.toContain('unanswered')
+}
 
 // A main-conversation response's usage: h tokens written for 1 hour, m for 5 minutes, `read` read.
 const usageOf = (h: number, m: number, read = 0) => ({
@@ -826,7 +848,10 @@ describe('keep-alive', () => {
     await $.classic.Stop(stop())
     await clock.fire(50) // one ping: 50015 token-equivalents at the opus-5-5 read price
     await $.session.end({ reason: 'clear', sessionId: 's-1' } as never)
-    expect((await keepalive($)).text).toContain('spent 50015 of 2000000 token-equivalents')
+    // The bare command only shows the band (live findings 3, point 5), so the new session's spend is read from its first ping
+    await $.classic.Stop(stop())
+    await clock.fire(50)
+    expect(seen.logs.filter(l => l.includes(' spent ')).at(-1)).toContain('spent 50015 of 2000000 token-equivalents')
     expect(seen.logs.filter(l => l.includes('AI_DLC_KEEPALIVE_HIT_THRESHOLD="high" in .claude/settings.local.json ignored'))).toHaveLength(2)
   })
 
@@ -926,7 +951,7 @@ describe('the published keep-warm time', () => {
 
   test('re-arming keeps the override: after each ping and after a second Stop, not the default (19.l1)', async ($, on) => {
     const { seen, clock } = engine(on)
-    await keepalive($, '1d --track 1h')
+    await configure($, '1d --track 1h')
     await $.classic.Stop(stop())
     await settle()
     expect(keepOf(seen, '1h')).toMatchObject({ running: true, keepWarmMs: 24 * H, cap: 28 })
@@ -940,7 +965,7 @@ describe('the published keep-warm time', () => {
 
   test('a track that stopped while the override stands still publishes the override: it is the time in force', async ($, on) => {
     const { seen, clock, line } = engine(on)
-    await keepalive($, '2h --track 1h')
+    await configure($, '2h --track 1h')
     await $.classic.Stop(stop())
     expect(await runChain(clock, seen, () => line('1h'), 50)).toBe(2)
     await settle()
@@ -949,12 +974,12 @@ describe('the published keep-warm time', () => {
 
   test('clearing the override of a stopped track publishes the setting at once', async ($, on) => {
     const { seen } = engine(on)
-    await keepalive($, '1d --track 1h')
+    await configure($, '1d --track 1h')
     await $.classic.Stop(stop())
     await $.classic.Stop(stop([]))
     await settle()
     expect(keepOf(seen, '1h')).toMatchObject({ running: false, keepWarmMs: 24 * H, cap: 28, line: `keepalive 1h: main warm until ${hhmm(START + 60 * MIN)}; work done, stopped` })
-    await keepalive($, 'clear')
+    await configure($, 'clear')
     await settle()
     expect(keepOf(seen, '1h')).toMatchObject({ running: false, keepWarmMs: 8 * H, cap: 9 })
     expect(keepOf(seen, '5m')).toMatchObject({ keepWarmMs: H, cap: 20 })
@@ -962,7 +987,7 @@ describe('the published keep-warm time', () => {
 
   test('a session override survives a new turn, on a track never armed too; the next Stop arms with it', async ($, on) => {
     const { seen, line } = engine(on)
-    await keepalive($, '1d')
+    await configure($, '1d')
     await $.classic.Stop(stop())
     await $.turn.start({ turnId: 't-2' } as never)
     await settle()
@@ -995,7 +1020,7 @@ describe('the published keep-warm time', () => {
   test('an override set while a track runs is published at its next ping, when it takes effect', async ($, on) => {
     const { seen, clock } = engine(on)
     await $.classic.Stop(stop())
-    await keepalive($, '2h --track 1h')
+    await configure($, '2h --track 1h')
     await settle()
     expect(keepOf(seen, '1h')).toMatchObject({ running: true, keepWarmMs: 8 * H })
     await clock.fire(50)
@@ -1018,11 +1043,11 @@ describe('the published keep-warm time', () => {
   test('a reader of the state (ai-dlc-lens) sees the time in force through $.state.get', { plugins: [reader] }, async ($, on) => {
     engine(on)
     const read = async () => Number((await $.command.run({ command: 'read-keepalive', args: '' } as never)).text)
-    await keepalive($, '1d')
+    await configure($, '1d')
     await $.classic.Stop(stop())
     await settle()
     expect(await read()).toBe(24 * H)
-    await keepalive($, 'clear')
+    await configure($, 'clear')
     await $.turn.start({ turnId: 't-2' } as never)
     await settle()
     expect(await read()).toBe(8 * H)
@@ -1310,12 +1335,12 @@ describe('/ai-dlc:cache-keepalive', () => {
     engine(on)
     expect((await $.command.run({ command: 'keepalive', args: '2h' } as never)).text).toBe('unanswered: keepalive')
     expect((await $.command.run({ command: 'ai-dlc:keepalive', args: '2h' } as never)).text).toBe('unanswered: ai-dlc:keepalive')
-    expect((await keepalive($, '2h')).text).toBe('keepalive: keep-warm set to 2h on both tracks for this session; now keep warm 2h on both tracks (this session, /ai-dlc:cache-keepalive)')
+    expect((await configure($, '2h')).text).toBe('keepalive: keep-warm set to 2h on both tracks for this session; now keep warm 2h on both tracks (this session, /ai-dlc:cache-keepalive-configure)')
   })
 
   test('/ai-dlc:cache-keepalive 2h overrides the duration for this session only, and outranks every settings level', async ($, on) => {
     const { seen, clock, line } = engine(on, { files: { [`${ROOT}/.claude/settings.local.json`]: JSON.stringify({ env: { AI_DLC_KEEPALIVE_1H_KEEP_WARM_FOR: '5h' } }) } })
-    await keepalive($, '2h')
+    await configure($, '2h')
     expect(seen.forks).toBe(0) // setting the duration does not ping
     await $.classic.Stop(stop())
     expect(line('1h')).toContain('keep warm 2h')
@@ -1324,7 +1349,7 @@ describe('/ai-dlc:cache-keepalive', () => {
 
   test('/ai-dlc:cache-keepalive 1d lifts the ping limit of the 1h track past 9, to the pings a day allows', async ($, on) => {
     const { part, seen, clock, line } = engine(on)
-    await keepalive($, '1d --track 1h')
+    await configure($, '1d --track 1h')
     await $.classic.Stop(stop())
     expect(line('1h')).toContain(`ping 0/28, first ping at ${hhmm(START + 50 * MIN)}, keep warm 1d`)
     expect(await runChain(clock, seen, () => line('1h'), 50)).toBe(28)
@@ -1340,27 +1365,28 @@ describe('/ai-dlc:cache-keepalive', () => {
 
   test('/ai-dlc:cache-keepalive 1d --machine applies to every session until cleared', async ($, on) => {
     engine(on)
-    expect((await keepalive($, '1d --machine')).text)
-      .toBe('keepalive: keep-warm set to 1d on both tracks for every session on this machine; now keep warm 1d on both tracks (this machine, /ai-dlc:cache-keepalive)')
-    expect((await keepalive($)).text).toContain('; keep warm 1d on both tracks (this machine, /ai-dlc:cache-keepalive)')
-    expect((await keepalive($, 'clear --machine')).text)
+    expect((await configure($, '1d --machine')).text)
+      .toBe('keepalive: keep-warm set to 1d on both tracks for every session on this machine; now keep warm 1d on both tracks (this machine, /ai-dlc:cache-keepalive-configure)')
+    expect((await keepalive($)).text).toContain('; keep warm 1d on both tracks (this machine, /ai-dlc:cache-keepalive-configure)')
+    expect((await configure($, 'clear --machine')).text)
       .toBe('keepalive: keep-warm override cleared on both tracks for every session on this machine; now keep warm: 1h track 8h (default), 5m track 1h (default)')
   })
 
   test('--track sets or clears the keep-warm time of one track and leaves the other', async ($, on) => {
     const { seen, clock, line } = engine(on, { split: [5, 5] })
-    expect((await keepalive($, '30m --track 5m')).text)
-      .toBe('keepalive: keep-warm set to 30m on the 5m track for this session; now keep warm: 1h track 8h (default), 5m track 30m (this session, /ai-dlc:cache-keepalive)')
-    expect((await keepalive($, '2h --track 1h --machine')).text)
-      .toBe('keepalive: keep-warm set to 2h on the 1h track for every session on this machine; now keep warm: 1h track 2h (this machine, /ai-dlc:cache-keepalive), 5m track 30m (this session, /ai-dlc:cache-keepalive)')
+    expect((await configure($, '30m --track 5m')).text)
+      .toBe('keepalive: keep-warm set to 30m on the 5m track for this session; now keep warm: 1h track 8h (default), 5m track 30m (this session, /ai-dlc:cache-keepalive-configure)')
+    expect((await configure($, '2h --track 1h --machine')).text)
+      .toBe('keepalive: keep-warm set to 2h on the 1h track for every session on this machine; now keep warm: 1h track 2h (this machine, /ai-dlc:cache-keepalive-configure), 5m track 30m (this session, /ai-dlc:cache-keepalive-configure)')
     expect(seen.forks).toBe(0)
     await $.classic.Stop(stop())
     expect(line('5m')).toContain('keep warm 30m')
     expect(line('1h')).toContain('keep warm 2h')
     expect(await runChain(clock, seen, () => line('5m'), 3)).toBe(10)
-    expect((await keepalive($, 'clear --track 5m')).text)
-      .toBe('keepalive: keep-warm override cleared on the 5m track for this session; now keep warm: 1h track 2h (this machine, /ai-dlc:cache-keepalive), 5m track 1h (default)')
-    expect((await keepalive($, '2h --track 30m')).text).toContain('"30m" is not a track: --track takes 1h, 5m or both')
+    expect((await configure($, 'clear --track 5m')).text)
+      .toBe('keepalive: keep-warm override cleared on the 5m track for this session; now keep warm: 1h track 2h (this machine, /ai-dlc:cache-keepalive-configure), 5m track 1h (default)')
+    // A bad track is a mistake in the grammar (it holds --track): the usage text, and nothing changes (W2)
+    expectUsage((await configure($, '2h --track 30m')).text, '"30m" is not a track: --track takes 1h, 5m or both')
   })
 
   test('the keys are per track and scope: a 5m-only machine key and a 1h-only session key each reach only their own track', async ($, on) => {
@@ -1368,7 +1394,7 @@ describe('/ai-dlc:cache-keepalive', () => {
     await $.classic.Stop(stop())
     expect(line('1h')).toContain('keep warm 3h')
     expect(line('5m')).toContain('keep warm 20m')
-    expect((await keepalive($, 'clear --track 1h')).text).toContain('now keep warm: 1h track 8h (default), 5m track 20m (this machine, /ai-dlc:cache-keepalive)')
+    expect((await configure($, 'clear --track 1h')).text).toContain('now keep warm: 1h track 8h (default), 5m track 20m (this machine, /ai-dlc:cache-keepalive-configure)')
   })
 
   test('the former single-key overrides are not read: keepalive:keepWarmFor:sessions and :machine without a track change nothing', async ($, on) => {
@@ -1384,24 +1410,23 @@ describe('/ai-dlc:cache-keepalive', () => {
     } })
     await $.classic.Stop(stop())
     expect(line('1h')).toContain('keep warm 30m')
-    expect((await keepalive($, 'clear')).text).toContain('now keep warm 1d on both tracks (this machine, /ai-dlc:cache-keepalive)')
-    expect((await keepalive($, 'clear --machine')).text).toContain('now keep warm: 1h track 8h (default), 5m track 1h (default)')
+    expect((await configure($, 'clear')).text).toContain('now keep warm 1d on both tracks (this machine, /ai-dlc:cache-keepalive-configure)')
+    expect((await configure($, 'clear --machine')).text).toContain('now keep warm: 1h track 8h (default), 5m track 1h (default)')
   })
 
   test('scope machine makes machine the default scope; --session overrides it', async ($, on) => {
     engine(on, { files: { [`${ROOT}/.ai-dlc/cache-keepalive.json`]: JSON.stringify({ scope: 'machine' }) } })
-    expect((await keepalive($, '3h')).text).toContain('for every session on this machine')
-    expect((await keepalive($, '30m --session')).text).toContain('for this session; now keep warm 30m on both tracks (this session, /ai-dlc:cache-keepalive)')
+    expect((await configure($, '3h')).text).toContain('for every session on this machine')
+    expect((await configure($, '30m --session')).text).toContain('for this session; now keep warm 30m on both tracks (this session, /ai-dlc:cache-keepalive-configure)')
   })
 
-  test('a bad argument shows the usage, names the command and each track interval, and changes nothing', async ($, on) => {
+  test('a bad argument changes nothing and goes on to the skill (next); the usage is no longer printed by the module', async ($, on) => {
     const { seen } = engine(on)
-    const { text } = await keepalive($, 'forever')
-    expect(text).toContain('"forever" is not a duration')
-    expect(text).toContain('Usage: /ai-dlc:cache-keepalive [<n>m|<n>h|<n>d|clear|on|off] [--track 1h|5m|both] [--session|--machine]')
-    expect(text).toContain('the 1h track every 50m and the 5m track every 3m')
-    expect(text).not.toMatch(/(^|[^:])\/keepalive/)
+    const { text } = await configure($, 'forever')
+    expect(text).toBe('unanswered: ai-dlc:cache-keepalive-configure')
     expect(seen.forks).toBe(0)
+    expect(seen.writes).toEqual([])
+    expect((await keepalive($)).text).toContain('keep warm: 1h track 8h (default), 5m track 1h (default)')
   })
 
   test('an override shorter than minDuration is ignored with a warning, and the next level applies', async ($, on) => {
@@ -1415,18 +1440,93 @@ describe('/ai-dlc:cache-keepalive', () => {
     const old = Array.from({ length: 3 }, (_, i) => [`old-${i}`, (i + 1) * MIN])
     let id = 's-1'
     engine(on, { store: { 'keepalive:keepWarmFor:sessions:1h': old, 'keepalive:keepWarmFor:sessions:5m': old }, session: () => id, files: { [`${ROOT}/.claude/settings.json`]: JSON.stringify({ env: { AI_DLC_KEEPALIVE_SESSION_OVERRIDES_MAX: '3' } }) } })
-    await keepalive($, '2h')
+    await configure($, '2h')
     id = 'old-0'
     expect((await keepalive($, '')).text).toContain('1h track 8h (default), 5m track 1h (default)')
     id = 'old-1'
-    expect((await keepalive($, '')).text).toContain('keep warm 2m on both tracks (this session, /ai-dlc:cache-keepalive)')
+    expect((await keepalive($, '')).text).toContain('keep warm 2m on both tracks (this session, /ai-dlc:cache-keepalive-configure)')
   })
 
-  test('a bare /ai-dlc:cache-keepalive pings now and reports the hit', async ($, on) => {
+  test('[live3-5, live3-7] a bare /ai-dlc:cache-keepalive pings once with the settings in force and reports the hit; it changes no setting', async ($, on) => {
     const { seen } = engine(on)
     const { text } = await keepalive($)
     expect(seen.forks).toBe(1)
     expect(text).toMatch(/^HIT: cache read 1000000\/1000010 \(100%\), spent \d+ of 2000000 token-equivalents; keep warm: 1h track 8h \(default\), 5m track 1h \(default\)$/)
+    expect(text).not.toContain('takes no arguments')
+    expect(seen.writes).toEqual([])
+  })
+
+  test('[live3-7] a bare /ai-dlc:cache-keepalive reports MISS when the cache was not read', async ($, on) => {
+    const { seen } = engine(on, { cacheRead: 0 })
+    const { text } = await keepalive($)
+    expect(seen.forks).toBe(1)
+    expect(text).toMatch(/^MISS: cache read 0\/1000010 \(0%\), spent \d+ of \d+ token-equivalents; keep warm: 1h track 8h \(default\), 5m track 1h \(default\)$/)
+  })
+
+  test('[live3-7] the bare command pings with the settings /ai-dlc:cache-keepalive-configure set, and has none of its own', async ($, on) => {
+    const { seen } = engine(on, { files: { [`${ROOT}/.claude/settings.local.json`]: JSON.stringify({ env: { AI_DLC_KEEPALIVE_PING_PROMPT: 'warm it', AI_DLC_KEEPALIVE_1H_KEEP_WARM_FOR: '5h' } }) } })
+    const { text } = await keepalive($)
+    expect(seen.prompts).toEqual(['warm it'])
+    expect(text).toContain('1h track 5h')
+    // A keep-warm time configure set for this session is what the next bare run reports
+    await configure($, '2h --track 1h')
+    expect((await keepalive($)).text).toContain('1h track 2h (this session, /ai-dlc:cache-keepalive-configure)')
+    expect(seen.forks).toBe(2)
+  })
+
+  test('[live3-5] /ai-dlc:cache-keepalive with arguments changes no setting and its reply names /ai-dlc:cache-keepalive-configure', async ($, on) => {
+    const { seen } = engine(on)
+    for (const args of ['2h', '1d --machine', 'off', 'clear --track 5m']) {
+      const { text } = await keepalive($, args)
+      expect(text).toContain(`it takes no arguments, so "${args}" changed nothing`)
+      expect(text).toContain('/ai-dlc:cache-keepalive-configure')
+    }
+    expect(seen.writes).toEqual([])
+    // Nothing was set: the time in force is still the default, and keep-alive is still on
+    expect((await keepalive($)).text).toMatch(/^HIT: .*keep warm: 1h track 8h \(default\), 5m track 1h \(default\)$/)
+    await $.classic.Stop(stop())
+    expect(seen.statuses.at(-1)).toBeDefined()
+  })
+
+  test('[live3-7] switched off for this session (configure off --session), the bare command pings nothing and says off; on again, it pings', async ($, on) => {
+    const { seen } = engine(on)
+    await $.command.run({ command: 'ai-dlc:cache-keepalive-configure', args: 'off --session' } as never)
+    const { text } = await keepalive($)
+    expect(seen.forks).toBe(0)
+    expect(text).toMatch(/^keepalive: off \(.+\); nothing pinged/)
+    await $.command.run({ command: 'ai-dlc:cache-keepalive-configure', args: 'on --session' } as never)
+    expect((await keepalive($)).text).toMatch(/^HIT: /)
+    expect(seen.forks).toBe(1)
+  })
+
+  test('[live3-7] while keep-alive is off the bare command pings nothing and says why', async ($, on) => {
+    const { seen } = engine(on, { files: { [`${ROOT}/.claude/settings.local.json`]: JSON.stringify({ env: { AI_DLC_KEEPALIVE_ENABLED: 'false' } }) } })
+    const { text } = await keepalive($)
+    expect(seen.forks).toBe(0)
+    expect(text).toMatch(/^keepalive: off \(.+\); nothing pinged/)
+  })
+
+  test('[live3-5] /ai-dlc:cache-keepalive-configure with no arguments, or with plain words, goes on to the skill (next), and changes nothing', async ($, on) => {
+    const { seen } = engine(on)
+    expect((await configure($)).text).toBe('unanswered: ai-dlc:cache-keepalive-configure')
+    expect((await configure($, 'make the 1h track ping every 40 minutes')).text).toBe('unanswered: ai-dlc:cache-keepalive-configure')
+    expect((await configure($, 'forever')).text).toBe('unanswered: ai-dlc:cache-keepalive-configure')
+    expect(seen.forks).toBe(0) // configure never pings
+    expect(seen.writes).toEqual([])
+    expect((await keepalive($)).text).toContain('keep warm: 1h track 8h (default), 5m track 1h (default)')
+  })
+
+  test('[live3-5, W2] configure with arguments that are a mistake in the grammar (a bad track, two durations, on with a duration, --track alone) gets the usage text and changes nothing', async ($, on) => {
+    const { seen } = engine(on)
+    for (const [args, problem] of [
+      ['2h --track 30m', '"30m" is not a track: --track takes 1h, 5m or both'],
+      ['2h 3h', 'give one duration'],
+      ['on 2h', 'give on or off alone, without a duration or clear'],
+      ['--track', '--track needs 1h, 5m or both'],
+    ] as const) expectUsage((await configure($, args)).text, problem)
+    expect(seen.forks).toBe(0)
+    expect(seen.writes).toEqual([])
+    expect((await keepalive($)).text).toContain('keep warm: 1h track 8h (default), 5m track 1h (default)')
   })
 
   // The override against each lower level in turn: without it the level applies, with it 2h does.
@@ -1441,7 +1541,7 @@ describe('/ai-dlc:cache-keepalive', () => {
       const { seen, clock, line } = engine(on, o)
       await $.classic.Stop(stop())
       expect(line('1h')).toContain(where === 'the default' ? 'keep warm 8h' : 'keep warm 5h')
-      await keepalive($, '2h')
+      await configure($, '2h')
       await $.turn.start({ turnId: 't-2' } as never)
       await $.classic.Stop(stop())
       expect(line('1h')).toContain('keep warm 2h')
@@ -1515,7 +1615,7 @@ describe('the ping on the limit', () => {
   test('a machine-wide /ai-dlc:cache-keepalive time lifts the 5m track past 20, to the pings it allows', async ($, on) => {
     // The spend limit (budgetMultiplier 2) would stop the track near 40 pings, so it is raised here.
     const { part, seen, clock, line } = engine(on, { split: [0, 5], files: local({ AI_DLC_KEEPALIVE_BUDGET_MULTIPLIER: '10' }) })
-    await keepalive($, '3h --track 5m --machine')
+    await configure($, '3h --track 5m --machine')
     await $.classic.Stop(stop())
     expect(line('5m')).toContain(`ping 0/60, first ping at ${hhmm(START + 3 * MIN)}, keep warm 3h`)
     expect(await runChain(clock, seen, () => line('5m'), 3)).toBe(60)
@@ -1524,7 +1624,7 @@ describe('the ping on the limit', () => {
 
   test('a command time that allows fewer pings than maxPings does not lower the limit shown, and a maxPings above it ends as kept warm', async ($, on) => {
     const { part, seen, clock, line } = engine(on)
-    await keepalive($, '2h --track 1h')
+    await configure($, '2h --track 1h')
     await $.classic.Stop(stop())
     expect(line('1h')).toContain(`ping 0/9, first ping at ${hhmm(START + 50 * MIN)}, keep warm 2h`)
     expect(await runChain(clock, seen, () => line('1h'), 50)).toBe(2)
@@ -1598,7 +1698,7 @@ const GATED: Gated[] = [
   { key: 'fiveMinute.pingEvery', env: 'AI_DLC_KEEPALIVE_5M_PING_EVERY', a: '2m', split: [0, 5], probe: async c => { await armed(c); return forksAt(c, [1, 1]) }, ta: '0/1', td: '0/0' },
   { key: 'fiveMinute.keepWarmFor', env: 'AI_DLC_KEEPALIVE_5M_KEEP_WARM_FOR', a: '30m', split: [0, 5], probe: async c => { await armed(c); return warmOf(c, '5m') }, ta: '30m', td: '1h' },
   { key: 'fiveMinute.maxPings', env: 'AI_DLC_KEEPALIVE_5M_MAX_PINGS', a: 7, split: [0, 5], probe: async c => { await armed(c); return maxOf(c, '5m') }, ta: '7', td: '20' },
-  { key: 'budgetMultiplier', env: 'AI_DLC_KEEPALIVE_BUDGET_MULTIPLIER', a: 3, probe: async c => { await armed(c); return /of (\d+)/.exec((await keepalive(c.$)).text)?.[1] ?? 'none' }, ta: '3000000', td: '2000000' },
+  { key: 'budgetMultiplier', env: 'AI_DLC_KEEPALIVE_BUDGET_MULTIPLIER', a: 3, probe: async c => { await armed(c); await c.clock.fire(50); return /spent \d+ of (\d+)/.exec(c.seen.logs.find(l => l.includes(' spent ')) ?? '')?.[1] ?? 'none' }, ta: '3000000', td: '2000000' },
   { key: 'compactOnCap', env: 'AI_DLC_KEEPALIVE_COMPACT_ON_CAP', a: true, forkOutput: 400_000, probe: compactProbe(c => c.seen.logs.some(l => l.includes('--resume-session-at')) ? 'compacts' : 'does not'), ta: 'compacts', td: 'does not' },
   { key: 'compactInstructions', env: 'AI_DLC_KEEPALIVE_COMPACT_INSTRUCTIONS', a: 'y', forkOutput: 400_000, base: { AI_DLC_KEEPALIVE_COMPACT_ON_CAP: 'true' }, probe: compactProbe((_, i) => i[0] ?? 'none'), ta: 'y', td: "Also keep the background tasks' IDs, output paths, and what to do when they finish." },
   // The prices the spend limit counts in. The mock's ping: 10 input, 1 output, 1M read and nothing
@@ -1748,9 +1848,9 @@ describe('[28.1.l3] review fixes', () => {
   // Warning: a track that stops on its own re-reads its keep-warm time (28.4 W3)
   test('an override cleared while a track runs is published when the track expires', async ($, on) => {
     const { seen, clock } = engine(on)
-    await keepalive($, '2h --track 1h')
+    await configure($, '2h --track 1h')
     await $.classic.Stop(stop())
-    const reply = await keepalive($, 'clear --track 1h')
+    const reply = await configure($, 'clear --track 1h')
     await settle()
     expect(reply.text).toContain('; the running 1h track takes it at its next ping')
     expect(keepOf(seen, '1h')).toMatchObject({ running: true, keepWarmMs: 2 * H })
@@ -1762,11 +1862,11 @@ describe('[28.1.l3] review fixes', () => {
 
   test('an override cleared while a track runs is published when the track misses', async ($, on) => {
     const { seen, clock } = engine(on, { cacheRead: 0 })
-    await keepalive($, '1d --track 1h')
+    await configure($, '1d --track 1h')
     await $.classic.Stop(stop())
     await settle()
     expect(keepOf(seen, '1h')).toMatchObject({ running: true, keepWarmMs: 24 * H, cap: 28 })
-    await keepalive($, 'clear')
+    await configure($, 'clear')
     await clock.fire(50)
     await settle()
     expect(keepOf(seen, '1h')).toMatchObject({ running: false, keepWarmMs: 8 * H, cap: 9, line: `keepalive 1h: main warm until ${hhmm(START + 60 * MIN)}; missed, stopped` })
@@ -1774,9 +1874,9 @@ describe('[28.1.l3] review fixes', () => {
 
   test('an override cleared while a track runs is published when the work is done', async ($, on) => {
     const { seen } = engine(on)
-    await keepalive($, '1d --track 1h')
+    await configure($, '1d --track 1h')
     await $.classic.Stop(stop())
-    await keepalive($, 'clear')
+    await configure($, 'clear')
     await $.classic.Stop(stop([]))
     await settle()
     expect(keepOf(seen, '1h')).toMatchObject({ running: false, keepWarmMs: 8 * H, cap: 9, line: `keepalive 1h: main warm until ${hhmm(START + 60 * MIN)}; work done, stopped` })
@@ -1784,7 +1884,7 @@ describe('[28.1.l3] review fixes', () => {
 
   test('the command reply says nothing about a next ping when the track named is not running', async ($, on) => {
     engine(on)
-    const reply = await keepalive($, '2h --track 1h')
+    const reply = await configure($, '2h --track 1h')
     expect(reply.text).not.toContain('next ping')
   })
 
@@ -2621,6 +2721,8 @@ describe('[17.2.4] ITEM-034.c the observation debug lines', () => {
 // off write the env of .claude/settings.local.json, the one level that outranks the repository's files;
 // the status line is hidden while the master is off.
 describe('[step 40] /ai-dlc:cache-keepalive on|off writes the env of .claude/settings.local.json', () => {
+  // Live findings 3, point 5: the old /ai-dlc:cache-keepalive arguments are /ai-dlc:cache-keepalive-configure's
+  const configure = ($: Parameters<TestBody>[0], args = '') => $.command.run({ command: 'ai-dlc:cache-keepalive-configure', args } as never)
   const LOCAL = `${ROOT}/.claude/settings.local.json`
   const REPO = `${ROOT}/.ai-dlc/cache-keepalive.json`
   const written = (seen: { writes: [string, string][] }) => JSON.parse(seen.writes.filter(([p]) => p === LOCAL).at(-1)![1])
@@ -2629,11 +2731,11 @@ describe('[step 40] /ai-dlc:cache-keepalive on|off writes the env of .claude/set
     const { seen, status } = engine(on)
     await $.classic.Stop(stop())
     expect(status()).toBeDefined()
-    const { text } = await keepalive($, 'off')
+    const { text } = await configure($, 'off')
     expect(seen.writes.map(([p]) => p)).toEqual([LOCAL])
     expect(written(seen)).toEqual({ env: { AI_DLC_KEEPALIVE_ENABLED: 'false' } })
     expect(text).toContain('AI_DLC_KEEPALIVE_ENABLED=false written to the env of .claude/settings.local.json')
-    expect(text).toContain('wins over .claude/settings.json and .ai-dlc/cache-keepalive.json')
+    expect(text).toContain('(order: .claude/settings.local.json > .claude/settings.json > ~/.claude/settings.json > .ai-dlc/cache-keepalive.json)')
     expect(status()).toBeUndefined()
     await settle()
     expect(seen.states.at(-1)?.enabled).toBe(false)
@@ -2642,15 +2744,15 @@ describe('[step 40] /ai-dlc:cache-keepalive on|off writes the env of .claude/set
   test('off stops a running track: no ping goes out afterwards', async ($, on) => {
     const { seen, clock } = engine(on)
     await $.classic.Stop(stop())
-    await keepalive($, 'off')
+    await configure($, 'off')
     await clock.fire(120)
     expect(seen.forks).toBe(0)
   })
 
   test('on after off writes true; the next Stop with tasks arms the tracks and shows the status line again', async ($, on) => {
     const { seen, status, line } = engine(on)
-    await keepalive($, 'off')
-    await keepalive($, 'on')
+    await configure($, 'off')
+    await configure($, 'on')
     expect(written(seen)).toEqual({ env: { AI_DLC_KEEPALIVE_ENABLED: 'true' } })
     await settle()
     expect(seen.states.at(-1)?.enabled).toBe(true)
@@ -2661,7 +2763,7 @@ describe('[step 40] /ai-dlc:cache-keepalive on|off writes the env of .claude/set
 
   test('every other key of the file stays, in order: other settings, other env variables', async ($, on) => {
     const { seen } = engine(on, { files: { [LOCAL]: JSON.stringify({ permissions: { allow: ['Bash(ls)'] }, env: { FOO: '1', AI_DLC_KEEPALIVE_ENABLED: 'true' }, model: 'x' }, null, 2) } })
-    await keepalive($, 'off')
+    await configure($, 'off')
     const doc = written(seen)
     expect(doc).toEqual({ permissions: { allow: ['Bash(ls)'] }, env: { FOO: '1', AI_DLC_KEEPALIVE_ENABLED: 'false' }, model: 'x' })
     expect(Object.keys(doc)).toEqual(['permissions', 'env', 'model'])
@@ -2669,7 +2771,7 @@ describe('[step 40] /ai-dlc:cache-keepalive on|off writes the env of .claude/set
 
   test('a CRLF file stays CRLF, and the file ends with one newline', async ($, on) => {
     const { seen } = engine(on, { files: { [LOCAL]: JSON.stringify({ env: {} }, null, 2).replace(/\n/g, '\r\n') + '\r\n' } })
-    await keepalive($, 'off')
+    await configure($, 'off')
     const text = seen.writes.at(-1)![1]
     expect(text).toContain('\r\n')
     expect(text.replace(/\r\n/g, '')).not.toContain('\n')
@@ -2678,7 +2780,7 @@ describe('[step 40] /ai-dlc:cache-keepalive on|off writes the env of .claude/set
 
   test('--track 5m off writes only the 5m switch: the master and the 1h track stay on', async ($, on) => {
     const { seen, status, line } = engine(on, { split: [1_000, 2_000] })
-    await keepalive($, 'off --track 5m')
+    await configure($, 'off --track 5m')
     expect(written(seen)).toEqual({ env: { AI_DLC_KEEPALIVE_5M_ENABLED: 'false' } })
     await $.classic.Stop(stop())
     expect(line('1h')).toContain('armed')
@@ -2688,13 +2790,13 @@ describe('[step 40] /ai-dlc:cache-keepalive on|off writes the env of .claude/set
 
   test('--track both writes both track variables and not the master', async ($, on) => {
     const { seen } = engine(on)
-    await keepalive($, 'off --track both')
+    await configure($, 'off --track both')
     expect(written(seen)).toEqual({ env: { AI_DLC_KEEPALIVE_1H_ENABLED: 'false', AI_DLC_KEEPALIVE_5M_ENABLED: 'false' } })
   })
 
   test('the written value outranks the repository file that says the opposite (the reload that "did nothing")', async ($, on) => {
     const { seen, status } = engine(on, { trusted: true, files: { [REPO]: JSON.stringify({ enabled: true }) } })
-    await keepalive($, 'off')
+    await configure($, 'off')
     await $.classic.Stop(stop())
     expect(status()).toBeUndefined()
     await settle()
@@ -2705,10 +2807,10 @@ describe('[step 40] /ai-dlc:cache-keepalive on|off writes the env of .claude/set
 
   test('a session switch is dropped, because it outranks every settings file: on after off --session applies the file', async ($, on) => {
     const { seen } = engine(on)
-    await keepalive($, 'off --session')
+    await configure($, 'off --session')
     await settle()
     expect(seen.states.at(-1)).toMatchObject({ enabled: false, sessionMaster: 'off' })
-    await keepalive($, 'on')
+    await configure($, 'on')
     expect(written(seen)).toEqual({ env: { AI_DLC_KEEPALIVE_ENABLED: 'true' } })
     await settle()
     expect(seen.states.at(-1)?.enabled).toBe(true)
@@ -2719,7 +2821,7 @@ describe('[step 40] /ai-dlc:cache-keepalive on|off writes the env of .claude/set
   test('--session writes no file, touches only this session, and says so', async ($, on) => {
     const { seen, status } = engine(on)
     await $.classic.Stop(stop())
-    const { text } = await keepalive($, 'off --session')
+    const { text } = await configure($, 'off --session')
     expect(seen.writes).toEqual([])
     expect(text).toContain('keep-alive off for this session; no settings file written')
     await settle()
@@ -2729,7 +2831,7 @@ describe('[step 40] /ai-dlc:cache-keepalive on|off writes the env of .claude/set
 
   test('--session with --track switches only that track for this session', async ($, on) => {
     const { seen } = engine(on, { split: [1_000, 2_000] })
-    await keepalive($, 'off --session --track 1h')
+    await configure($, 'off --session --track 1h')
     await settle()
     expect(seen.writes).toEqual([])
     const t = (n: string) => seen.states.at(-1)!.tracks.find(x => x.name === n) as { sessionSwitch?: string }
@@ -2750,7 +2852,7 @@ describe('[step 40] /ai-dlc:cache-keepalive on|off writes the env of .claude/set
 
   test('[42.3] off --session --track 1h: only the 1h track reads enabled false, and the master stays on', async ($, on) => {
     const { seen } = engine(on, { split: [1_000, 2_000] })
-    await keepalive($, 'off --session --track 1h')
+    await configure($, 'off --session --track 1h')
     await settle()
     const t = (n: string) => seen.states.at(-1)!.tracks.find(x => x.name === n) as { enabled?: boolean }
     expect(seen.states.at(-1)?.enabled).toBe(true)
@@ -2760,7 +2862,7 @@ describe('[step 40] /ai-dlc:cache-keepalive on|off writes the env of .claude/set
 
   test('[42.3] off --session (the master): the master and both tracks read enabled false', async ($, on) => {
     const { seen } = engine(on)
-    await keepalive($, 'off --session')
+    await configure($, 'off --session')
     await settle()
     const t = (n: string) => seen.states.at(-1)!.tracks.find(x => x.name === n) as { enabled?: boolean }
     expect(seen.states.at(-1)?.enabled).toBe(false)
@@ -2770,8 +2872,8 @@ describe('[step 40] /ai-dlc:cache-keepalive on|off writes the env of .claude/set
 
   test('[42.3] a track switched on for the session under a master switched off reads enabled true (the track state, not the master\'s)', async ($, on) => {
     const { seen } = engine(on)
-    await keepalive($, 'off --session')
-    await keepalive($, 'on --session --track 1h')
+    await configure($, 'off --session')
+    await configure($, 'on --session --track 1h')
     await settle()
     const t = (n: string) => seen.states.at(-1)!.tracks.find(x => x.name === n) as { enabled?: boolean }
     expect(t('1h').enabled).toBe(true)
@@ -2780,14 +2882,16 @@ describe('[step 40] /ai-dlc:cache-keepalive on|off writes the env of .claude/set
 
   test('--machine with on or off is refused with the usage text and writes nothing', async ($, on) => {
     const { seen } = engine(on)
-    const { text } = await keepalive($, 'off --machine')
-    expect(text).toContain('Usage: /ai-dlc:cache-keepalive')
+    const { text } = await configure($, 'off --machine')
+    // a mistake in the grammar (it holds --machine): the module gives the usage text and writes nothing (W2)
+    expectUsage(text, 'on and off take --session, --for or no scope flag (then they are written to .claude/settings.local.json)')
     expect(seen.writes).toEqual([])
+    expect(seen.forks).toBe(0)
   })
 
   test('a file with comments is not rewritten (the comments would be lost): nothing written, the reason given', async ($, on) => {
     const { seen } = engine(on, { files: { [LOCAL]: '{ // mine\n "env": {} }' } })
-    const { text } = await keepalive($, 'off')
+    const { text } = await configure($, 'off')
     expect(seen.writes).toEqual([])
     expect(text).toContain('is not plain JSON')
     expect(text).toContain('nothing written')
@@ -2799,7 +2903,7 @@ describe('[step 40] /ai-dlc:cache-keepalive on|off writes the env of .claude/set
   ] as const) {
     test(`${title}: nothing written, the reason given`, async ($, on) => {
       const { seen } = engine(on, { files: { [LOCAL]: content } })
-      const { text } = await keepalive($, 'off')
+      const { text } = await configure($, 'off')
       expect(seen.writes).toEqual([])
       expect(text).toContain(reason)
     })
@@ -2807,19 +2911,21 @@ describe('[step 40] /ai-dlc:cache-keepalive on|off writes the env of .claude/set
 
   test('a file that exists but cannot be read is not overwritten', async ($, on) => {
     const { seen } = engine(on, { files: { [LOCAL]: '{"env":{}}' }, failRead: new Set([LOCAL]) })
-    const { text } = await keepalive($, 'off')
+    const { text } = await configure($, 'off')
     expect(seen.writes).toEqual([])
     expect(text).toContain('exists but could not be read; nothing written')
   })
 
   test('an empty file is treated as an empty object', async ($, on) => {
     const { seen } = engine(on, { files: { [LOCAL]: '  \n' } })
-    await keepalive($, 'off')
+    await configure($, 'off')
     expect(written(seen)).toEqual({ env: { AI_DLC_KEEPALIVE_ENABLED: 'false' } })
   })
 })
 
 describe('[step 40] the status line is hidden while the master is off', () => {
+  // Live findings 3, point 5: the old /ai-dlc:cache-keepalive arguments are /ai-dlc:cache-keepalive-configure's
+  const configure = ($: Parameters<TestBody>[0], args = '') => $.command.run({ command: 'ai-dlc:cache-keepalive-configure', args } as never)
   const local = (env: Record<string, string>) => ({ [`${ROOT}/.claude/settings.local.json`]: JSON.stringify({ env }) })
 
   test('master off in the settings: a Stop with tasks shows no status line, and the state says disabled', async ($, on) => {
@@ -2850,22 +2956,29 @@ describe('[step 40] the status line is hidden while the master is off', () => {
   })
 
   test('the command still answers while the master is off, so it can be turned back on', async ($, on) => {
-    engine(on, { files: local({ AI_DLC_KEEPALIVE_ENABLED: 'false' }) })
+    const { seen } = engine(on, { files: local({ AI_DLC_KEEPALIVE_ENABLED: 'false' }) })
     const { text } = await keepalive($)
     expect(text).toMatch(/^keepalive: off \(/)
     expect(text).toContain('nothing pinged')
+    expect(seen.forks).toBe(0)
+    // and configure turns it back on (the session switch outranks the file that says false)
+    await configure($, 'on --session')
+    await settle()
+    expect(seen.states.at(-1)?.enabled).toBe(true)
   })
 })
 
 // The reply of a bare /ai-dlc:cache-keepalive while nothing may ping says why (offCause, keepalive.ts): the
 // session's master switch, the master setting with its source, or each track that is off.
 describe('[step 40] the reason keep-alive is off, as the command says it (offCause)', () => {
+  // Live findings 3, point 5: the old /ai-dlc:cache-keepalive arguments are /ai-dlc:cache-keepalive-configure's
+  const configure = ($: Parameters<TestBody>[0], args = '') => $.command.run({ command: 'ai-dlc:cache-keepalive-configure', args } as never)
   const local = (env: Record<string, string>) => ({ [`${ROOT}/.claude/settings.local.json`]: JSON.stringify({ env }) })
   const reply = async ($: Parameters<TestBody>[0]) => (await keepalive($)).text
 
   test('the session master switched off: "switched off for this session"', async ($, on) => {
     engine(on)
-    await keepalive($, 'off --session')
+    await configure($, 'off --session')
     const text = await reply($)
     expect(text.startsWith('keepalive: off (switched off for this session); nothing pinged')).toBe(true)
     expect(text).toContain('keep-alive: off for this session') // and the switches in force are listed after it
@@ -2885,7 +2998,7 @@ describe('[step 40] the reason keep-alive is off, as the command says it (offCau
 
   test('both tracks switched off for this session: each says so, joined by "; "', async ($, on) => {
     engine(on)
-    await keepalive($, 'off --session --track both')
+    await configure($, 'off --session --track both')
     const text = await reply($)
     expect(text).toContain('1h track switched off for this session')
     expect(text).toContain('5m track switched off for this session')
@@ -2900,13 +3013,155 @@ describe('[step 40] the reason keep-alive is off, as the command says it (offCau
 
   test('one track off by its session switch and the other by its setting: each its own reason', async ($, on) => {
     engine(on, { files: local({ AI_DLC_KEEPALIVE_5M_ENABLED: 'false' }) })
-    await keepalive($, 'off --session --track 1h')
+    await configure($, 'off --session --track 1h')
     expect(await reply($)).toMatch(/^keepalive: off \(1h track switched off for this session; fiveMinute\.enabled=false, [^)]+\); nothing pinged/)
   })
 
   test('with one track still allowed the command does not report off at all', async ($, on) => {
     engine(on, { files: local({ AI_DLC_KEEPALIVE_5M_ENABLED: 'false' }) })
     expect(await reply($)).not.toMatch(/^keepalive: off \(/)
+  })
+})
+
+// Live findings 3, point 5 (the human, 2026-10-26): /ai-dlc:cache-keepalive takes no arguments, changes nothing and
+// pings nothing; the old argument grammar is /ai-dlc:cache-keepalive-configure's, which hands anything that does not
+// parse to the configure skill (`next`).
+describe('[43 live3 p5] /ai-dlc:cache-keepalive takes no arguments; its arguments are configure\'s', () => {
+  const CFG = 'ai-dlc:cache-keepalive-configure'
+  const configure = ($: Parameters<TestBody>[0], args = '') => $.command.run({ command: CFG, args } as never)
+  const published = async (seen: { states: Published[] }) => { await settle(); return seen.states.at(-1)! }
+
+  // Point 7: with no arguments it pings now, with the settings configure set; it has no settings of its own.
+  test('bare, with no arguments: it writes nothing and takes no arguments to explain; its ping is configure\'s settings', async ($, on) => {
+    const { seen } = engine(on)
+    await $.classic.Stop(stop())
+    await configure($, '2h --session')
+    const { text } = await keepalive($)
+    expect(seen.writes).toEqual([])
+    expect(text).not.toContain('takes no arguments')
+    expect(text).toContain('keep warm 2h on both tracks (this session')
+  })
+
+  for (const args of ['off', 'off --session', '2h', '2h --session --track 1h', 'clear --machine', 'on']) {
+    test(`bare with arguments ("${args}") changes nothing and the reply names configure`, async ($, on) => {
+      const { seen } = engine(on)
+      await $.classic.Stop(stop())
+      await settle()
+      const before = JSON.stringify((await published(seen)).tracks.map(t => [t.name, t.keepWarmMs, t.running]))
+      const { text } = await keepalive($, args)
+      const state = await published(seen)
+      expect(text).toContain('takes no arguments')
+      expect(text).toContain(`/${CFG}`)
+      expect(text).toContain(`"${args}" changed nothing`)
+      expect(seen.writes).toEqual([])
+      expect(state.enabled).toBe(true)
+      expect(state.sessionMaster).toBeUndefined()
+      expect(JSON.stringify(state.tracks.map(t => [t.name, t.keepWarmMs, t.running]))).toBe(before)
+    })
+  }
+
+  test('configure with no arguments reaches the next hook (the skill runs)', async ($, on) => {
+    const { seen } = engine(on)
+    const { text } = await configure($)
+    expect(text).toBe(`unanswered: ${CFG}`)
+    expect(seen.writes).toEqual([])
+    expect(seen.forks).toBe(0)
+  })
+
+  for (const words of ['turn keep-alive off for the team', 'forever']) {
+    test(`configure with plain words ("${words}") reaches the next hook and changes nothing`, async ($, on) => {
+      const { seen } = engine(on)
+      const { text } = await configure($, words)
+      expect(text).toBe(`unanswered: ${CFG}`)
+      expect(seen.writes).toEqual([])
+      expect(seen.forks).toBe(0)
+      expect((await published(seen)).sessionMaster).toBeUndefined()
+    })
+  }
+
+  for (const [words, problem] of [
+    ['2h --track 30m', '"30m" is not a track: --track takes 1h, 5m or both'],
+    ['off --machine', 'on and off take --session, --for or no scope flag (then they are written to .claude/settings.local.json)'],
+  ] as const) {
+    test(`[W2] configure with a mistake in the grammar ("${words}") gets the usage text and changes nothing`, async ($, on) => {
+      const { seen } = engine(on)
+      expectUsage((await configure($, words)).text, problem)
+      expect(seen.writes).toEqual([])
+      expect(seen.forks).toBe(0)
+      expect((await published(seen)).sessionMaster).toBeUndefined()
+    })
+  }
+
+  // Review round 4, W2: arguments with one of the grammar's flags, or made only of its bare words, are a mistake in the grammar
+  for (const [args, problem] of [
+    ['on --for everyone', '"everyone" is not a target: --for takes just-me, team or global'],
+    ['on --for=everyone', '"everyone" is not a target: --for takes just-me, team or global'],
+    ['on --for team --for global', 'give --for once'],
+    ['--for team', '--for goes with on, off, a keep-warm time or clear'],
+    ['on --track 2h', '"2h" is not a track: --track takes 1h, 5m or both'],
+    ['on --track 1h --track 5m', 'give --track once'],
+    ['30m --session clear', 'give a duration or clear, not both'],
+    ['on --machine', 'on and off take --session, --for or no scope flag (then they are written to .claude/settings.local.json)'],
+    ['on --for team --machine', "--for writes a settings file and --machine sets this machine's override: give one of them"],
+    ['--FOR everyone ON', '"everyone" is not a target: --for takes just-me, team or global'],
+  ] as const) {
+    test(`[W2] each flag of the grammar: "${args}" gets the usage text, with --for in it, and changes nothing`, async ($, on) => {
+      const { seen } = engine(on)
+      expectUsage((await configure($, args)).text, problem)
+      expect(seen.writes).toEqual([])
+      expect(seen.forks).toBe(0)
+    })
+  }
+
+  for (const [args, problem] of [
+    ['2h 3h', 'give one duration'],
+    ['on 2h', 'give on or off alone, without a duration or clear'],
+    ['clear 2h', 'give a duration or clear, not both'],
+    ['on off', 'give on or off once'],
+    ['ON 2H', 'give on or off alone, without a duration or clear'],
+  ] as const) {
+    test(`[W2] bare words only: "${args}" gets the usage text and changes nothing`, async ($, on) => {
+      const { seen } = engine(on)
+      expectUsage((await configure($, args)).text, problem)
+      expect(seen.writes).toEqual([])
+      expect(seen.forks).toBe(0)
+    })
+  }
+
+  for (const words of ['turn the 5m track off', 'turn off the 1h track', 'set it to 2h please', 'clear the 5m track', 'do it --forever please']) {
+    test(`[W2] plain words that hold a bare word ("${words}") are not a mistake in the grammar: they go on to the skill and change nothing`, async ($, on) => {
+      const { seen } = engine(on)
+      expect((await configure($, words)).text).toBe(`unanswered: ${CFG}`)
+      expect(seen.writes).toEqual([])
+      expect(seen.forks).toBe(0)
+    })
+  }
+
+  for (const flag of ['--session', '--machine']) {
+    test(`[W2] "${flag}" alone parses as a ping (it names nothing to change): it goes on to the skill, not to the usage text`, async ($, on) => {
+      const { seen } = engine(on)
+      expect((await configure($, flag)).text).toBe(`unanswered: ${CFG}`)
+      expect(seen.writes).toEqual([])
+    })
+  }
+
+  test('configure 2h --session sets the session override with no model turn, and the published tracks carry it', async ($, on) => {
+    const { seen } = engine(on)
+    const { text } = await configure($, '2h --session')
+    expect(text).toContain('keep-warm set to 2h on both tracks for this session')
+    expect(text).not.toBe(`unanswered: ${CFG}`)
+    expect(seen.forks).toBe(0)
+    expect(seen.writes).toEqual([])
+    expect((await published(seen)).tracks.map(t => t.keepWarmMs)).toEqual([120 * MIN, 120 * MIN])
+  })
+
+  test('configure off --session switches the master off for this session, writes no file, pings nothing', async ($, on) => {
+    const { seen } = engine(on)
+    const { text } = await configure($, 'off --session')
+    expect(text).toContain('keep-alive off for this session; no settings file written')
+    expect(seen.forks).toBe(0)
+    expect(seen.writes).toEqual([])
+    expect(await published(seen)).toMatchObject({ enabled: false, sessionMaster: 'off' })
   })
 })
 
@@ -2955,7 +3210,7 @@ describe('[T17.6] the keep-alive Pane (VS Code)', () => {
     on('ui.open', (_, ev) => (opened.push(ev as never), { value: { isPlaced: true } }) as never)
     return e
   }
-  const pane = ($: Parameters<TestBody>[0]) => $.ui.mount({ plugin: 'ai-dlc', surface: 'vscode', component: 'Pane', requestId: 'keepalive', props: { title: 'keepalive', isFocused: false, bodyColumns: 100, placement: 'dock', scroll: { offset: 0, bodyRows: 40 }, view: {} } } as never)
+  const pane = ($: Parameters<TestBody>[0], placement: 'dock' | 'inline' = 'dock') => $.ui.mount({ plugin: 'ai-dlc', surface: 'vscode', component: 'Pane', requestId: 'keepalive', props: { title: 'keepalive', isFocused: false, bodyColumns: 100, placement, scroll: { offset: 0, bodyRows: 40 }, view: {} } } as never)
   const textOf = (n: unknown): string => typeof n === 'string' ? n : Array.isArray(n) ? n.map(textOf).join('') : n && typeof n === 'object' ? Object.entries(n).map(([k, v]) => k === 'children' || k === 'text' || k === 'label' || k === 'props' ? textOf(v) : '').join('') : ''
 
   test('[AC-17.6.9] the bare command opens the Pane with the title "ai-dlc cache-keepalive" when a VS Code surface is attached', async ($, on) => {
@@ -2970,38 +3225,917 @@ describe('[T17.6] the keep-alive Pane (VS Code)', () => {
     expect(opened).toEqual([])
   })
 
-  test('[AC-17.6.9] the Pane draws the band\'s tree: the title with the master button, then the 5m row, then the 1h row, each with its button', async ($, on) => {
+  // Step 43 (live 1): the Pane, seated inline or docked, opens minimised and has the band's controls.
+  const kids = (n: any): any[] => {
+    const c = n?.props?.children ?? n?.children
+    return c === undefined || c === null ? [] : Array.isArray(c) ? c.flat(Infinity) : [c]
+  }
+  const walk = (n: any): any[] => (n !== null && typeof n === 'object' ? [n, ...kids(n).flatMap(walk)] : [])
+  const buttons = (tree: any) => walk(tree).filter(n => n.type === 'Button')
+  const press = async (ui: Awaited<ReturnType<typeof pane>>, key: string) => { await ui.press({ key }); await settle() }
+  const MIN_ROW = '⚠ ai-dlc cache-keepalive: on off⏻Ping now⟳Maximise⤢Restore□Close×' // live findings 3, point 8: each glyph is the Button's Text child, the label names the control
+  const closes: unknown[] = []
+  const withClose = (on: On, o: Opts = {}) => {
+    closes.length = 0
+    const e = withPane(on, o)
+    on('ui.close', (_, ev) => (closes.push(ev), { value: undefined }) as never)
+    return e
+  }
+
+  for (const placement of ['inline', 'dock'] as const) {
+    test(`[43 live 1b] ${placement}: the Pane starts minimised, the master switch and the status only, with ka-max, ka-min and ka-close`, async ($, on) => {
+      withPane(on)
+      const ui = await pane($, placement)
+      const text = textOf(await ui.drawn())
+      expect(text).toBe(MIN_ROW)
+      for (const key of ['ka-master', 'ka-ping', 'ka-max', 'ka-min', 'ka-close']) expect(await ui.find({ type: 'Button', key })).toBeDefined()
+      expect(await ui.find({ type: 'Button', key: 'ka-5m' })).toBe(undefined)
+      expect(await ui.find({ type: 'Button', key: 'ka-1h' })).toBe(undefined)
+      expect(text).not.toContain('keepalive 5m:')
+      const restore: any = await ui.find({ type: 'Button', key: 'ka-min' })
+      expect(restore?.text).toBe('□')
+      expect(restore?.props?.label).toBe('Restore')
+      await ui.unmount()
+    })
+
+    test(`[43 live 1b] ${placement}: □ shows the rows and becomes –, – minimises again`, async ($, on) => {
+      withPane(on)
+      const ui = await pane($, placement)
+      await press(ui, 'ka-min')
+      let text = textOf(await ui.drawn())
+      expect(text.indexOf('⚠ ai-dlc cache-keepalive:')).toBe(0)
+      expect(text.indexOf('keepalive 5m:')).toBeGreaterThan(0)
+      expect(text.indexOf('keepalive 1h:')).toBeGreaterThan(text.indexOf('keepalive 5m:'))
+      for (const key of ['ka-master', 'ka-5m', 'ka-1h', 'ka-ping', 'ka-max', 'ka-min', 'ka-close']) expect(await ui.find({ type: 'Button', key })).toBeDefined()
+      expect(((await ui.find({ type: 'Button', key: 'ka-min' })) as any)?.props?.label).toBe('Minimise') // full: the word
+      await press(ui, 'ka-min')
+      text = textOf(await ui.drawn())
+      expect(text).toBe(MIN_ROW)
+      await ui.unmount()
+    })
+
+    test(`[43 live 1b] ${placement}: ka-max restores the Pane (rows shown) and raises it: the Pane is opened again, focused`, async ($, on) => {
+      withPane(on)
+      const ui = await pane($, placement)
+      await press(ui, 'ka-max')
+      expect(textOf(await ui.drawn())).toContain('keepalive 5m:')
+      expect(((await ui.find({ type: 'Button', key: 'ka-min' })) as any)?.props?.label).toBe('Minimise') // full: the word
+      expect(opened).toEqual([expect.objectContaining({ id: 'keepalive', focus: true })])
+      await ui.unmount()
+    })
+
+    test(`[43 live 1b] ${placement}: × closes the Pane (ui.close of its id), minimised and restored`, async ($, on) => {
+      withClose(on)
+      const ui = await pane($, placement)
+      await press(ui, 'ka-close')
+      expect(closes).toEqual([expect.objectContaining({ id: 'keepalive' })])
+      await press(ui, 'ka-min')
+      await press(ui, 'ka-close')
+      expect(closes.length).toBe(2)
+      await ui.unmount()
+    })
+
+    test(`[43 live 1c] ${placement}: every Button is plain, minimised and restored`, async ($, on) => {
+      withPane(on)
+      const ui = await pane($, placement)
+      const min = buttons(await ui.drawn())
+      expect(min.length).toBe(5) // master, ping, max, min, close
+      for (const b of min) expect(b.props.plain).toBe(true)
+      await press(ui, 'ka-min')
+      const open = buttons(await ui.drawn())
+      expect(open.length).toBe(7) // master, ping, max, min, close, 5m, 1h
+      for (const b of open) expect(b.props.plain).toBe(true)
+      await ui.unmount()
+    })
+
+    test(`[43 live 1c] ${placement}: all buttons are the same height: no Button carries a height or padding prop of its own, and every Button has the same look props`, async ($, on) => {
+      withPane(on)
+      const ui = await pane($, placement)
+      const sizeProps = (b: any) => Object.keys(b.props).filter(k => /height|padding|margin|width|size/i.test(k))
+      for (const open of [false, true]) {
+        if (open) await press(ui, 'ka-min')
+        const bs = buttons(await ui.drawn())
+        for (const b of bs) expect(sizeProps(b)).toEqual([])
+        const shape = (b: any) => Object.keys(b.props).filter(k => !['key', 'label', 'onPress', 'press', 'role', 'children'].includes(k)).sort().join(',')
+        expect(new Set(bs.map(shape)).size).toBe(1)
+      }
+      await ui.unmount()
+    })
+
+    test(`[43 live 1c] ${placement}: a row has its text in a growing left Box and its buttons in a right-aligned group, minimised and restored`, async ($, on) => {
+      withPane(on)
+      const ui = await pane($, placement)
+      const rowsOf = (tree: any) => walk(tree).filter(n => n.props?.justifyContent === 'space-between')
+      const check = (row: any, nButtons: number) => {
+        expect(row.props.flexDirection).toBe('row')
+        const [left, right, ...rest] = kids(row)
+        expect(rest).toEqual([])
+        expect(left.props.flexGrow).toBe(1)
+        expect(left.props.flexDirection).toBe('row')
+        expect(right.props.justifyContent).toBe('flex-end')
+        expect(right.props.flexGrow).toBeUndefined()
+        expect(buttons(left)).toEqual([])
+        expect(buttons(right).length).toBe(nButtons)
+        for (const n of [row, left, right]) expect(n.props.width).toBeUndefined() // step 34: no Box with a width
+      }
+      const minRows = rowsOf(await ui.drawn())
+      expect(minRows.length).toBe(1)
+      check(minRows[0], 5)
+      await press(ui, 'ka-min')
+      const openRows = rowsOf(await ui.drawn())
+      expect(openRows.length).toBe(3) // title, 5m, 1h
+      check(openRows[0], 5)
+      check(openRows[1], 1)
+      check(openRows[2], 1)
+      expect(textOf(openRows[1])).toContain('keepalive 5m:')
+      expect(textOf(openRows[2])).toContain('keepalive 1h:')
+      await ui.unmount()
+    })
+
+    test(`[43 live3 p8] ${placement}: ka-ping pings once with the settings in force and redraws, minimised and restored`, async ($, on) => {
+      const { seen } = withPane(on, { files: { [`${ROOT}/.claude/settings.local.json`]: JSON.stringify({ env: { AI_DLC_KEEPALIVE_PING_PROMPT: 'warm it' } }) } })
+      let invalidated = 0
+      on('ui.invalidate' as never, ((_: unknown, e: unknown, next: (e: unknown) => unknown) => (invalidated++, next(e))) as never) // counts, and lets the redraw through
+      const ui = await pane($, placement)
+      await $.classic.Stop(stop()) // the settings are read at the Stop
+      expect(seen.forks).toBe(0) // drawing and stopping ping nothing
+      const base = invalidated
+      await press(ui, 'ka-ping')
+      expect(seen.forks).toBe(1)
+      expect(seen.prompts).toEqual(['warm it'])
+      expect(invalidated - base).toBe(1) // the Pane is redrawn once the ping is done
+      expect(textOf(await ui.drawn())).toBe(MIN_ROW) // the press neither opens nor closes it
+      await press(ui, 'ka-min')
+      await press(ui, 'ka-ping')
+      expect(seen.forks).toBe(2)
+      expect(textOf(await ui.drawn())).toContain('keepalive 5m:') // restored stays restored
+      await ui.unmount()
+    })
+
+    test(`[43 live3 p8] ${placement}: ka-ping reads the settings first: a file changed since the last Stop is what the press uses`, async ($, on) => {
+      const local = `${ROOT}/.claude/settings.local.json`
+      const { seen, files } = withPane(on, { files: { [local]: JSON.stringify({ env: { AI_DLC_KEEPALIVE_PING_PROMPT: 'old prompt' } }) } })
+      const ui = await pane($, placement)
+      await $.classic.Stop(stop())
+      files[local] = JSON.stringify({ env: { AI_DLC_KEEPALIVE_PING_PROMPT: 'new prompt' } })
+      await press(ui, 'ka-ping')
+      expect(seen.prompts).toEqual(['new prompt'])
+      await ui.unmount()
+    })
+
+    test(`[43 live3 p8] ${placement}: ka-ping pings nothing while keep-alive is off`, async ($, on) => {
+      const { seen } = withPane(on, { files: { [`${ROOT}/.claude/settings.local.json`]: JSON.stringify({ env: { AI_DLC_KEEPALIVE_ENABLED: 'false' } }) } })
+      const ui = await pane($, placement)
+      await $.classic.Stop(stop()) // settings are read at the Stop
+      await press(ui, 'ka-ping')
+      expect(seen.forks).toBe(0)
+      await ui.unmount()
+    })
+
+    // Review round 4, W3: no ping overlaps another. The held fork stays out until release(); forks are counted when they start.
+    const invalidations = (on: On) => {
+      const n = { count: 0 }
+      on('ui.invalidate' as never, ((_: unknown, e: unknown, next: (e: unknown) => unknown) => (n.count++, next(e))) as never)
+      return n
+    }
+
+    test(`[W3] ${placement}: two presses of ka-ping back to back ping once; the second is ignored, not queued, and redraws nothing`, async ($, on) => {
+      const { seen, release } = withPane(on, { holdForks: true })
+      const drawn = invalidations(on) // before the first use of $, as the hooks are registered
+      const ui = await pane($, placement)
+      await $.classic.Stop(stop())
+      const base = drawn.count
+      await Promise.all([ui.press({ key: 'ka-ping' }), ui.press({ key: 'ka-ping' })]) // the second arrives before the first has read its settings
+      await settle()
+      expect(seen.forks).toBe(1)
+      expect(seen.logs.filter(l => l.includes('ping press ignored: a ping is already under way')).length).toBe(1)
+      release()
+      await settle()
+      expect(seen.forks).toBe(1) // the ignored press did not wait for the first, and did not ping after it
+      expect(drawn.count - base).toBe(1) // one redraw, of the press that pinged
+      await press(ui, 'ka-ping') // once the first is done, a press pings again
+      expect(seen.forks).toBe(2)
+      await ui.unmount()
+    })
+
+    test(`[W3] ${placement}: a press of ka-ping while a press is out (its fork not back yet) pings nothing more`, async ($, on) => {
+      const { seen, release } = withPane(on, { holdForks: true })
+      const ui = await pane($, placement)
+      await $.classic.Stop(stop())
+      await press(ui, 'ka-ping')
+      expect(seen.forks).toBe(1)
+      await press(ui, 'ka-ping')
+      await press(ui, 'ka-ping')
+      expect(seen.forks).toBe(1)
+      release()
+      await settle()
+      expect(seen.forks).toBe(1)
+      await ui.unmount()
+    })
+
+    test(`[W3] ${placement}: a press of ka-ping while a track's scheduled ping is out pings nothing, and pings again when it is back`, async ($, on) => {
+      const { seen, clock, release } = withPane(on, { holdForks: true })
+      const ui = await pane($, placement)
+      await $.classic.Stop(stop()) // the 1h track arms; its first ping is due at 50 minutes
+      await clock.fire(50)
+      expect(seen.forks).toBe(1) // the scheduled ping is out, held
+      await press(ui, 'ka-ping')
+      expect(seen.forks).toBe(1)
+      expect(seen.logs.some(l => l.includes('ping press ignored: a ping is already under way'))).toBe(true)
+      release()
+      await settle()
+      await press(ui, 'ka-ping')
+      expect(seen.forks).toBeGreaterThanOrEqual(2)
+      await ui.unmount()
+    })
+
+    test(`[W3] ${placement}: a press whose fork fails does not leave the guard set: the next press pings`, async ($, on) => {
+      const { seen } = withPane(on, { failFork: true })
+      const ui = await pane($, placement)
+      await $.classic.Stop(stop())
+      await press(ui, 'ka-ping')
+      expect(seen.forks).toBe(1)
+      await press(ui, 'ka-ping')
+      expect(seen.forks).toBe(2) // not "already under way": the flags were released
+      expect(seen.logs.some(l => l.includes('ping press ignored'))).toBe(false)
+      await ui.unmount()
+    })
+
+    test(`[43 live3 p8] ${placement}: minimised, five controls in order master, ping, max, min, close, each a glyph Text child named by its label`, async ($, on) => {
+      withPane(on)
+      const ui = await pane($, placement)
+      const bs = buttons(await ui.drawn())
+      expect(bs.map(b => b.props.key)).toEqual(['ka-master', 'ka-ping', 'ka-max', 'ka-min', 'ka-close'])
+      expect(bs.map(b => b.props.label)).toEqual(['off', 'Ping now', 'Maximise', 'Restore', 'Close']) // master reads the press: off|on
+      expect(bs.map(b => kids(b).map(c => [c.type, textOf(c)]))).toEqual([[['Text', '⏻']], [['Text', '⟳']], [['Text', '⤢']], [['Text', '□']], [['Text', '×']]])
+      expect(bs.map(b => b.props.role)).toEqual([undefined, undefined, undefined, undefined, 'dismiss'])
+      await ui.unmount()
+    })
+
+    test(`[43 live3 p8] ${placement}: restored, the labels are the words, master reads off|on, and no Button has a glyph child; role=dismiss stays on close`, async ($, on) => {
+      withPane(on)
+      const ui = await pane($, placement)
+      await press(ui, 'ka-min')
+      const bs = buttons(await ui.drawn())
+      expect(bs.map(b => b.props.key)).toEqual(['ka-master', 'ka-ping', 'ka-max', 'ka-min', 'ka-close', 'ka-5m', 'ka-1h'])
+      expect(bs.slice(0, 5).map(b => b.props.label)).toEqual(['off', 'Ping now', 'Maximise', 'Minimise', 'Close'])
+      for (const b of bs) expect(kids(b)).toEqual([])
+      expect(bs.find(b => b.props.key === 'ka-close').props.role).toBe('dismiss')
+      await press(ui, 'ka-master')
+      expect(buttons(await ui.drawn())[0].props.label).toBe('on')
+      await ui.unmount()
+    })
+
+    test(`[43 live 1b] ${placement}: the command run again after a restore minimises the Pane again`, async ($, on) => {
+      withPane(on)
+      const ui = await pane($, placement)
+      await press(ui, 'ka-min')
+      expect(textOf(await ui.drawn())).toContain('keepalive 5m:')
+      await keepalive($)
+      await settle()
+      expect(textOf(await ui.drawn())).toBe(MIN_ROW)
+      await press(ui, 'ka-max')
+      expect(textOf(await ui.drawn())).toContain('keepalive 5m:')
+      await keepalive($)
+      await settle()
+      expect(textOf(await ui.drawn())).toBe(MIN_ROW)
+      await ui.unmount()
+    })
+
+    test(`[AC-17.6.10] ${placement}: a press in the Pane acts on this session and its rows change without reopening`, async ($, on) => {
+      withPane(on)
+      const ui = await pane($, placement)
+      await press(ui, 'ka-min')
+      expect(textOf(await ui.drawn())).not.toContain('(disabled)')
+      await press(ui, 'ka-master')
+      const after = textOf(await ui.drawn())
+      expect(after).toContain('keepalive 5m: off (disabled)')
+      expect(after).toContain('keepalive 1h: off (disabled)')
+      await ui.unmount()
+    })
+  }
+
+  test('[AC-17.6.10, 43 live 1b] minimised, the master button works: the status reads off and the button reads on', async ($, on) => {
     withPane(on)
     const ui = await pane($)
-    const text = textOf(await ui.drawn())
-    expect(text.indexOf('⚠ ai-dlc cache-keepalive:')).toBe(0)
-    expect(text.indexOf('keepalive 5m:')).toBeGreaterThan(0)
-    expect(text.indexOf('keepalive 1h:')).toBeGreaterThan(text.indexOf('keepalive 5m:'))
-    for (const key of ['ka-master', 'ka-5m', 'ka-1h']) expect(await ui.find({ type: 'Button', key })).toBeDefined()
+    await press(ui, 'ka-master')
+    expect(textOf(await ui.drawn())).toBe('⚠ ai-dlc cache-keepalive: off on⏻Ping now⟳Maximise⤢Restore□Close×')
     await ui.unmount()
   })
+})
 
-  test('[42.2] the Pane has no minimise and no close: the full rows and buttons are always drawn, with no `–` / `□` / `×` control', async ($, on) => {
-    withPane(on)
-    const ui = await pane($)
-    const text = textOf(await ui.drawn())
-    expect(text).toContain('keepalive 5m:')
-    expect(text).toContain('keepalive 1h:')
-    expect(await ui.find({ type: 'Button', key: 'ka-min' })).toBe(undefined)
-    expect(await ui.find({ type: 'Button', key: 'ka-close' })).toBe(undefined) // no close either: only the band has one
-    expect(text).not.toMatch(/[–□×]/)
-    await ui.unmount()
+// ---- Live findings 3, point 6a: --for just-me|team|global ----
+describe('[6a] parsing --for', () => {
+  const parse = (a: string) => parseCommandArgs(a, 'session')
+
+  test('each target with on, off, a keep-warm time and clear', () => {
+    expect(parse('on --for just-me')).toEqual({ kind: 'switch', on: true, where: 'local' })
+    expect(parse('off --for team')).toEqual({ kind: 'switch', on: false, where: 'team' })
+    expect(parse('on --for global')).toEqual({ kind: 'switch', on: true, where: 'global' })
+    expect(parse('30m --for team')).toEqual({ kind: 'set', ms: 30 * MIN, scope: 'session', tracks: ['1h', '5m'], for: 'team' })
+    expect(parse('2h --for global --track 1h')).toEqual({ kind: 'set', ms: 120 * MIN, scope: 'session', tracks: ['1h'], for: 'global' })
+    expect(parse('clear --for just-me')).toEqual({ kind: 'clear', scope: 'session', tracks: ['1h', '5m'], for: 'just-me' })
+    expect(parse('clear --for team --track 5m')).toEqual({ kind: 'clear', scope: 'session', tracks: ['5m'], for: 'team' })
   })
 
-  test('[AC-17.6.10] a press in the Pane acts on this session and its rows change without reopening', async ($, on) => {
-    withPane(on)
-    const ui = await pane($)
-    expect(textOf(await ui.drawn())).not.toContain('(disabled)')
-    await ui.press({ key: 'ka-master' })
+  test('without --for, on and off stay local and a time stays an override of its scope (no `for`)', () => {
+    expect(parse('off')).toEqual({ kind: 'switch', on: false, where: 'local' })
+    expect(parse('30m')).toEqual({ kind: 'set', ms: 30 * MIN, scope: 'session', tracks: ['1h', '5m'] })
+    expect(parseCommandArgs('30m', 'machine')).toEqual({ kind: 'set', ms: 30 * MIN, scope: 'machine', tracks: ['1h', '5m'] })
+  })
+
+  test('the = form, any case, and either word order', () => {
+    expect(parse('on --for=team')).toEqual({ kind: 'switch', on: true, where: 'team' })
+    expect(parse('--FOR=Global off')).toEqual({ kind: 'switch', on: false, where: 'global' })
+    expect(parse('--for TEAM 1h')).toMatchObject({ kind: 'set', ms: 60 * MIN, for: 'team' })
+    expect(parse('--for team on --track 1h')).toEqual({ kind: 'switch', on: true, where: 'team', tracks: ['1h'] })
+  })
+
+  test('twice is refused, also with the same value', () => {
+    expect(parse('on --for team --for global')).toEqual({ kind: 'usage', problem: 'give --for once' })
+    expect(parse('on --for=team --for=team')).toEqual({ kind: 'usage', problem: 'give --for once' })
+    expect(parse('on --for team --for=global')).toEqual({ kind: 'usage', problem: 'give --for once' })
+  })
+
+  test('an unknown target, or none, is refused and names the three targets', () => {
+    expect(parse('on --for everyone')).toEqual({ kind: 'usage', problem: '"everyone" is not a target: --for takes just-me, team or global' })
+    expect(parse('on --for=')).toMatchObject({ kind: 'usage' })
+    expect(parse('on --for')).toEqual({ kind: 'usage', problem: '--for needs just-me, team or global' })
+    expect(parse('on --for local')).toMatchObject({ kind: 'usage', problem: expect.stringContaining('just-me, team or global') })
+  })
+
+  test('with --machine it is refused, in either order and for each kind', () => {
+    for (const a of ['on --for team --machine', 'on --machine --for team', '30m --for global --machine', 'clear --machine --for just-me']) {
+      const r = parse(a)
+      expect(r.kind).toBe('usage')
+      expect(r.kind === 'usage' && r.problem).toContain('--for')
+      expect(r.kind === 'usage' && r.problem).toContain('--machine')
+    }
+  })
+
+  test('alone, or with only --track, it is refused: --for goes with on, off, a time or clear', () => {
+    expect(parse('--for team')).toEqual({ kind: 'usage', problem: '--for goes with on, off, a keep-warm time or clear' })
+    expect(parse('--for global --track 1h')).toEqual({ kind: 'usage', problem: '--for goes with on, off, a keep-warm time or clear' })
+  })
+
+  test('with --session the session wins: the call carries no `for`, only ignoredFor', () => {
+    expect(parse('on --session --for team')).toEqual({ kind: 'switch', on: true, where: 'session', ignoredFor: 'team' })
+    expect(parse('--for=global --session off')).toEqual({ kind: 'switch', on: false, where: 'session', ignoredFor: 'global' })
+    expect(parse('30m --session --for team')).toEqual({ kind: 'set', ms: 30 * MIN, scope: 'session', tracks: ['1h', '5m'], ignoredFor: 'team' })
+    expect(parse('clear --for just-me --session')).toEqual({ kind: 'clear', scope: 'session', tracks: ['1h', '5m'], ignoredFor: 'just-me' })
+  })
+
+  test('the old refusals stay: a duration with clear, on with a time', () => {
+    expect(parse('30m clear --for team')).toEqual({ kind: 'usage', problem: 'give a duration or clear, not both' })
+    expect(parse('on 30m --for team')).toEqual({ kind: 'usage', problem: 'give on or off alone, without a duration or clear' })
+  })
+})
+
+describe('[6a] /ai-dlc:cache-keepalive-configure --for writes the env of the file the target names', () => {
+  const configure = ($: Parameters<TestBody>[0], args = '') => $.command.run({ command: 'ai-dlc:cache-keepalive-configure', args } as never)
+  const LOCAL = `${ROOT}/.claude/settings.local.json`
+  const TEAM = `${ROOT}/.claude/settings.json`
+  const GLOBAL = '/home/test/.claude/settings.json'
+  const REPO = `${ROOT}/.ai-dlc/cache-keepalive.json`
+  const lastOf = (seen: { writes: [string, string][] }, p: string) => JSON.parse(seen.writes.filter(([w]) => w === p).at(-1)![1])
+  const paths = (seen: { writes: [string, string][] }) => seen.writes.map(([p]) => p)
+  const TARGETS = [['just-me', LOCAL, '.claude/settings.local.json'], ['team', TEAM, '.claude/settings.json'], ['global', GLOBAL, '~/.claude/settings.json']] as const
+
+  for (const [target, file, shown] of TARGETS) {
+    test(`on and off --for ${target} write the master into ${shown} only, and the reply names it`, async ($, on) => {
+      const { seen } = engine(on, { files: { [REPO]: JSON.stringify({ scope: 'session' }) } })
+      const off = await configure($, `off --for ${target}`)
+      expect(lastOf(seen, file)).toEqual({ env: { AI_DLC_KEEPALIVE_ENABLED: 'false' } })
+      expect(off.text).toContain(`AI_DLC_KEEPALIVE_ENABLED=false written to the env of ${shown}`)
+      expect(paths(seen).filter(p => p !== REPO)).toEqual([file])
+      await configure($, `on --for=${target}`)
+      expect(lastOf(seen, file)).toEqual({ env: { AI_DLC_KEEPALIVE_ENABLED: 'true' } })
+    })
+
+    test(`a keep-warm time --for ${target} writes each track's time into ${shown}, and clear removes them with null, keeping the rest`, async ($, on) => {
+      const { seen } = engine(on, { files: { [file]: JSON.stringify({ model: 'x', env: { FOO: '1', AI_DLC_KEEPALIVE_ENABLED: 'true' } }) } })
+      const set = await configure($, `2h --for ${target}`)
+      // W4: the 1h track needs 2 pings, below the 9 in force, so its maxPings is not written; the 5m track needs 40, above the 20 in force
+      expect(lastOf(seen, file)).toEqual({ model: 'x', env: { FOO: '1', AI_DLC_KEEPALIVE_ENABLED: 'true', AI_DLC_KEEPALIVE_1H_KEEP_WARM_FOR: '2h', AI_DLC_KEEPALIVE_5M_KEEP_WARM_FOR: '2h', AI_DLC_KEEPALIVE_5M_MAX_PINGS: '40' } })
+      expect(set.text).toContain('AI_DLC_KEEPALIVE_5M_MAX_PINGS=40 written')
+      expect(set.text).not.toContain('AI_DLC_KEEPALIVE_1H_MAX_PINGS')
+      expect(set.text).toContain(`in the env of ${shown}`)
+      expect(set.text).toContain('order: .claude/settings.local.json > .claude/settings.json > ~/.claude/settings.json > .ai-dlc/cache-keepalive.json')
+      const clear = await configure($, `clear --for ${target}`)
+      const after = lastOf(seen, file)
+      expect(after).toEqual({ model: 'x', env: { FOO: '1', AI_DLC_KEEPALIVE_ENABLED: 'true' } })
+      for (const k of ['1H_KEEP_WARM_FOR', '1H_MAX_PINGS', '5M_KEEP_WARM_FOR', '5M_MAX_PINGS']) expect(after.env).not.toHaveProperty(`AI_DLC_KEEPALIVE_${k}`)
+      expect(clear.text).toContain(`removed in the env of ${shown}`)
+      expect(clear.text).toContain('AI_DLC_KEEPALIVE_5M_MAX_PINGS removed') // 40 is the pair the 2h left, so it goes with it
+    })
+  }
+
+  test('--track writes only that track; the other track keeps whatever the file had', async ($, on) => {
+    const { seen } = engine(on, { files: { [LOCAL]: JSON.stringify({ env: { AI_DLC_KEEPALIVE_5M_KEEP_WARM_FOR: '45m', AI_DLC_KEEPALIVE_5M_MAX_PINGS: '15' } }) } })
+    await configure($, '3h --for just-me --track 1h')
+    // 3h needs 3 pings, below the 9 in force: the 1h maxPings is not written (W4)
+    expect(lastOf(seen, LOCAL).env).toEqual({ AI_DLC_KEEPALIVE_5M_KEEP_WARM_FOR: '45m', AI_DLC_KEEPALIVE_5M_MAX_PINGS: '15', AI_DLC_KEEPALIVE_1H_KEEP_WARM_FOR: '3h' })
+  })
+
+  test('maxPings follows the keep-warm time at each track\'s pingEvery: rounded down, at least 1, 1h at 50m and 5m at 3m (limits of 1 in force, so each first time needs more; later ones rewrite the pair they left)', async ($, on) => {
+    const { seen } = engine(on, { files: { [LOCAL]: JSON.stringify({ env: { AI_DLC_KEEPALIVE_1H_MAX_PINGS: '1', AI_DLC_KEEPALIVE_5M_MAX_PINGS: '1' } }) } })
+    const env = async (a: string) => { await configure($, a); return lastOf(seen, LOCAL).env }
+    expect(await env('150m --for just-me --track 1h')).toMatchObject({ AI_DLC_KEEPALIVE_1H_KEEP_WARM_FOR: '150m', AI_DLC_KEEPALIVE_1H_MAX_PINGS: '3' })
+    expect(await env('149m --for just-me --track 1h')).toMatchObject({ AI_DLC_KEEPALIVE_1H_MAX_PINGS: '2' })
+    expect(await env('49m --for just-me --track 1h')).toMatchObject({ AI_DLC_KEEPALIVE_1H_MAX_PINGS: '1' })
+    expect(await env('9m --for just-me --track 5m')).toMatchObject({ AI_DLC_KEEPALIVE_5M_KEEP_WARM_FOR: '9m', AI_DLC_KEEPALIVE_5M_MAX_PINGS: '3' })
+    expect(await env('8m --for just-me --track 5m')).toMatchObject({ AI_DLC_KEEPALIVE_5M_MAX_PINGS: '2' })
+    expect(await env('2m --for just-me --track 5m')).toMatchObject({ AI_DLC_KEEPALIVE_5M_MAX_PINGS: '1' })
+  })
+
+  test('maxPings follows the pingEvery in force, not the default (a limit of 1 in force, so 10m needs more)', async ($, on) => {
+    const { seen } = engine(on, { trusted: true, files: { [REPO]: JSON.stringify({ fiveMinute: { pingEvery: '2m' } }), [LOCAL]: JSON.stringify({ env: { AI_DLC_KEEPALIVE_5M_MAX_PINGS: '1' } }) } })
+    await configure($, '10m --for just-me --track 5m')
+    expect(lastOf(seen, LOCAL).env).toMatchObject({ AI_DLC_KEEPALIVE_5M_KEEP_WARM_FOR: '10m', AI_DLC_KEEPALIVE_5M_MAX_PINGS: '5' })
+  })
+
+  test('the pingEvery in force also decides what the file\'s own pair is: a 5m pair left at 2m is owned, and is rewritten', async ($, on) => {
+    const { seen } = engine(on, { trusted: true, files: { [REPO]: JSON.stringify({ fiveMinute: { pingEvery: '2m' } }), [LOCAL]: JSON.stringify({ env: { AI_DLC_KEEPALIVE_5M_KEEP_WARM_FOR: '10m', AI_DLC_KEEPALIVE_5M_MAX_PINGS: '5' } }) } })
+    await configure($, '4m --for just-me --track 5m') // 10m at 2m is 5: the pair; 4m needs 2, below the 5 in force
+    expect(lastOf(seen, LOCAL).env).toEqual({ AI_DLC_KEEPALIVE_5M_KEEP_WARM_FOR: '4m', AI_DLC_KEEPALIVE_5M_MAX_PINGS: '2' })
+  })
+
+  // Review round 4, W4: a maxPings is the file's own pair ("owned") when it equals the pings the file's keepWarmFor allows at the
+  // pingEvery in force; a time rewrites it when it is owned, or when the limit in force is below what the new time needs.
+  // Defaults: 1h track at 50m with a limit of 9, 5m track at 3m with a limit of 20.
+  const K1 = 'AI_DLC_KEEPALIVE_1H_KEEP_WARM_FOR'
+  const M1 = 'AI_DLC_KEEPALIVE_1H_MAX_PINGS'
+  const K5 = 'AI_DLC_KEEPALIVE_5M_KEEP_WARM_FOR'
+  const M5 = 'AI_DLC_KEEPALIVE_5M_MAX_PINGS'
+  const envOf = (vars: Record<string, string>) => JSON.stringify({ env: vars })
+
+  test('[W4] a time with no maxPings in the file and a limit in force that allows it writes the time only, and the reply names no maxPings', async ($, on) => {
+    const { seen } = engine(on)
+    const { text } = await configure($, '2h --for just-me --track 1h') // needs 2, the limit in force is 9
+    expect(lastOf(seen, LOCAL)).toEqual({ env: { [K1]: '2h' } })
+    expect(text).not.toContain('_MAX_PINGS')
+  })
+
+  test('[W4] a time with the limit in force too low writes the pair, also into a file that has no maxPings of its own', async ($, on) => {
+    const { seen } = engine(on, { files: { [LOCAL]: envOf({ [M1]: '1' }) } })
+    const { text } = await configure($, '2h --for team --track 1h') // the limit in force is 1 (from the local file), 2h needs 2
+    expect(lastOf(seen, TEAM)).toEqual({ env: { [K1]: '2h', [M1]: '2' } })
+    expect(text).toContain(`${M1}=2 written`)
+  })
+
+  test('[W4] a time over the file\'s own pair rewrites the maxPings, even when it is lower than the one before', async ($, on) => {
+    const { seen } = engine(on, { trusted: true, files: { [TEAM]: envOf({ [K1]: '8h', [M1]: '9' }) } }) // 8h at 50m is 9: the pair
+    const { text } = await configure($, '2h --for team --track 1h')
+    expect(lastOf(seen, TEAM)).toEqual({ env: { [K1]: '2h', [M1]: '2' } })
+    expect(text).toContain(`${M1}=2 written`)
+  })
+
+  for (const hand of ['12', '2']) { // above the 9 the 8h left, and equal to the 2 the new time needs
+    test(`[W4] a time over a maxPings set by hand (${hand}, not the pair of its keep-warm time) keeps it, at or above what the time needs`, async ($, on) => {
+      const { seen } = engine(on, { trusted: true, files: { [TEAM]: envOf({ [K1]: '8h', [M1]: hand }) } })
+      const { text } = await configure($, '2h --for team --track 1h')
+      expect(lastOf(seen, TEAM)).toEqual({ env: { [K1]: '2h', [M1]: hand } })
+      expect(text).not.toContain('_MAX_PINGS')
+    })
+  }
+
+  test('[W4] a maxPings in a file with no keepWarmFor is not the pair of anything: a time keeps it, and a clear keeps it and says so', async ($, on) => {
+    const { seen } = engine(on, { trusted: true, files: { [TEAM]: envOf({ [M1]: '12' }) } })
+    await configure($, '2h --for team --track 1h')
+    expect(lastOf(seen, TEAM)).toEqual({ env: { [K1]: '2h', [M1]: '12' } })
+    await configure($, 'clear --for team --track 1h')
+    expect(lastOf(seen, TEAM)).toEqual({ env: { [M1]: '12' } })
+  })
+
+  test('[W4] each track decides for itself: one owned pair is rewritten while a hand-set maxPings of the other stays', async ($, on) => {
+    const { seen } = engine(on, { trusted: true, files: { [TEAM]: envOf({ [K1]: '8h', [M1]: '9', [K5]: '1h', [M5]: '99' }) } }) // 1h: the pair, 8h at 50m is 9; 5m: 1h at 3m is 20, not 99
+    const { text } = await configure($, '2h --for team')
+    expect(lastOf(seen, TEAM)).toEqual({ env: { [K1]: '2h', [M1]: '2', [K5]: '2h', [M5]: '99' } })
+    expect(text).toContain(`${M1}=2 written`)
+    expect(text).not.toContain(M5)
+  })
+
+  test('[W4] clear with the file\'s own pair removes both variables and the reply says each maxPings removed', async ($, on) => {
+    const { seen } = engine(on, { trusted: true, files: { [TEAM]: envOf({ FOO: '1', [K1]: '8h', [M1]: '9', [K5]: '1h', [M5]: '20' }) } }) // 8h at 50m is 9; 1h at 3m is 20
+    const { text } = await configure($, 'clear --for team')
+    expect(lastOf(seen, TEAM)).toEqual({ env: { FOO: '1' } })
+    expect(text).toContain(`${M1} removed`)
+    expect(text).toContain(`${M5} removed`)
+    expect(text).not.toContain('kept')
+  })
+
+  test('[W4] clear with a maxPings set by hand removes the keep-warm time only, keeps the maxPings, and the reply names the value kept', async ($, on) => {
+    const { seen } = engine(on, { trusted: true, files: { [TEAM]: envOf({ [K1]: '8h', [M1]: '12', [K5]: '1h', [M5]: '20' }) } })
+    const { text } = await configure($, 'clear --for team')
+    expect(lastOf(seen, TEAM)).toEqual({ env: { [M1]: '12' } })
+    expect(text).toContain(`${M1}=12 kept: it is not the ping limit its keep-warm time left`)
+    expect(text).toContain(`${M5} removed`)
+    expect(text).not.toContain(`${M5}=`)
+    expect(text).not.toContain(`${M1} removed`)
+  })
+
+  test('[W4] clear in a file with neither variable writes, and names, no maxPings', async ($, on) => {
+    const { seen } = engine(on, { files: { [LOCAL]: envOf({ FOO: '1' }) } })
+    const { text } = await configure($, 'clear --for just-me --track 5m')
+    expect(lastOf(seen, LOCAL)).toEqual({ env: { FOO: '1' } })
+    expect(text).not.toContain('_MAX_PINGS')
+  })
+
+  test('a file with comments is not rewritten, and the reply says nothing was written', async ($, on) => {
+    const { seen } = engine(on, { files: { [GLOBAL]: '{\n  // mine\n  "env": {}\n}\n' } })
+    const { text } = await configure($, 'off --for global')
+    expect(seen.writes).toEqual([])
+    expect(text).toContain('nothing written')
+  })
+
+  test('--for global without a home folder writes nothing', async ($, on) => {
+    const { seen } = engine(on, { env: { HOME: '', USERPROFILE: '' } })
+    const { text } = await configure($, 'off --for global')
+    expect(seen.writes).toEqual([])
+    expect(text).toContain('nothing written')
+  })
+
+  test('the session override still outranks a written file', async ($, on) => {
+    engine(on, { split: [5, 5], trusted: true })
+    await configure($, '40m --for team --track 5m')
+    expect((await configure($, '20m --session --track 5m')).text).toContain('5m track 20m (this session')
+  })
+
+  test('off --for team applies at once in a trusted folder, and not in an untrusted one (the master is trust-gated)', async ($, on) => {
+    const t = engine(on, { trusted: true })
+    await $.classic.Stop(stop())
+    await configure($, 'off --for team')
+    expect(t.status()).toBeUndefined()
     await settle()
-    const after = textOf(await ui.drawn())
-    expect(after).toContain('keepalive 5m: off (disabled)')
-    expect(after).toContain('keepalive 1h: off (disabled)')
-    await ui.unmount()
+    expect(t.seen.states.at(-1)?.enabled).toBe(false)
+  })
+
+  test('off --for team in an untrusted folder is written but keep-alive stays on, and the reply warns', async ($, on) => {
+    const u = engine(on)
+    await $.classic.Stop(stop())
+    const { text } = await configure($, 'off --for team')
+    expect(u.seen.writes.map(([p]) => p)).toEqual([TEAM])
+    expect(u.status()).toBeDefined()
+    expect(text).toContain('warning: Claude Code does not trust this folder')
+  })
+
+  test('off --for global applies at once, trusted or not: the global level is not gated', async ($, on) => {
+    const u = engine(on)
+    await $.classic.Stop(stop())
+    await configure($, 'off --for global')
+    expect(u.status()).toBeUndefined()
+  })
+})
+
+describe('[6a] --session wins over --for', () => {
+  const configure = ($: Parameters<TestBody>[0], args = '') => $.command.run({ command: 'ai-dlc:cache-keepalive-configure', args } as never)
+  for (const target of ['just-me', 'team', 'global']) {
+    test(`on/off --session --for ${target}: no file written, this session's switch changes, the reply says --for ${target} ignored`, async ($, on) => {
+      const { seen } = engine(on, { files: { [`${ROOT}/.ai-dlc/cache-keepalive.json`]: JSON.stringify({ scope: 'session' }) } })
+      await $.classic.Stop(stop())
+      const { text } = await configure($, `off --session --for ${target}`)
+      expect(seen.writes).toEqual([])
+      expect(text).toContain(`--for ${target} ignored: --session wins and writes nothing`)
+      await settle()
+      expect(seen.states.at(-1)).toMatchObject({ enabled: false, sessionMaster: 'off' })
+    })
+
+    test(`a keep-warm time and clear --session --for ${target}: no file written, the session override is set, the reply says --for ${target} ignored`, async ($, on) => {
+      const { seen } = engine(on, { split: [5, 5] })
+      await $.classic.Stop(stop())
+      const set = await configure($, `25m --session --for ${target} --track 5m`)
+      expect(seen.writes).toEqual([])
+      expect(set.text).toContain(`--for ${target} ignored: --session wins and writes nothing`)
+      expect(set.text).toContain('5m track 25m (this session')
+      const clear = await configure($, `clear --session --for ${target} --track 5m`)
+      expect(seen.writes).toEqual([])
+      expect(clear.text).toContain(`--for ${target} ignored: --session wins and writes nothing`)
+    })
+  }
+
+  test('without --for the reply carries no note', async ($, on) => {
+    const { seen } = engine(on)
+    const a = await configure($, 'off --session')
+    const b = await configure($, '25m --session')
+    expect(seen.writes).toEqual([])
+    expect(a.text).not.toContain('ignored')
+    expect(b.text).not.toContain('ignored')
+  })
+
+  test('--machine with --for is refused with the usage text, and nothing is written (W2)', async ($, on) => {
+    const { seen } = engine(on)
+    const { text } = await configure($, 'on --for team --machine')
+    expect(seen.writes).toEqual([])
+    expectUsage(text, "--for writes a settings file and --machine sets this machine's override: give one of them")
+  })
+})
+
+describe('[6a] a team write is recorded in teamRecord of .ai-dlc/cache-keepalive.json', () => {
+  const configure = ($: Parameters<TestBody>[0], args = '') => $.command.run({ command: 'ai-dlc:cache-keepalive-configure', args } as never)
+  const TEAM = `${ROOT}/.claude/settings.json`
+  const LOCAL = `${ROOT}/.claude/settings.local.json`
+  const GLOBAL = '/home/test/.claude/settings.json'
+  const REPO = `${ROOT}/.ai-dlc/cache-keepalive.json`
+  const doc = { scope: 'machine', oneHour: { keepWarmFor: '8h' }, teamRecord: { AI_DLC_KEEPALIVE_SOURCE_NOTE: 'false' } }
+  const recordOf = (files: Record<string, string>) => JSON.parse(files[REPO]!)
+
+  test('team on/off: the record gets the variable, every other key of the file stays', async ($, on) => {
+    const { files, seen } = engine(on, { files: { [REPO]: JSON.stringify(doc, null, 2) } })
+    const { text } = await configure($, 'off --for team')
+    expect(recordOf(files)).toEqual({ ...doc, teamRecord: { AI_DLC_KEEPALIVE_SOURCE_NOTE: 'false', AI_DLC_KEEPALIVE_ENABLED: 'false' } })
+    expect(seen.writes.map(([p]) => p)).toEqual([TEAM, REPO])
+    expect(text).toContain('recorded in .ai-dlc/cache-keepalive.json (teamRecord)')
+  })
+
+  test('a team keep-warm time records both variables of each track; clear removes them from the record', async ($, on) => {
+    const { files } = engine(on, { files: { [REPO]: JSON.stringify(doc) } })
+    await configure($, '2h --for team --track 5m') // 40 pings at 3m, above the 20 in force: both variables are written (W4)
+    expect(recordOf(files).teamRecord).toEqual({ AI_DLC_KEEPALIVE_SOURCE_NOTE: 'false', AI_DLC_KEEPALIVE_5M_KEEP_WARM_FOR: '2h', AI_DLC_KEEPALIVE_5M_MAX_PINGS: '40' })
+    await configure($, 'clear --for team --track 5m')
+    expect(recordOf(files).teamRecord).toEqual({ AI_DLC_KEEPALIVE_SOURCE_NOTE: 'false' })
+  })
+
+  test('[W4] the record gets exactly the variables written: a maxPings that was not written is not in it', async ($, on) => {
+    const { files } = engine(on, { files: { [REPO]: JSON.stringify(doc) } })
+    await configure($, '2h --for team --track 1h') // 2 pings, below the 9 in force
+    expect(recordOf(files).teamRecord).toEqual({ AI_DLC_KEEPALIVE_SOURCE_NOTE: 'false', AI_DLC_KEEPALIVE_1H_KEEP_WARM_FOR: '2h' })
+    expect(JSON.parse(files[TEAM]!).env).toEqual({ AI_DLC_KEEPALIVE_1H_KEEP_WARM_FOR: '2h' })
+  })
+
+  test('[W4] a maxPings set by hand in the team file stays on a clear, and stays in the record', async ($, on) => {
+    const env = { AI_DLC_KEEPALIVE_1H_KEEP_WARM_FOR: '8h', AI_DLC_KEEPALIVE_1H_MAX_PINGS: '12' } // 8h at 50m is 9, not 12
+    const { files } = engine(on, { trusted: true, files: { [TEAM]: JSON.stringify({ env }), [REPO]: JSON.stringify({ ...doc, teamRecord: env }) } })
+    await configure($, 'clear --for team --track 1h')
+    expect(JSON.parse(files[TEAM]!).env).toEqual({ AI_DLC_KEEPALIVE_1H_MAX_PINGS: '12' })
+    expect(recordOf(files).teamRecord).toEqual({ AI_DLC_KEEPALIVE_1H_MAX_PINGS: '12' })
+  })
+
+  test('just-me and global writes are never recorded', async ($, on) => {
+    const { seen } = engine(on, { files: { [REPO]: JSON.stringify(doc) } })
+    await configure($, 'off --for just-me')
+    await configure($, '2h --for global')
+    expect(seen.writes.map(([p]) => p).sort()).toEqual([GLOBAL, LOCAL].sort())
+    expect(seen.writes.some(([p]) => p === REPO)).toBe(false)
+  })
+
+  test('a plain on/off (no --for) and a --session call are not recorded either', async ($, on) => {
+    const { seen } = engine(on, { files: { [REPO]: JSON.stringify(doc) } })
+    await configure($, 'off')
+    await configure($, 'on --session --for team')
+    expect(seen.writes.some(([p]) => p === REPO || p === TEAM)).toBe(false)
+  })
+
+  test('the repository file is never created for it: the team file is written, the reply says it was not recorded', async ($, on) => {
+    const { seen, files } = engine(on)
+    const { text } = await configure($, 'off --for team')
+    expect(seen.writes.map(([p]) => p)).toEqual([TEAM])
+    expect(files[REPO]).toBeUndefined()
+    expect(JSON.parse(files[TEAM]!)).toEqual({ env: { AI_DLC_KEEPALIVE_ENABLED: 'false' } })
+    expect(text).toContain('not recorded in .ai-dlc/cache-keepalive.json')
+    expect(text).toContain('does not exist')
+  })
+
+  test('a repository file that is not plain JSON is left as it is; the team file is still written', async ($, on) => {
+    const raw = '{\n  // comment\n  "scope": "machine"\n}\n'
+    const { seen, files } = engine(on, { files: { [REPO]: raw } })
+    const { text } = await configure($, 'off --for team')
+    expect(files[REPO]).toBe(raw)
+    expect(seen.writes.map(([p]) => p)).toEqual([TEAM])
+    expect(text).toContain('not recorded in .ai-dlc/cache-keepalive.json')
+  })
+
+  test('the record never feeds the settings: a teamRecord entry does not turn keep-alive off', async ($, on) => {
+    const { status } = engine(on, { trusted: true, files: { [REPO]: JSON.stringify({ teamRecord: { AI_DLC_KEEPALIVE_ENABLED: 'false', AI_DLC_KEEPALIVE_5M_KEEP_WARM_FOR: '5h' } }) } })
+    await $.classic.Stop(stop())
+    expect(status()).toBeDefined()
+  })
+})
+
+describe('[6a] a team write in an untrusted folder warns and still writes', () => {
+  const configure = ($: Parameters<TestBody>[0], args = '') => $.command.run({ command: 'ai-dlc:cache-keepalive-configure', args } as never)
+  const TEAM = `${ROOT}/.claude/settings.json`
+
+  test('untrusted: the file is written and the reply warns that .claude/settings.json does not apply here, pointing to --for just-me', async ($, on) => {
+    const { seen } = engine(on)
+    const { text } = await configure($, '30m --for team')
+    expect(seen.writes.map(([p]) => p)).toEqual([TEAM])
+    expect(text).toContain('warning: Claude Code does not trust this folder')
+    expect(text).toContain('.claude/settings.json does not apply here for the trust-gated settings')
+    expect(text).toContain('.claude/settings.local.json (--for just-me) does')
+  })
+
+  test('trusted: no warning', async ($, on) => {
+    const { seen } = engine(on, { trusted: true })
+    const { text } = await configure($, '30m --for team')
+    expect(seen.writes.map(([p]) => p)).toEqual([TEAM])
+    expect(text).not.toContain('warning')
+    expect(text).not.toContain('does not trust')
+  })
+
+  test('just-me and global writes never warn, trusted or not', async ($, on) => {
+    const { seen } = engine(on)
+    const a = await configure($, '30m --for just-me')
+    const b = await configure($, 'off --for global')
+    expect(seen.writes.length).toBe(2)
+    for (const t of [a.text, b.text]) expect(t).not.toContain('does not trust')
+  })
+
+  test('on and off --for team warn the same way', async ($, on) => {
+    engine(on)
+    const { text } = await configure($, 'off --for team')
+    expect(text).toContain('warning: Claude Code does not trust this folder')
+  })
+})
+
+describe('[6a] the global level of the precedence: local > team > global > repository file > default', () => {
+  const GLOBAL = '/home/test/.claude/settings.json'
+  const TEAM = `${ROOT}/.claude/settings.json`
+  const LOCAL = `${ROOT}/.claude/settings.local.json`
+  const REPO = `${ROOT}/.ai-dlc/cache-keepalive.json`
+  const env = (v: Record<string, string>) => JSON.stringify({ env: v })
+  const K = 'AI_DLC_KEEPALIVE_5M_KEEP_WARM_FOR'
+
+  test('the default applies with nothing set', async ($, on) => {
+    const { line } = engine(on, { split: [5, 5], trusted: true })
+    await $.classic.Stop(stop())
+    expect(line('5m')).toContain('keep warm 1h')
+  })
+
+  test('global over the repository file', async ($, on) => {
+    const { line } = engine(on, { split: [5, 5], trusted: true, files: { [REPO]: JSON.stringify({ fiveMinute: { keepWarmFor: '20m' } }), [GLOBAL]: env({ [K]: '40m' }) } })
+    await $.classic.Stop(stop())
+    expect(line('5m')).toContain('keep warm 40m')
+  })
+
+  test('team over global', async ($, on) => {
+    const { line } = engine(on, { split: [5, 5], trusted: true, files: { [TEAM]: env({ [K]: '30m' }), [GLOBAL]: env({ [K]: '40m' }), [REPO]: JSON.stringify({ fiveMinute: { keepWarmFor: '20m' } }) } })
+    await $.classic.Stop(stop())
+    expect(line('5m')).toContain('keep warm 30m')
+  })
+
+  test('local over team and global', async ($, on) => {
+    const { line } = engine(on, { split: [5, 5], trusted: true, files: { [LOCAL]: env({ [K]: '15m' }), [TEAM]: env({ [K]: '30m' }), [GLOBAL]: env({ [K]: '40m' }) } })
+    await $.classic.Stop(stop())
+    expect(line('5m')).toContain('keep warm 15m')
+  })
+
+  test('global is not gated: untrusted, the team value is skipped and logged, the global one applies, and the repository file is skipped', async ($, on) => {
+    const { line, seen } = engine(on, { split: [5, 5], files: { [TEAM]: env({ [K]: '30m' }), [GLOBAL]: env({ [K]: '40m' }), [REPO]: JSON.stringify({ fiveMinute: { keepWarmFor: '20m' } }) } })
+    await $.classic.Stop(stop())
+    expect(line('5m')).toContain('keep warm 40m')
+    expect(seen.logs.some(l => l.includes(`${K}="30m" in the env of .claude/settings.json ignored: Claude Code does not trust this folder`))).toBe(true)
+    expect(seen.logs.some(l => l.includes('ignored: Claude Code does not trust this folder') && l.includes('~/.claude/settings.json'))).toBe(false)
+  })
+
+  test('untrusted, global alone sets a gated spend setting that the team file may not', async ($, on) => {
+    const g = engine(on, { forkOutput: 400_000, files: { [GLOBAL]: env({ AI_DLC_KEEPALIVE_BUDGET_MULTIPLIER: '0' }) } })
+    await $.classic.Stop(stop())
+    expect(await runChain(g.clock, g.seen, () => g.line('1h'), 50)).toBe(9)
+    expect(g.line('1h')).toContain('kept warm 8h, stopped')
+  })
+
+  test('an invalid global value is skipped with a warning naming ~/.claude/settings.json; the next level applies', async ($, on) => {
+    const { line, seen } = engine(on, { split: [5, 5], trusted: true, files: { [GLOBAL]: env({ [K]: 'soon' }), [REPO]: JSON.stringify({ fiveMinute: { keepWarmFor: '20m' } }) } })
+    await $.classic.Stop(stop())
+    expect(line('5m')).toContain('keep warm 20m')
+    expect(seen.logs.some(l => l.includes(`${K}="soon" in ~/.claude/settings.json ignored`) || (l.includes('~/.claude/settings.json') && l.includes(K)))).toBe(true)
+  })
+
+  test('a team write and the global file together: what --for global wrote is overridden by what --for team wrote', async ($, on) => {
+    engine(on, { split: [5, 5], trusted: true })
+    const configure = ($: Parameters<TestBody>[0], args = '') => $.command.run({ command: 'ai-dlc:cache-keepalive-configure', args } as never)
+    const said = async (a: string) => (await configure($, a)).text
+    expect(await said('40m --for global --track 5m')).toContain('5m track 40m (')
+    expect(await said('30m --for team --track 5m')).toContain('5m track 30m (')
+    expect(await said('15m --for just-me --track 5m')).toContain('5m track 15m (')
+    expect(await said('clear --for just-me --track 5m')).toContain('5m track 30m (')
+    expect(await said('clear --for team --track 5m')).toContain('5m track 40m (')
+    expect(await said('clear --for global --track 5m')).toContain('5m track 1h (default)')
+  })
+})
+
+// Review round 4, W3: no two pings overlap. `pressing`, `pingBusy` and `pingsOut` (keepalive.ts) keep a press, the command
+// and a track's scheduled ping from going out together; a track's scheduled ping is not held back by the other two.
+describe('[W3] /ai-dlc:cache-keepalive pings once at a time', () => {
+  test('a run while another run\'s ping is out says so and pings nothing; after the first is back it pings again', async ($, on) => {
+    const { seen, release } = engine(on, { holdForks: true })
+    await $.classic.Stop(stop())
+    const first = keepalive($) // not awaited: its fork is held
+    await settle()
+    expect(seen.forks).toBe(1)
+    const second = await keepalive($)
+    expect(second.text).toContain('a ping is already under way; nothing more pinged; ')
+    expect(second.text).toContain('keep warm') // the keep-warm times are still given
+    expect(seen.forks).toBe(1)
+    release()
+    const done = await first
+    expect(done.text).toContain('cache read')
+    expect(done.text).not.toContain('already under way')
+    expect(seen.forks).toBe(1)
+    const third = await keepalive($)
+    expect(third.text).toContain('cache read')
+    expect(seen.forks).toBe(2)
+  })
+
+  test('two runs started together ping once: the one that gets there second is told a ping is under way (the claim comes before the first await)', async ($, on) => {
+    const { seen } = engine(on)
+    await $.classic.Stop(stop())
+    const texts = (await Promise.all([keepalive($), keepalive($)])).map(r => r.text)
+    expect(seen.forks).toBe(1)
+    expect(texts.filter(t => t.includes('a ping is already under way; nothing more pinged')).length).toBe(1)
+    expect(texts.filter(t => t.includes('cache read')).length).toBe(1)
+  })
+
+  test('three runs started together ping once', async ($, on) => {
+    const { seen } = engine(on)
+    await $.classic.Stop(stop())
+    const [a, b, c] = await Promise.all([keepalive($), keepalive($), keepalive($)])
+    expect(seen.forks).toBe(1)
+    expect([a, b, c].filter(r => r.text.includes('cache read')).length).toBe(1)
+  })
+
+  test('a run while a track\'s scheduled ping is out says so and pings nothing', async ($, on) => {
+    const { seen, clock, release } = engine(on, { holdForks: true })
+    await $.classic.Stop(stop()) // the 1h track arms; its first ping is due at 50 minutes
+    await clock.fire(50)
+    expect(seen.forks).toBe(1)
+    const text = (await keepalive($)).text
+    expect(text).toContain('a ping is already under way; nothing more pinged')
+    expect(seen.forks).toBe(1)
+    release()
+    await settle()
+    expect((await keepalive($)).text).toContain('cache read')
+    expect(seen.forks).toBeGreaterThanOrEqual(2)
+  })
+
+  test('a track\'s scheduled ping is not held back by a run of the command whose ping is out', async ($, on) => {
+    const { seen, clock, release } = engine(on, { holdForks: true })
+    await $.classic.Stop(stop())
+    const first = keepalive($)
+    await settle()
+    expect(seen.forks).toBe(1)
+    await clock.fire(50)
+    expect(seen.forks).toBe(2) // the scheduled ping went out beside the command's
+    release()
+    await first
+  })
+
+  test('a run with keep-alive off still says it is off, not that a ping is under way', async ($, on) => {
+    const { seen, release } = engine(on, { holdForks: true, files: { [`${ROOT}/.claude/settings.local.json`]: JSON.stringify({ env: { AI_DLC_KEEPALIVE_ENABLED: 'false' } }) } })
+    const text = (await keepalive($)).text
+    expect(text).toMatch(/^keepalive: off \(.+\); nothing pinged/)
+    expect(seen.forks).toBe(0)
+    release()
+  })
+
+  test('a fork that fails releases the flags: the next run is not told a ping is under way, and goes out', async ($, on) => {
+    const { seen } = engine(on, { failFork: true })
+    await $.classic.Stop(stop())
+    const outcome = async () => { try { return JSON.stringify(await keepalive($)) } catch (err) { return String(err) } }
+    const a = await outcome()
+    expect(seen.forks).toBe(1)
+    expect(a).not.toContain('already under way')
+    const b = await outcome()
+    expect(seen.forks).toBe(2)
+    expect(b).not.toContain('already under way')
+  })
+
+  test('a scheduled ping that fails releases the count: the command pings afterwards', async ($, on) => {
+    const { seen, clock } = engine(on, { failFork: true })
+    await $.classic.Stop(stop())
+    await clock.fire(50)
+    const before = seen.forks
+    expect(before).toBeGreaterThanOrEqual(1)
+    let said = ''
+    try { said = JSON.stringify(await keepalive($)) } catch (err) { said = String(err) }
+    expect(seen.forks).toBeGreaterThan(before)
+    expect(said).not.toContain('already under way')
+  })
+})
+
+// Review round 4, W2: grammarMistake(raw) is true when the arguments hold a flag of the configure grammar (also as --flag=value),
+// or when every word is one of its bare words; any other arguments are a change in plain words, for the skill.
+describe('[W2] grammarMistake', () => {
+  test('a flag of the grammar anywhere, bare or with a value, in any case', () => {
+    for (const raw of ['--for', '--for=team', '--for everyone', '--FOR=Global', '--track', '--track=2h', '--track=', '--session', '--machine', '--machine=x',
+      'turn it off --track 5m', 'make it 5m --session please', 'a --for b']) expect([raw, grammarMistake(raw)]).toEqual([raw, true])
+  })
+
+  test('every word a bare word: on, off, clear, --clear or a duration, in any case and spacing', () => {
+    for (const raw of ['on', 'off', 'clear', '--clear', '2h', '30m', '1d', 'on off', '2h 3h', 'on 2h', 'clear 2h', 'ON 2H', '  2h   3h  ', 'Off', '--CLEAR']) expect([raw, grammarMistake(raw)]).toEqual([raw, true])
+  })
+
+  test('plain words, empty, or a bare word among other words, are not a mistake in the grammar', () => {
+    for (const raw of ['', '   ', 'forever', 'turn the 5m track off', 'turn keep-alive off for the team', 'off please', 'set it to 2h please', 'clear the 5m track',
+      '2h and 3h', 'on 2h now']) expect([raw, grammarMistake(raw)]).toEqual([raw, false])
+  })
+
+  test('a word that only starts like a flag is not that flag', () => {
+    for (const raw of ['--forever', '--forth', '--tracks', '--tracker=1', '--sessions', '--machines=x', '--clearly', 'do it --forever please', '--fo', '-for', 'for']) expect([raw, grammarMistake(raw)]).toEqual([raw, false])
+  })
+
+  test('a flag among plain words still makes it grammar, so a mistake in a sentence with --for is answered with the usage text', () => {
+    expect(grammarMistake('please turn it off --for team')).toBe(true)
+    expect(grammarMistake('please turn it off for team')).toBe(false)
   })
 })

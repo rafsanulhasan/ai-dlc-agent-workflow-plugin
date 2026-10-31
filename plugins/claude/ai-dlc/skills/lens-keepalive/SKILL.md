@@ -20,7 +20,7 @@ It writes the lens setting `keepaliveSection` (on by default) to `.ai-dlc/lens.j
 
 Cache Lab sits in every agent panel (opened from an avatar), after Context Lab, and starts collapsed. With this setting on and the `ai-dlc` plugin's keep-alive publishing its state, it shows:
 
-- **On/off buttons for Master, 1h and 5m**: each shows whether that cache is kept warm and switches it for this session only, as the buttons of keep-alive's band do (they run `/ai-dlc:cache-keepalive on|off [--track 1h|5m] --session`; no settings file is written).
+- **On/off buttons for Master, 1h and 5m**: each shows whether that cache is kept warm and switches it for this session only, as the buttons of keep-alive's band do (they run `/ai-dlc:cache-keepalive-configure on|off [--track 1h|5m] --session`; no settings file is written).
 - **Keep Alive**, a sub-accordion, collapsed until opened:
 
   - **Kept warm, 5m track** and **1h track**: for each time keep-alive armed the track, from the arming to the cache's expiry, moved on by each ping; the cache's own TTL is included. The arming times, expiries and pings come from the state the `ai-dlc` plugin's keep-alive publishes; without `ai-dlc`, or with keep-alive off, both read `0s`.

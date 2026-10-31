@@ -278,7 +278,9 @@ export const afterMasterPress = (sw: SessionSwitch, settingEnabled: boolean): Se
 /** The band and Pane title (rev 11, Q-SL2). */
 export const BAND_TITLE = '⚠ ai-dlc cache-keepalive:'
 export type TrackRow = { track: Ttl; line: string; button: Button }
-export type BandModel = { title: typeof BAND_TITLE; master: Button; rows: TrackRow[]; seed?: string }
+/** `on` (live findings 3, point 4): whether keep-alive is on in force, any track enabled, for the minimised row's
+ * status; absent, the status follows the master button. */
+export type BandModel = { title: typeof BAND_TITLE; master: Button; rows: TrackRow[]; seed?: string; on?: boolean }
 /** The band and Pane model: the master button (it names the press), the 5m row then the 1h row (Q-SL5),
  * each button `[off]` while the track is enabled, else `[on]` (Q-SL8), and the seed line while it shows. */
 export const bandModel = (master: Button, lines: Record<Ttl, { line: string; enabled: boolean }>, seed?: string): BandModel => ({

@@ -1,0 +1,628 @@
+/**
+ * Step 43, requirement C1 (status bugs), tests added by the SQA engineer. Tag: [C1a] latest attempt wins (a failed or
+ * killed agent that started again is not "halted"), [C1] a done run state or a done *Stages* row reads completed (a
+ * pending placeholder or a record without a hand-back no longer beats a finished step; blocked still halts; a listed
+ * `completed` applies), [C1b] another session's change to a run state shows within the 2 s poll, an unchanged one costs
+ * no refresh.
+ *
+ * The pure helpers (`workflowStatus`, `settleMembers`, `stageStatuses`, `stageDone`, `attemptKey`, `runStateSig`) are
+ * tested alone; the sessions are driven through the engine harness with their own small fake file system (the one in
+ * lens.test.tsx is not exported), and read the status dot of the workflow pane and of the band.
+ *
+ * "Fails on the old code" (base 1302cd4), by reading its `workflowStatus` (any failed/killed member halted, whatever came
+ * after; the run's `done` was never read; a pending member made the workflow pending; `refreshList` skipped a listed
+ * `completed`; the 2 s poll never looked at a run folder): the [C1a], [C1] and [C1b] session tests and the pure tests
+ * that name `settleMembers`, `stageDone`, `stageStatuses`, `attemptKey` or `runStateSig` (not exported there) cannot pass on it.
+ */
+import { describe, expect, test } from 'claude-code/testing'
+import { OPEN, attemptKey, runStateSig, settleMembers, stageDone, stageStatuses, workflowStatus } from '../hooks/lens'
+import type { StatusMember } from '../hooks/lens'
+
+const PLUGIN = 'ai-dlc-lens'
+const CHART_PANE = 'ai-dlc-lens-chart'
+
+// ---------------------------------------------------------------- pure helpers
+
+const m = (status: string, extra: object = {}) => ({ status, type: 'x', ...extra }) as unknown as StatusMember & { startedAt?: number }
+const KEY = (a: any): string | null => a.key ?? null
+
+describe('[C1] workflowStatus: the run state decides, blocked first', () => {
+  test('[C1] a run `blocked` halts even when every agent completed', () => {
+    expect(workflowStatus([m('completed')], ['blocked'])).toBe('halted')
+    expect(workflowStatus([m('completed')], ['done', 'blocked'])).toBe('halted')
+  })
+
+  test('[C1] every run named `done` (at least one) reads completed whatever the agents say: failed, running, pending, waiting', () => {
+    for (const s of ['failed', 'killed', 'running', 'pending', 'waiting']) expect(workflowStatus([m(s)], ['done'])).toBe('completed')
+    expect(workflowStatus([], ['done'])).toBe('completed')
+    expect(workflowStatus([m('running')], ['done', 'done'])).toBe('completed')
+  })
+
+  test('[C1] the run status is trimmed and case-insensitive; empty ones are ignored', () => {
+    expect(workflowStatus([m('running')], [' DONE '])).toBe('completed')
+    expect(workflowStatus([m('completed')], [' Blocked'])).toBe('halted')
+    expect(workflowStatus([m('running')], ['', '  ', 'done'])).toBe('completed')
+    // Only empty statuses: the agents decide, as before.
+    expect(workflowStatus([m('running')], ['', ' '])).toBe('in-progress')
+  })
+
+  test('[C1] boundary: one run not done (active), or done mixed with active, falls back to the agents', () => {
+    expect(workflowStatus([m('running')], ['active'])).toBe('in-progress')
+    expect(workflowStatus([m('running')], ['done', 'active'])).toBe('in-progress')
+    expect(workflowStatus([m('failed')], ['done', 'active'])).toBe('halted')
+    expect(workflowStatus([m('pending')], ['active'])).toBe('pending')
+    expect(workflowStatus([m('completed')], ['active'])).toBe('completed')
+  })
+
+  test('[C1] boundary: with no run named the old rules stand (failed halts, killed halts, running, waiting, pending, completed)', () => {
+    expect(workflowStatus([m('failed')])).toBe('halted')
+    expect(workflowStatus([m('killed'), m('running')])).toBe('halted')
+    expect(workflowStatus([m('running'), m('completed')])).toBe('in-progress')
+    expect(workflowStatus([m('waiting')])).toBe('waiting')
+    expect(workflowStatus([m('pending')])).toBe('pending')
+    expect(workflowStatus([])).toBe('pending')
+    expect(workflowStatus([m('completed'), m('completed')])).toBe('completed')
+  })
+
+  test('the spawner is left out of the members, as before', () => {
+    expect(workflowStatus([m('running', { id: 'main' }), m('completed', { id: 'a1' })], [], 'main')).toBe('completed')
+  })
+})
+
+describe('[C1a] settleMembers: the latest attempt wins', () => {
+  test('[C1a] a failed member is left out when a later member has the same attempt key: the run is not halted', () => {
+    const all = [m('failed', { key: 'R|1', startedAt: 10 }), m('running', { key: 'R|1', startedAt: 20 })]
+    const kept = settleMembers(all, KEY)
+    expect(kept.map(a => a.status)).toEqual(['running'])
+    expect(workflowStatus(kept)).toBe('in-progress')
+    // The old reading of the same members: halted for ever.
+    expect(workflowStatus(all)).toBe('halted')
+  })
+
+  test('[C1a] a killed member is superseded the same way; the later one ending decides (completed)', () => {
+    const kept = settleMembers([m('killed', { key: 'R|1', startedAt: 10 }), m('completed', { key: 'R|1', startedAt: 20 })], KEY)
+    expect(kept.map(a => a.status)).toEqual(['completed'])
+    expect(workflowStatus(kept)).toBe('completed')
+  })
+
+  test('[C1a] a member not started yet (startedAt 0 or absent) is later than every started one', () => {
+    expect(settleMembers([m('failed', { key: 'R|1', startedAt: 99 }), m('pending', { key: 'R|1', startedAt: 0 })], KEY).map(a => a.status)).toEqual(['pending'])
+    expect(settleMembers([m('failed', { key: 'R|1', startedAt: 99 }), m('pending', { key: 'R|1' })], KEY).map(a => a.status)).toEqual(['pending'])
+  })
+
+  test('[C1a] equal start times go by list order: the later in the list is the later attempt', () => {
+    expect(settleMembers([m('failed', { key: 'R|1', startedAt: 5 }), m('running', { key: 'R|1', startedAt: 5 })], KEY).map(a => a.status)).toEqual(['running'])
+    // The other way round the failure is the later attempt and stays.
+    expect(settleMembers([m('running', { key: 'R|1', startedAt: 5 }), m('failed', { key: 'R|1', startedAt: 5 })], KEY).map(a => a.status)).toEqual(['running', 'failed'])
+  })
+
+  test('[C1a] boundary: a failure AFTER a completed attempt of the same step stays and halts', () => {
+    const kept = settleMembers([m('completed', { key: 'R|1', startedAt: 10 }), m('failed', { key: 'R|1', startedAt: 20 })], KEY)
+    expect(kept.map(a => a.status)).toEqual(['completed', 'failed'])
+    expect(workflowStatus(kept)).toBe('halted')
+  })
+
+  test('[C1a] boundary: a failure with no retry, a retry of ANOTHER step, or a member with no key all keep the failure', () => {
+    expect(workflowStatus(settleMembers([m('failed', { key: 'R|1', startedAt: 10 })], KEY))).toBe('halted')
+    expect(workflowStatus(settleMembers([m('failed', { key: 'R|1', startedAt: 10 }), m('running', { key: 'R|2', startedAt: 20 })], KEY))).toBe('halted')
+    expect(workflowStatus(settleMembers([m('failed', { key: 'R|1', startedAt: 10 }), m('running', { startedAt: 20 })], KEY))).toBe('halted')
+    expect(workflowStatus(settleMembers([m('failed', { startedAt: 10 }), m('running', { startedAt: 20 })], KEY))).toBe('halted')
+    // The same step number in another run is another attempt key.
+    expect(workflowStatus(settleMembers([m('failed', { key: 'R|1', startedAt: 10 }), m('running', { key: 'S|1', startedAt: 20 })], KEY))).toBe('halted')
+  })
+
+  test('[C1a] only failed or killed members are ever left out: running, waiting, completed and pending are kept', () => {
+    const all = [m('running', { key: 'R|1', startedAt: 1 }), m('waiting', { key: 'R|1', startedAt: 2 }), m('completed', { key: 'R|1', startedAt: 3 }), m('pending', { key: 'R|1', startedAt: 4 })]
+    expect(settleMembers(all, KEY).map(a => a.status)).toEqual(['running', 'waiting', 'completed', 'pending'])
+  })
+
+  test('[C1a] two failures of one step, then a retry: both are left out', () => {
+    const kept = settleMembers([m('failed', { key: 'R|1', startedAt: 1 }), m('killed', { key: 'R|1', startedAt: 2 }), m('running', { key: 'R|1', startedAt: 3 })], KEY)
+    expect(kept.map(a => a.status)).toEqual(['running'])
+  })
+})
+
+describe('[C1] settleMembers: a done stage settles its step', () => {
+  test('[C1] a pending placeholder whose step is done counts as completed; one whose step is not done stays pending', () => {
+    const all = [m('pending', { key: 'R|1', done: true }), m('pending', { key: 'R|2', done: false })]
+    const kept = settleMembers(all, KEY, (a: any) => a.done === true)
+    expect(kept.map(a => a.status)).toEqual(['completed', 'pending'])
+    expect(workflowStatus([kept[0]!])).toBe('completed')
+    // The old reading: a pending member wins over everything that ended.
+    expect(workflowStatus([m('pending'), m('completed')])).toBe('pending')
+    expect(workflowStatus([kept[0]!, m('completed')])).toBe('completed')
+  })
+
+  test('[C1] an OPEN record (no hand-back) whose step is done counts as completed; not done, it stays OPEN', () => {
+    const kept = settleMembers([m(OPEN, { key: 'R|1', done: true }), m(OPEN, { key: 'R|2', done: false })], KEY, (a: any) => a.done === true)
+    expect(kept.map(a => a.status)).toEqual(['completed', OPEN])
+  })
+
+  test('[C1] a running, failed (no retry) or waiting member is NOT settled by a done stage (only pending and OPEN are)', () => {
+    const kept = settleMembers([m('running', { key: 'R|1', done: true }), m('failed', { key: 'R|2', done: true }), m('waiting', { key: 'R|3', done: true })], KEY, (a: any) => a.done === true)
+    expect(kept.map(a => a.status)).toEqual(['running', 'failed', 'waiting'])
+  })
+
+  test('without an isDone predicate nothing is settled, and the input is not changed', () => {
+    const all = [m('pending', { key: 'R|1' })]
+    expect(settleMembers(all, KEY).map(a => a.status)).toEqual(['pending'])
+    settleMembers(all, KEY, () => true)
+    expect(all[0]!.status).toBe('pending')
+  })
+})
+
+describe('[C1] stageStatuses and stageDone', () => {
+  const RUN = [
+    '---', 'run: R', 'status: active', '---', '', '# Run: R', '', '## Stages',
+    '| Step | Stage | Agent | Status | Record |',
+    '|---|---|---|---|---|',
+    '| 43 | feature | orchestrator | in-progress | x |',
+    '| 43.2 | change | agent-manager | Done (passed) | x |',
+    '| 43.6 | bold | agent-manager | **Done** | x |',
+    '| 43.7 | underscored | agent-manager | __done__ | x |',
+    '| 43.3 | tests | sqa-engineer | blocked | x |',
+    '| 43.4.1 | review | code-reviewer | pending | x |',
+    '| not a code | skipped | x | done | x |',
+    '| 43.2 | change again | agent-manager | failed | x |',
+  ].join('\n')
+
+  test('[C1] the Stages table is read by step code, lower-cased, markdown stripped; a repeated code keeps its first row; a row with no step code is skipped', () => {
+    const got = stageStatuses(RUN)
+    expect(got).toEqual({ '43': 'in-progress', '43.2': 'done (passed)', '43.3': 'blocked', '43.4.1': 'pending', '43.6': 'done', '43.7': 'done' })
+    // A bold cell is read as its word (markers are stripped at both ends, so **Done** and __done__ give done).
+    expect(stageDone('43.6', got)).toBe(true)
+  })
+
+  test('[C1] null, a text with no table, and a table that is not a Stages table give {}', () => {
+    expect(stageStatuses(null)).toEqual({})
+    expect(stageStatuses('# nothing here\n')).toEqual({})
+    expect(stageStatuses('# Other\n| A | B |\n|---|---|\n| 1 | done |\n')).toEqual({})
+  })
+
+  test('[C1] a table with a Stage column but no heading is a Stages table; the Status column is found by its header', () => {
+    expect(stageStatuses('| Agent | Stage | Status | Step |\n|---|---|---|---|\n| a | s | done | 7 |\n')).toEqual({ '7': 'done' })
+  })
+
+  test('[C1] stageDone: the row of the code, or of a parent step code, starting with `done`', () => {
+    const st = stageStatuses(RUN)
+    expect(stageDone('43.2', st)).toBe(true)
+    expect(stageDone('43.2.1', st)).toBe(true)
+    expect(stageDone('43.2.1.3', st)).toBe(true)
+  })
+
+  test('[C1] boundary: in-progress, blocked, pending and failed rows are not done; a sibling row does not count; the parent row 43 (in-progress) does not make 43.3 done', () => {
+    const st = stageStatuses(RUN)
+    expect(stageDone('43', st)).toBe(false)
+    expect(stageDone('43.3', st)).toBe(false)
+    expect(stageDone('43.4.1', st)).toBe(false)
+    expect(stageDone('43.5', st)).toBe(false)
+    expect(stageDone('44', st)).toBe(false)
+    // "done" must start the cell: "undone" and "not done" are not done.
+    expect(stageDone('1', { '1': 'not done' })).toBe(false)
+    expect(stageDone('1', { '1': 'undone' })).toBe(false)
+    expect(stageDone('1', { '1': 'done' })).toBe(true)
+  })
+
+  test('[C1] a done parent row settles every step under it (row 43 done covers 43.*)', () => {
+    expect(stageDone('43.9.9', { '43': 'done' })).toBe(true)
+    expect(stageDone('430', { '43': 'done' })).toBe(false)
+  })
+
+  test('[C1] stageDone with no stages or an empty code is false', () => {
+    expect(stageDone('1', undefined)).toBe(false)
+    expect(stageDone('', { '': 'done' })).toBe(false)
+    expect(stageDone('1', {})).toBe(false)
+  })
+})
+
+describe('[C1a] attemptKey: the run and the step of the record a brief names', () => {
+  test('[C1a] the key is <run folder name>|<step code>, from the handoff path or from the prompt', () => {
+    const p = 'docs/handoffs/FEAT-1/43.2-orchestrator-to-agent-manager.handoff.md'
+    // The run id is the folder name as `runIdOf` gives it (lower-cased).
+    expect(attemptKey({ handoff: p, prompt: '' })).toBe('feat-1|43.2')
+    expect(attemptKey({ handoff: null, prompt: `Your handoff record is ${p} (root x).\nDo it.` })).toBe('feat-1|43.2')
+  })
+
+  test('[C1a] two attempts at one step share a key; another step or another run does not', () => {
+    const k = (run: string, code: string) => attemptKey({ handoff: `docs/handoffs/${run}/${code}-orchestrator-to-agent-manager.handoff.md`, prompt: '' })
+    expect(k('R', '1')).toBe(k('R', '1'))
+    expect(k('R', '1')).not.toBe(k('R', '2'))
+    expect(k('R', '1')).not.toBe(k('S', '1'))
+  })
+
+  test('[C1a] a brief that names no record has no key', () => {
+    expect(attemptKey({ handoff: null, prompt: 'just do it' })).toBe(null)
+    expect(attemptKey({ handoff: null, prompt: '' })).toBe(null)
+  })
+})
+
+describe('[C1b] runStateSig: a run folder\'s current run state as a change signature', () => {
+  const f = (name: string, size = 1, mtimeMs = 1, kind = 'file') => ({ name, kind, size, mtimeMs })
+
+  test('[C1b] the highest run.v<..>.md decides, with its size and time', () => {
+    expect(runStateSig([f('run.v1.md', 10, 100), f('run.v2.md', 20, 200), f('run.v1.1.md', 30, 300), f('7-a-to-b.handoff.md')])).toBe('run.v2.md:20:200')
+  })
+
+  test('[C1b] a new highest version, a rewritten size, or a rewritten time each change the signature; the same entries do not', () => {
+    const a = [f('run.v1.md', 10, 100)]
+    const same = runStateSig(a)
+    expect(runStateSig([f('run.v1.md', 10, 100)])).toBe(same)
+    expect(runStateSig([f('run.v1.md', 11, 100)])).not.toBe(same)
+    expect(runStateSig([f('run.v1.md', 10, 101)])).not.toBe(same)
+    expect(runStateSig([f('run.v1.md', 10, 100), f('run.v2.md', 1, 1)])).not.toBe(same)
+  })
+
+  test('[C1b] a change to a record that is not the run state does not change the signature', () => {
+    const base = [f('run.v1.md', 10, 100), f('1-a-to-b.handoff.md', 5, 5)]
+    expect(runStateSig([f('run.v1.md', 10, 100), f('1-a-to-b.handoff.md', 99, 999)])).toBe(runStateSig(base))
+  })
+
+  test('[C1b] a run from before versions (run.md) is the run state when no versioned file exists; a versioned file wins over run.md', () => {
+    expect(runStateSig([f('run.md', 3, 4)])).toBe('run.md:3:4')
+    expect(runStateSig([f('run.md', 3, 4), f('run.v1.md', 5, 6)])).toBe('run.v1.md:5:6')
+  })
+
+  test('[C1b] a folder with neither gives \'\'; a sub-folder named like a run state is not read', () => {
+    expect(runStateSig([])).toBe('')
+    expect(runStateSig([f('1-a-to-b.handoff.md')])).toBe('')
+    expect(runStateSig([f('run.v1.md', 1, 1, 'dir')])).toBe('')
+  })
+})
+
+// ---------------------------------------------------------------- the engine: a small fake file system
+
+type Fs = {
+  files: Record<string, string>
+  /** The modification time every listing gives a file; bumped by `put`. */
+  stamp: Record<string, number>
+  /** `fs.list` calls per folder. */
+  lists: Record<string, number>
+  /** The status `agent.list` gives each agent id. */
+  listed: Record<string, string>
+  put: (path: string, text: string) => void
+}
+
+const RUN_DIR = 'docs/handoffs/X'
+const stages = (rows: string[]) => `| Step | Stage | Agent | Status |\n|---|---|---|---|\n${rows.join('\n')}\n`
+const runState = (status: string, rows: string[] = ['| 1 | change it | agent-manager | in-progress |', '| 2 | review it | code-reviewer | pending |']) =>
+  `---\nrun: X\nstatus: ${status}\n---\n\n# Run: X: the thing\n\n## Stages\n${stages(rows)}`
+const brief = (code: string, run = 'X') => `Your handoff record is docs/handoffs/${run}/${code}-orchestrator-to-agent-manager.handoff.md (root x).\nDo it.`
+
+const pane = () => ({ plugin: PLUGIN, component: 'Pane', requestId: CHART_PANE, surface: 'vscode', props: { title: CHART_PANE, isFocused: false, bodyColumns: 120, placement: 'dock', scroll: { offset: 0, bodyRows: 80 }, view: {} } }) as any
+const band = () => ({ plugin: PLUGIN, surface: 'vscode', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 40, bodyColumns: 120, scroll: { offset: 0, bodyRows: 40 }, view: {} } }) as any
+
+const later = (fn: () => void, ms: number) => (globalThis as any).setTimeout(fn, ms)
+async function until(ok: () => boolean | Promise<boolean>, ms = 5000): Promise<boolean> {
+  const end = Date.now() + ms
+  for (;;) {
+    if (await ok()) return true
+    if (Date.now() >= end) return false
+    await new Promise<void>(r => later(r, 1))
+  }
+}
+let lastMs = 0
+async function nextMs() {
+  while (Date.now() <= lastMs) await new Promise<void>(r => later(r, 1))
+  lastMs = Date.now()
+}
+
+/** Every `clock.every` dispatch, held open until `tick()` lets its period end (the poll runs once per tick). */
+const heldClock = () => {
+  const periods: { ms: number; end: () => void }[] = []
+  const clockEvery = (e: { ms: number }) => new Promise(r => periods.push({ ms: e.ms, end: () => r({ value: undefined }) }))
+  const tick = async () => {
+    const open = periods.splice(0)
+    for (const p of open) p.end()
+    await until(() => periods.length >= new Set(open.map(p => p.ms)).size)
+    for (let i = 0; i < 20; i++) await new Promise<void>(r => later(r, 0))
+  }
+  return { clockEvery, tick }
+}
+
+async function boot($: any, on: any, initial: Record<string, string>, clockEvery?: (e: { ms: number }) => unknown): Promise<Fs> {
+  const files: Record<string, string> = { ...initial }
+  const stamp: Record<string, number> = {}
+  const lists: Record<string, number> = {}
+  const listed: Record<string, string> = {}
+  let clockT = 1
+  const fs: Fs = {
+    files,
+    stamp,
+    lists,
+    listed,
+    put: (path, text) => {
+      files[path] = text
+      stamp[path] = ++clockT
+    },
+  }
+  const norm = (p: unknown) => String(p).replace(/\\/g, '/').replace(/\/$/, '')
+  const fileOf = (path: string) => Object.keys(files).find(k => path === k || path.endsWith('/' + k))
+  on('ui.render', ($s: any, e: any) => {
+    const { Text } = $s.ui.resolve(e)
+    return <Text>NATIVE ROW</Text>
+  })
+  on('clock.every', (_: unknown, e: any) => (clockEvery !== undefined ? clockEvery(e) : { value: undefined }))
+  on('session.start', (_: unknown, e: any) => ({ cwd: e.cwd }))
+  on('session.end', (_: unknown, e: any) => ({ sessionId: e.sessionId }))
+  on('session.usage', () => ({ value: { startedAt: 0, context: { window: 1_000_000, tokens: 10 }, rateLimits: [] } }))
+  on('settings.read', () => ({ value: { agent: 'ai-dlc:orchestrator' } }))
+  on('fs.exists', () => ({ value: false }))
+  on('fs.stat', (_: unknown, e: any) => {
+    throw new Error(`ENOENT ${norm(e.path ?? e)}`)
+  })
+  on('fs.read', (_: unknown, e: any) => {
+    const hit = fileOf(norm(e.path ?? e))
+    if (hit === undefined) throw new Error(`ENOENT ${norm(e.path ?? e)}`)
+    return { value: files[hit] }
+  })
+  on('fs.write', (_: unknown, e: any) => ({ value: undefined }))
+  on('fs.list', (_: unknown, e: any) => {
+    const dir = norm(e?.path ?? e)
+    const folders = new Set<string>()
+    for (const k of Object.keys(files)) for (let i = k.lastIndexOf('/'); i > 0; i = k.lastIndexOf('/', i - 1)) folders.add(k.slice(0, i))
+    const hit = [...folders].filter(d => dir === d || dir.endsWith('/' + d)).sort((a, b) => b.length - a.length)[0]
+    if (hit === undefined) throw new Error(`ENOENT ${dir}`)
+    lists[hit] = (lists[hit] ?? 0) + 1
+    const out: any[] = []
+    const subs = new Set<string>()
+    for (const k of Object.keys(files)) {
+      if (!k.startsWith(hit + '/')) continue
+      const rest = k.slice(hit.length + 1)
+      if (rest.includes('/')) subs.add(rest.slice(0, rest.indexOf('/')))
+      else out.push({ name: rest, kind: 'file', size: files[k]!.length, mtimeMs: stamp[k] ?? 1 })
+    }
+    for (const s of subs) out.push({ name: s, kind: 'dir', mtimeMs: 1 })
+    return { value: out }
+  })
+  on('ui.toast', () => ({ value: undefined }))
+  on('agent.list', () => ({ value: Object.entries(listed).map(([id, status]) => ({ id, description: id, type: 'ai-dlc:agent-manager', status })) }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('ui.close', () => ({ value: undefined }))
+  on('ui.panes', () => ({ value: [] }))
+  on('ui.view', () => ({ value: undefined }))
+  on('agent.spawn', (_: unknown, e: any) => ({ model: 'claude-sonnet-5-5', agentId: 'a' + (/^toolu_(\d+)$/.exec(String(e.tool_use_id))?.[1] ?? '1') }))
+  on('turn.start', (_: unknown, e: any) => ({ turnId: e.turnId }))
+  on('turn.step', async function* (_: unknown, e: any) {
+    yield { kind: 'stop', stopReason: 'end_turn', usage: { input_tokens: 10, output_tokens: 10, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, model: e.agentId === undefined ? 'claude-opus-5-5' : 'claude-sonnet-5-5' } }
+    return { turnId: 'm', index: 0, answer: 'ok', toolUses: [], stopReason: 'end_turn', usage: null }
+  })
+  on('tool.call', () => ({ result: {} }))
+  on('turn.complete', (_: unknown, e: any) => ({ text: e.answer }))
+  on('classic.SubagentStop', () => ({}))
+  on('classic.Stop', () => ({}))
+  await $.session.start({ cwd: '/', surface: 'vscode', isInteractive: true })
+  await $.turn.start({ text: 'do the thing', turnId: 'm0' })
+  for await (const _ of $.turn.step({ turnId: 'm', index: 0, model: 'claude-opus-5-5', messageCount: 1 })) {
+    // drain the main step
+  }
+  return fs
+}
+
+/** The orchestrator's Agent call `toolu_<n>` with the brief of step `code`; `spawn` false leaves it a `call:` placeholder. */
+async function call($: any, n: number, code: string, spawn = true) {
+  await nextMs()
+  const prompt = brief(code)
+  await $.tool.call({ tool: 'Agent', subagent_type: 'ai-dlc:agent-manager', description: `d${n}`, prompt, tool_use_id: `toolu_${n}` })
+  if (spawn) await $.agent.spawn({ tool_use_id: `toolu_${n}`, prompt, description: `d${n}`, subagentType: 'ai-dlc:agent-manager', provider: { plugin: 'ai-dlc', tier: 'user' }, parentModel: 'claude-opus-5-5', background: true, fork: false })
+}
+const fail = ($: any, id: string) => $.turn.complete({ reason: 'error', answer: '', durationMs: 1, isAborted: false, turnId: 't', agentId: id, usage: null })
+const finish = ($: any, id: string) =>
+  $.turn.complete({ reason: 'answer', answer: 'done', durationMs: 1, isAborted: false, turnId: 't', agentId: id, usage: { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, model: 'claude-sonnet-5-5' } })
+
+/** The status dots the workflow pane draws (`status: <label>`), the first being the workflow's. */
+const dots = async (ui: any): Promise<string[]> =>
+  ((await ui.findAll({ type: 'Svg' })) as any[]).map((x: any) => String(x?.props?.alt ?? x?.alt ?? '')).filter(a => a.startsWith('status: '))
+/** The workflow's status as the pane draws it now, after at most a few seconds for a redraw. */
+const paneStatus = async ($: any, want?: string): Promise<string> => {
+  const ui = await $.ui.mount(pane())
+  let got = (await dots(ui))[0] ?? ''
+  if (want !== undefined) {
+    await until(async () => {
+      got = (await dots(ui))[0] ?? ''
+      return got === `status: ${want}`
+    })
+  }
+  await ui.unmount()
+  return got
+}
+const bandStatus = async ($: any): Promise<string> => {
+  const ui = await $.ui.mount(band())
+  const got = (await dots(ui))[0] ?? ''
+  await ui.unmount()
+  return got
+}
+
+// ---------------------------------------------------------------- sessions
+
+describe('[C1a] a failed step that starts again: the latest attempt decides, the workflow is not halted', () => {
+  test('[C1a] a1 fails (halted), a2 starts the same step (in progress, not halted), a2 finishes (completed); pane and band agree', async ($, on) => {
+    await boot($, on, { [`${RUN_DIR}/run.md`]: runState('active') })
+    await call($, 1, '1')
+    expect(await paneStatus($)).toBe('status: in progress')
+    await fail($, 'a1')
+    // No retry yet: failed with no later attempt still halts (boundary).
+    expect(await paneStatus($, 'halted')).toBe('status: halted')
+    expect(await bandStatus($)).toBe('status: halted')
+    await call($, 2, '1')
+    expect(await paneStatus($, 'in progress')).toBe('status: in progress')
+    expect(await bandStatus($)).toBe('status: in progress')
+    await finish($, 'a2')
+    expect(await paneStatus($, 'completed')).toBe('status: completed')
+    expect(await bandStatus($)).toBe('status: completed')
+  })
+
+  test('[C1a] a retry of ANOTHER step does not clear the failure: still halted', async ($, on) => {
+    await boot($, on, { [`${RUN_DIR}/run.md`]: runState('active') })
+    await call($, 1, '1')
+    await fail($, 'a1')
+    await call($, 2, '2')
+    expect(await paneStatus($, 'halted')).toBe('status: halted')
+    expect(await bandStatus($)).toBe('status: halted')
+  })
+
+  test('[C1a] a failure AFTER a completed attempt of the same step halts', async ($, on) => {
+    await boot($, on, { [`${RUN_DIR}/run.md`]: runState('active') })
+    await call($, 1, '1')
+    await finish($, 'a1')
+    await call($, 2, '1')
+    await fail($, 'a2')
+    expect(await paneStatus($, 'halted')).toBe('status: halted')
+  })
+
+  test('[C1a] a killed agent (the agent list says so) that started again: the retry decides', async ($, on) => {
+    const h = heldClock()
+    const fs = await boot($, on, { [`${RUN_DIR}/run.md`]: runState('active') }, h.clockEvery)
+    await call($, 1, '1')
+    fs.listed['a1'] = 'killed'
+    await h.tick()
+    expect(await paneStatus($, 'halted')).toBe('status: halted')
+    await call($, 2, '1')
+    expect(await paneStatus($, 'in progress')).toBe('status: in progress')
+  })
+})
+
+describe('[C1] a done run state or stage reads completed; blocked still halts', () => {
+  test('[C1] a pending placeholder (the Agent call not started) whose Stages row is done: completed, not pending', async ($, on) => {
+    await boot($, on, { [`${RUN_DIR}/run.md`]: runState('active', ['| 1 | change it | agent-manager | done (passed) |', '| 2 | review it | code-reviewer | pending |']) })
+    await call($, 1, '1', false)
+    expect(await paneStatus($, 'completed')).toBe('status: completed')
+    expect(await bandStatus($)).toBe('status: completed')
+  })
+
+  test('[C1] boundary: the same placeholder whose Stages row is in-progress stays pending', async ($, on) => {
+    await boot($, on, { [`${RUN_DIR}/run.md`]: runState('active') })
+    await call($, 1, '1', false)
+    expect(await paneStatus($, 'pending')).toBe('status: pending')
+    expect(await bandStatus($)).toBe('status: pending')
+  })
+
+  test('[C1] a done row of a PARENT step settles the placeholder of a sub-step (row 1 done, brief names 1.2)', async ($, on) => {
+    await boot($, on, { [`${RUN_DIR}/run.md`]: runState('active', ['| 1 | change it | agent-manager | done |']) })
+    await call($, 1, '1.2', false)
+    expect(await paneStatus($, 'completed')).toBe('status: completed')
+  })
+
+  test('[C1] the run status `done` makes the workflow completed although its agent was never told it ended', async ($, on) => {
+    const fs = await boot($, on, { [`${RUN_DIR}/run.md`]: runState('done', ['| 1 | change it | agent-manager | done |']) })
+    fs.listed['a1'] = 'running'
+    await call($, 1, '1')
+    expect(await paneStatus($, 'completed')).toBe('status: completed')
+    expect(await bandStatus($)).toBe('status: completed')
+  })
+
+  test('[C1] blocked still halts: the run is blocked while its agent completed, and a done row does not undo a blocked run', async ($, on) => {
+    await boot($, on, { [`${RUN_DIR}/run.md`]: runState('blocked', ['| 1 | change it | agent-manager | done |']) })
+    await call($, 1, '1')
+    await finish($, 'a1')
+    expect(await paneStatus($, 'halted')).toBe('status: halted')
+    expect(await bandStatus($)).toBe('status: halted')
+  })
+
+  test('[C1] a listed `completed` applies to an agent whose turn.complete this session never saw', async ($, on) => {
+    const h = heldClock()
+    const fs = await boot($, on, { [`${RUN_DIR}/run.md`]: runState('active') }, h.clockEvery)
+    await call($, 1, '1')
+    fs.listed['a1'] = 'running'
+    await h.tick()
+    expect(await paneStatus($, 'in progress')).toBe('status: in progress')
+    fs.listed['a1'] = 'completed'
+    await h.tick()
+    expect(await paneStatus($, 'completed')).toBe('status: completed')
+  })
+
+  test('[C1] boundary: a status that already ended is never changed by the list (failed stays failed though the list says completed)', async ($, on) => {
+    const h = heldClock()
+    const fs = await boot($, on, { [`${RUN_DIR}/run.md`]: runState('active') }, h.clockEvery)
+    await call($, 1, '1')
+    await fail($, 'a1')
+    fs.listed['a1'] = 'completed'
+    await h.tick()
+    expect(await paneStatus($, 'halted')).toBe('status: halted')
+  })
+})
+
+describe('[C1b] another session moved the run: the 2 s poll shows it, an unchanged run state costs no refresh', () => {
+  const BLOCKED = runState('blocked', ['| 1 | change it | agent-manager | blocked |'])
+  const DONE = runState('done', ['| 1 | change it | agent-manager | done |'])
+
+  test('[C1b] a halted run continued in another session (run.md rewritten): the next poll shows completed in the pane and the band', async ($, on) => {
+    const h = heldClock()
+    const fs = await boot($, on, { [`${RUN_DIR}/run.md`]: BLOCKED }, h.clockEvery)
+    await call($, 1, '1')
+    await finish($, 'a1')
+    expect(await paneStatus($, 'halted')).toBe('status: halted')
+    await h.tick()
+    expect(await paneStatus($)).toBe('status: halted')
+    // The other session writes the run state again (same file, new size and time).
+    fs.put(`${RUN_DIR}/run.md`, DONE)
+    // Not yet polled: this session still shows what it knew.
+    expect(await bandStatus($)).toBe('status: halted')
+    await h.tick()
+    expect(await paneStatus($, 'completed')).toBe('status: completed')
+    expect(await until(async () => (await bandStatus($)) === 'status: completed')).toBe(true)
+    expect(await bandStatus($)).toBe('status: completed')
+  })
+
+  test('[C1b] the other session writes a new version (run.v2.md beside run.v1.md): the poll reads the highest', async ($, on) => {
+    const h = heldClock()
+    const fs = await boot($, on, { [`${RUN_DIR}/run.v1.md`]: BLOCKED }, h.clockEvery)
+    await call($, 1, '1')
+    await finish($, 'a1')
+    await h.tick()
+    expect(await paneStatus($, 'halted')).toBe('status: halted')
+    fs.put(`${RUN_DIR}/run.v2.md`, DONE)
+    await h.tick()
+    expect(await paneStatus($, 'completed')).toBe('status: completed')
+  })
+
+  test('[C1b] the other session blocks a run this one saw active: the poll shows halted', async ($, on) => {
+    const h = heldClock()
+    const fs = await boot($, on, { [`${RUN_DIR}/run.md`]: runState('active') }, h.clockEvery)
+    await call($, 1, '1')
+    await finish($, 'a1')
+    await h.tick()
+    expect(await paneStatus($, 'completed')).toBe('status: completed')
+    fs.put(`${RUN_DIR}/run.md`, BLOCKED)
+    await h.tick()
+    expect(await paneStatus($, 'halted')).toBe('status: halted')
+  })
+
+  /** The listings of the run folder one poll costs (the poll's own signature listing, plus a refresh's when it runs). */
+  const polled = async (h: { tick: () => Promise<void> }, fs: Fs): Promise<number> => {
+    const before = fs.lists[RUN_DIR] ?? 0
+    await h.tick()
+    return (fs.lists[RUN_DIR] ?? 0) - before
+  }
+
+  // A run with nothing wrong in it (no anomaly for the detector to keep scanning), so the cost of a poll is the poll's own.
+  const QUIET = runState('active', ['| 1 | change it | agent-manager | done |'])
+
+  test('[C1b] negative: with the run state unchanged a poll does not refresh the runs (a steady, smaller cost per poll); a change costs the refresh on top', async ($, on) => {
+    const h = heldClock()
+    const fs = await boot($, on, { [`${RUN_DIR}/run.md`]: QUIET }, h.clockEvery)
+    await call($, 1, '1')
+    await finish($, 'a1')
+    // The first poll sees the folder for the first time (it refreshes); after it the polls have nothing to see.
+    for (let i = 0; i < 4; i++) await h.tick()
+    const idle1 = await polled(h, fs)
+    const idle2 = await polled(h, fs)
+    expect(idle1).toBeGreaterThan(0)
+    expect(idle2).toBe(idle1)
+    fs.put(`${RUN_DIR}/run.md`, QUIET.replace('status: active', 'status: done'))
+    const changed = await polled(h, fs)
+    expect(changed).toBeGreaterThan(idle1)
+    // And it is steady again once the change was taken.
+    expect(await polled(h, fs)).toBe(idle1)
+  })
+
+  test('[C1b] negative: a change to a record that is not the run state (a hand-back written) does not move the signature: no refresh', async ($, on) => {
+    const h = heldClock()
+    const fs = await boot($, on, { [`${RUN_DIR}/run.md`]: QUIET }, h.clockEvery)
+    await call($, 1, '1')
+    await finish($, 'a1')
+    for (let i = 0; i < 4; i++) await h.tick()
+    const idle = await polled(h, fs)
+    fs.put(`${RUN_DIR}/1-agent-manager-to-orchestrator.handback.md`, 'hand-back text')
+    expect(await polled(h, fs)).toBe(idle)
+  })
+})

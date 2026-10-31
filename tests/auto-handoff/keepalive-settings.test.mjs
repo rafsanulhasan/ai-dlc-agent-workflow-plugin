@@ -80,11 +80,17 @@ describe("the keep-alive command", () => {
     const skill = fs.readFileSync(path.join(PLUGIN, "skills", "cache-keepalive", "SKILL.md"), "utf8");
     assert.match(skill, /^---\r?\nname: cache-keepalive\r?\n/);
     assert.ok(!fs.existsSync(path.join(PLUGIN, "skills", "keepalive")), "the former keepalive skill is renamed cache-keepalive");
-    assert.match(skill, /--track 1h\|5m\|both/);
+    // Live findings 3, point 5: the command takes no arguments and pings with the settings configure set (point 7); its old grammar (--track, --session, durations) is configure's
+    assert.match(skill, /takes no argument/);
+    assert.match(skill, /pings now with the settings in force \(those `\/ai-dlc:cache-keepalive-configure` set\)/);
+    assert.doesNotMatch(skill, /--track 1h\|5m\|both/);
+    assert.match(skill, /`\/ai-dlc:cache-keepalive-configure`'s/);
     assert.match(skill, /\ndisable-model-invocation: true\r?\n/);
     const code = fs.readFileSync(path.join(KEEPALIVE, "keepalive.ts"), "utf8");
     assert.match(code, /export const COMMAND = 'ai-dlc:cache-keepalive'/);
     assert.match(code, /on\('command\.run', \{ command: COMMAND \}/);
+    assert.match(code, /export const CONFIGURE = 'ai-dlc:cache-keepalive-configure'/);
+    assert.match(code, /on\('command\.run', \{ command: CONFIGURE \}/);
     assert.ok(!code.includes("command.register"), "a hooks module can only register a bare name");
   });
 

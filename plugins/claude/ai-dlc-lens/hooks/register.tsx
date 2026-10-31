@@ -41,6 +41,7 @@
 // Step 36.2: one view. `/ai-dlc:lens` opens the workflow view, titled "AI-DLC Lens" (`VIEW_TITLE`), or raises it
 // (`openLens`). The round 1 lens card (the `ai-dlc-lens` pane, L1-L6) is gone, so "the lens pane" above is history.
 import { atom, read, update } from 'claude-code'
+import type { LensMessage } from './lens'
 import type { EngineInterface, Register, RenderElement, Timer, UiOpenResult } from 'claude-code'
 import type { LensAgent, LensAnomaly, LensBatch, LensCall, LensConfig, LensCosting, LensDef, LensDoc, LensDrill, LensNotice, LensRun, LensTask, LensUi, LensView, LensWorkflows, Tokens } from '../types'
 import {
@@ -81,6 +82,13 @@ import {
   leadOf,
   matchHandoff,
   mergeStopTasks,
+  addMessage,
+  handoffLine,
+  messageText,
+  messagesOfEdge,
+  STOP_NOTE,
+  messageTarget,
+  commandSeatOf,
   modelOf,
   notePending,
   parseDefinition,
@@ -107,6 +115,7 @@ import {
   windowOf,
   workflowBatch,
   workflowStatus,
+  attemptKey, runStateSig, settleMembers, stageDone, stageStatuses,
   workflowTask,
   WF0,
   keepaliveLine,
@@ -138,6 +147,28 @@ import {
   showChart,
   viewResize,
   viewRestore,
+  bandModeOf,
+  paneModeOf,
+  bandMinimise,
+  bandToList,
+  dockedBandMinimise,
+  bandRestore,
+  paneToList,
+  paneOnRun,
+  paneFromBand,
+  bandFromPane,
+  dockedRestore,
+  dockedCanRestore,
+  bandPick,
+  bandClosedOf,
+  lensCommandView,
+  commandStartView,
+  commandOpenView,
+  withoutStepKeys,
+  cardOpenView,
+  stepKeyOfCall,
+  drillTargetOf,
+  drillPlaceOf,
   parseRecordName,
   stepCharts,
   stepsDescending,
@@ -172,6 +203,9 @@ const KIT = 'ai-dlc-lens-kit'
 const EDGE = 'ai-dlc-lens-edge'
 const AGENT = 'ai-dlc-lens-agent'
 const CHART = 'ai-dlc-lens-chart'
+/** Live round 1 (the human, 2026-10-26): the Run List tab `/ai-dlc:lens` opens beside the workflow tab in a wide VS Code panel. */
+const RUNS = 'ai-dlc-lens-runs'
+const RUNS_TITLE = 'AI-DLC Lens: runs'
 // Step 36.2: the workflow view's title (its tab, and the minimised view with no run yet). The id stays `ai-dlc-lens-chart`:
 // with the round 1 card's `ai-dlc-lens` gone nothing clashes, and a pane left open keeps its id across the update.
 const VIEW_TITLE = 'AI-DLC Lens'
@@ -309,6 +343,17 @@ const thinkBlocks: Record<string, number> = {}
 /** tool_use_id -> the output tokens of the step that asked for it and how many calls that step asked for. */
 const stepOfCall: Record<string, { out: number; n: number }> = {}
 const lastStatus: Record<string, string> = {}
+/**
+ * Step 43.2.5: the session's SendMessage calls (`beforeCall`), for the Connections panel's Send Message accordion.
+ * Module memory (reset at `session.start` and on reload); a new one bumps `avatarRevA`, which every drawing reads.
+ */
+let messagesNow: LensMessage[] = []
+/** Step 43.2.5: the main loop's running turn (`turn.start` without `agentId`), the one the Agents panel's Stop ends. */
+let mainTurnId: string | null = null
+/** Step 43.2.5: what the last View transcript, Refresh or Stop press of each agent's panel did, shown under its buttons. */
+let pressNotes: Record<string, string> = {}
+/** Step 43.2.5: the full length of each agent's hand-back record as `loadDoc` read it (the shown text is capped). */
+let handbackChars: Record<string, number> = {}
 /** The settings non-drawing code uses (limits); the drawings read `lensA`. */
 let cfg: LensSettings = { ...DEFAULTS }
 
@@ -748,6 +793,17 @@ const avatarNotes = (): string[] =>
 
 const chartSize = (s: LensSettings): ChartSize => ({ col: s.chartColumnPx, row: s.chartRowPx, perRow: s.chartAvatarsPerRow, r: s.avatarRadiusPx, blink: s.blink, blinkMs: s.blinkMs })
 
+/**
+ * Step 43 (live 2d): the Svg's declared size, fitted to `fitPx` CSS px (the body's columns times cellPx) when the
+ * chart is wider: the surface scales a wider Svg down to its slot but keeps the declared height, so the drawing
+ * sat in blank space above and below it. Both sides shrink by one factor (the aspect is kept); no `fitPx`: as drawn.
+ */
+const svgFit = (width: number, height: number, fitPx: number | undefined): { width: number; height: number } => {
+  if (fitPx === undefined || !(fitPx > 0) || width <= fitPx) return { width, height }
+  const k = fitPx / width
+  return { width: Math.max(1, Math.floor(fitPx)), height: Math.max(1, Math.round(height * k)) }
+}
+
 /** Addendum A7: the chart settings in full screen: columns, rows and avatars 1.5 times larger, within each setting's maximum. */
 const fullscreenSettings = (s: LensSettings): LensSettings => ({
   ...s,
@@ -809,6 +865,44 @@ async function mergedHomes($: EngineInterface, missing: readonly string[]): Prom
   return out
 }
 
+/** Step 43 (C1): a run state as `parseRun` reads it, with each *Stages* row's status (`stageStatuses`) when it has any. */
+function runOf(text: string | null): LensRun | null {
+  const r = parseRun(text)
+  if (r === null) return null
+  const stageStatus = stageStatuses(text)
+  return Object.keys(stageStatus).length > 0 ? { ...r, stageStatus } : r
+}
+
+/** Step 43 (C1): each known run folder's current run-state signature (`runStateSig`), as the 2 s poll last saw it. */
+let runStateSeen: Record<string, string> = {}
+
+/**
+ * Step 43 (C1, another session moved a run): stats every run folder `runsA` knows (a listing, no read) and tells
+ * whether its current run-state file changed since the last poll: a new highest `run.v<…>.md`, or the same file with
+ * another size or time. A folder seen for the first time counts as changed. Every cached record of the folder whose
+ * listed size or time changed is dropped from `recordCache`, so the next read takes the file from disk.
+ */
+async function runStatesMoved($: EngineInterface): Promise<boolean> {
+  let moved = false
+  const seen: Record<string, string> = {}
+  for (const d of Object.keys(await read($, runsA))) {
+    let entries: ListEntry[]
+    try {
+      entries = ((await $.fs.list(d)) as ListEntry[]).filter(e => e.kind !== 'dir')
+    } catch {
+      continue // not listable: nothing to compare
+    }
+    for (const e of entries) {
+      const hit = recordCache[`${d}/${e.name}`]
+      if (hit !== undefined && hit.sig !== sigOf(e)) delete recordCache[`${d}/${e.name}`]
+    }
+    seen[d] = runStateSig(entries)
+    if (own(runStateSeen, d) !== seen[d]) moved = true
+  }
+  runStateSeen = seen
+  return moved
+}
+
 /**
  * Re-reads the `run.md` of every run a brief named (round 5): the pane's titles and status follow the
  * run as it moves. Written only when something changed, so a pane redraws only then.
@@ -817,7 +911,7 @@ async function refreshRuns($: EngineInterface) {
   const next: Record<string, LensRun> = {}
   const missing: string[] = []
   for (const d of await runDirs($)) {
-    const r = parseRun(await readRunState($, d))
+    const r = runOf(await readRunState($, d))
     if (r !== null) next[d] = r
     else missing.push(d)
   }
@@ -825,12 +919,12 @@ async function refreshRuns($: EngineInterface) {
   // the run it joined keeps, and drawn in that run's chart as a child run (`parent:` set to that run).
   const merged = new Set<string>()
   for (const [d, m] of Object.entries(await mergedHomes($, missing))) {
-    const r = parseRun(await readText($, `${m.home}/${m.file}`))
+    const r = runOf(await readText($, `${m.home}/${m.file}`))
     if (r === null) continue
     next[d] = { ...r, parent: folderNameOf(m.home) }
     merged.add(d)
     if (!Object.keys(next).some(k => runIdOf(k) === runIdOf(m.home))) {
-      const h = parseRun(await readRunState($, m.home))
+      const h = runOf(await readRunState($, m.home))
       if (h !== null) next[m.home] = h
     }
   }
@@ -846,7 +940,7 @@ async function refreshRuns($: EngineInterface) {
     const pd = base.includes('/') || base.includes('\\') ? `${base.replace(/[\\/][^\\/]*$/, '')}/${p}` : p
     if (Object.keys(next).some(k => runIdOf(k) === runIdOf(pd))) continue
     reads++
-    const r = parseRun(await readRunState($, pd))
+    const r = runOf(await readRunState($, pd))
     if (r === null) continue
     next[pd] = r
     queue.push(pd)
@@ -995,7 +1089,9 @@ async function refreshList($: EngineInterface, reason: string) {
       // Round 6: nor puts `running` back over an `idle` the turn's end set (the list lags, E4); a turn's
       // own start sets `running`. It may still start a pending agent or wake a waiting one.
       const stale = a.status === 'running' && cur !== undefined && cur.status !== 'pending' && cur.status !== 'waiting'
-      if (cur && cur.status !== a.status && a.status !== 'completed' && !ENDED.has(cur.status) && !stale) out[a.id] = { ...cur, status: String(a.status) }
+      // Step 43 (C1): a listed `completed` applies too (an agent whose `turn.complete` this session never saw, a
+      // pending one included); a status already ended (`ENDED`) is still never changed by the list.
+      if (cur && cur.status !== a.status && !ENDED.has(cur.status) && !stale) out[a.id] = { ...cur, status: String(a.status) }
       if (out[a.id] && typeof a.teammateId === 'string' && out[a.id]!.teammate !== true) out[a.id] = { ...out[a.id]!, teammate: true }
     }
     return out
@@ -1047,8 +1143,13 @@ async function loadDoc($: EngineInterface, a: LensAgent) {
       const hb = pickHandback(names, rec)
       if (hb !== null) {
         doc.handback = `${rec.dir}/${hb}`
-        doc.handbackText = cap((await readText($, doc.handback)) ?? '', cfg.recordChars)
-      } else doc.handbackText = '(no hand-back yet)'
+        const full = (await readText($, doc.handback)) ?? ''
+        handbackChars[a.id] = full.length
+        doc.handbackText = cap(full, cfg.recordChars)
+      } else {
+        delete handbackChars[a.id]
+        doc.handbackText = '(no hand-back yet)'
+      }
     } catch (err) {
       doc.error += ` list ${rec.dir}: ${String(err)}`
     }
@@ -1066,19 +1167,21 @@ async function openModeNow($: EngineInterface): Promise<'tab' | 'drill-in'> {
 /**
  * Opens an arrow's details (`snap`: the agent as the drawing drew it). Step 1.5: `tab` opens the separate
  * pane (a tab beside the others, PaneOpenArgs, d.ts:7588-7660); `drill-in` shows it inside the drawing
- * it was pressed in (`target`: `lens`, `pane` or `card:<call>`) with "< Back". Both work from every drawing.
+ * it was pressed in (`target`) with "< Back". Both work from every drawing.
+ * Step 43 (B5, B6): `target` is `band`, `pane`, `band-wide:<w>` (pressed on a wide band: drilled in the pane, opened on
+ * `w`) or `card:<call>` (`drillTargetOf`, `drillAt`).
  */
 async function openEdge($: EngineInterface, snap: LensAgent, title: string, target: string) {
   const mode = await openModeNow($)
   await loadDoc($, snap)
   if (mode === 'drill-in') {
-    await update($, drillsA, m => ({ ...(m as Record<string, LensDrill>), [target]: { kind: 'edge', id: snap.id, snap } }))
+    await drillAt($, target, { kind: 'edge', id: snap.id, snap })
     return
   }
   await update($, uiA, x => ({ ...x, edge: snap.id, edgeSnap: snap }))
   await update($, tabsMinA, m => ({ ...(m as Record<string, boolean>), [EDGE]: false }))
   // Round 6 (A4): Esc closes it while it holds the keys (PaneOpenArgs.closeOnEscape, d.ts:7614-7624); `focus` asks for them.
-  const r = await $.ui.open({ id: EDGE, title: cap(`Hand-off: ${title}`, 60), focus: true, closeOnEscape: true })
+  const r = await $.ui.open({ id: EDGE, title: cap(`Connections: ${title}`, 60), focus: true, closeOnEscape: true })
   await plog($, 'E3', { open: EDGE, result: r })
 }
 
@@ -1087,13 +1190,27 @@ async function openAgent($: EngineInterface, snap: LensAgent, title: string, tar
   const mode = await openModeNow($)
   await refreshList($, 'avatar press')
   if (mode === 'drill-in') {
-    await update($, drillsA, m => ({ ...(m as Record<string, LensDrill>), [target]: { kind: 'agent', id: snap.id, snap } }))
+    await drillAt($, target, { kind: 'agent', id: snap.id, snap })
     return
   }
   await update($, uiA, x => ({ ...x, agent: snap.id, agentSnap: snap }))
   await update($, tabsMinA, m => ({ ...(m as Record<string, boolean>), [AGENT]: false }))
-  const r = await $.ui.open({ id: AGENT, title: cap(`Agent: ${title}`, 60), focus: true, closeOnEscape: true })
+  const r = await $.ui.open({ id: AGENT, title: cap(`Agents: ${title}`, 60), focus: true, closeOnEscape: true })
   await plog($, 'E3', { open: AGENT, result: r })
+}
+
+/**
+ * Step 43 (B5, B6, design 4): a drill-in opened where its target says (`drillPlaceOf`): `band` inside the band, `pane`
+ * in the pane, `card:<call>` in that card. Pressed on a wide band (`band-wide:<w>`), the pane opens first in workflow
+ * mode on the band's run `w`, and the drill is drawn there.
+ */
+async function drillAt($: EngineInterface, target: string, d: LensDrill) {
+  const { key, openPane } = drillPlaceOf(target)
+  await update($, drillsA, m => ({ ...(m as Record<string, LensDrill>), [key]: d }))
+  if (openPane !== null) {
+    const r = await paneOn($, openPane)
+    await plog($, 'E3', { open: CHART, via: 'band drill', workflow: openPane, result: r })
+  }
 }
 
 /** Leaves a drawing's drill-in view ("< Back"). */
@@ -1181,17 +1298,45 @@ async function viewPaneOpen($: EngineInterface): Promise<boolean> {
 }
 
 /**
- * Step 36.2: `/ai-dlc:lens`. Docked, or where the band is not drawn: opens the AI-DLC Lens pane when it is closed and
- * raises it (`focus`) when it is open. On the band: one step per run (`bandStep`). Returns the one-line reply.
+ * Step 43 (A1, design 3): `/ai-dlc:lens`. Pinned with the band drawn: the band comes back (a band closed with its `×`
+ * included) minimised, and the pane is neither opened nor changed; the band's `⤢` opens it. Otherwise the pane opens
+ * (or is raised) in the seat `commandSeatOf` gives (live findings 3): in VS Code, `dock` for the last lens pane drawn
+ * wide and docked (the workflow view on the newest run, with the Run List tab), else `inline` (exactly one pane, the
+ * minimised list); on other surfaces always `dock`, the human's rule 2 (the workflow view on the newest run).
+ * `paneSeat` is module memory, refreshed only when a lens pane is drawn, so after a resize with no redraw since, the
+ * seat can be stale. Returns the one-line reply. `bandStep` is retired.
  */
 async function openLens($: EngineInterface): Promise<string> {
   await closeOldCard($)
   // Amendment 8: the command brings back a band closed with its `×`.
   await update($, bandClosedA, () => false)
   const v = await read($, viewA)
+  if (await onBand($, v)) {
+    await update($, viewA, x => lensCommandView(x as LensView, true, null))
+    return `${VIEW_TITLE}: the band above the prompt is shown minimised; the pane is not changed (open it from the band with ⤢).`
+  }
   const wasOpen = await viewPaneOpen($)
-  if (await onBand($, v)) return bandStep($, v, wasOpen)
-  const r = await openWorkflowPane($, v, true)
+  const latest = await latestFlow($)
+  const live = latest !== null && latest.live ? latest.w : null
+  const w = latest?.w ?? null
+  // Live findings 2 and 3: every write happens here, in the command's event, never in a draw (the host denies a state
+  // write while `ui.render` is dispatched). The seat comes from the last lens pane drawn (`paneSeat`): wide and docked,
+  // the workflow view on the newest run with its default steps and the Run List tab (VS Code); else (narrow, inline,
+  // or not known yet) exactly one pane, the minimised list. Never an old full screen (`commandStartView`).
+  // The narrow/wide split is VS Code's (live findings 2 and 3); docked elsewhere (terminal, desktop) the pane keeps the
+  // human's rule 2: the workflow view on the newest run.
+  const vscode = (await surfacesNow($)).includes('vscode')
+  const seat = vscode ? commandSeatOf(paneSeat, Number((await read($, lensA)).settings.wideColumns)) : 'dock'
+  await update($, viewA, x => commandOpenView(commandStartView(lensCommandView(x as LensView, false, live)), seat, w))
+  await drillBack($, 'pane')
+  if (seat === 'dock' && w !== null) {
+    await update($, cardOpenA, m => withoutStepKeys(m as Record<string, boolean>, w))
+    await update($, stepSelA, m => {
+      const { [w]: _gone, ...rest } = m as Record<string, string>
+      return rest
+    })
+  }
+  const r = seat === 'dock' && vscode ? await openRunsTab($) : await openWorkflowPane($, await read($, viewA), true)
   if (!r.isPlaced) return `${VIEW_TITLE} is open but not drawn yet: ${r.reason}`
   return `${VIEW_TITLE} ${wasOpen ? 'brought forward' : 'opened'}.`
 }
@@ -1204,12 +1349,6 @@ async function bandStart($: EngineInterface) {
   await update($, viewA, x => ((x as LensView).size === 'normal' ? viewResize(x as LensView, 'minimised') : (x as LensView)))
 }
 
-/** Step 36.2: the band's list view from a minimised band: the size before when it is the list, else normal. */
-function bandList(x: LensView): LensView {
-  const back = viewRestore(x)
-  return back.size === 'normal' ? back : viewResize(x, 'normal')
-}
-
 type Latest = NonNullable<Awaited<ReturnType<typeof latestFlow>>>
 
 /** Step 36.2: how a reply names the workflow the pane goes to: the latest in progress, else the most recent. */
@@ -1217,64 +1356,79 @@ const latestWhich = (latest: Latest): string =>
   latest.live ? `the latest in-progress workflow, ${latest.title}` : `the most recent workflow, ${latest.title} (none is in progress)`
 
 /**
- * Step 36.2, amendment 3: the pane beside the band, opened (or raised) on `w`, focused; the band is not touched.
- * Amendment 8: docked (the band drawn because a workflow is in progress), the docked pane itself selects `w`.
+ * Step 43: opens (or raises) the pane, focused, after `fn` sets its mode and run; the band is not touched. Beside the
+ * band the pane draws `paneViewOf`; docked (or where no band is drawn) the view itself.
+ */
+async function paneWith($: EngineInterface, fn: (v: LensView, docked: boolean) => LensView): Promise<UiOpenResult> {
+  const docked = !(await onBand($, await read($, viewA)))
+  await update($, viewA, x => fn(x as LensView, docked))
+  const v = await read($, viewA)
+  return openWorkflowPane($, docked ? v : paneViewOf(v), true)
+}
+
+/**
+ * Step 36.2, amendment 3; step 43: the pane opened (or raised) in workflow mode on `w`, focused; the band is not
+ * touched. Beside the band it is the pane's own run (`pane`); docked, the docked pane's `selected`.
  */
 async function paneOn($: EngineInterface, w: string): Promise<UiOpenResult> {
-  if (!(await onBand($, await read($, viewA)))) {
-    await update($, viewA, x => ({ ...(x as LensView), selected: w }))
-    return openWorkflowPane($, await read($, viewA), true)
-  }
-  await update($, viewA, x => ({ ...(x as LensView), pane: w }))
-  return openWorkflowPane($, paneViewOf(await read($, viewA)), true)
+  return paneWith($, (x, docked) => paneOnRun(x, w, docked))
 }
 
 /**
- * Step 36.2, amendment 6: the band's `⤢` (and a step chart's `⤢` on the band). The band stays as it is, minimised or
- * its list, and is never hidden; the pane opens beside it on the latest workflow, or switches to it from an older one
- * (`latestFlow`: the newest in progress, else the newest), or, from a step chart, on that chart's workflow.
+ * Step 43 (B3a): the band's `⤢`, and a step's `⤢` on the band (`w`, that step's workflow). The band stays as it is.
+ * From the band's controls: the pane opens at once, focused, in list mode when the band is minimised or in list mode,
+ * else in workflow mode on the band's run (`paneFromBand`; `layout`: the band's, a wide band being in list mode). With
+ * `w`: the pane opens in workflow mode on `w`.
  */
-async function expandBand($: EngineInterface, w?: string) {
-  // A button press has no reply line, unlike `/ai-dlc:lens` (`bandStep`): what it did is logged, like the other
-  // panes' opens (E3). With no workflow there is nothing to open, and the band already reads "Nothing Here".
-  const target = w ?? (await latestFlow($))?.w
-  if (target === undefined) {
-    await plog($, 'E3', { open: null, via: 'band expand', reason: 'no workflow' })
-    return
-  }
-  const r = await paneOn($, target)
-  await plog($, 'E3', { open: CHART, via: 'band expand', workflow: target, result: r })
+async function expandBand($: EngineInterface, w?: string, layout: 'wide' | 'narrow' = 'wide') {
+  const conf = await read($, lensA)
+  const r =
+    w !== undefined
+      ? await paneOn($, w)
+      : await paneWith($, (x, docked) => {
+          const pinned = placeOf(x, String(conf.settings.workflowPlace)) === 'pinned'
+          return paneFromBand(x, layout, docked, pinned ? x.size : dockedBandViewOf(x).size)
+        })
+  // A button press has no reply line: what it did is logged, like the other panes' opens (E3).
+  await plog($, 'E3', { open: CHART, via: 'band expand', workflow: w ?? null, result: r })
+}
+
+/** Step 43 (B4b, D5): when the lens band was last drawn above the prompt (`nowMs`), 0 for never this load. */
+let lastBandAt = 0
+/**
+ * Live findings 3: the last lens pane drawn (CHART, RUNS, AGENT or EDGE): its placement and body columns, module
+ * memory set while drawing (no state write), read by `/ai-dlc:lens` to pick its seat (`commandSeatOf`).
+ */
+let paneSeat: { placement?: 'dock' | 'inline'; columns?: number } | null = null
+function notePaneSeat(placement: unknown, columns: unknown) {
+  paneSeat = { ...(placement === 'dock' || placement === 'inline' ? { placement } : {}), ...(typeof columns === 'number' ? { columns } : {}) }
+}
+/** Step 43: bumped while the pane beside the band is drawn, so the band and the pane redraw and `bandClosedOf` stays current. */
+const bandPingA = atom({ plugin: 'ai-dlc-lens', key: 'bandPing' } as const, 0)
+/** Step 43: one ping waits at a time (`pingBandSoon`). */
+let bandPingWaiting = false
+
+/**
+ * Step 43 (B4b): asks for one more draw of the band and the pane in half of `bandGoneMs` (`goneMs`), so a band still on
+ * screen is drawn again (`lastBandAt`) before the pane next asks whether it is closed. At most one waits at a time.
+ */
+function pingBandSoon($: EngineInterface, goneMs: number) {
+  if (bandPingWaiting) return
+  bandPingWaiting = true
+  $.clock.after(Math.floor(goneMs / 2), () => {
+    bandPingWaiting = false
+    void update($, bandPingA, n => (n as number) + 1).catch(err => lensFail('band ping', err))
+  })
 }
 
 /**
- * Step 36.2, amendments 1 and 4: `/ai-dlc:lens` while the band shows the view. Each run moves one step, the rules
- * checked in this order: (1) the band minimised: its list view is restored, the pane untouched; (2) the band in list
- * view and the pane closed: the pane opens on the latest workflow (`latestFlow`: the newest in progress, else the
- * newest) and the band is minimised; (3) the pane open on another workflow: it switches to the latest; (4) the pane
- * already on the latest: the band is minimised and the pane stays open on it. With the pane open, each run so toggles
- * the band between minimised and its list. Amendment 3: the pane beside the band keeps its own run
- * (`LensView.pane`) and is drawn at its normal size whatever the band's (`paneViewOf`), so steps 2 and 3 set `pane`,
- * never the band's `selected`, and minimising the band never closes the pane. Steps 1 to 4 set `viewA` directly,
- * never `changeView`, so nothing else opens or closes.
+ * Step 43 (B4b): the pane's `↺` while the band is closed (`bandClosedOf`): the pane closes and the band comes back at
+ * its normal size, in the pane's mode, on the pane's run (`bandFromPane`).
  */
-async function bandStep($: EngineInterface, v: LensView, paneOpen: boolean): Promise<string> {
-  if (v.size === 'minimised') {
-    await update($, viewA, x => bandList(x as LensView))
-    return `${VIEW_TITLE}: the band's list view is restored.`
-  }
-  const latest = await latestFlow($)
-  if (latest === null) return `${VIEW_TITLE} is pinned to the band above the prompt, which draws it once a workflow starts; no pane opened.`
-  const which = latestWhich(latest)
-  const minimise = () => update($, viewA, x => viewResize(x as LensView, 'minimised'))
-  const drawn = (r: UiOpenResult, text: string) => (r.isPlaced ? text : `${VIEW_TITLE}: the pane is open on ${which} but not drawn yet: ${r.reason}`)
-  if (!paneOpen) {
-    const r = await paneOn($, latest.w)
-    await minimise()
-    return drawn(r, `${VIEW_TITLE}: the pane opened on ${which}; the band is minimised.`)
-  }
-  if (selectedOf(paneViewOf(v), latest.ws) !== latest.w) return drawn(await paneOn($, latest.w), `${VIEW_TITLE}: the pane switched to ${which}.`)
-  await minimise()
-  return `${VIEW_TITLE}: the band is minimised; the pane stays open on ${which}.`
+async function paneToBand($: EngineInterface) {
+  await update($, viewA, x => bandFromPane(x as LensView))
+  await update($, bandClosedA, () => false)
+  await $.ui.close({ id: CHART })
 }
 
 /**
@@ -1308,18 +1462,41 @@ async function changeView($: EngineInterface, fn: (v: LensView) => LensView) {
   await showView($, next)
 }
 
-
 /**
- * "Open flowchart" (a chat card): the workflow view, restored if minimised, with that run selected.
- * Round 6 (finding 18.4-1): it never expands the run's panel: every panel starts collapsed (A2).
+ * Step 43 (the human's rule 3): a chat card's "Open flowchart": the pane in workflow mode on the card's run `w`
+ * (`cardOpenView`), with the step of the card's call (`call`) chosen (`stepSelA`) and its accordion open
+ * (`step:<w>:<key>` in `cardOpenA`); the band is untouched. Round 6 (finding 18.4-1): the run's other panels keep
+ * their own open state.
  */
-async function openChart($: EngineInterface, w: string) {
+async function openChart($: EngineInterface, w: string, call = '') {
   await update($, chartLeadA, () => w)
   await refreshRuns($)
-  await changeView($, v => {
-    const base = v.size === 'minimised' ? viewRestore(v) : v
-    return { ...base, selected: w }
-  })
+  const key = await cardStepKey($, w, call)
+  if (key !== null) {
+    await update($, stepSelA, m => ({ ...(m as Record<string, string>), [w]: key }))
+    await update($, cardOpenA, m => ({ ...(m as Record<string, boolean>), [`step:${w}:${key}`]: true }))
+  }
+  const band = await onBand($, await read($, viewA))
+  await update($, viewA, x => cardOpenView(x as LensView, w, band))
+  const v = await read($, viewA)
+  const r = await openWorkflowPane($, band ? paneViewOf(v) : v, true)
+  await plog($, 'E3', { open: CHART, via: 'card open flowchart', workflow: w, step: key, result: r })
+}
+
+/** Step 43 (rule 3): the step key of a chat card's call in its workflow's step charts (`stepKeyOfCall`), else null. */
+async function cardStepKey($: EngineInterface, w: string, call: string): Promise<string | null> {
+  if (call === '') return null
+  try {
+    const { agents, label } = await snapshot($)
+    const fc = await flowContext($, agents)
+    if (!fc.wf.order.includes(w)) return null
+    const { batch, view, run } = flowCore(fc, w, label)
+    const { steps } = flowSteps(view, batch.parent, run.id, fc.runs, fc.roots)
+    return stepKeyOfCall(steps, call, own(fc.callAgent as Record<string, string>, call) ?? '')
+  } catch (err) {
+    lensFail('card step', err)
+    return null
+  }
 }
 
 /** Round 6: whether any agent but main is still at work, so the status poll is worth running. */
@@ -1478,6 +1655,11 @@ async function keepaliveFigures($: EngineInterface, agentId: string | null = nul
   }
 }
 
+/** Step 43.2.5: redraws every drawing (each reads `avatarRevA` through `snapshot`) after a change kept in module memory. */
+async function redrawAll($: EngineInterface) {
+  await update($, avatarRevA, n => (n as number) + 1)
+}
+
 async function beforeCall($: EngineInterface, e: any): Promise<CallCtx | null> {
   try {
     const key: string = e.agentId ?? 'main'
@@ -1498,6 +1680,12 @@ async function beforeCall($: EngineInterface, e: any): Promise<CallCtx | null> {
       const agents = await read($, agentsA)
       const hit = Object.values(agents).find(a => a.id === to || a.name === to)
       if (hit) await patchAgent($, hit.id, a => ({ ...a, loop: true }))
+      // Step 43.2.5: the Connections panel's Send Message accordion lists it (sender, receiver, text, time). The human's
+      // decision: `team-lead` and `main` are the orchestrator; a teammate or persona name is that agent when known.
+      const { label } = await snapshot($)
+      const target = messageTarget(to, Object.values(agents), a => label(a).name)
+      messagesNow = addMessage(messagesNow, { id, from: key, to: target ?? to, toRaw: to, text: messageText(input), at: nowMs() })
+      await redrawAll($)
     }
     if (AGENT_TOOLS.has(tool)) {
       // The chat card's placeholder avatar until agent.spawn names the agent; a call no step reported is a batch of its own.
@@ -1623,7 +1811,8 @@ function agentButtons($: EngineInterface, t: any, order: string[], agents: Recor
   return (
     <Box flexDirection="column" alignItems="center">
       <Box flexDirection="row" flexWrap="wrap" alignItems="center" justifyContent="center">
-        <Text dimColor>Avatars: </Text>
+        {/* Step 43.2.5 (human): the avatars are "Agents" and open the Agents panel. */}
+        <Text dimColor>Agents: </Text>
         {ids.map(id => {
           const name = label(agents[id]!).name
           const mine = marks.list.filter(x => x.target === 'agent' && x.agent === id)
@@ -1638,7 +1827,8 @@ function agentButtons($: EngineInterface, t: any, order: string[], agents: Recor
         })}
       </Box>
       <Box flexDirection="row" flexWrap="wrap" alignItems="center" justifyContent="center">
-        <Text dimColor>Arrows: </Text>
+        {/* Step 43.2.5 (human): the arrows are "Connections" and open the Connections panel. */}
+        <Text dimColor>Connections: </Text>
         {edges.length === 0 && <Text dimColor>(none yet)</Text>}
         {edges.map(id => {
           const a = agents[id]!
@@ -1783,8 +1973,24 @@ function workflowInfo(
   const request = batch.ids.map(id => callTask[id] ?? '').find(x => x !== '') ?? ''
   const { parent, current } = workflowTask(members, runs, request || fallback, roots)
   const dirs = [...new Set(members.map(a => runDirOf(a)).filter((d): d is string => d !== null))]
-  // Round 6 (18.3-4): the spawner is named and left out by workflowStatus itself.
-  return { members, parent, current, status: workflowStatus(all, dirs.map(d => runs[d]?.status ?? ''), batch.parent), both: runningAndWaiting(all, batch.parent) }
+  // Round 6 (18.3-4): the spawner is named and left out by workflowStatus itself. Step 43 (C1): the members are
+  // settled first (`settleMembers`: latest attempt wins, a done stage settles its step), as the step accordion's are.
+  const settled = settleMembers(all, a => attemptOf(a, attemptKey(a)), a => stageDone(codeOfAgent(a), own(runs, runDirOf(a) ?? '')?.stageStatus))
+  return { members, parent, current, status: workflowStatus(settled, dirs.map(d => runs[d]?.status ?? ''), batch.parent), both: runningAndWaiting(settled, batch.parent) }
+}
+
+/**
+ * Step 43 (C1): a member's attempt key for `settleMembers`: its record's step code (`code`) and its agent type, so a
+ * restart (the same step, the same kind of agent) supersedes a failed attempt; a teammate also by its name, so another
+ * teammate sharing the team's record never does.
+ */
+const attemptOf = (a: Pick<LensAgent, 'type' | 'name' | 'teammate'>, code: string | null): string | null =>
+  code === null || code === '' ? null : `${code}|${a.type}|${a.teammate === true || a.type === 'teammate' ? a.name : ''}`
+
+/** Step 43 (C1): the step code of the record an agent's brief names, '' for none (`attemptKey`). */
+const codeOfAgent = (a: Pick<LensAgent, 'handoff' | 'prompt'>): string => {
+  const k = attemptKey(a)
+  return k === null ? '' : k.slice(k.indexOf('|') + 1)
 }
 
 /**
@@ -1902,7 +2108,13 @@ function noticeList(t: any, scope: string, notices: readonly LensNotice[], open:
   )
 }
 
-/** The arrow panel: who handed off to whom, the hand-off's usage, then the record and hand-back, or the prompt. */
+/**
+ * The Connections panel (an arrow's; step 43.2.5, the human's order): the header; a separator; this connection's
+ * Anomalies (absent while none); a separator; the Hand-off line (the brief's and the hand-back's sizes in characters,
+ * in place of the former Usage, which showed the receiver's whole-life tokens); the Hand-off and Hand-back sections,
+ * or the prompt; then the Send Message accordion (each SendMessage between the two agents: sender, receiver, text,
+ * time). No Context Lab and no Cache Lab: neither is per connection with the data the lens has (43.1.4).
+ */
 function edgeBody(
   $: EngineInterface,
   t: any,
@@ -1915,6 +2127,7 @@ function edgeBody(
   av: ChartAvatars,
   hasSvg: boolean,
   closeHere = false,
+  anomalies: readonly LensAnomaly[] = [],
 ) {
   const { Box, Text } = t
   const a = liveOr(agents, ui.edge, ui.edgeSnap)
@@ -1922,26 +2135,40 @@ function edgeBody(
     return (
       <Box flexDirection="column">
         {closeHere ? paneControls($, t, EDGE, tabMinButton($, t, EDGE, false)) : null}
-        <Text dimColor>Press an arrow under the flowchart.</Text>
+        <Text dimColor>Press a connection under the flowchart.</Text>
       </Box>
     )
   const from = a.parent !== null ? agents[a.parent] : undefined
-  const tk = a.turns
   const l = label(a)
   const fromName = from ? label(from).name : '?'
   const prompt = doc.agent === a.id ? doc.prompt || a.prompt : a.prompt
   const hasRecord = doc.agent === a.id && doc.handoff !== ''
+  const mine = anomalies.filter(x => x.target === 'edge' && x.agent === a.id)
+  // The hand-back: the stored record's full text when `loadDoc` read one, else the agent's last message.
+  const back = hasRecord && handbackChars[a.id] !== undefined ? handbackChars[a.id]! : (a.output ?? '') !== '' ? a.output!.length : null
+  const msgs = a.parent === null ? [] : messagesOfEdge(messagesNow, a.parent, a.id)
+  const nameOf = (id: string) => (agents[id] ? label(agents[id]!).name : id)
   return (
     <Box flexDirection="column">
       {closeHere ? paneControls($, t, EDGE, tabMinButton($, t, EDGE, false)) : null}
       {panelHeader(t, initials(l.name), `${fromName} ${a.loop ? '<->' : '->'} ${l.name}`, `${l.model} · ${l.role}`, a.status, headerAvatar(t, hasSvg, av, a, l.name))}
-      {section($, t, open, s, `edge:${a.id}:usage`, 'edge-usage', `Usage (in ${fmtTokens(tk.in + tk.cr + tk.cw)}, out ${fmtTokens(tk.out)})`, () => [
-        kv(t, 'Input', fmtTokens(tk.in + tk.cr + tk.cw)),
-        kv(t, 'Output', fmtTokens(tk.out)),
-        kv(t, 'Cache read', fmtTokens(tk.cr)),
-        kv(t, 'Cache write', fmtTokens(tk.cw)),
-        kv(t, 'Uncached', fmtTokens(tk.in)),
-      ])}
+      {/* The section draws the separator above it; absent while the connection has no anomaly. */}
+      {mine.length === 0
+        ? null
+        : section($, t, open, s, `edge:${a.id}:anomalies`, 'edge-anomalies', `Anomalies (${mine.length})`, () =>
+            mine.map(x => (
+              <Box key={`edge-an-${x.key}`} flexDirection="row" columnGap={1}>
+                {anomalyMark(t, [x], s)}
+                <Text wrap="wrap">{anomalyLine(x)}</Text>
+              </Box>
+            )),
+          )}
+      <Box flexDirection="column" marginTop={1}>
+        <Text dimColor wrap="truncate">
+          {DIVIDER}
+        </Text>
+        <Text wrap="wrap">{handoffLine(prompt === '' ? null : prompt.length, back)}</Text>
+      </Box>
       {doc.error !== '' && (
         <Text color="red" wrap="wrap">
           {doc.error}
@@ -1949,7 +2176,7 @@ function edgeBody(
       )}
       {hasRecord
         ? [
-            section($, t, open, s, `edge:${a.id}:doc`, 'edge-doc', `Handoff (${doc.handoff})`, () => <Text wrap="wrap">{doc.handoffText === '' ? '—' : doc.handoffText}</Text>),
+            section($, t, open, s, `edge:${a.id}:doc`, 'edge-doc', `Hand-off (${doc.handoff})`, () => <Text wrap="wrap">{doc.handoffText === '' ? '—' : doc.handoffText}</Text>),
             section($, t, open, s, `edge:${a.id}:back`, 'edge-back', `Hand-back (${doc.handback === '' ? '—' : doc.handback})`, () => <Text wrap="wrap">{doc.handbackText === '' ? '—' : doc.handbackText}</Text>),
           ]
         : [
@@ -1960,6 +2187,22 @@ function edgeBody(
               </Text>
             ) : null,
           ]}
+      {section($, t, open, s, `edge:${a.id}:messages`, 'edge-messages', `Send Message (${msgs.length})`, () =>
+        msgs.length === 0 ? (
+          <Text dimColor>no SendMessage between these two agents yet</Text>
+        ) : (
+          msgs.map(m => (
+            <Box key={`edge-msg-${m.id}`} flexDirection="column" marginBottom={1}>
+              <Text dimColor wrap="wrap">
+                {fmtClock(m.at)} {nameOf(m.from)} {'->'} {nameOf(m.to)}
+              </Text>
+              <Text wrap="wrap">{m.text === '' ? '—' : m.text}</Text>
+            </Box>
+          ))
+        ),
+      )}
+      {/* The human (2026-10-26): the Connections panel has "Stop turn". */}
+      {stopRow($, t, 'edge-stop', 'Stop turn', `edge:${a.id}`)}
     </Box>
   )
 }
@@ -2059,16 +2302,24 @@ async function loadLab($: EngineInterface) {
   }
 }
 
-/** Cache Lab is collapsed until opened (its own default: the figures are never read while it is closed). */
-const labOpen = (open: Record<string, boolean>) => open[CACHE_LAB] ?? false
+/** Step 43 (C3a): Cache Lab opens and closes like every section (`isOpen`, `collapsedByDefault`); the figures are never read while it is closed. */
+/**
+ * Live round 1, point 3 (the human, 2026-10-26): Cache Lab starts as `collapsedByDefault` says (collapsed by default) at
+ * every load and every session, whatever an earlier session or this one left in `cardOpenA`, which survives a
+ * /reload-plugins: the stored state counts only after a press of its own since then (`labPressed`). Nothing is written
+ * while drawing.
+ */
+let labPressed = false
+const labOpen = (open: Record<string, boolean>, s: LensSettings) => (labPressed ? isOpen(open, CACHE_LAB, s) : !s.collapsedByDefault)
 
-async function toggleLab($: EngineInterface) {
+async function toggleLab($: EngineInterface, s: LensSettings) {
   let opened = false
   await update($, cardOpenA, m => {
     const o = m as Record<string, boolean>
-    opened = !(o[CACHE_LAB] ?? false)
+    opened = !labOpen(o, s)
     return { ...o, [CACHE_LAB]: opened }
   })
+  labPressed = true
   if (opened) await loadLab($)
 }
 
@@ -2094,8 +2345,11 @@ function labSub($: EngineInterface, t: any, open: Record<string, boolean>, key: 
   )
 }
 
-/** The `/ai-dlc:cache-keepalive` command ai-dlc's keep-alive answers (Cache Lab's buttons run it, step 42). */
-const KEEPALIVE_COMMAND = 'ai-dlc:cache-keepalive'
+/**
+ * The command ai-dlc's keep-alive answers for Cache Lab's buttons (step 42): since live findings 3 (point 5) the
+ * switches are /ai-dlc:cache-keepalive-configure's, which ai-dlc's module answers; /ai-dlc:cache-keepalive takes no arguments.
+ */
+const KEEPALIVE_COMMAND = 'ai-dlc:cache-keepalive-configure'
 
 /** Step 42: a Cache Lab button's press: the same session switch as keep-alive's band button, through its command. Never throws. */
 async function pressKeepalive($: EngineInterface, target: KeepaliveTarget, on: boolean) {
@@ -2132,7 +2386,7 @@ function keepaliveButtons($: EngineInterface, t: any, sw: Record<KeepaliveTarget
 async function cacheLabSection($: EngineInterface, t: any, open: Record<string, boolean>, s: LensSettings, agentId: string | null = null) {
   const { Box, Text, Button } = t
   const state = await read($, cacheLabA)
-  const o = labOpen(open)
+  const o = labOpen(open, s)
   const preset = await windowPreset($)
   const lab = labNow
   // ITEM-074: keep-alive's figures, a view over the state it publishes (no transcript read: drawn in every load state).
@@ -2202,7 +2456,7 @@ async function cacheLabSection($: EngineInterface, t: any, open: Record<string, 
         {DIVIDER}
       </Text>
       <Box flexDirection="row" flexWrap="wrap">
-        <Button key="cachelab-open" label={o ? '[-]' : '[+]'} onPress={() => toggleLab($)} />
+        <Button key="cachelab-open" label={o ? '[-]' : '[+]'} onPress={() => toggleLab($, s)} />
         <Text bold wrap="wrap">
           {' '}
           Cache Lab
@@ -2233,6 +2487,13 @@ async function cacheLabSection($: EngineInterface, t: any, open: Record<string, 
 }
 
 /**
+ * Step 43 (C3b): what the agent panel's callers add: `lead`, drawn after the Panel Type switch and its divider
+ * ("< Back" in drill-in); `mode`, the session's Panel Type (default: the `panelOpenMode` setting); `anomalies`,
+ * every anomaly read (`snapshot().marks.list`), of which the panel shows its agent's own.
+ */
+type AgentPanelMore = { lead?: unknown; mode?: 'tab' | 'drill-in'; anomalies?: readonly LensAnomaly[] }
+
+/**
  * The avatar panel (findings 3, 4 and the window addendum): every figure, never where it came from
  * (round 4: the sources stay in state and the probe log). Each background task is its own collapsible entry.
  */
@@ -2253,6 +2514,7 @@ function agentBody(
   hasSvg: boolean,
   closeHere = false,
   cacheLab: RenderElement | null = null,
+  more: AgentPanelMore = {},
 ) {
   const { Box, Text, Button } = t
   const a = liveOr(agents, ui.agent, ui.agentSnap)
@@ -2260,7 +2522,7 @@ function agentBody(
     return (
       <Box flexDirection="column">
         {closeHere ? paneControls($, t, AGENT, tabMinButton($, t, AGENT, false)) : null}
-        <Text dimColor>Press an avatar under the flowchart.</Text>
+        <Text dimColor>Press an agent under the flowchart.</Text>
       </Box>
     )
   const id = a.id
@@ -2284,12 +2546,36 @@ function agentBody(
   const notStarted = a.status === 'pending'
   const win = w.n === null ? '—' : fmtTokens(w.n)
   const bar = usageBar(used, w.n)
+  // Step 43 (C3b): the panel's own Panel Type switch, then a divider, then "< Back" (drill-in) or the tab's controls.
+  const mode = more.mode ?? openModeOf('', String(s.panelOpenMode))
+  const mine = (more.anomalies ?? []).filter(x => x.agent === id)
   return (
     <Box flexDirection="column">
+      {panelTypeSwitch($, t, mode, { drill: 'agent-panel-drill-in', tab: 'agent-panel-tab' })}
+      <Text dimColor wrap="truncate">
+        {DIVIDER}
+      </Text>
+      {more.lead ?? null}
       {closeHere ? paneControls($, t, AGENT, tabMinButton($, t, AGENT, false)) : null}
       {panelHeader(t, initials(l.name), l.name, `${mod.text} · ${l.role}`, a.status, headerAvatar(t, hasSvg, av, a, l.name))}
+      {/* Step 43 (C3b): this agent's anomalies, the workflow view's style; absent while it has none. */}
+      {mine.length === 0
+        ? null
+        : section($, t, open, s, `agent:${id}:anomalies`, 'agent-anomalies', `Anomalies (${mine.length})`, () =>
+            mine.map(x => (
+              <Box key={`agent-an-${x.key}`} flexDirection="row" columnGap={1}>
+                {anomalyMark(t, [x], s)}
+                <Text wrap="wrap">{anomalyLine(x)}</Text>
+              </Box>
+            )),
+          )}
       {notStarted ? (
-        <Text dimColor>Not started yet: no figures.</Text>
+        <Box flexDirection="column" marginTop={1}>
+          <Text dimColor wrap="truncate">
+            {DIVIDER}
+          </Text>
+          <Text dimColor>Not started yet: no figures.</Text>
+        </Box>
       ) : (
         section($, t, open, s, `agent:${id}:usage`, 'agent-usage', `Context Lab (${fmtTokens(used)} / ${win})`, () => [
           bar !== '' ? <Text color="cyan">{bar}</Text> : null,
@@ -2348,10 +2634,133 @@ function agentBody(
           {th === '' ? '(no thinking chunks seen)' : th}
         </Text>
       ))}
-      <Box flexDirection="row" flexWrap="wrap" marginTop={1}>
-        <Button key="agent-view" label="View transcript" onPress={() => $.ui.view(id === 'main' ? {} : { agentId: id })} />
-        <Button key="agent-refresh" label="Refresh" onPress={() => refreshList($, 'refresh press')} />
+      {/* Step 43.2.5 (the human, 2026-10-26): View transcript, Refresh and Stop centred, spaced apart (columnGap 2);
+          Stop red with white text. ButtonProps has no colour (d.ts:1093-1190), but a Button may hold Text children
+          drawn in its place (d.ts:1107-1113), so the colour is its Text child's (TextProps color, backgroundColor).
+          A desktop draws its native button whatever the children (d.ts:1135-1141): there the colour may not show.
+          The note of the last press and what Stop does below. */}
+      <Box flexDirection="row" flexWrap="wrap" justifyContent="center" alignItems="center" columnGap={2} marginTop={1} width="100%">
+        <Button key="agent-view" label="View transcript" onPress={() => viewTranscript($, id, l.name)} />
+        <Button key="agent-refresh" label="Refresh" onPress={() => refreshPanel($, id)} />
+        {/* The human (2026-10-26): Stop only on the orchestrator's (main) Agents panel; none on a subagent's. */}
+        {id === 'main' ? (
+          <Button key="agent-stop" label="Stop" onPress={() => stopTurn($, id)}>
+            <Text color="white" backgroundColor="red" bold>
+              {' Stop '}
+            </Text>
+          </Button>
+        ) : null}
       </Box>
+      {pressNotes[id] !== undefined ? (
+        <Text dimColor wrap="wrap">
+          {pressNotes[id]}
+        </Text>
+      ) : null}
+      {id === 'main' ? (
+        <Text dimColor wrap="wrap">
+          {STOP_NOTE}
+        </Text>
+      ) : null}
+    </Box>
+  )
+}
+
+/**
+ * Step 43.2.5: the Agents panel's View transcript. `$.ui.view` resolves `{ deny }` and never throws when the switch is
+ * refused (d.ts:2627-2639, UiViewResult d.ts:15474-15484): no agent holds the id or the tasks list no longer shows it
+ * (`$.agent.list()` drops a finished agent's task, d.ts:3270-3276), a teammate stopped or in a pane of its own, the
+ * session draws none. Before, that answer was dropped, so a refused press showed nothing; now it is said under the
+ * buttons. It is called first, with no `await` before it, as it works only while answering the press.
+ */
+async function viewTranscript($: EngineInterface, id: string, name: string) {
+  let deny: string | undefined
+  try {
+    // `?.`: a result with nothing in it (a test's answer) reads as shown.
+    deny = (await $.ui.view(id === 'main' ? {} : { agentId: id }))?.deny
+  } catch (err) {
+    deny = String(err)
+  }
+  pressNotes[id] =
+    deny !== undefined
+      ? `View transcript: not shown. ${deny}`
+      : id === 'main'
+        ? 'View transcript: the main conversation is in view.'
+        : `View transcript: ${name}'s transcript is in view. View transcript in the orchestrator's panel goes back to the main one.`
+  await plog($, 'E3', { view: id, deny: deny ?? null })
+  await redrawAll($)
+}
+
+/**
+ * Step 43.2.5: the Agents panel's Refresh. Before, it only re-read `$.agent.list()` (`refreshList`), which the 2 s poll
+ * already does while an agent works and which never changes an ended status, so a press changed nothing that could be
+ * seen. Now it re-reads everything the panel shows that is not live already: the agents' statuses and background
+ * tasks, the run states, the anomalies, and Cache Lab while it is open; then says when it did.
+ */
+async function refreshPanel($: EngineInterface, id: string) {
+  const parts = ['agent statuses and background tasks']
+  try {
+    await refreshList($, 'refresh press')
+    await refreshRuns($)
+    parts.push('run states')
+    await detectNow($, false)
+    parts.push('anomalies')
+    if (labOpen(await read($, cardOpenA), (await read($, lensA)).settings as LensSettings)) {
+      await loadLab($)
+      parts.push('Cache Lab')
+    }
+    pressNotes[id] = `Refreshed at ${fmtClock(nowMs())}: ${parts.join(', ')}.`
+  } catch (err) {
+    lensFail('refresh press', err)
+    pressNotes[id] = `Refresh failed: ${String(err)}`
+  }
+  await redrawAll($)
+}
+
+/**
+ * Step 43.2.5: the Agents panel's Stop: the interrupt Esc makes. `$.turn.abort` ends the main loop's running turn and
+ * stops its running tools, so the agents that turn runs (d.ts:2989-3005); no API stops one agent alone (`$.agent` has
+ * spawn, list and register only, d.ts:3252-3302). With no main turn running it does nothing and says so.
+ */
+async function stopTurn($: EngineInterface, id: string) {
+  const turnId = mainTurnId
+  if (turnId === null) pressNotes[id] = 'Stop: no turn is running.'
+  else {
+    try {
+      await $.turn.abort({ turnId })
+      pressNotes[id] = `Stop: the current turn was interrupted at ${fmtClock(nowMs())}.`
+    } catch (err) {
+      pressNotes[id] = `Stop: not stopped. ${String(err)}`
+    }
+  }
+  await plog($, 'E3', { stop: turnId, note: pressNotes[id] })
+  await redrawAll($)
+}
+
+/**
+ * Step 43.2.5 (the human, 2026-10-26): a Stop button, white on red (a Text child: ButtonProps has no colour,
+ * d.ts:1093-1190; children d.ts:1107-1113; a desktop may draw its native button, d.ts:1135-1141), centred, then the note
+ * of its last press (`noteKey`) and what it does (STOP_NOTE). The orchestrator's Agents panel says "Stop"; a step
+ * accordion and the Connections panel say "Stop turn". Every one calls `stopTurn` ($.turn.abort, as Esc).
+ */
+function stopRow($: EngineInterface, t: any, key: string, label: string, noteKey: string) {
+  const { Box, Text, Button } = t
+  return (
+    <Box key={`${key}-row`} flexDirection="column" width="100%" marginTop={1}>
+      <Box flexDirection="row" justifyContent="center" alignItems="center" width="100%">
+        <Button key={key} label={label} onPress={() => stopTurn($, noteKey)}>
+          <Text color="white" backgroundColor="red" bold>
+            {` ${label} `}
+          </Text>
+        </Button>
+      </Box>
+      {pressNotes[noteKey] !== undefined ? (
+        <Text dimColor wrap="wrap">
+          {pressNotes[noteKey]}
+        </Text>
+      ) : null}
+      <Text dimColor wrap="wrap">
+        {STOP_NOTE}
+      </Text>
     </Box>
   )
 }
@@ -2366,7 +2775,7 @@ const fmtCap = String(SVG_CAP).replace(/\B(?=(\d{3})+(?!\d))/g, ',')
  * On the terminal an agent whose avatar is a trusted PNG file draws it through `Image` (AC-13.3).
  * `kp` prefixes the Image keys: a tree drawing two charts of one agent (step 1.5) needs distinct keys.
  */
-function chartNode(t: any, hasSvg: boolean, on1: boolean, ids: string[], agents: Record<string, LensAgent>, label: (a: LensAgent) => ChartLabel, s: LensSettings, alt: string, av: ChartAvatars, kp = '') {
+function chartNode(t: any, hasSvg: boolean, on1: boolean, ids: string[], agents: Record<string, LensAgent>, label: (a: LensAgent) => ChartLabel, s: LensSettings, alt: string, av: ChartAvatars, kp = '', fitPx?: number) {
   const { Box, Text, Svg, Image } = t
   let note: string | null = null
   if (hasSvg) {
@@ -2379,11 +2788,12 @@ function chartNode(t: any, hasSvg: boolean, on1: boolean, ids: string[], agents:
     }
     if (chart !== null && !chart.tooLarge) {
       const left = chart.dropped.length
+      const fit = svgFit(chart.width, chart.height, fitPx)
       // Round 5: Svg has no alignment of its own (SvgProps): its Box centres it both ways.
       return (
         <Box flexDirection="column" alignItems="center" justifyContent="center">
           <Box flexDirection="row" alignItems="center" justifyContent="center">
-            <Svg source={chart.source} alt={alt} width={chart.width} height={chart.height} isInteractive={true} />
+            <Svg source={chart.source} alt={alt} width={fit.width} height={fit.height} isInteractive={true} />
           </Box>
           {left > 0 && (
             <Text dimColor wrap="wrap">
@@ -2454,23 +2864,63 @@ type ControlSite = ViewSite['where'] | 'side'
 
 /**
  * Step 1.5: the workflow view's first row. Left: the `Panel Type` switch (drill-in or tab, for the session)
- * and the notices no workflow claims. Right: pinned / docked, full screen, minimise, restore (while a
- * size to return to is kept) and, in the pane, close. No API puts a control in the host's title bar or
- * tab (Pane `title` read-only, d.ts:10876-10883; the close mark is the engine's, d.ts:10868-10873), so
- * they sit in the body. What each can and cannot do: see `showView`, `openSizeOf` and MANUAL-CHECKS Z9-Z13.
+ * and the notices no workflow claims. Right: pinned / docked, then the size controls of the site. No API puts a
+ * control in the host's title bar or tab (Pane `title` read-only, d.ts:10876-10883; the close mark is the engine's,
+ * d.ts:10868-10873), so they sit in the body. Step 43 (design 2), by site (`where`; `at`: the stored view, its layout
+ * and whether the band counts as closed, `bandClosedOf`):
+ * - the band: `–` / `□` minimise the band only, `□` back to its list (B1a, B2a); `⤢` opens the pane at once, in list
+ *   mode from a minimised or listing band, else on the band's run (B3a, `expandBand`); `↺` only in workflow mode, back
+ *   to the list (B4a); `×` only while no workflow is in progress (amendment 8);
+ * - `side`, the pane beside the band: `–` / `□` change the band's size only, `□` to its list, never its workflow view
+ *   (B1b, B2b); no `⤢` (B3b); `↺` only while the band is closed: the pane closes and the band comes back in the pane's
+ *   mode (B4b, `paneToBand`); band open, none (B4c); `×` closes the pane;
+ * - the docked pane: as before, full screen, minimise, `↺` (also out of its workflow view, `dockedRestore`), `×`.
  */
-function viewControls($: EngineInterface, t: any, v: LensView, place: 'pinned' | 'docked', where: ControlSite, lead: any, idle: boolean) {
+function viewControls(
+  $: EngineInterface,
+  t: any,
+  v: LensView,
+  place: 'pinned' | 'docked',
+  where: ControlSite,
+  lead: any,
+  idle: boolean,
+  at: { stored: LensView; layout: 'wide' | 'narrow'; bandGone: boolean },
+) {
   const { Box, Button } = t
-  // Step 36.2, amendment 3: `side`, the pane beside the band. The band's size is not this pane's, so it has no minimise
-  // or restore of its own; full screen takes the run it shows (`v` is `paneViewOf`).
   const side = where === 'side'
-  // Amendment 6: on the band, `⤢` opens the pane beside it on the latest workflow (`expandBand`) and leaves the band
-  // as it is, never full screen; `□` on the minimised band brings back its list (`bandList`), the pane untouched.
-  // Amendment 8: the band has a close (`×`, `bandClosedA`) only while no workflow is in progress. Docked (the band
-  // drawn because a workflow is in progress), its `–` / `□` change the band's own size (`band`), never the docked pane's.
   const band = where === 'band'
+  const docked = place === 'docked'
   const full = v.size === 'fullscreen'
   const min = v.size === 'minimised'
+  // The band's own size: pinned the view's `size`, docked its `band` (`dockedBandViewOf`); the side pane shows the band's.
+  const bandMin = docked ? dockedBandViewOf(at.stored).size === 'minimised' : at.stored.size === 'minimised'
+  const bandSize = () =>
+    update($, viewA, x => {
+      const y = x as LensView
+      const isMin = docked ? dockedBandViewOf(y).size === 'minimised' : y.size === 'minimised'
+      return isMin ? bandToList(y, docked) : docked ? dockedBandMinimise(y) : bandMinimise(y)
+    })
+  const bandWorkflow = band && !min && bandModeOf(at.stored, at.layout) === 'workflow'
+  let sizeControls: any[]
+  if (band)
+    sizeControls = [
+      <Button key="pane-full" label="⤢" plain onPress={() => expandBand($, undefined, at.layout)} />,
+      <Button key="pane-min" label={min ? '□' : '–'} plain onPress={bandSize} />,
+      bandWorkflow ? <Button key="pane-restore" label="↺" plain onPress={() => update($, viewA, x => bandRestore(x as LensView))} /> : null,
+    ]
+  else if (side)
+    sizeControls = [
+      <Button key="pane-min" label={bandMin ? '□' : '–'} plain onPress={bandSize} />,
+      at.bandGone ? <Button key="pane-restore" label="↺" plain onPress={() => paneToBand($)} /> : null,
+    ]
+  else
+    // Step 43, D2 (the human, 2026-10-26): the docked pane has no `⤢` on its title row; full screen is reached from a
+    // step chart's `⤢` only, and while it is shown `⤡` restores it.
+    sizeControls = [
+      full ? <Button key="pane-full" label="⤡" plain onPress={() => changeView($, viewRestore)} /> : null,
+      <Button key="pane-min" label={min ? '□' : '–'} plain onPress={() => changeView($, x => (x.size === 'minimised' ? viewRestore(x) : viewResize(x, 'minimised')))} />,
+      dockedCanRestore(v) ? <Button key="pane-restore" label="↺" plain onPress={() => changeView($, dockedRestore)} /> : null,
+    ]
   return (
     <Box flexDirection="row" flexWrap="wrap" justifyContent="space-between" alignItems="center" width="100%">
       <Box flexDirection="row" alignItems="center" columnGap={1} flexGrow={1}>
@@ -2478,27 +2928,7 @@ function viewControls($: EngineInterface, t: any, v: LensView, place: 'pinned' |
       </Box>
       <Box flexDirection="row" alignItems="center" columnGap={1}>
         <Button key="pane-place" label={place} plain onPress={() => changeView($, x => ({ ...x, place: place === 'pinned' ? 'docked' : 'pinned' }))} />
-        <Button
-          key="pane-full"
-          label={full ? '⤡' : '⤢'}
-          plain
-          onPress={() =>
-            band ? expandBand($) : changeView($, x => (x.size === 'fullscreen' ? viewRestore(x) : { ...viewResize(x, 'fullscreen'), ...(side ? { selected: v.selected } : {}) }))
-          }
-        />
-        {side ? null : (
-          <Button
-            key="pane-min"
-            label={min ? '□' : '–'}
-            plain
-            onPress={() =>
-              band && place === 'docked'
-                ? update($, viewA, x => ({ ...(x as LensView), band: (x as LensView).band === 'normal' ? 'minimised' : 'normal' }))
-                : changeView($, x => (x.size === 'minimised' ? (band ? bandList(x) : viewRestore(x)) : viewResize(x, 'minimised')))
-            }
-          />
-        )}
-        {!side && v.prev.length > 0 ? <Button key="pane-restore" label="↺" plain onPress={() => changeView($, viewRestore)} /> : null}
+        {sizeControls}
         {!band ? <Button key="pane-close" label="×" role="dismiss" plain onPress={() => $.ui.close({ id: CHART })} /> : null}
         {band && idle ? <Button key="band-close" label="×" role="dismiss" plain onPress={() => update($, bandClosedA, () => true)} /> : null}
       </Box>
@@ -2509,21 +2939,21 @@ function viewControls($: EngineInterface, t: any, v: LensView, place: 'pinned' |
 /** Step 1.5: an arrow or avatar opened in drill-in mode, with "< Back" (`target`: the drawing it was pressed in). */
 async function drillBody($: EngineInterface, t: any, target: string, d: LensDrill, hasSvg: boolean) {
   const { Box, Button } = t
-  const { agents, defs, s, label, av } = await snapshot($)
+  const { agents, defs, s, label, av, marks } = await snapshot($)
   const open = await read($, cardOpenA)
   const back = <Button key="drill-back" label="< Back" onPress={() => drillBack($, target)} />
   if (d.kind === 'edge')
     return (
       <Box flexDirection="column" width="100%">
         {back}
-        {edgeBody($, t, { ...UI0, edge: d.id, edgeSnap: d.snap }, await read($, docA), agents, label, open, s, av, hasSvg)}
+        {edgeBody($, t, { ...UI0, edge: d.id, edgeSnap: d.snap }, await read($, docA), agents, label, open, s, av, hasSvg, false, marks.list)}
       </Box>
     )
   // Step 42: Cache Lab, in place of the Cache keep-alive section.
   const cacheLab = await cacheLabSection($, t, open, s, d.id)
+  // Step 43 (C3b): "< Back" goes under the agent panel's Panel Type switch and its divider.
   return (
     <Box flexDirection="column" width="100%">
-      {back}
       {agentBody(
         $,
         t,
@@ -2541,6 +2971,7 @@ async function drillBody($: EngineInterface, t: any, target: string, d: LensDril
         hasSvg,
         false,
         cacheLab,
+        { lead: back, mode: await openModeNow($), anomalies: marks.list },
       )}
     </Box>
   )
@@ -2576,8 +3007,15 @@ function stepSources(runId: string, runs: Record<string, LensRun>, roots: Record
   const inFlow = (d: string) => runId !== '' && (runIdOf(d) === runId || own(roots, runIdOf(d)) === runId)
   const sources: StepSource[] = []
   const redirect: Record<string, { dir: string; offset: number }> = {}
-  for (const [d, r] of Object.entries(runs)) {
+  // Live round 1 (2c): one folder listed under two spellings (`\` or `/`, letter case, `./`, a trailing `/`) is one
+  // source, so its steps are not drawn twice; the spelling that has records is kept.
+  const seen = new Set<string>()
+  const key = (d: string) => d.replace(/\\/g, '/').replace(/^(\.\/)+/, '').replace(/\/+$/, '').toLowerCase()
+  const entries = Object.entries(runs).sort(([, a], [, b]) => Number(b.records !== undefined) - Number(a.records !== undefined))
+  for (const [d, r] of entries) {
     if (!inFlow(d)) continue
+    if (seen.has(key(d))) continue
+    seen.add(key(d))
     if (r.records !== undefined) {
       // The Features table's root names and renumbering go with the folder's records.
       sources.push({ dir: d, names: r.records, stages: r.stages, child: runIdOf(d) !== runId, ...(r.features ? { features: r.features } : {}), ...(r.renames ? { renames: r.renames } : {}), ...(r.codeMap ? { codeMap: r.codeMap } : {}) })
@@ -2657,20 +3095,40 @@ async function latestFlow($: EngineInterface): Promise<{ w: string; title: strin
   return f ? { w: f.w, title: f.title, live: live !== undefined, ws } : null
 }
 
-/** Where the workflow view is drawn: the pane (Pane props, d.ts:10867-10909) or the band above the prompt (AbovePrompt props, d.ts:10809-10850). */
-type ViewSite = { surface: string; columns: number | undefined; rows: number; where: 'pane' | 'band' }
+/**
+ * Where the workflow view is drawn: the pane (Pane props, d.ts:10867-10909) or the band above the prompt (AbovePrompt
+ * props, d.ts:10809-10850). `placement`: the pane's (Pane `placement`, dock or inline, the surface's); none for the band.
+ */
+type ViewSite = { surface: string; columns: number | undefined; rows: number; where: 'pane' | 'band'; placement?: 'dock' | 'inline'; runs?: true }
+
+/**
+ * Live round 1 (the human, 2026-10-26): in a wide VS Code panel `/ai-dlc:lens` opens two docked tabs, the Run List
+ * (`RUNS`, opened but not shown) and the workflow (`CHART`, shown). PaneOpenArgs has no "open behind" (d.ts:7588-7659):
+ * the Run List opens without `focus`, then the workflow tab is opened again with `focus`, which raises it (d.ts:7604-7612,
+ * a request the surface honours only while the prompt has the keys over an empty composer). Never throws.
+ */
+async function openRunsTab($: EngineInterface): Promise<UiOpenResult> {
+  try {
+    const r = await $.ui.open({ id: RUNS, title: RUNS_TITLE, closeOnEscape: true })
+    const c = await $.ui.open({ id: CHART, title: VIEW_TITLE, closeOnEscape: true, focus: true })
+    await plog($, 'E3', { open: RUNS, result: r, raised: CHART, chart: c })
+    return c
+  } catch (err) {
+    lensFail('runs tab', err)
+    return openWorkflowPane($, await read($, viewA), true)
+  }
+}
 
 /**
  * The workflow view (round 4 pane; step 1.5 layout), drawn in the pane and, pinned, in the band. Its
  * identity is the run (`joinWorkflow`): every run the lens has seen is listed, newest start first
  * (`runStartOf`, `newestFirst`; the selected run stays selected when the order changes), and none is ever
- * hidden by a newer one (AC-1.5.1). Wide (`wideColumns` and up, from the site's body columns,
- * Pane `bodyColumns` d.ts:10890-10894, AbovePrompt `bodyColumns` d.ts:10840-10848): the runs stacked as
- * collapsible panels on the right, the selected run's step charts beside them (step 8.6.1: one chart per
- * top-level step of the run, by code, highest first, `flowSteps`). Narrow: every run minimised to one row (dot and
- * title); choosing one opens its step charts, "< Runs" goes back. Minimised: one line. Full screen: the
- * frame asks the whole viewport, the body fills the rows it is given and shows one step's chart. The run
- * panels and sections start collapsed (`collapsedByDefault`); the step charts are always drawn.
+ * hidden by a newer one (AC-1.5.1). Step 43 (design 1): each site draws its list mode (every run one row: dot, ▲,
+ * title) or its workflow mode (one run: "< Runs", its status and name, its metadata, then one accordion per top-level
+ * step, highest code first, `flowSteps`); the band's mode is `bandMode` (a wide band, `wideColumns` and up from its
+ * body columns, AbovePrompt `bodyColumns` d.ts:10840-10848, lists only), the pane's `paneMode`. The combined wide
+ * layout is retired. Minimised: one line. Full screen (docked only): the frame asks the whole viewport, the body fills
+ * the rows it is given and shows one step's chart. Sections start collapsed (`collapsedByDefault`).
  */
 async function workflowBody($: EngineInterface, t: any, site: ViewSite) {
   const { Box, Text, Button } = t
@@ -2689,11 +3147,47 @@ async function workflowBody($: EngineInterface, t: any, site: ViewSite) {
   const side = site.where === 'pane' && (await onBand($, stored))
   // Amendment 8: docked, the band (drawn while a workflow is in progress) has its own size (`dockedBandViewOf`).
   const dockedBand = site.where === 'band' && placeOf(stored, String(s.workflowPlace)) === 'docked'
-  const v = side ? paneViewOf(stored) : dockedBand ? dockedBandViewOf(stored) : stored
-  const choose = (w: string) => changeView($, x => (side ? { ...x, pane: w } : { ...x, selected: w }))
+  // Live round 1: the Run List tab (`RUNS`) is always its normal size and its list.
+  const runsTab = site.runs === true
+  const v0 = side ? paneViewOf(stored) : dockedBand ? dockedBandViewOf(stored) : stored
+  const v = runsTab ? { ...v0, size: 'normal', prev: [] } : v0
+  const place = placeOf(v, String(s.workflowPlace))
+  // Step 43 (design 1): this site's layout and mode. A wide band lists only (`bandModeOf`); the pane has its own mode.
+  const layout = layoutOf(site.columns, s.wideColumns)
+  const siteMode = runsTab ? 'list' : site.where === 'band' ? bandModeOf(stored, layout) : paneModeOf(stored)
+  // The pane draws `selected` docked (or where no band is), `pane` beside the band.
+  const paneDocked = site.where === 'pane' && !side
+  // Step 43 (B4b, D5): beside the band, whether the band counts as closed: its `×`, or not drawn for `bandGoneMs`;
+  // in a VS Code panel too narrow for the pane only the `×` counts (the human, 2026-10-26).
+  // The band and this pane redraw on `bandPingA`, so the answer follows the band while the pane is open.
+  if (side || site.where === 'band') await read($, bandPingA)
+  const goneMs = Number(s.bandGoneMs)
+  const bandGone = side && bandClosedOf(await read($, bandClosedA), lastBandAt, nowMs(), goneMs, !(site.surface === 'vscode' && layout === 'narrow'))
+  if (side) pingBandSoon($, goneMs)
+  const at = { stored, layout, bandGone }
+  // Step 43 (B2a, design 2): a run chosen in a list. The band: narrow, its own workflow view; wide, the pane opens on it
+  // (`bandPick`) and the band keeps its list. The pane: its workflow view on that run.
+  const choose = async (w: string) => {
+    // Live round 1: a run chosen in the Run List tab opens in the workflow tab, which is raised.
+    if (runsTab) {
+      await paneOn($, w)
+      return
+    }
+    if (site.where === 'band') {
+      const pick = bandPick(stored, layout, w, place === 'docked')
+      if (pick.openPane) await paneOn($, w)
+      else await update($, viewA, x => bandPick(x as LensView, layout, w, place === 'docked').view)
+      return
+    }
+    await update($, viewA, x => paneOnRun(x as LensView, w, paneDocked))
+  }
+  // "< Runs": back to this site's list.
+  const toList = () => update($, viewA, x => (site.where === 'band' ? bandRestore(x as LensView) : paneToList(x as LensView)))
+  // Step 43 (B5, B6, design 4): where an avatar or arrow pressed in this drawing drills in (`drillTargetOf`), and the
+  // drill this drawing shows: the band's own (`band`) or the pane's (`pane`).
+  const drillKey = site.where === 'band' ? 'band' : 'pane'
   const drills = await read($, drillsA)
   const mode = openModeOf(await read($, openModeA), String(s.panelOpenMode))
-  const place = placeOf(v, String(s.workflowPlace))
   const hasSvg = site.surface !== 'terminal'
   const on1 = hasSvg ? false : (await read($, tick))
   const errors = lensErrors.map(x => <Text color="red">lens hook error: {x}</Text>)
@@ -2721,7 +3215,7 @@ async function workflowBody($: EngineInterface, t: any, site: ViewSite) {
   const fill = v.size === 'fullscreen' && site.rows > 0 ? { minHeight: site.rows } : {}
 
   // A1: minimised, one line. Step 36.2, amendment 6: the controls row holds it: the newest workflow in progress with
-  // how many are in progress, "(n)"; with none in progress the first waiting, then pending, then halted (`bandLineOf`);
+  // how many are in progress, "(n)"; live round 1: the top 3 runs, in progress, waiting, halted, pending, completed (`bandLineOf`);
   // with no workflow, "Nothing Here". The list view adds the detail.
   if (v.size === 'minimised') {
     const line = bandLineOf(flows)
@@ -2735,23 +3229,38 @@ async function workflowBody($: EngineInterface, t: any, site: ViewSite) {
           site.where,
           line ? (
             <Box flexDirection="row" alignItems="center" columnGap={1}>
-              {statusIndicator(t, hasSvg, on1, line.flow.info.status, s, line.flow.info.both)}
               {anomalyMark(t, anomalies, s)}
-              <Text bold wrap="truncate">
-                {line.flow.info.parent}
-              </Text>
+              {/* Live round 1: the top 3 runs (`bandLineOf`), each its dot and title, then how many are in progress. */}
+              {line.top.map((f, i) => (
+                <Box key={`band-line-${i}`} flexDirection="row" alignItems="center" columnGap={1}>
+                  {statusIndicator(t, hasSvg, on1, f.info.status, s, f.info.both)}
+                  <Text bold={f.info.status !== 'completed'} dimColor={f.info.status === 'completed'} wrap="truncate">
+                    {f.info.parent}
+                  </Text>
+                </Box>
+              ))}
               {line.live > 0 ? <Text dimColor>({line.live})</Text> : null}
             </Box>
           ) : (
             <Text dimColor>Nothing Here</Text>
           ),
           idle,
+          at,
         )}
       </Box>
     )
   }
 
-  const controls = viewControls(
+  const controls = runsTab ? (
+    // Live round 1: the Run List tab's row: Panel Type and the notices; its close closes this tab only.
+    <Box flexDirection="row" flexWrap="wrap" justifyContent="space-between" alignItems="center" width="100%">
+      <Box flexDirection="row" alignItems="center" columnGap={1} flexGrow={1}>
+        {modeButton}
+        {noticeIcon($, t, 'pane', loose)}
+      </Box>
+      <Button key="runs-close" label="×" role="dismiss" plain onPress={() => $.ui.close({ id: RUNS })} />
+    </Box>
+  ) : viewControls(
     $,
     t,
     v,
@@ -2762,6 +3271,7 @@ async function workflowBody($: EngineInterface, t: any, site: ViewSite) {
       {noticeIcon($, t, 'pane', loose)}
     </Box>,
     idle,
+    at,
   )
   // Step 42: the keep-alive band is a band of its own, after this one: no keep-alive line in the lens band.
   const keepalive = site.where === 'band' ? null : await keepaliveRow($, t)
@@ -2787,12 +3297,12 @@ async function workflowBody($: EngineInterface, t: any, site: ViewSite) {
   const head = [controls, pinnedNote, keepalive, noticeList(t, 'pane', loose, open), anomalySection]
 
   // Drill-in, pressed in this view: the details with "< Back", in place of the runs.
-  const drilled = drills['pane']
+  const drilled = runsTab ? undefined : drills[drillKey]
   if (drilled !== undefined)
     return (
       <Box flexDirection="column" width="100%" {...fill}>
         {head}
-        {await drillBody($, t, 'pane', drilled, hasSvg)}
+        {await drillBody($, t, drillKey, drilled, hasSvg)}
         {errors}
       </Box>
     )
@@ -2812,6 +3322,8 @@ async function workflowBody($: EngineInterface, t: any, site: ViewSite) {
 
   const many = ws.length > 1
   const sel = selectedOf(v, ws)
+  // Step 43 (B5, B6): the drill target of this drawing's avatars and arrows (`stepChart` passes it to `agentButtons`).
+  const viewTarget = drillTargetOf(site.where, layout, sel)
 
   /**
    * Step 8.6.1 (the human, 2026-10-24): one run's step charts replace its task panels and its one chart. Each
@@ -2828,26 +3340,55 @@ async function workflowBody($: EngineInterface, t: any, site: ViewSite) {
     return { ...l, model: code === '' ? l.model : l.model === '' ? code : `${code} · ${l.model}` }
   }
   const stepLook = (c: StepChart): { st: FlowStatus; both: boolean } => {
-    // A record with no hand-back and no live agent counts as not started (pending, grey).
-    const all = c.ids.map(id => c.agents[id]!).map(a => (a.status === OPEN ? { ...a, status: 'pending' } : a))
+    // Step 43 (C1): the same inputs as the band's status (`workflowInfo`): the members settled (`settleMembers`, by
+    // each node's step code; a done *Stages* row settles its step) and the run's `status:`. Then a record with no
+    // hand-back and no live agent counts as not started (pending, grey).
+    const run = Object.entries(runs).find(([d]) => runIdOf(d) === runIdOf(c.dir))?.[1]
+    const settled = settleMembers(
+      c.ids.map(id => c.agents[id]!),
+      a => attemptOf(a, own(c.codes, a.id) ?? null),
+      a => stageDone(own(c.codes, a.id) ?? '', run?.stageStatus),
+    )
+    const all = settled.map(a => (a.status === OPEN ? { ...a, status: 'pending' } : a))
     const spawner = c.key === NO_STEP ? (c.ids[0] ?? null) : null
-    return { st: workflowStatus(all, [], spawner), both: runningAndWaiting(all, spawner) }
+    return { st: workflowStatus(all, run === undefined ? [] : [run.status], spawner), both: runningAndWaiting(all, spawner) }
   }
   // The ▲ of a step: an anomaly of one of its agents, or of one of its steps in its run folder.
   const stepBad = (c: StepChart): LensAnomaly[] =>
     marks.list.filter(x => (x.agent !== '' && c.ids.includes(x.agent)) || (c.step !== null && x.step !== '' && topStepOf(x.step) === c.step && x.run !== '' && runIdOf(x.run) === runIdOf(c.dir)))
+  /**
+   * Step 43 (C2): whether a step's accordion is open: the person's choice (`step:<w>:<key>` in `cardOpenA`), else
+   * open for the run's highest step (the first, `stepsDescending`) and for the step a card or ⤢ chose (`stepSelA`).
+   */
+  const stepOpenKey = (f: Flow, c: StepChart) => `step:${f.w}:${c.key}`
+  const stepOpen = (f: Flow, c: StepChart) => open[stepOpenKey(f, c)] ?? (f.steps[0]?.key === c.key || own(stepSel as Record<string, string>, f.w) === c.key)
+  // Live 2d: the width a chart may take, in CSS px (the body's columns times cellPx); unknown columns: as drawn.
+  const fitPx = site.columns !== undefined && site.columns > 0 ? site.columns * s.cellPx : undefined
   const stepChart = (f: Flow, c: StepChart, size: LensSettings, kp: string, bp: string, full = false) => {
     const lab = stepLabel(c)
     const look = stepLook(c)
+    // Full screen shows one step only: never collapsed, no minimise.
+    const o = full || stepOpen(f, c)
+    const ok = stepOpenKey(f, c)
     return (
-      <Box flexDirection="column" alignItems="center" justifyContent="center" width="100%" marginTop={1}>
+      <Box flexDirection="column" alignItems="center" width="100%" marginTop={full ? 0 : 1}>
         <Box flexDirection="row" flexWrap="wrap" alignItems="center" columnGap={1}>
           {statusIndicator(t, hasSvg, on1, look.st, s, look.both, 'step status')}
           {anomalyMark(t, stepBad(c), s)}
           <Text bold wrap="wrap">
             {c.title}
           </Text>
-          {full ? null : (
+          {/* The human (2026-10-26): every step accordion has "Stop turn" (the whole turn, as Esc), before –/□ and ⤢. */}
+          <Button key={`${kp}step-stop`} label="Stop turn" onPress={() => stopTurn($, `step:${f.w}:${c.key}`)}>
+            <Text color="white" backgroundColor="red" bold>
+              {' Stop turn '}
+            </Text>
+          </Button>
+          {full ? null : <Button key={`${kp}step-min`} label={o ? '–' : '□'} plain onPress={() => update($, cardOpenA, m => ({ ...(m as Record<string, boolean>), [ok]: !((m as Record<string, boolean>)[ok] ?? o) }))} />}
+          {full ? (
+            // Live 2b.ii: full screen keeps the heading's button, as restore (⤡) where ⤢ was.
+            <Button key={`${kp}step-restore`} label="⤡" plain onPress={() => changeView($, viewRestore)} />
+          ) : (
             <Button
               key={`${kp}step-full`}
               label="⤢"
@@ -2861,8 +3402,19 @@ async function workflowBody($: EngineInterface, t: any, site: ViewSite) {
             />
           )}
         </Box>
-        {s.chartInPane ? chartNode(t, hasSvg, on1, c.ids, c.agents, lab, size, `${full ? 'Full screen chart' : 'Step chart'} ${c.key}: ${f.info.parent}`, av, kp) : null}
-        {agentButtons($, t, c.ids.filter(id => !c.bare.includes(id)), c.agents, lab, 'pane', c.ids[0] ?? null, marks, bp)}
+        {o && s.chartInPane ? chartNode(t, hasSvg, on1, c.ids, c.agents, lab, size, `${full ? 'Full screen chart' : 'Step chart'} ${c.key}: ${f.info.parent}`, av, kp, fitPx) : null}
+        {o && agentButtons($, t, c.ids.filter(id => !c.bare.includes(id)), c.agents, lab, viewTarget, c.ids[0] ?? null, marks, bp)}
+        {/* Open, the step shows the note of its Stop turn's last press and what it does. */}
+        {o && pressNotes[`step:${f.w}:${c.key}`] !== undefined ? (
+          <Text dimColor wrap="wrap">
+            {pressNotes[`step:${f.w}:${c.key}`]}
+          </Text>
+        ) : null}
+        {o ? (
+          <Text dimColor wrap="wrap">
+            {STOP_NOTE}
+          </Text>
+        ) : null}
       </Box>
     )
   }
@@ -2891,7 +3443,7 @@ async function workflowBody($: EngineInterface, t: any, site: ViewSite) {
   // dock (at most 45%), and the VS Code panel is sized by VS Code (d.ts:7638-7658, Pane `placement`). So full
   // screen raises the pane (`showView`, focus) and gives it to the selected run alone. Step 8.6.1: it shows the
   // selected step's chart (⤢ on a step chart, else the first, the highest code), drawn 1.5 times larger and filling the body's
-  // rows, with a "Steps:" row to show another; the run list, notices, keep-alive line and Anomalies section are
+  // rows (live 2c: no "Steps:" row; ⤡ restores the view, where ⤢ on another step shows that one); the run list, notices, keep-alive line and Anomalies section are
   // hidden until ⤡ (or ↺) restores the view.
   if (v.size === 'fullscreen') {
     const f = flows.find(x => x.w === sel) ?? flows[0]!
@@ -2922,15 +3474,6 @@ async function workflowBody($: EngineInterface, t: any, site: ViewSite) {
             {f.info.parent}
           </Text>
         </Box>
-        {f.steps.length > 1 ? (
-          <Box flexDirection="row" flexWrap="wrap" alignItems="center" columnGap={1}>
-            <Text dimColor>Steps:</Text>
-            {f.steps.map(c => {
-              const name = c.step === null ? 'no step' : c.key
-              return <Button key={`fs-step-${c.key}`} label={c.key === step?.key ? `(${name})` : name} plain onPress={() => update($, stepSelA, m => ({ ...(m as Record<string, string>), [f.w]: c.key }))} />
-            })}
-          </Box>
-        ) : null}
         <Box flexDirection="column" flexGrow={1} alignItems="center" justifyContent="center" width="100%">
           {step === undefined ? <Text dimColor>No step yet.</Text> : stepChart(f, step, big, 'fs:', 'fs:', true)}
         </Box>
@@ -2940,11 +3483,10 @@ async function workflowBody($: EngineInterface, t: any, site: ViewSite) {
   }
 
   /**
-   * One run's content: its spawner's thinking and gathered context. Step 8.6.1: `chart` draws the run's step
-   * charts above them (the narrow view); the wide view draws the selected run's step charts beside the list, so
-   * its panel names how many there are.
+   * Step 43 (C2, design 5): one run's metadata in workflow mode, under its name: who spawned how many agents, how many
+   * steps, then its spawner's thinking and gathered context (collapsed like every section).
    */
-  const content = (f: Flow, chart = false) => {
+  const meta = (f: Flow) => {
     const { w, batch, n, rootName } = f
     const th = thinking[batch.parent] ?? ''
     const ctx = (batch.parent === 'main' ? mainContext : (calls[batch.parent] ?? []).filter(c => CONTEXT_TOOLS.has(c.tool))).slice(-s.contextLimit)
@@ -2956,9 +3498,8 @@ async function workflowBody($: EngineInterface, t: any, site: ViewSite) {
           {rootName} spawned {n} agent{n > 1 ? 's' : ''}
         </Text>
         <Text dimColor wrap="wrap">
-          {k} step chart{k === 1 ? '' : 's'}
+          {k} step{k === 1 ? '' : 's'}
         </Text>
-        {chart ? stepList(f, 'nr:') : null}
         <Box flexDirection="column" width="100%">
           {section($, t, open, s, `${w}:thinking`, `${wPrefix}wf-thinking`, `${rootName} thinking (${th.length} chars)`, () => (
             <Text dimColor wrap="wrap">
@@ -2971,91 +3512,61 @@ async function workflowBody($: EngineInterface, t: any, site: ViewSite) {
     )
   }
 
-  /** One run as a collapsible panel: [+], its dot, its title (dim once completed), its notices; `pick`: the wide view's "show" Button. */
-  const panel = (f: Flow, i: number, pick: boolean) => {
-    const wKey = `wf:${f.w}`
-    const wOpen = isOpen(open, wKey, s)
+  // Step 43 (design 1): the combined wide layout (the list beside the selected run's charts) is retired. Every site draws
+  // either its list mode or its workflow mode (`siteMode`; a wide band lists only).
+  if (siteMode === 'workflow') {
+    // Workflow mode (C2, design 5): Panel Type (controls row), the head's notes and notices; a separator; Anomalies
+    // (absent while none); a separator; "< Runs"; the status and the run's name; its metadata; one accordion per step,
+    // highest code first (`stepList`).
+    const f = flows.find(x => x.w === sel) ?? flows[0]!
     const mine = notices.filter(x => x.w === f.w)
-    const done = f.info.status === 'completed'
-    return (
-      <Box flexDirection="column" marginTop={i === 0 ? 0 : 1}>
-        <Box flexDirection="row" flexWrap="wrap" alignItems="center" columnGap={1}>
-          <Button key={`wf-${f.w}`} label={wOpen ? '[-]' : '[+]'} onPress={() => toggleOpen($, wKey, s)} />
-          {statusIndicator(t, hasSvg, on1, f.info.status, s, f.info.both)}
-          {anomalyMark(t, f.bad, s)}
-          <Text bold={!done} dimColor={done} wrap="wrap">
-            {f.info.parent}
-          </Text>
-          {noticeIcon($, t, f.w, mine)}
-          {pick ? <Button key={`wf-show-${f.w}`} label={f.w === sel ? '(shown)' : 'show'} plain onPress={() => choose(f.w)} /> : null}
-        </Box>
-        {noticeList(t, f.w, mine, open)}
-        {wOpen && content(f)}
-      </Box>
-    )
-  }
-
-  if (layoutOf(site.columns, s.wideColumns) === 'narrow') {
-    // Narrow: every run minimised to one row; the one chosen opens in its place, "< Runs" goes back.
-    const chosen = flows.find(f => open[`nr:${f.w}`] === true)
-    const pick = async (w: string) => {
-      await update($, cardOpenA, m => {
-        const out: Record<string, boolean> = {}
-        for (const [k, x] of Object.entries(m as Record<string, boolean>)) if (!k.startsWith('nr:')) out[k] = x
-        if (w !== '') out[`nr:${w}`] = true
-        return out
-      })
-      if (w !== '') await choose(w)
-    }
     return (
       <Box flexDirection="column" width="100%" {...fill}>
         {head}
-        {chosen !== undefined ? (
-          <Box flexDirection="column" width="100%">
-            <Button key="runs-back" label="< Runs" onPress={() => pick('')} />
-            <Box flexDirection="row" flexWrap="wrap" alignItems="center" columnGap={1}>
-              {statusIndicator(t, hasSvg, on1, chosen.info.status, s, chosen.info.both)}
-              {anomalyMark(t, chosen.bad, s)}
-              <Text bold wrap="wrap">
-                {chosen.info.parent}
-              </Text>
-            </Box>
-            {content(chosen, true)}
+        <Box key="wf-separator" flexDirection="column" marginTop={1}>
+          <Text dimColor wrap="truncate">
+            {DIVIDER}
+          </Text>
+        </Box>
+        <Box flexDirection="column" width="100%">
+          <Button key="runs-back" label="< Runs" onPress={toList} />
+          <Box flexDirection="row" flexWrap="wrap" alignItems="center" columnGap={1}>
+            {statusIndicator(t, hasSvg, on1, f.info.status, s, f.info.both)}
+            {anomalyMark(t, f.bad, s)}
+            <Text bold wrap="wrap">
+              {f.info.parent}
+            </Text>
+            {noticeIcon($, t, f.w, mine)}
           </Box>
-        ) : (
-          flows.map(f => (
-            <Box flexDirection="row" alignItems="center" columnGap={1}>
-              {statusIndicator(t, hasSvg, on1, f.info.status, s, f.info.both)}
-              {anomalyMark(t, f.bad, s)}
-              <Button key={`run-${f.w}`} label={f.info.parent} plain onPress={() => pick(f.w)} />
-            </Box>
-          ))
-        )}
+          {noticeList(t, f.w, mine, open)}
+          {meta(f)}
+          {stepList(f, 'nr:')}
+        </Box>
         {errors}
       </Box>
     )
   }
 
-  // Wide: the selected run's step charts (by code, highest first, each with its Buttons) on the left, every run a
-  // collapsible panel on the right.
-  const shown = flows.find(f => f.w === sel) ?? flows[0]!
+  // List mode (design 1): the runs only, each one row: its dot, its ▲, its title and its notices.
+  // Its Button keeps the key of the retired run panel's (`wf-<w>`): one run, one key, whatever the layout.
   return (
     <Box flexDirection="column" width="100%" {...fill}>
       {head}
-      <Box flexDirection="row" width="100%" columnGap={1} alignItems="flex-start">
-        <Box flexDirection="column" flexGrow={1} flexShrink={1} alignItems="center">
-          <Box flexDirection="row" columnGap={1}>
-            {anomalyMark(t, shown.bad, s)}
-            <Text bold wrap="wrap">
-              {shown.info.parent}
-            </Text>
+      {flows.map(f => {
+        return (
+          <Box flexDirection="row" alignItems="center" columnGap={1}>
+            {statusIndicator(t, hasSvg, on1, f.info.status, s, f.info.both)}
+            {anomalyMark(t, f.bad, s)}
+            {/* A completed run's title is dimmed, as the retired run panel drew it (Text child; the label still names the Button). */}
+            <Button key={`wf-${f.w}`} label={f.info.parent} plain onPress={() => choose(f.w)}>
+              <Text bold={f.info.status !== 'completed'} dimColor={f.info.status === 'completed'}>
+                {f.info.parent}
+              </Text>
+            </Button>
+            {noticeIcon($, t, f.w, notices.filter(x => x.w === f.w))}
           </Box>
-          {stepList(shown, 'sel:')}
-        </Box>
-        <Box flexDirection="column" width={s.runListColumns} flexShrink={0}>
-          {flows.map((f, i) => panel(f, i, true))}
-        </Box>
-      </Box>
+        )
+      })}
       {errors}
     </Box>
   )
@@ -3276,6 +3787,12 @@ export const register: Register = on => {
     mergedSeen = {}
     anomalySkipped = []
     anomaliesNow = []
+    runStateSeen = {}
+    labPressed = false
+    messagesNow = []
+    mainTurnId = null
+    pressNotes = {}
+    handbackChars = {}
     // Both timers are made before the first `await`: a second `session.start` that overlaps this one (its
     // `stopTimers()` running while this one awaits) cancels both, and never leaves a second poller.
     // Timer-driven blink (kit check 2, and the terminal's text avatars).
@@ -3287,6 +3804,8 @@ export const register: Register = on => {
         try {
           const atWork = anyAtWork(await read($, agentsA))
           if (probeOn || atWork) await refreshList($, 'timer')
+          // Step 43 (C1): another session moved a run (a new run state version, or the current one rewritten): re-read the runs.
+          if (await runStatesMoved($)) await refreshRuns($)
           // Step 1.6.1: while agents work (a wait growing too long), and while an anomaly stands (so it clears).
           if (atWork || anomaliesNow.length > 0) await detectNow($)
           await captureKeepalive($)
@@ -3582,8 +4101,14 @@ export const register: Register = on => {
         // Step 1.5: pinned, on surfaces that all draw the band above the prompt, the band shows it and no pane opens.
         // Step 36.2.3, amendment 7: the old lens card goes when the view first appears (a /reload-plugins has no session.start).
         await closeOldCard($)
-        // Step 36.2, amendment 4 (point 1): the band appears minimised.
+        // Step 36.2, amendment 4 (point 1): the band appears minimised. Step 43 (the human's rule 2, as `/ai-dlc:lens`):
+        // a pane opened by itself shows the newest run in progress in workflow mode, else its run list.
         if (await onBand($, await read($, viewA))) await bandStart($)
+        else {
+          const latest = await latestFlow($)
+          // Live round 1 (D-e): never an old full screen or minimise left from an earlier open.
+          await update($, viewA, x => commandStartView(lensCommandView(x as LensView, false, latest !== null && latest.live ? latest.w : null)))
+        }
         await showView($, await read($, viewA))
         await plog($, 'E3', { open: CHART, auto: true })
       }
@@ -3601,6 +4126,8 @@ export const register: Register = on => {
   on('turn.start', async ($, e, next) => {
     try {
       const key = e.agentId ?? 'main'
+      // Step 43.2.5: the main loop's running turn, the one the Agents panel's Stop ends (`$.turn.abort`, d.ts:2989-3005).
+      if (e.agentId === undefined) mainTurnId = e.turnId
       // Step 1.4: the arming that ends with this turn keeps its time before the next Stop re-arms.
       if (key === 'main') await captureKeepalive($)
       if (probeOn) await plog($, 'E9', { site: 'turn.start', agent: key, known: (await read($, agentsA))[key]?.toolUseId ?? null })
@@ -3708,6 +4235,8 @@ export const register: Register = on => {
 
   on('turn.complete', async ($, e, next) => {
     const r = await next(e)
+    // Step 43.2.5: the main turn has ended; Stop has nothing to end until the next one starts.
+    if (e.agentId === undefined && e.turnId === mainTurnId) mainTurnId = null
     try {
       const key = e.agentId ?? 'main'
       await ensureAgent($, key, key === 'main' ? null : 'main', '')
@@ -3750,26 +4279,28 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'Pane', requestId: EDGE }, async ($, e) => {
+    notePaneSeat(e.props.placement, e.props.bodyColumns)
     return guardPane($, e, 'hand-off pane', async () => {
       const t = $.ui.resolve(e) as any
-      const { agents, s, label, av } = await snapshot($)
+      const { agents, s, label, av, marks } = await snapshot($)
       if ((await read($, tabsMinA))[EDGE] === true) {
         const u = await read($, uiA)
         const a = liveOr(agents, u.edge, u.edgeSnap)
-        return minimisedTab($, t, EDGE, a ? `Hand-off: ${a.parent !== null && agents[a.parent] ? label(agents[a.parent]!).name : '?'} -> ${label(a).name} - ${a.status}` : 'Hand-off')
+        return minimisedTab($, t, EDGE, a ? `Connections: ${a.parent !== null && agents[a.parent] ? label(agents[a.parent]!).name : '?'} -> ${label(a).name} - ${a.status}` : 'Connections')
       }
-      return edgeBody($, t, await read($, uiA), await read($, docA), agents, label, await read($, cardOpenA), s, av, e.surface !== 'terminal', true)
+      return edgeBody($, t, await read($, uiA), await read($, docA), agents, label, await read($, cardOpenA), s, av, e.surface !== 'terminal', true, marks.list)
     })
   })
 
   on('ui.render', { component: 'Pane', requestId: AGENT }, async ($, e) => {
+    notePaneSeat(e.props.placement, e.props.bodyColumns)
     return guardPane($, e, 'agent pane', async () => {
       const t = $.ui.resolve(e) as any
-      const { agents, defs, s, label, av } = await snapshot($)
+      const { agents, defs, s, label, av, marks } = await snapshot($)
       const ui = await read($, uiA)
       if ((await read($, tabsMinA))[AGENT] === true) {
         const a = liveOr(agents, ui.agent, ui.agentSnap)
-        return minimisedTab($, t, AGENT, a ? `Agent: ${label(a).name} - ${a.status}` : 'Agent')
+        return minimisedTab($, t, AGENT, a ? `Agents: ${label(a).name} - ${a.status}` : 'Agents')
       }
       // Step 42: Cache Lab, in place of the Cache keep-alive section; it reads keep-alive only while open.
       const open = await read($, cardOpenA)
@@ -3791,6 +4322,7 @@ export const register: Register = on => {
         e.surface !== 'terminal',
         true,
         cacheLab,
+        { mode: await openModeNow($), anomalies: marks.list },
       )
     })
   })
@@ -3800,10 +4332,21 @@ export const register: Register = on => {
   // `workflowBody`, shared with the band below. No outer margin or padding (A9): the frame fits the tree
   // (d.ts:10904-10909); only full screen fills the rows.
   on('ui.render', { component: 'Pane', requestId: CHART }, async ($, e) => {
+    notePaneSeat(e.props.placement, e.props.bodyColumns)
     return guardPane($, e, 'workflow pane', async () => {
       const t = $.ui.resolve(e) as any
       if (e.viewport !== undefined) lastViewport = { columns: e.viewport.columns, rows: e.viewport.rows }
-      return workflowBody($, t, { surface: String(e.surface), columns: e.props.bodyColumns, rows: e.props.scroll.bodyRows, where: 'pane' })
+      // The pane's placement (dock or inline) is the surface's, known only while drawing (`notePaneSeat`, `commandSeatOf`).
+      return workflowBody($, t, { surface: String(e.surface), columns: e.props.bodyColumns, rows: e.props.scroll.bodyRows, where: 'pane', placement: e.props.placement })
+    })
+  })
+
+  // Live round 1: the Run List tab, the view's list at its normal size (`ViewSite.runs`).
+  on('ui.render', { component: 'Pane', requestId: RUNS }, async ($, e) => {
+    notePaneSeat(e.props.placement, e.props.bodyColumns)
+    return guardPane($, e, 'runs pane', async () => {
+      const t = $.ui.resolve(e) as any
+      return workflowBody($, t, { surface: String(e.surface), columns: e.props.bodyColumns, rows: e.props.scroll.bodyRows, where: 'pane', placement: e.props.placement, runs: true })
     })
   })
 
@@ -3831,6 +4374,8 @@ export const register: Register = on => {
       const t = $.ui.resolve(e) as any
       const { Box } = t
       const ours = await workflowBody($, t, { surface: String(e.surface), columns: e.props.bodyColumns, rows: e.props.maxRows, where: 'band' })
+      // Step 43 (B4b, D5): the band is on screen; the pane beside it reads this to tell whether the band is closed.
+      lastBandAt = nowMs()
       const below = await next(e)
       // No `width` on this Box: `below` can be core's own drawing (an engine node), and AbovePrompt refuses an
       // engine node under a Box with `width` (the hook is skipped and the view never draws). Step 36.2, amendment 5:
@@ -3944,6 +4489,19 @@ export const register: Register = on => {
   on('ui.render', { component: 'ToolUse' }, async ($, e, next) => {
     const tool = String(e.props.tool)
     if (!CARD_TOOLS.has(tool)) return next(e)
+    // Step 43.2.5 (human): a SendMessage row is hidden from the chat (the Connections panel's Send Message accordion
+    // lists it); the full view (ctrl+o, --verbose: `isExpanded`, d.ts:10411-10418) still draws it whole. That an empty
+    // tree removes the row, and leaves no gap, is not documented per surface: a manual check.
+    // cr-std-43 round 2: a send that failed stays drawn (isErrored, d.ts:10403), so the person sees it failed.
+    if (tool === 'SendMessage' && e.props.isExpanded !== true && e.props.isErrored !== true) {
+      try {
+        const { Box } = $.ui.resolve(e) as any
+        return <Box />
+      } catch (err) {
+        lensFail('send message row', err)
+        return next(e)
+      }
+    }
     const input = (e.props.input ?? {}) as Record<string, unknown>
     const stripPrompt = AGENT_TOOLS.has(tool) && e.props.isExpanded !== true && typeof input.prompt === 'string'
     let native: any
@@ -4060,7 +4618,7 @@ export const register: Register = on => {
             <Text wrap="wrap">
               Workflow: {info.current} - {chip}{' '}
             </Text>
-            <Button key="card-open-chart" label="Open flowchart" onPress={() => openChart($, w ?? id)} />
+            <Button key="card-open-chart" label="Open flowchart" onPress={() => openChart($, w ?? id, id)} />
           </Box>
           {drilled !== undefined ? await drillBody($, t, target, drilled, hasSvg) : chart}
           {lensErrors.map(x => (
@@ -4074,6 +4632,16 @@ export const register: Register = on => {
   })
   on('ui.render', { component: 'ToolResult' }, async ($, e, next) => {
     if (CARD_TOOLS.has(String(e.props.tool))) toolResultHooks += 1
+    // Step 43.2.5: the result block under a hidden SendMessage row goes with it (ToolResult, d.ts:10440-10490).
+    // cr-std-43 round 2: a failed send keeps its result (the error text; isErrored, d.ts:10472).
+    if (String(e.props.tool) === 'SendMessage' && e.props.isExpanded !== true && e.props.isErrored !== true) {
+      try {
+        const { Box } = $.ui.resolve(e) as any
+        return <Box />
+      } catch (err) {
+        lensFail('send message result', err)
+      }
+    }
     return next(e)
   })
 
@@ -4106,7 +4674,7 @@ export const register: Register = on => {
     await captureKeepalive($)
     stopEvents += 1
     // ITEM-070: new transcripts while Cache Lab is open.
-    if (labOpen(await read($, cardOpenA))) await loadLab($)
+    if (labOpen(await read($, cardOpenA), (await read($, lensA)).settings as LensSettings)) await loadLab($)
     const tasks: LensTask[] = (e.background_tasks ?? []).map(b => stopTask(b, 'Stop'))
     await patchAgent($, 'main', a => ({ ...a, bg: stampTasks(a.bg, mergeStopTasks(a.bg, tasks), nowMs()) }))
     if (probeOn) await plog($, 'E7', { site: 'classic.Stop', background_tasks: e.background_tasks ?? null })

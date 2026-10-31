@@ -95,7 +95,9 @@ export const SPEC = {
     def: 70,
     doc: "The workflow view's width (body columns) from which the runs stack as collapsible panels on the right with the selected run's chart beside them; narrower, the view shows only the list of runs, each minimised to one row",
   },
-  runListColumns: { kind: 'int', min: 16, max: 200, def: 34, doc: 'Width of the stacked run panels on the right of the wide workflow view, columns' },
+  // Step 43 (B4b, D5, the human 2026-10-26): how long the band may go undrawn before the pane beside it counts it as closed.
+  bandGoneMs: { kind: 'int', min: 1000, max: 600000, def: 10000, doc: "How long the lens band may go undrawn before the pane beside it counts it as not on screen (its restore then closes the pane and shows the band), ms; not applied in a VS Code panel too narrow for the pane" },
+  runListColumns: { kind: 'int', min: 16, max: 200, def: 34, doc: 'Unused since step 43 (the wide workflow view with stacked run panels is retired); kept so existing settings stay valid, columns' },
   // Step 1.6.1: /ai-dlc:lens-gate, the anomaly detector (hooks/anomaly.ts). One switch, one setting per check, its colour, and the waiting threshold.
   gateAlert: { kind: 'bool', def: true, doc: 'Detect anomalies in the runs and agents the lens sees: a toast when one appears, a marker on its run, agent or arrow, and the Anomalies section of the workflow view. /ai-dlc:lens-gate on|off sets it' },
   anomalyRunBlocked: { kind: 'bool', def: true, doc: 'Check: a run is blocked (run.md status: blocked); the anomaly names its blocked steps' },

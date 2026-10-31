@@ -15,12 +15,17 @@
 //                               user command (a dot is one nesting level; JSON literal or plain text; null is refused)
 //
 // Options: --root <dir> (default: git root, else the working directory).
-// Each key is read, highest first, from a /ai-dlc:cache-keepalive override (keep-warm times only, per track;
-// kept in the plugin's store, not readable here), `env` in .claude/settings.local.json, `env` in
-// .claude/settings.json, .ai-dlc/cache-keepalive.json, then the default. Keep-alive has no /config rows,
-// and the process environment is not read. Keys the schema marks x-trustGated apply from the two
-// committed sources (the env of .claude/settings.json and this file) only when Claude Code trusts the
-// folder, as in the module; `show` reads the trust flag from ~/.claude.json and nothing else from it.
+// Each key is read, highest first, from a /ai-dlc:cache-keepalive-configure override (keep-warm times only, per track;
+// kept in the plugin's store, not readable here), `env` in .claude/settings.local.json (--for just-me), `env` in
+// .claude/settings.json (--for team), `env` in ~/.claude/settings.json (--for global: this machine's user
+// settings), .ai-dlc/cache-keepalive.json, then the default. Keep-alive has no /config rows, and the process
+// environment is not read. Keys the schema marks x-trustGated apply from the two committed sources (the env
+// of .claude/settings.json and this file) only when Claude Code trusts the folder, as in the module; the
+// global level is the person's own and is never gated. `show` reads the trust flag from ~/.claude.json and
+// nothing else from it.
+// The file's optional `teamRecord` section records the team values /ai-dlc:cache-keepalive-configure --for team
+// last wrote to .claude/settings.json (AI_DLC_KEEPALIVE_* name -> text). It is a record only: never read for
+// a value, kept as it is by merge and set, never written by install; a personal value never goes there.
 
 import fs from "node:fs";
 import os from "node:os";
@@ -33,7 +38,11 @@ const SCHEMA_FILE = path.join(HERE, "cache-keepalive.schema.json");
 const FILE_NAME = "cache-keepalive.json";
 const SCHEMA_NAME = "cache-keepalive.schema.json";
 // Where a person sets a trust-gated setting instead: the module's words (hooks/keepalive/keepalive.ts, GATED_INSTEAD).
-const GATED_INSTEAD = "set them in the env of .claude/settings.local.json instead (a keep-warm time also with /ai-dlc:cache-keepalive)";
+const GATED_INSTEAD = "set them in the env of .claude/settings.local.json instead (a keep-warm time also with /ai-dlc:cache-keepalive-configure)";
+
+// The record section of the file: not a setting, never read for a value (see the header).
+export const RECORD = "teamRecord";
+const RECORD_NAME = /^AI_DLC_KEEPALIVE_[A-Z0-9_]+$/;
 
 const isObj = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
 const readMaybe = (file) => { try { return fs.readFileSync(file, "utf8").replace(/^﻿/, ""); } catch { return undefined; } };
@@ -72,6 +81,18 @@ export function settingsEnv(root, name, warnings) {
   if (!("env" in doc)) return null;
   if (!isObj(doc.env)) { warnings.push(`${rel}: env is not an object; skipped`); return null; }
   return doc.env;
+}
+
+/** Where the global level is read from, as `show` names it. */
+export const GLOBAL_WHERE = "~/.claude/settings.json";
+
+/** The `env` object of ~/.claude/settings.json (`home`: the user's home folder), or null; never trust-gated.
+ * Read by settingsEnv (kept the same as configure-auto-handoff's copy), its warnings naming the file as GLOBAL_WHERE. */
+export function globalEnv(home, warnings) {
+  const found = [];
+  const env = settingsEnv(home, "settings.json", found);
+  warnings.push(...found.map((w) => w.replace(/^\.claude\/settings\.json/, GLOBAL_WHERE)));
+  return env;
 }
 
 /** The repository file: { doc } (null when missing) or { error }. */
@@ -125,7 +146,7 @@ export function loadSchema(file = SCHEMA_FILE) {
   const schema = JSON.parse(fs.readFileSync(file, "utf8"));
   const keys = [];
   for (const [k, p] of Object.entries(schema.properties)) {
-    if (k === "$schema") continue;
+    if (k === "$schema" || k === RECORD) continue;
     if (p.properties) for (const [sub, q] of Object.entries(p.properties)) keys.push({ key: `${k}.${sub}`, ...q });
     else keys.push({ key: k, ...p });
   }
@@ -309,8 +330,9 @@ function rule(key, v, soFar) {
 const display = (p, v) => (p["x-kind"] === "duration" || p["x-kind"] === "minDuration") && typeof v === "number" ? formatDuration(v) : v;
 
 /** Each key's effective value and source, with a warning for every invalid or skipped value.
- * `trust`: { trusted, why } for the folder; untrusted, the x-trustGated keys of the two committed sources are skipped. */
-export function effective(root, keys, trust = trustOf(readMaybe(path.join(os.homedir(), ".claude.json")), trustTarget(root))) {
+ * `trust`: { trusted, why } for the folder; untrusted, the x-trustGated keys of the two committed sources are skipped.
+ * `home`: the user's home folder, whose .claude/settings.json is the global level (never gated). */
+export function effective(root, keys, trust = trustOf(readMaybe(path.join(os.homedir(), ".claude.json")), trustTarget(root)), home = os.homedir()) {
   const warnings = [];
   const levels = [];
   for (const name of ["settings.local.json", "settings.json"]) {
@@ -323,6 +345,7 @@ export function effective(root, keys, trust = trustOf(readMaybe(path.join(os.hom
     }
     levels.push({ where, byEnv: true, values });
   }
+  levels.push({ where: GLOBAL_WHERE, byEnv: true, values: globalEnv(home, warnings) });
   const repo = readRepoFile(path.join(root, ".ai-dlc", FILE_NAME));
   if (repo.error) warnings.push(`.ai-dlc/${FILE_NAME}: ${repo.error}; it is skipped`);
   let values = repo.doc;
@@ -365,9 +388,11 @@ export function merged(doc, keys) {
       if (doc) (has ? filled : added).push(p.key);
     }
   }
+  // The record is kept as it is (merge and set never change it; install, with no file, writes none).
+  if (doc && Object.hasOwn(doc, RECORD)) out[RECORD] = doc[RECORD];
   if (doc) {
     for (const [k, v] of Object.entries(doc)) {
-      if (k === "$schema") continue;
+      if (k === "$schema" || k === RECORD) continue;
       if (isObj(out[k]) && isObj(v)) { for (const sub of Object.keys(v)) if (!Object.hasOwn(out[k], sub)) removed.push(`${k}.${sub}`); }
       else if (!Object.hasOwn(out, k)) removed.push(k);
     }
@@ -384,6 +409,7 @@ export function fileProblems(doc, keys) {
   const tracks = new Set(keys.filter((p) => p.key.includes(".")).map((p) => p.key.split(".")[0]));
   for (const [k, v] of Object.entries(doc)) {
     if (k === "$schema") { if (typeof v !== "string") found.push({ problem: "$schema: not text" }); continue; }
+    if (k === RECORD) { found.push(...recordProblems(v, keys)); continue; }
     if (tracks.has(k)) {
       if (!isObj(v)) { found.push({ key: k, problem: `${k}: not an object` }); continue; }
       for (const sub of Object.keys(v)) if (!keys.some((p) => p.key === `${k}.${sub}`)) found.push({ problem: `${k}.${sub}: not a setting (run /ai-dlc:cache-keepalive-merge to remove it)` });
@@ -400,6 +426,18 @@ export function fileProblems(doc, keys) {
   return found;
 }
 
+/** The problems in the record section: not an object, a name that is not a keep-alive variable, a value
+ * that is not text. The record is never read for a value, so each is only a note on the record. */
+function recordProblems(v, keys) {
+  if (!isObj(v)) return [{ problem: `${RECORD}: not an object; it is a record only and never read` }];
+  const found = [];
+  for (const [name, raw] of Object.entries(v)) {
+    if (!RECORD_NAME.test(name) || !keys.some((p) => p["x-env"] === name)) found.push({ problem: `${RECORD}.${name}: not a keep-alive variable; it is a record only and never read` });
+    else if (typeof raw !== "string") found.push({ problem: `${RECORD}.${name}: not text; it is a record only and never read` });
+  }
+  return found;
+}
+
 /** The problems in the file, as text. */
 export const validateDoc = (doc, keys) => fileProblems(doc, keys).map((f) => f.problem);
 
@@ -407,25 +445,27 @@ export const validateDoc = (doc, keys) => fileProblems(doc, keys).map((f) => f.p
 export const NULL_IN_FILE = "null: every key holds a value (run /ai-dlc:cache-keepalive-merge to write its default)";
 
 /**
- * The env half of `validate`: every AI_DLC_KEEPALIVE_* variable in the env of .claude/settings.local.json
- * and .claude/settings.json, read with the same check as the file and the module (checkValue, held to
- * hooks/keepalive/settings.ts by tests/auto-handoff/), against the minDuration and each track's ttl in
+ * The env half of `validate`: every AI_DLC_KEEPALIVE_* variable in the env of .claude/settings.local.json,
+ * .claude/settings.json and ~/.claude/settings.json (`home`; never trust-gated), read with the same check
+ * as the file and the module (checkValue, held to hooks/keepalive/settings.ts by tests/auto-handoff/),
+ * against the minDuration and each track's ttl in
  * force. Each finding is a warning, never an error, since keep-alive only skips a bad value: an unknown
  * name, a value that fails its kind, limits or a rule, a settings file that does not parse, and, in a
  * folder Claude Code does not trust, a gated variable in .claude/settings.json that differs from its
  * default. `applied(key)` names what applies instead; `rows` are show's rows, read once. Returns { warnings }.
  */
-export function validateEnv(root, keys, trust = trustOf(readMaybe(path.join(os.homedir(), ".claude.json")), trustTarget(root)), applied, rows = effective(root, keys, trust).rows) {
+export function validateEnv(root, keys, trust = trustOf(readMaybe(path.join(os.homedir(), ".claude.json")), trustTarget(root)), applied, rows, home = os.homedir()) {
+  rows ??= effective(root, keys, trust, home).rows;
   // The rows in force are read once (a caller that already has them, such as validate, passes them);
   // `applied` and `inForce` are both derived from them.
   applied ??= appliedFrom(rows);
   const warnings = [];
   const inForce = (key) => { const v = rows.find((r) => r.key === key).value; return typeof v === "string" ? parseDuration(v) : v; };
   const minDuration = inForce("minDuration");
-  for (const name of ["settings.local.json", "settings.json"]) {
-    const where = `.claude/${name}`;
+  for (const name of ["settings.local.json", "settings.json", GLOBAL_WHERE]) {
+    const where = name === GLOBAL_WHERE ? GLOBAL_WHERE : `.claude/${name}`;
     const problems = [];
-    const env = settingsEnv(root, name, problems);
+    const env = name === GLOBAL_WHERE ? globalEnv(home, problems) : settingsEnv(root, name, problems);
     warnings.push(...problems);
     if (!env) continue;
     for (const [variable, raw] of Object.entries(env)) {
@@ -469,7 +509,7 @@ export const appliedFrom = (rows) => (key) => {
 };
 
 /** Each track whose maxPings is below the pings its keep-warm time allows, as a warning: the limit
- * stops the pings first (only /ai-dlc:cache-keepalive lifts it). From show's rows. */
+ * stops the pings first (only a /ai-dlc:cache-keepalive-configure <duration> override lifts it). From show's rows. */
 export function capWarnings(rows) {
   const v = (key) => { const x = rows.find((r) => r.key === key).value; return typeof x === "string" ? parseDuration(x) : x; };
   const out = [];
@@ -525,7 +565,7 @@ function main(argv) {
       if (json) { out(JSON.stringify({ settings: rows, warnings }, null, 2)); return 0; }
       out("| Key | Value | Source |\n|---|---|---|");
       for (const r of rows) out(`| \`${r.key}\` | \`${JSON.stringify(r.value).replace(/\|/g, "\\|")}\` | ${r.source} |`);
-      out("A /ai-dlc:cache-keepalive override of a track (this session's, else the machine's) outranks its keepWarmFor above; run /ai-dlc:cache-keepalive to see the keep-warm time in force.");
+      out("A /ai-dlc:cache-keepalive-configure <duration> override of a track (this session's, else the machine's) outranks its keepWarmFor above; run /ai-dlc:cache-keepalive to see the keep-warm time in force.");
       for (const w of warnings) out(`warning: ${w}`);
       return 0;
     }
@@ -614,8 +654,9 @@ function main(argv) {
       return 0;
     }
     case "validate": {
-      // Both sources: the file (schema, values, required keys, no null) and the AI_DLC_KEEPALIVE_*
-      // variables in the env of the two settings files. Every finding is a warning naming what applies
+      // Both sources: the file (schema, values, required keys, no null; the teamRecord section only for
+      // its shape) and the AI_DLC_KEEPALIVE_* variables in the env of the three settings files (the
+      // repository's two and ~/.claude/settings.json). Every finding is a warning naming what applies
       // instead, since keep-alive only skips a bad value; validate exits 0 (human, 2026-10-23).
       const shownRows = effective(root, keys).rows;
       const applied = appliedFrom(shownRows);

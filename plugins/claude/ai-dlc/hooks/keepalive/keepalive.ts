@@ -1,5 +1,6 @@
 import type { EngineInterface, Register, Timer } from 'claude-code'
-import { TRACK_NAMES, formatDuration, parseCommandArgs } from './duration.ts'
+import { TRACK_NAMES, formatDuration, parseCommandArgs, parseDuration } from './duration.ts'
+import type { ForTarget } from './duration.ts'
 import type { CommandArgs } from './duration.ts'
 import type { Scope, TrackName } from './duration.ts'
 import { SETTINGS, defaults, gatedDiffering, readMult, resolveSettings } from './settings.ts'
@@ -28,6 +29,11 @@ import { keepaliveTree } from './panel.tsx'
 // comes from the plugin skill skills/cache-keepalive, which Claude Code lists as /ai-dlc:cache-keepalive,
 // and the command.run hook below answers its runs in the skill's place.
 export const COMMAND = 'ai-dlc:cache-keepalive'
+// Live findings 3, points 5 and 7 (the human, 2026-10-26): /ai-dlc:cache-keepalive pings now with the settings in force
+// and shows the band, and ignores any arguments it is given. The grammar it took (durations, clear, on, off, --track,
+// --session, --machine) and --for are this command's, the configure skill's, answered by this module (it holds the
+// session switches and the overrides); plain words pass to the skill.
+export const CONFIGURE = 'ai-dlc:cache-keepalive-configure'
 export const REPO_FILE = '.ai-dlc/cache-keepalive.json'
 // The /ai-dlc:cache-keepalive overrides, one pair of store keys per track: this session's (a list of
 // [session id, ms]) and the machine's (ms).
@@ -463,7 +469,7 @@ function render($: EngineInterface, now: number) {
 async function bandModelNow($: EngineInterface): Promise<BandModel> {
   const now = await $.clock.now()
   const rows = { '1h': { line: lineFor(tracks['1h'], now), enabled: trackEnabled('1h', 'oneHour') }, '5m': { line: lineFor(tracks['5m'], now), enabled: trackEnabled('5m', 'fiveMinute') } }
-  return bandModel(masterNow() ? 'off' : 'on', rows, seedLine)
+  return { ...bandModel(masterNow() ? 'off' : 'on', rows, seedLine), on: anyOn() }
 }
 
 // Whether the first band draw since the module loaded has checked the status line (keepaliveBand).
@@ -476,13 +482,68 @@ let bandMinimised = true
 // Step 42: the band's `×` hides it for this session (the Pane is untouched); any run of /ai-dlc:cache-keepalive,
 // a new session (session.start) or a load brings it back.
 let bandClosed = false
+// Step 43 (live 1b): the Pane's own size while the surface seats it inline (VS Code with a narrow Claude
+// panel, above the prompt). It is the Pane's alone, never the band's: the band's `⤢` must open the Pane full
+// on a terminal where the band stays minimised. Each run of /ai-dlc:cache-keepalive minimises it; the `⤢`
+// (on the band or on the Pane) restores it. Live round 1 (the human, 2026-10-26): the docked Pane too (VS Code
+// with a wide Claude panel) opens minimised, the master switch and the status only, with the same controls.
+let paneMinimised = true
 
-/** Where keepaliveBand draws: the band (AbovePrompt) or, by default, the Pane. */
-export type BandSite = { where: 'band' } | { where: 'pane' }
+// Review round 4, W3: no ping overlaps another. `pressing`: a "Ping now" press is under way, from its first read to its
+// redraw, so a second press meanwhile does nothing. `pingBusy`: a ping of the command or of a press is out (pingReply).
+// `pingsOut`: pings of any kind out, a track's scheduled one included (ping). A press, or a run of the command, while a
+// ping is out pings nothing; a track's scheduled ping is not held back by them.
+let pressing = false
+let pingBusy = false
+let pingsOut = 0
+const pingUnderWay = () => pingBusy || pingsOut > 0
+
+// Live findings 3, point 7: the ping of /ai-dlc:cache-keepalive and of the band's "Ping Now": nothing while keep-alive
+// is off (it says why), else one ping with the settings in force, and the hit or miss with the keep-warm times.
+// The band's "Ping now" (point 8): the settings are read first, as the command reads them, then the ping, then a
+// redraw. A press while another press or any ping is under way does nothing (W3). Never throws.
+async function pressPing($: EngineInterface) {
+  if (pressing || pingUnderWay()) {
+    $.ui.log('keepalive: ping press ignored: a ping is already under way', { to: 'debug' })
+    return
+  }
+  pressing = true
+  try {
+    await load($)
+    await prepare($)
+    await refreshKeep($)
+    await pingReply($)
+  } catch (err) {
+    $.ui.log(`keepalive: ping press failed (${err instanceof Error ? err.message : String(err)})`, { to: 'debug' })
+  } finally {
+    pressing = false
+  }
+  $.ui.invalidate('ui.render')
+}
+
+// The check and the claim of pingBusy come before the first await, so two callers can never both pass it.
+async function pingReply($: EngineInterface): Promise<string> {
+  if (!anyOn()) return withSwitches(`keepalive: off (${offCause()}); nothing pinged`)
+  if (pingUnderWay()) return withSwitches(`keepalive: a ping is already under way; nothing more pinged; ${await keepLines($)}`)
+  pingBusy = true
+  try {
+    const { context: ctx } = await $.session.usage()
+    if (!budget) budget = settings.budgetMultiplier > 0 ? settings.budgetMultiplier * (ctx.tokens ?? 0) : Infinity
+    const { ok, line } = await ping($, await $.clock.now())
+    return withSwitches(`${ok ? 'HIT' : 'MISS'}: ${line}; ${await keepLines($)}`)
+  } finally {
+    pingBusy = false
+  }
+}
+
+/** Where keepaliveBand draws: the band (AbovePrompt) or, by default, the Pane, seated `inline` or `dock`
+ * (the Pane's `placement` prop; absent: dock). */
+export type BandSite = { where: 'band' } | { where: 'pane'; placement?: 'dock' | 'inline' }
 
 /** The keep-alive band (AbovePrompt, Terminal and Desktop) or the Pane's body: the tree, or undefined
  * when `status` is off (AC-17.6.5) or the band was closed. register.tsx draws it as a band of its own, after
- * the lens band (step 42). On the band it has its own minimise and close; the Pane has neither. Never throws. */
+ * the lens band (step 42). The band has its own maximise, minimise and close; so has the Pane seated inline
+ * (step 43, live 1b) and, since live round 1, the docked Pane too, whose close closes the Pane. Never throws. */
 export async function keepaliveBand($: EngineInterface, t: { Box: any; Text: any; Button: any }, site: BandSite = { where: 'pane' }): Promise<unknown> {
   try {
     await loadSwitch($)
@@ -496,10 +557,19 @@ export async function keepaliveBand($: EngineInterface, t: { Box: any; Text: any
     if (site.where === 'band' && bandClosed) return undefined
     const press = (n: TrackName) => { void pressTrack($, n) }
     const master = () => { void pressMaster($) }
-    if (site.where === 'pane') return keepaliveTree(t, await bandModelNow($), press, master)
+    // Step 43 (A2): the `⤢` opens the keep-alive Pane full (restored) on any surface, focused; on the inline
+    // Pane it restores that Pane and gives it the focus (there is no larger seat a hook can ask for).
+    const onMaximise = () => { paneMinimised = false; $.ui.invalidate('ui.render'); void openPane($, { anySurface: true }) }
+    // Live findings 3, point 8: "Ping Now" on the band and the Pane: the command's ping, with the settings in force.
+    const onPing = () => { void pressPing($) }
+    if (site.where === 'pane') {
+      const onToggle = () => { paneMinimised = !paneMinimised; $.ui.invalidate('ui.render') }
+      const onClose = () => { void $.ui.close({ id: PANE }).catch(() => {}) }
+      return keepaliveTree(t, await bandModelNow($), press, master, { minimised: paneMinimised, onToggle, onClose, onMaximise, onPing })
+    }
     const onToggle = () => { bandMinimised = !bandMinimised; $.ui.invalidate('ui.render') }
     const onClose = () => { bandClosed = true; $.ui.invalidate('ui.render') }
-    return keepaliveTree(t, await bandModelNow($), press, master, { minimised: bandMinimised, onToggle, onClose })
+    return keepaliveTree(t, await bandModelNow($), press, master, { minimised: bandMinimised, onToggle, onClose, onMaximise, onPing })
   } catch (err) {
     $.ui.log(`keepalive: band not drawn (${err instanceof Error ? err.message : String(err)})`, { to: 'debug' })
     return undefined
@@ -554,27 +624,68 @@ export async function pressMaster($: EngineInterface): Promise<void> {
 const LOCAL_FILE = '.claude/settings.local.json'
 const envOf = (key: string): string => SETTINGS.find(s => s.key === key)!.env
 
-// Sets variables in the env of .claude/settings.local.json, every other key kept. Answers the problem
-// and writes nothing when the file cannot be read or is not plain JSON (a file with comments is not
-// rewritten, since they would be lost).
-async function writeLocalEnv($: EngineInterface, vars: Record<string, string>): Promise<string | undefined> {
-  const path = `${await repoRoot($)}/${LOCAL_FILE}`
+// Point 6a (the human, 2026-10-26): the settings file `--for` names, by target. just-me (the default) and team are the
+// repository's; global is this machine's, under the home folder.
+const TEAM_FILE = '.claude/settings.json'
+const GLOBAL_FILE = '~/.claude/settings.json'
+const FILE_OF: Record<ForTarget, string> = { 'just-me': LOCAL_FILE, team: TEAM_FILE, global: GLOBAL_FILE }
+async function pathOf($: EngineInterface, target: ForTarget): Promise<string | undefined> {
+  if (target === 'global') {
+    const home = await homeDir($)
+    return home ? `${home}/.claude/settings.json` : undefined
+  }
+  return `${await repoRoot($)}/${FILE_OF[target]}`
+}
+
+// Sets (a string) or removes (null) variables in a JSON settings file's `env` (or, with `section`, another top-level
+// object), every other key kept. Answers the problem and writes nothing when the file cannot be read or is not plain
+// JSON (a file with comments is not rewritten, since they would be lost). `create`: false leaves a missing file alone.
+// `vars` may be worked out from the section as the file holds it (keepWarmToFile, W4). Answers the problem, or the
+// variables written.
+type Vars = Record<string, string | null>
+async function writeJsonSection($: EngineInterface, path: string, name: string, vars: Vars | ((section: Record<string, unknown>) => Vars), section = 'env', create = true): Promise<{ problem: string } | { vars: Vars }> {
   const text = await readRaw($, path)
-  if (text === undefined && (await sigOf($, path)).startsWith('file:')) return `${LOCAL_FILE} exists but could not be read; nothing written`
+  if (text === undefined && (await sigOf($, path)).startsWith('file:')) return { problem: `${name} exists but could not be read; nothing written` }
+  if (text === undefined && !create) return { problem: `${name} does not exist; nothing written` }
   let doc: Record<string, unknown> = {}
   if (text !== undefined && text.trim()) {
     let parsed: unknown
-    try { parsed = JSON.parse(text.replace(/^﻿/, '')) } catch { return `${LOCAL_FILE} is not plain JSON (a file with comments is not rewritten); nothing written` }
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return `${LOCAL_FILE}: the top level is not an object; nothing written`
+    try { parsed = JSON.parse(text.replace(/^﻿/, '')) } catch { return { problem: `${name} is not plain JSON (a file with comments is not rewritten); nothing written` } }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return { problem: `${name}: the top level is not an object; nothing written` }
     doc = parsed as Record<string, unknown>
   }
-  const env = doc.env
-  if (env !== undefined && (!env || typeof env !== 'object' || Array.isArray(env))) return `${LOCAL_FILE}: env is not an object; nothing written`
-  doc.env = { ...(env as Record<string, unknown> | undefined), ...vars }
+  const env = doc[section]
+  if (env !== undefined && (!env || typeof env !== 'object' || Array.isArray(env))) return { problem: `${name}: ${section} is not an object; nothing written` }
+  const next: Record<string, unknown> = { ...(env as Record<string, unknown> | undefined) }
+  const resolved = typeof vars === 'function' ? vars(next) : vars
+  for (const [k, v] of Object.entries(resolved)) if (v === null) delete next[k]; else next[k] = v
+  doc[section] = next
   const eol = text?.includes('\r\n') ? '\r\n' : '\n'
   await $.fs.write(path, JSON.stringify(doc, null, 2).replace(/\n/g, eol) + eol)
-  return undefined
+  return { vars: resolved }
 }
+
+// Point 6a: writes the variables to the file `target` names. A team write is also recorded in the repository file's
+// `teamRecord` (a record only, never read; personal values never go there), with the variables written to the team
+// file, and warns, without refusing, when Claude Code does not trust this folder (the committed settings then do not
+// apply for the gated keys). Answers the problem, or the variables written and the notes to add to the reply.
+async function writeEnv($: EngineInterface, target: ForTarget, vars: Vars | ((section: Record<string, unknown>) => Vars)): Promise<{ problem?: string; notes: string[]; vars: Vars }> {
+  const path = await pathOf($, target)
+  if (path === undefined) return { problem: `no home folder found for ${GLOBAL_FILE}; nothing written`, notes: [], vars: {} }
+  const res = await writeJsonSection($, path, FILE_OF[target], vars)
+  if ('problem' in res) return { problem: res.problem, notes: [], vars: {} }
+  const notes: string[] = []
+  if (target === 'team') {
+    const rec = await writeJsonSection($, `${await repoRoot($)}/${REPO_FILE}`, REPO_FILE, res.vars, 'teamRecord', false)
+    notes.push('problem' in rec ? `not recorded in ${REPO_FILE}: ${rec.problem}` : `recorded in ${REPO_FILE} (teamRecord)`)
+    const home = await homeDir($)
+    const trust = trustOf(home ? await readRaw($, `${home}/.claude.json`) : undefined, await trustTarget($))
+    if (!trust.trusted) notes.push(`warning: Claude Code does not trust this folder (${trust.why}), so ${TEAM_FILE} does not apply here for the trust-gated settings these are; ${LOCAL_FILE} (--for just-me) does`)
+  }
+  return { notes, vars: res.vars }
+}
+
+const PRECEDENCE = `${LOCAL_FILE} > ${TEAM_FILE} > ${GLOBAL_FILE} > ${REPO_FILE}`
 
 /**
  * `on` / `off`: the master, or the tracks --track names. With --session, the band's buttons (this
@@ -589,13 +700,15 @@ async function switchCommand($: EngineInterface, a: Extract<CommandArgs, { kind:
   if (a.where === 'session') {
     if (!names) { if (masterNow() !== a.on) await pressMaster($) }
     else for (const n of names) if (trackEnabled(n, keyOf(n)) !== a.on) await pressTrack($, n)
-    return withSwitches(`keepalive: ${what} ${word} for this session; no settings file written`)
+    const ign = a.ignoredFor ? `; --for ${a.ignoredFor} ignored: --session wins and writes nothing` : ''
+    return withSwitches(`keepalive: ${what} ${word} for this session; no settings file written${ign}`)
   }
+  const target: ForTarget = a.where === 'team' ? 'team' : a.where === 'global' ? 'global' : 'just-me'
   const vars: Record<string, string> = names
     ? Object.fromEntries(names.map(n => [envOf(`${keyOf(n)}.enabled`), String(a.on)]))
     : { [envOf('enabled')]: String(a.on) }
-  const problem = await writeLocalEnv($, vars)
-  if (problem) return `keepalive: ${problem}`
+  const res = await writeEnv($, target, vars)
+  if (res.problem) return `keepalive: ${res.problem}`
   const sw = await loadSwitch($)
   await saveSwitch($, names ? Object.fromEntries(Object.entries(sw).filter(([k]) => !names.includes(k as TrackName))) as SessionSwitch : {})
   await load($)
@@ -607,7 +720,8 @@ async function switchCommand($: EngineInterface, a: Extract<CommandArgs, { kind:
   await refreshKeep($)
   render($, await $.clock.now())
   const written = Object.entries(vars).map(([k, v]) => `${k}=${v}`).join(', ')
-  return withSwitches(`keepalive: ${what} ${word}: ${written} written to the env of ${LOCAL_FILE}, which wins over .claude/settings.json and ${REPO_FILE}`)
+  const notes = res.notes.length ? `; ${res.notes.join('; ')}` : ''
+  return withSwitches(`keepalive: ${what} ${word}: ${written} written to the env of ${FILE_OF[target]} (order: ${PRECEDENCE})${notes}`)
 }
 
 async function warn($: EngineInterface, line: string) {
@@ -618,7 +732,7 @@ async function warn($: EngineInterface, line: string) {
 }
 
 // Where a person sets a trust-gated setting instead: the sources a cloned repository cannot write.
-const GATED_INSTEAD = `set them in the env of .claude/settings.local.json instead (a keep-warm time also with /${COMMAND})`
+const GATED_INSTEAD = `set them in the env of .claude/settings.local.json instead (a keep-warm time also with /${CONFIGURE})`
 
 // The turn cache: what the read at a new turn (load with atTurn) keeps between turns, so a turn reads
 // only what changed. A Stop and the command never use it.
@@ -757,6 +871,14 @@ async function load($: EngineInterface, { atTurn = false } = {}) {
       const values = where === '.claude/settings.json' ? await trustGate($, env, gatedDiffering(env, 'env'), `the env of ${where}`, GATED_INSTEAD, problems, trust) : env
       levels.push({ where, by: 'env', values })
     }
+    // Point 6a: the env of ~/.claude/settings.json (`--for global`), below the team's and above the repository file;
+    // this machine's own file, so never trust-gated.
+    const home = await homeDir($)
+    if (home) {
+      const { env, problem } = settingsEnv(await read(`${home}/.claude/settings.json`))
+      if (problem) fail(`${GLOBAL_FILE} ${problem}`)
+      if (env) levels.push({ where: GLOBAL_FILE, by: 'env', values: env })
+    }
     const repo = repoConfig(await read(`${root}/${REPO_FILE}`))
     if (repo.problem) fail(`${REPO_FILE} ${repo.problem}`)
     if (repo.values) levels.push({ where: REPO_FILE, by: 'json', values: await trustGate($, repo.values, gatedDiffering(repo.values, 'json'), REPO_FILE, GATED_INSTEAD, problems, trust) })
@@ -794,14 +916,14 @@ async function keepWarm($: EngineInterface, key: TrackKey, { session = true } = 
     const id = await stateId($)
     const own = (await sessionOverrides($, n)).find(([s]) => s === id)
     if (own) {
-      if (own[1] >= settings.minDuration) return { ms: own[1], from: `this session, /${COMMAND}`, override: true }
-      await warn($, `the /${COMMAND} override of the ${n} track for this session (${formatDuration(own[1])}) is shorter than minDuration (${formatDuration(settings.minDuration)}); ignored`)
+      if (own[1] >= settings.minDuration) return { ms: own[1], from: `this session, /${CONFIGURE}`, override: true }
+      await warn($, `the /${CONFIGURE} override of the ${n} track for this session (${formatDuration(own[1])}) is shorter than minDuration (${formatDuration(settings.minDuration)}); ignored`)
     }
   }
   const machine = await $.store.get(machineKey(n))
   if (typeof machine === 'number' && machine > 0) {
-    if (machine >= settings.minDuration) return { ms: machine, from: `this machine, /${COMMAND}`, override: true }
-    if (session) await warn($, `the /${COMMAND} override of the ${n} track for this machine (${formatDuration(machine)}) is shorter than minDuration (${formatDuration(settings.minDuration)}); ignored`)
+    if (machine >= settings.minDuration) return { ms: machine, from: `this machine, /${CONFIGURE}`, override: true }
+    if (session) await warn($, `the /${CONFIGURE} override of the ${n} track for this machine (${formatDuration(machine)}) is shorter than minDuration (${formatDuration(settings.minDuration)}); ignored`)
   }
   return { ms: settings[key].keepWarmFor, from: sources[`${key}.keepWarmFor`] ?? 'default' }
 }
@@ -872,6 +994,16 @@ const cost = (u: Usage, r: number) => r * u.cache_read_input_tokens + u.input_to
 // the command's ping, which keeps no track, is recorded.
 // `at` is the ping's start, taken before the fork, so a warm-until recorded from it errs early.
 async function ping($: EngineInterface, at: number, ttl?: TrackName) {
+  pingsOut++
+  try {
+    return await pingOut($, at, ttl)
+  } finally {
+    pingsOut--
+  }
+}
+
+// ping's body; `pingsOut` counts it while it runs (W3).
+async function pingOut($: EngineInterface, at: number, ttl?: TrackName) {
   const r = await $.model.fork({ prompt: settings.pingPrompt })
   if (!('usage' in r)) return { ok: false, line: `no ping: ${r.reason}` }
   const u = r.usage
@@ -1110,12 +1242,15 @@ async function rosterChanged($: EngineInterface) {
 export const PANE = 'keepalive'
 const PANE_TITLE = 'ai-dlc cache-keepalive'
 
-// Opens the keep-alive Pane when a VS Code surface is attached; '' when not, or the reason it was not
-// placed (`; pane not shown (<reason>)`). Never throws.
-async function openPane($: EngineInterface): Promise<string> {
+// Opens the keep-alive Pane, focused: by the command only when a VS Code surface is attached (it has no
+// band); with `anySurface` (the band's `⤢`, step 43, A2) on every surface. '' when not opened, or the
+// reason it was not placed (`; pane not shown (<reason>)`). Never throws.
+async function openPane($: EngineInterface, opts: { anySurface?: boolean } = {}): Promise<string> {
   try {
-    if (!(await $.session.surfaces()).includes('vscode')) return ''
-    const r = await $.ui.open({ id: PANE, title: PANE_TITLE, closeOnEscape: true })
+    if (!opts.anySurface && !(await $.session.surfaces()).includes('vscode')) return ''
+    // Live findings 3 (VS Code, narrow: two panes): the command opens the Pane as before step 43, without `focus`;
+    // only the `⤢` (anySurface) asks for the focus, to raise the Pane it restores.
+    const r = await $.ui.open({ id: PANE, title: PANE_TITLE, closeOnEscape: true, ...(opts.anySurface ? { focus: true as const } : {}) })
     return r.isPlaced ? '' : `; pane not shown (${(r as { reason?: string }).reason ?? 'not placed'})`
   } catch (err) {
     $.ui.log(`keepalive: pane not opened (${err instanceof Error ? err.message : String(err)})`, { to: 'debug' })
@@ -1318,58 +1453,142 @@ export function registerKeepalive(on: Parameters<Register>[0], deps: KeepaliveDe
   // the status line re-rendered in the mode it gives. The payloads are not read.
   on('session.start', async ($, e, next) => {
     bandClosed = false
+    paneMinimised = true
     await rosterChanged($)
     return next(e)
   })
   on('session.attach', async ($, e, next) => (await rosterChanged($), next(e)))
   on('session.detach', async ($, e, next) => (await rosterChanged($), next(e)))
 
-  // The keep-alive Pane (VS Code), opened by the command: the same tree as the band (AC-17.6.9).
+  // The keep-alive Pane (VS Code), opened by the command: the same tree as the band (AC-17.6.9); seated
+  // inline (a narrow Claude panel) it has the band's controls and opens minimised (step 43, live 1b).
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e, next) => {
-    const tree = await keepaliveBand($, $.ui.resolve(e))
+    const tree = await keepaliveBand($, $.ui.resolve(e), { where: 'pane', placement: e.props.placement })
     return tree === undefined ? next(e) : tree as never
   })
 
-  // /ai-dlc:cache-keepalive pings now (upstream). With a duration it sets the keep-warm time of both
-  // tracks, or of the one --track names, and with clear it removes that override, in the default scope
-  // or the one --session / --machine names.
+  // /ai-dlc:cache-keepalive. Upstream it pinged now and set the keep-warm time. Since live findings 3 (points 5 and 7)
+  // it pings now with the settings in force and shows the band; it ignores its arguments, and the grammar it took,
+  // --for included, is /ai-dlc:cache-keepalive-configure's (the hook after this one).
   on('command.run', { command: COMMAND }, async ($, e) => {
-    // Step 42: any run brings back a band closed with its `×`.
-    if (bandClosed) { bandClosed = false; $.ui.invalidate('ui.render') }
+    // Step 43 (A2): every run shows the band, minimised: it brings back a band closed with its `×` (step 42)
+    // and minimises an open one. The Pane is opened from the band's `⤢`, or below on VS Code, which has no band.
+    // Step 43 (live 1b): it minimises the Pane too. It changes no setting, and any arguments it is given change
+    // nothing (the reply says so); with keep-alive off it pings nothing and says why.
+    if (bandClosed || !bandMinimised || !paneMinimised) { bandClosed = false; bandMinimised = true; paneMinimised = true; $.ui.invalidate('ui.render') }
     await load($)
     await prepare($)
-    // A full read: publish the keep-warm time, pingEvery and limit it leaves in force
     await refreshKeep($)
     publish($, await $.clock.now())
-    const args = parseCommandArgs(e.args ?? '', settings.scope, settings.minDuration)
-    if (args.kind === 'usage') {
-      const every = TRACKS.map(([n, key]) => `the ${n} track every ${formatDuration(settings[key].pingEvery)}`).join(' and ')
-      return { text: `keepalive: ${args.problem}. Usage: /${COMMAND} [<n>m|<n>h|<n>d|clear|on|off] [--track 1h|5m|both] [--session|--machine]. on or off turns keep-alive, or the tracks --track names, on or off in the env of ${LOCAL_FILE} (with --session, for this session only). A duration sets the keep-warm time of both tracks, or of the one --track names. Pings come on ${every}, so a duration no longer than a track's interval sends no ping on it: the cache's own lifetime covers it.` }
-    }
-    if (args.kind === 'switch') return { text: await switchCommand($, args) }
-    if (args.kind !== 'ping') {
-      await setKeepWarm($, args.scope, args.kind === 'set' ? args.ms : undefined, args.tracks)
-      await refreshKeep($)
-      publish($, await $.clock.now())
-      const where = args.scope === 'machine' ? 'every session on this machine' : 'this session'
-      const which = args.tracks.length === TRACK_NAMES.length ? 'both tracks' : `the ${args.tracks[0]} track`
-      const what = args.kind === 'set' ? `set to ${formatDuration(args.ms)} on ${which} for ${where}` : `override cleared on ${which} for ${where}`
-      // A running track keeps the time it armed with until its next ping, which reads it again
-      const running = args.tracks.filter(n => tracks[n].timer !== undefined)
-      const later = running.length === 0 ? '' : running.length === 1
-        ? `; the running ${running[0]} track takes it at its next ping`
-        : '; the running tracks take it at their next ping'
-      return { text: withSwitches(`keepalive: keep-warm ${what}; now ${await keepLines($)}${later}`) }
-    }
     // In VS Code the command also opens the keep-alive Pane, the buttons' only place there (LLD 13);
-    // the Terminal and Desktop have the band.
+    // the Terminal and Desktop have the band, shown minimised above (step 43, A2), and open no Pane.
     const pane = await openPane($)
-    if (!anyOn()) return { text: withSwitches(`keepalive: off (${offCause()}); nothing pinged${pane}`) }
-    const { context: ctx } = await $.session.usage()
-    if (!budget) budget = settings.budgetMultiplier > 0 ? settings.budgetMultiplier * (ctx.tokens ?? 0) : Infinity
-    const { ok, line } = await ping($, await $.clock.now())
-    return { text: withSwitches(`${ok ? 'HIT' : 'MISS'}: ${line}; ${await keepLines($)}${pane}`) }
+    const extra = (e.args ?? '').trim() === '' ? '' : `; it takes no arguments, so "${(e.args ?? '').trim()}" changed nothing: keep-warm times, on and off are /${CONFIGURE}'s`
+    // Live findings 3, point 7: it pings now, with the settings /ai-dlc:cache-keepalive-configure set (`pingReply`).
+    return { text: `${await pingReply($)}${pane}${extra}` }
   })
+
+  // Live findings 3, point 5: /ai-dlc:cache-keepalive-configure with the arguments /ai-dlc:cache-keepalive used to take.
+  // Arguments that parse as those (a duration, clear, on or off, with --track, --session, --machine or --for) are
+  // answered here. A mistake in that grammar (grammarMistake) gets its usage text here too. None, or plain words (a
+  // change in plain words), go on to the configure skill (`next(e)`), as before.
+  on('command.run', { command: CONFIGURE }, async ($, e, next) => {
+    const raw = (e.args ?? '').trim()
+    if (raw === '') return next(e)
+    await load($)
+    await prepare($)
+    await refreshKeep($)
+    publish($, await $.clock.now())
+    const args = parseCommandArgs(raw, settings.scope, settings.minDuration)
+    if (args.kind === 'usage') return grammarMistake(raw) ? { text: configureUsage(args.problem) } : next(e)
+    if (args.kind === 'ping') return next(e)
+    if (args.kind === 'switch') return { text: await switchCommand($, args) }
+    if (args.for !== undefined) return { text: await keepWarmToFile($, args, args.for) }
+    await setKeepWarm($, args.scope, args.kind === 'set' ? args.ms : undefined, args.tracks)
+    await refreshKeep($)
+    publish($, await $.clock.now())
+    const where = args.scope === 'machine' ? 'every session on this machine' : 'this session'
+    const which = args.tracks.length === TRACK_NAMES.length ? 'both tracks' : `the ${args.tracks[0]} track`
+    const what = args.kind === 'set' ? `set to ${formatDuration(args.ms)} on ${which} for ${where}` : `override cleared on ${which} for ${where}`
+    // A running track keeps the time it armed with until its next ping, which reads it again
+    const running = args.tracks.filter(n => tracks[n].timer !== undefined)
+    const later = running.length === 0 ? '' : running.length === 1
+      ? `; the running ${running[0]} track takes it at its next ping`
+      : '; the running tracks take it at their next ping'
+    const ign = args.ignoredFor ? `; --for ${args.ignoredFor} ignored: --session wins and writes nothing` : ''
+    return { text: withSwitches(`keepalive: keep-warm ${what}; now ${await keepLines($)}${later}${ign}`) }
+  })
+}
+
+// Review round 4, W2: the flags of the configure grammar, which a change in plain words never contains.
+const GRAMMAR_FLAGS = ['--for', '--track', '--session', '--machine'] as const
+const isGrammarFlag = (w: string) => GRAMMAR_FLAGS.some(f => w === f || w.startsWith(`${f}=`))
+const isGrammarWord = (w: string) => w === 'on' || w === 'off' || w === 'clear' || w === '--clear' || parseDuration(w, 0) !== undefined
+
+/** Whether arguments that did not parse are a mistake in the configure grammar, to be answered with its usage text:
+ * they hold one of its flags (`--for`, `--track`, `--session`, `--machine`), or every word is one of its bare words
+ * (`on`, `off`, `clear`, a duration). Anything else is a change in plain words, for the configure skill: a bare word
+ * among other words ("turn the 5m track off") does not make it grammar. */
+export function grammarMistake(raw: string): boolean {
+  const words = raw.trim().toLowerCase().split(/\s+/).filter(Boolean)
+  return words.some(isGrammarFlag) || (words.length > 0 && words.every(isGrammarWord))
+}
+
+// The usage text of /ai-dlc:cache-keepalive-configure's grammar, after the problem parseCommandArgs found.
+const configureUsage = (problem: string) =>
+  `keepalive: ${problem}. Usage: /${CONFIGURE} <n>m|<n>h|<n>d|clear|on|off [--track 1h|5m|both] [--session|--machine|--for just-me|team|global], `
+  + `or a change in plain words. A duration sets the keep-warm time of both tracks, or of the one --track names, and clear removes it: `
+  + `for this session (--session), every session on this machine (--machine), or, with --for, in the env of ${FILE_OF['just-me']} (just-me), `
+  + `${FILE_OF.team} (team) or ${FILE_OF.global} (global); with none of them, in the default scope (${settings.scope}). `
+  + `on or off turns keep-alive, or the tracks --track names, on or off: in the env of ${LOCAL_FILE}, of the file --for names, `
+  + `or, with --session, for this session only. --machine does not go with on, off or --for.`
+
+/**
+ * Point 6a: a keep-warm time (or `clear`) `--for just-me|team|global`: each track's `keepWarmFor` variable in that
+ * file's env. Review round 4, W4: its `maxPings` variable is written only when it has to be, and removed only when
+ * it is the one a keep-warm time leaves, so a value set by hand stays:
+ * - a time writes the track's `maxPings` as the pings that time allows at the pingEvery in force (pingsWithin, at
+ *   least 1, as the configure skill writes it) when the file's own `maxPings` is the one its old `keepWarmFor` left,
+ *   or the limit in force is below what the new time needs; otherwise it leaves it as it is;
+ * - `clear` removes `keepWarmFor`, and `maxPings` only when it is the one that `keepWarmFor` left; a `maxPings` kept is
+ *   named in the reply.
+ * The session and machine overrides are untouched, and still outrank every settings file.
+ */
+async function keepWarmToFile($: EngineInterface, a: Extract<CommandArgs, { kind: 'set' | 'clear' }>, target: ForTarget): Promise<string> {
+  const kept: string[] = []
+  const varsFor = (env: Record<string, unknown>): Record<string, string | null> => {
+    const vars: Record<string, string | null> = {}
+    kept.length = 0
+    for (const n of a.tracks) {
+      const key = keyOf(n)
+      const every = settings[key].pingEvery
+      const keepVar = envOf(`${key}.keepWarmFor`)
+      const capVar = envOf(`${key}.maxPings`)
+      const pair = (ms: number) => String(Math.max(1, pingsWithin(ms, every)))
+      const old = parseDuration(env[keepVar], 0)
+      const owned = env[capVar] !== undefined && old !== undefined && env[capVar] === pair(old)
+      if (a.kind === 'set') {
+        vars[keepVar] = formatDuration(a.ms)
+        if (owned || settings[key].maxPings < pingsWithin(a.ms, every)) vars[capVar] = pair(a.ms)
+      } else {
+        vars[keepVar] = null
+        if (owned) vars[capVar] = null
+        else if (env[capVar] !== undefined) kept.push(`${capVar}=${String(env[capVar])} kept: it is not the ping limit its keep-warm time left`)
+      }
+    }
+    return vars
+  }
+  const res = await writeEnv($, target, varsFor)
+  if (res.problem) return `keepalive: ${res.problem}`
+  await load($)
+  await refreshKeep($)
+  publish($, await $.clock.now())
+  const which = a.tracks.length === TRACK_NAMES.length ? 'both tracks' : `the ${a.tracks[0]} track`
+  const what = a.kind === 'set' ? `keep-warm ${formatDuration(a.ms)} on ${which} written` : `keep-warm of ${which} removed`
+  const caps = Object.entries(res.vars).filter(([k]) => k.endsWith('_MAX_PINGS')).map(([k, v]) => v === null ? `${k} removed` : `${k}=${v} written`)
+  const all = [...caps, ...kept, ...res.notes]
+  const notes = all.length ? `; ${all.join('; ')}` : ''
+  return withSwitches(`keepalive: ${what} in the env of ${FILE_OF[target]} (order: ${PRECEDENCE}; a /${CONFIGURE} --session or --machine override still outranks it); now ${await keepLines($)}${notes}`)
 }
 
 /** The settings in force and where each came from. */

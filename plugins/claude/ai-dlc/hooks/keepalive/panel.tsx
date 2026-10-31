@@ -1,4 +1,4 @@
-// Keep-alive's band (AbovePrompt, Terminal and Desktop) and Pane (VS Code): one tree, two hosts, so
+// Keep-alive's band (AbovePrompt, Terminal and Desktop) and Pane (VS Code; inline or docked): one tree, two hosts, so
 // their rows cannot differ (LLD rev 7, section 13; rev 11, 20.6). This file only draws, like
 // ../auto-handoff/panel.tsx: keepalive.ts holds the state and the presses, since the host never follows
 // $ across an import.
@@ -7,49 +7,79 @@ import type { BandModel, Ttl } from './cache-state.ts'
 // The elements come from $.ui.resolve in the render hook.
 type Elements = { Box: any; Text: any; Button: any }
 
-/** The band's own controls (step 42): minimised or not, the press of its `–` / `□` and of its `×`. The Pane has none. */
-export type BandControls = { minimised: boolean; onToggle: () => void; onClose: () => void }
+/** The band's own controls (step 42): minimised or not, the press of its `–` / `□` and of its `×`; step 43 (A2):
+ * the press of its `⤢`, which opens the keep-alive Pane full. Step 43 (live 1b): the Pane seated inline (VS Code
+ * with a narrow Claude panel) has the same controls; the docked Pane has none. */
+export type BandControls = { minimised: boolean; onToggle: () => void; onClose: () => void; onMaximise: () => void; onPing?: () => void }
 
-/** Whether keep-alive is on, from the master button (it names the press: `[off]` while on). */
-export const masterState = (m: BandModel): 'on' | 'off' => (m.master === 'off' ? 'on' : 'off')
+/**
+ * Live findings 3, point 8: minimised, the band's buttons are icons; full, they are words. No surface has an icon
+ * element or a Button icon prop (ButtonProps, d.ts:1093-1190); a one-glyph label is the control by itself (`plain`,
+ * d.ts:1135-1141), so the icons are glyphs, drawn as the Button's Text child with the label naming the control
+ * (d.ts:1107-1113). A desktop draws its native button with them.
+ */
+const GLYPH = { ping: '⟳', master: '⏻', max: '⤢', min: '–', restore: '□', close: '×' } as const
+const WORD = { ping: 'Ping now', max: 'Maximise', min: 'Minimise', restore: 'Restore', close: 'Close' } as const
+function glyphButton(Button: any, Text: any, key: string, label: string, glyph: string, onPress: () => void, role?: 'dismiss') {
+  return (
+    <Button key={key} label={label} plain {...(role ? { role } : {})} onPress={onPress}>
+      <Text>{glyph}</Text>
+    </Button>
+  )
+}
 
-/** The band's controls after the master button: the lens band's minimise (`–` minimises, `□` restores) and a
- * close (`×`), both plain. No Box in this tree has a width: the band shares its parent with core's engine node. */
-function controls(Button: any, c: BandControls) {
+/** Whether keep-alive is on in force: `m.on` (any track enabled) when the model gives it, else the master button
+ * (it names the press: `[off]` while on). Live findings 3, point 4: the minimised row read the master switch alone,
+ * so it said `off` while a track the session or a setting turned on kept keep-alive running (the full band's rows
+ * said so). */
+export const masterState = (m: BandModel): 'on' | 'off' => (m.on !== undefined ? (m.on ? 'on' : 'off') : m.master === 'off' ? 'on' : 'off')
+
+/** The controls after the master button: `⤢`, which opens the keep-alive Pane full (step 43, A2), the lens
+ * band's minimise (`–` minimises, `□` restores) and a close (`×`). */
+function controls(Button: any, Text: any, c: BandControls) {
+  const ping = c.onPing
+  if (c.minimised)
+    return [
+      ...(ping ? [glyphButton(Button, Text, 'ka-ping', WORD.ping, GLYPH.ping, ping)] : []),
+      glyphButton(Button, Text, 'ka-max', WORD.max, GLYPH.max, c.onMaximise),
+      glyphButton(Button, Text, 'ka-min', WORD.restore, GLYPH.restore, c.onToggle),
+      glyphButton(Button, Text, 'ka-close', WORD.close, GLYPH.close, c.onClose, 'dismiss'),
+    ]
   return [
-    <Button key="ka-min" label={c.minimised ? '□' : '–'} plain onPress={c.onToggle} />,
-    <Button key="ka-close" label="×" role="dismiss" plain onPress={c.onClose} />,
+    ...(ping ? [<Button key="ka-ping" label={WORD.ping} plain onPress={ping} />] : []),
+    <Button key="ka-max" label={WORD.max} plain onPress={c.onMaximise} />,
+    <Button key="ka-min" label={WORD.min} plain onPress={c.onToggle} />,
+    <Button key="ka-close" label={WORD.close} role="dismiss" plain onPress={c.onClose} />,
   ]
+}
+
+/** One row (step 43, live 1c): the text on the left, growing, and the buttons in a group on the right, so every
+ * Button is right-aligned on its row. No Box in this tree has a `width`: the band shares its parent with core's
+ * engine node, which AbovePrompt refuses under a Box with a width; `flexGrow` and `justifyContent` place it instead. */
+function row(Box: any, key: string | undefined, text: unknown, buttons: unknown) {
+  return (
+    <Box key={key} flexDirection="row" justifyContent="space-between" gap={0}>
+      <Box flexDirection="row" flexGrow={1} gap={0}>{text}</Box>
+      <Box flexDirection="row" justifyContent="flex-end" gap={0}>{buttons}</Box>
+    </Box>
+  )
 }
 
 /** The title row (bold title and the master button), the 5m row, the 1h row, each its full line and its
  * button, then the seed row while the seed line shows (no button). No margin or padding; gap 0.
- * Step 42: with `band` (the band), the title row ends in the minimise control and the close; minimised, the
- * band is that one row with whether keep-alive is on or off, the master button and the two controls. */
+ * Step 42: with `band` (the band, or the inline Pane since step 43), the title row ends in the maximise control
+ * (step 43), the minimise control and the close; minimised, it is that one row with whether keep-alive is on or
+ * off, the master button and the three controls. Step 43 (live 1c): every Button is `plain`, the master and the
+ * track buttons as the controls, so all are drawn the same height. */
 export function keepaliveTree({ Box, Text, Button }: Elements, m: BandModel, onPress: (t: Ttl) => void, onMaster: () => void, band?: BandControls) {
-  const master = <Button key="ka-master" label={m.master} onPress={onMaster} />
+  const master = <Button key="ka-master" label={m.master} plain onPress={onMaster} />
+  const ctl = band ? controls(Button, Text, band) : []
   if (band?.minimised)
-    return (
-      <Box flexDirection="row" gap={0}>
-        <Text bold>{m.title} </Text>
-        <Text>{masterState(m)} </Text>
-        {master}
-        {controls(Button, band)}
-      </Box>
-    )
+    return row(Box, undefined, [<Text key="ka-t" bold>{m.title} </Text>, <Text key="ka-s">{masterState(m)} </Text>], [glyphButton(Button, Text, 'ka-master', m.master, GLYPH.master, onMaster), ...ctl])
   return (
     <Box flexDirection="column" gap={0}>
-      <Box flexDirection="row" gap={0}>
-        <Text bold>{m.title} </Text>
-        {master}
-        {band ? controls(Button, band) : null}
-      </Box>
-      {m.rows.map(r => (
-        <Box key={`ka-row-${r.track}`} flexDirection="row" gap={0}>
-          <Text>{r.line} </Text>
-          <Button key={`ka-${r.track}`} label={r.button} onPress={() => onPress(r.track)} />
-        </Box>
-      ))}
+      {row(Box, 'ka-title', <Text bold>{m.title} </Text>, [master, ...ctl])}
+      {m.rows.map(r => row(Box, `ka-row-${r.track}`, <Text>{r.line} </Text>, <Button key={`ka-${r.track}`} label={r.button} plain onPress={() => onPress(r.track)} />))}
       {m.seed !== undefined ? <Text>{m.seed}</Text> : null}
     </Box>
   )

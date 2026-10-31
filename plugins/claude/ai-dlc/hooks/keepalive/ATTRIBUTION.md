@@ -821,3 +821,51 @@ root 17, step 17.2.4; spec keepalive-cache-status line 82, D2a; LLD rev 5,
   `/ai-dlc:cache-keepalive`, a new session or a load. The Pane has neither.
   `bandText` gains the minimised row. Each published track gains `enabled`,
   its state in force, for the lens's Cache Lab buttons.
+- **The command shows the band minimised; the band opens the Pane (step 43,
+  2026-10-26).** Every run of `/ai-dlc:cache-keepalive` sets the band
+  minimised and brings it back when its `×` closed it; in the terminal and
+  desktop it opens no Pane (VS Code, which has no band, still opens it).
+  The band's title row gains `⤢` before `–` / `□` and `×`, minimised or
+  not, which opens the Pane on any surface, focused (`openPane`'s
+  `anySurface`; `BandControls.onMaximise`).
+- **One command shows, the other configures (live findings 3, 2026-10-26).**
+  `/ai-dlc:cache-keepalive` takes no arguments: it shows the band minimised
+  (VS Code: opens the Pane, without `focus`, so a narrow panel gets one pane)
+  and pings nothing. The arguments it took (a duration, `clear`, `on`, `off`,
+  `--track`, `--session`, `--machine`) are answered by the module on
+  `/ai-dlc:cache-keepalive-configure`; no arguments or other words pass to the
+  configure skill (`next(e)`). The minimised row's status says whether
+  keep-alive is on in force (`BandModel.on`, any track enabled), not the master
+  switch alone. The Pane is minimised again at session.start.
+- **The command pings again; a Ping now button (live findings 3, points 7
+  and 8, 2026-10-26).** `/ai-dlc:cache-keepalive` pings now with the settings
+  in force (`pingReply`), still with no arguments. The band and the Pane gain a
+  Ping now control; minimised, every control is a glyph (`⏻`, `⟳`, `⤢`, `□`,
+  `×`), drawn as the Button's Text child with the label naming it; full, the
+  controls are words. No surface has a Button icon, so glyphs are the icons.
+- **`--for just-me|team|global` and the global level (live findings 3,
+  point 6a, 2026-10-26).** On `/ai-dlc:cache-keepalive-configure`, `--for`
+  picks the settings file `on`, `off`, a keep-warm time or `clear` is written
+  to: the env of `.claude/settings.local.json` (the default), `.claude/settings.json`
+  or `~/.claude/settings.json`. A keep-warm time writes `maxPings` with it.
+  `--session` wins over `--for` (nothing written, the reply says so);
+  `--machine` with `--for` is refused. A team write is recorded in the
+  repository file's `teamRecord` (never read) and warns in an untrusted
+  folder. The module reads a new level, the env of `~/.claude/settings.json`,
+  below the team's and above the repository file, never trust-gated.
+- **Step 43 review round 4 fixes (2026-10-31).** The comments that said
+  `/ai-dlc:cache-keepalive` only shows the band and pings nothing now say what
+  it does: it pings with the settings in force, ignores its arguments, and the
+  grammar, `--for` included, is the configure command's (`keepalive.ts`,
+  `duration.ts`). On `/ai-dlc:cache-keepalive-configure`, a mistake in that
+  grammar (arguments with `--for`, `--track`, `--session` or `--machine`, or
+  made only of `on`, `off`, `clear` and durations; `grammarMistake`) gets the
+  usage text (`configureUsage`); only plain words go on to the skill. No ping
+  overlaps another: a Ping now press while a press or any ping is under way
+  does nothing, and the command, while a ping is out, pings nothing and says
+  so (`pressing`, `pingBusy`, `pingsOut`). A keep-warm time `--for` a file
+  writes `…_MAX_PINGS` only when the file's value is the one its old keep-warm
+  time left or the limit in force is too low, and `clear` removes it only when
+  it is that one; a value set by hand stays, and the reply names each one
+  written, removed or kept. The `masterState` comment in `panel.tsx` is one
+  JSDoc; the `validateEnv` JSDoc in the configure CLI template is rewrapped.
