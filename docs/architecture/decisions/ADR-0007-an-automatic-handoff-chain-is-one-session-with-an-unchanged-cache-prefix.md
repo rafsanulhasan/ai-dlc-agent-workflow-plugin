@@ -33,7 +33,7 @@ We will treat an automatic-handoff chain as one session, identified by its **cha
 - **Published for the other plugin.** Keep-alive publishes `chain?: { id, sessions }` in its `$.state` value. The ai-dlc-lens plugin reads it for the Cache Lab's "This session" preset and its kept window. With no published value, the lens uses its own session only. Two plugins are not known to share one `$.store`, so the lens never reads `lineage:` records.
 - **Settings** (keep-alive's, in `.ai-dlc/cache-keepalive.json` and `AI_DLC_KEEPALIVE_*`):
   - `handoff.carryOver` (default `true`): when `false`, keep-alive keys by session id again. It does not change what the lens does.
-  - `handoff.onWhenOff` (default `true`, trust-gated): once per handoff, a seeded session whose chain's master in force is off acts as a master `[on]` press, setting the master and both track switches `on` (human, Q-SL9). It applies whatever `handoff.carryOver` says (Q-SL10).
+  - `handoff.onWhenOff` (default `true`, trust-gated): once per handoff, a seeded session in which neither track is on in force (the head row's rule; step 44, R44.13, 2026-10-31; before: whose chain's master in force is off) acts as a master `[on]` press, setting the master and both track switches `on` (human, Q-SL9). It applies whatever `handoff.carryOver` says (Q-SL10).
 - **The prefix rule.** At a handoff, no module may change, for the seeded session:
   - the model or the effort;
   - the tools or the system prompt;
