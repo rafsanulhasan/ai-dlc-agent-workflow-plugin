@@ -164,7 +164,8 @@ review round 1, with the human's decisions D1 to D4):
   `keepalive seed: cache hit, <n>k read` or `keepalive seed: cache miss`,
   alone during the seed turn, under the track lines once a Stop arms them,
   cleared at the next turn and at `session.end`, hidden with the tracks when
-  `enabled` or `status` is off.
+  `enabled` or `status` is off. Replaced in step 44: the seed line is the band's
+  and the Pane's seed row only (see the step 44 bullet below).
 - **Spend limit failures are caught.** The timer awaits `spendLimit`, so a
   failure in it reaches the timer's `catch`, which now logs it even when the
   track was already stopped. A store that cannot be read when deciding
@@ -869,3 +870,45 @@ root 17, step 17.2.4; spec keepalive-cache-status line 82, D2a; LLD rev 5,
   it is that one; a value set by hand stays, and the reply names each one
   written, removed or kept. The `masterState` comment in `panel.tsx` is one
   JSDoc; the `validateEnv` JSDoc in the configure CLI template is rewrapped.
+- **No status line; each button offers the opposite (step 44, R44.1 to R44.3
+  and R44.6, 2026-10-31).** Keep-alive writes no status line: `render` only publishes and
+  redraws the band and the Pane, the seed line is the band's seed row only, and
+  the first render or band draw after a load clears a line an older module left
+  (`clearOldStatus`). The status-line summary (D13: `summaryOf`, `statusTextOf`,
+  `statusModeOf`, `surfaceMode`, `SUMMARY_MAX`, `TrackFacts`, `SeedFact`,
+  `StatusMode`, `StatusTextSetting`; in `keepalive.ts` `factsOf`, `seedFact` and
+  `statusHidden`) and the surface roster it needed (`refreshSurfaces`) are removed; the
+  `AI_DLC_KEEPALIVE_STATUS_TEXT` setting is still read and checked but has no
+  effect. A track row starts with its status, the track's switch in force
+  (`rowLineOf`): `on, idle (…)`, `on, <running text>` or `off (disabled)`, the
+  cache part last; its button is the opposite. The head row reads `on` while
+  either track is on in force, else `off`, full and minimised alike, and its
+  button, the opposite, turns the master and both tracks off or on
+  (`bandModel`, `afterMasterPress(on)`, `switchAll`). The published `$.state`
+  lines are unchanged. Label rule D10 is replaced. Review fix (44.4.l1.1, W1):
+  `/ai-dlc:cache-keepalive-configure on|off --session` with no `--track` acts
+  as the head row's button, judged by what the head row reads (`anyOn`), not
+  by the master switch alone. R44.6 (44.4.l1.1): while both tracks are off the
+  band and the Pane show no seed row (`bandModel`); it shows again once a track
+  is on.
+- **No band below the pane in VS Code (step 44, R44.4 widened, 2026-10-31).**
+  Keep-alive draws its band only when every attached surface draws one
+  (`bandEverywhere` in `cache-state.ts`, the lens's rule; `bandSessionNow`), so
+  a VS Code session (or one whose surfaces are unknown) gets the Pane alone,
+  with no minimised row below it. The command opens the Pane wherever the band
+  is not drawn (`openPane`), so a session always has one of them.
+- **Keep-alive is a band only (step 44, R44.7, 44.2.l1.3, 2026-10-31).** A
+  probe in VS Code showed the `AbovePrompt` site raised there (surface
+  `vscode`, narrow and wide), so keep-alive draws its band on every surface and
+  opens no Pane: the Pane, its render hook, `openPane`, the band's `⤢`
+  (`BandControls.onMaximise`), the Pane's own size and `bandEverywhere` /
+  `bandSessionNow` (44.2.l1.1) are removed. A keep-alive Pane left open from
+  before is closed once per load (`closeOldPane`). The probe that found it
+  (`probe44`) is removed too.
+- **`statusText` retired; the handoff seed reads the tracks (step 44, R44.11
+  and R44.13, 44.2.l1.4, 2026-10-31).** `statusText`
+  (`AI_DLC_KEEPALIVE_STATUS_TEXT`) is gone from the settings, both schemas and
+  the configure CLI. The CLI's `validate` calls a file key or `env` variable
+  that still sets it "no longer used" (`RETIRED`), and merge removes the key.
+  `applyHandoffSeed` turns keep-alive on only when no track is on in force
+  (`anyOn`), as the head row reads it.

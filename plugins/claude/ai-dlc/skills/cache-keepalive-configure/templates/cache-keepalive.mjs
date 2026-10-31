@@ -214,10 +214,6 @@ export function checkValue(p, raw, byEnv, minDuration = 0) {
       const word = typeof raw === "string" ? raw.trim().toLowerCase() : "";
       return word === "session" || word === "machine" ? { value: word } : bad("not session or machine");
     }
-    case "statusText": {
-      const word = typeof raw === "string" ? raw.trim().toLowerCase() : "";
-      return word === "auto" || word === "summary" || word === "full" ? { value: word } : bad("not auto, summary or full");
-    }
     case "text": return typeof raw === "string" && raw.trim() ? { value: raw.trim() } : bad("blank or not text");
     case "threshold": return n !== undefined && n >= 0 && n < 1 ? { value: n } : bad("not a number from 0 up to, not including, 1");
     case "ratio": return n !== undefined && n > 0 && n < 1 ? { value: n } : bad("not a number between 0 and 1");
@@ -367,6 +363,13 @@ export function effective(root, keys, trust = trustOf(readMaybe(path.join(os.hom
 // Values earlier versions wrote that this one rewrites to the default on merge (and set).
 const LEGACY = { "oneHour.maxPings": [0, "0"], "fiveMinute.maxPings": [0, "0"] };
 
+// Settings an earlier version had and this one retired: each key, its env variable and why. validate names them
+// "no longer used" (not "not a setting"); merge removes the key like any key the schema no longer has.
+// Step 44 (R44.11): statusText went with the status line (R44.1).
+const RETIRED = [{ key: "statusText", env: "AI_DLC_KEEPALIVE_STATUS_TEXT", why: "keep-alive writes no status line" }];
+const retiredKey = (key) => RETIRED.find((r) => r.key === key);
+const retiredEnv = (variable) => RETIRED.find((r) => r.env === variable);
+
 /** The file's text after a merge: every schema key in schema order. A value already set is kept; a
  * missing key, or a null one left by an earlier version or by hand, gets its default (the schema's,
  * which tests check against the module's SETTINGS); keys the schema no longer has are removed. The
@@ -415,6 +418,8 @@ export function fileProblems(doc, keys) {
       for (const sub of Object.keys(v)) if (!keys.some((p) => p.key === `${k}.${sub}`)) found.push({ problem: `${k}.${sub}: not a setting (run /ai-dlc:cache-keepalive-merge to remove it)` });
       continue;
     }
+    const gone = retiredKey(k);
+    if (gone) { found.push({ problem: `${k}: no longer used (${gone.why}); run /ai-dlc:cache-keepalive-merge to remove it` }); continue; }
     if (!keys.some((p) => p.key === k)) found.push({ problem: `${k}: not a setting (run /ai-dlc:cache-keepalive-merge to remove it)` });
   }
   for (const p of keys) if (!valueAt(doc, p.key).has) found.push({ key: p.key, problem: `${p.key}: missing (run /ai-dlc:cache-keepalive-merge to write its default)` });
@@ -471,6 +476,8 @@ export function validateEnv(root, keys, trust = trustOf(readMaybe(path.join(os.h
     for (const [variable, raw] of Object.entries(env)) {
       if (!variable.startsWith("AI_DLC_KEEPALIVE_")) continue;
       const p = keys.find((x) => x["x-env"] === variable);
+      const gone = retiredEnv(variable);
+      if (!p && gone) { warnings.push(`${where}: ${variable}: no longer used (${gone.why}); ignored, remove it`); continue; }
       if (!p) { warnings.push(`${where}: ${variable}: not a keep-alive setting; ignored`); continue; }
       if (name === "settings.json" && !trust.trusted && p["x-trustGated"] && differsFromDefault(p, raw, true)) {
         warnings.push(`${where}: ${variable}: skipped, Claude Code does not trust this folder (${trust.why}); ${GATED_INSTEAD}; ${applied(p.key)}`);

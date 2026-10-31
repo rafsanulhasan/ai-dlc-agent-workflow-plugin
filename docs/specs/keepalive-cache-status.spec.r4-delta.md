@@ -4,14 +4,14 @@ root: 17 (part B moved to docs/specs/cache-lab.spec.md, root 22, on 2026-10-25)
 kind: spec delta
 feature: keepalive-cache-status
 base: docs/specs/keepalive-cache-status.spec.md (revision 3; not reopened)
-revision: 4.7 (delta only; 17.1.50, gate critique 17.1.l2.4 Minors 3 and 4: AC-map rows say firm since 034.c. 4.6, 17.1.40, gate critique 17.1.l2.2 fixes: Minor 1 D12 table joined, Minor 2 D13 AC-map ids, Blocker 1 D12 master in force with `carryOver: false`, 034.c result in D2 / D2a, `chainIdOf`, D8 `chain.sessions` newest first as LLD 19.1. 4.5, 17.1.35.l1.2: summary tokens for a track stopped by overage and for compaction. 4.4, 17.1.35.l1.1: Q-SL11 decided, setting `statusText`, the human's 2v. 4.3, 17.1.35: D13 status-line summary, the full text in the band and the Pane under the title row `⚠ ai-dlc cache-keepalive:`, the human's 2s and 2t. 4.2, 17.1.31.l1.1: Q-SL9 decided (onWhenOff acts as a master [on] press), Q-SL10 confirmed, setting `sourceNote`. 4.1, 17.1.31: gate-critique fix round for 17.1.l2.1, the human's decisions of run.v4.md 2n and the "one combined session" principle)
+revision: 4.8 (delta only; 44.1, step 44, the human's R44.1 to R44.3, R44.6 and R44.7 revised, ADR-0008: keep-alive draws only its own AbovePrompt band, on every surface, VS Code included; no Pane; no status line, so D13 is superseded; track and master Buttons offer the opposite of the row's status, D10 and D11 *Label* replaced; the seed row hidden while both tracks are off. 4.7, 17.1.50, gate critique 17.1.l2.4 Minors 3 and 4: AC-map rows say firm since 034.c. 4.6, 17.1.40, gate critique 17.1.l2.2 fixes: Minor 1 D12 table joined, Minor 2 D13 AC-map ids, Blocker 1 D12 master in force with `carryOver: false`, 034.c result in D2 / D2a, `chainIdOf`, D8 `chain.sessions` newest first as LLD 19.1. 4.5, 17.1.35.l1.2: summary tokens for a track stopped by overage and for compaction. 4.4, 17.1.35.l1.1: Q-SL11 decided, setting `statusText`, the human's 2v. 4.3, 17.1.35: D13 status-line summary, the full text in the band and the Pane under the title row `⚠ ai-dlc cache-keepalive:`, the human's 2s and 2t. 4.2, 17.1.31.l1.1: Q-SL9 decided (onWhenOff acts as a master [on] press), Q-SL10 confirmed, setting `sourceNote`. 4.1, 17.1.31: gate-critique fix round for 17.1.l2.1, the human's decisions of run.v4.md 2n and the "one combined session" principle)
 author: requirement-analyst (synthesis; design sections are proposals for software-architect and system-engineer)
 date: 2026-10-25
 status: draft (Part A revised by software-architect at 17.1.23 to the human's master-button decision, at 17.1.26 to the track-button label rule, Q-SL8, and at 17.1.31 to the human's 2n decisions: D3 hide rule, the keep-warm source note, D12 automatic-handoff chain), awaiting gate critique round 2, product-owner acceptance and the combined G1+G2+G3 stop
 items: [ITEM-068 (T17.6, part A); ITEM-076 (T17.7, D12 chain carry-over); part B moved to cache-lab.spec.md]
-adrs: [ADR-0007 (D12)]
+adrs: [ADR-0007 (D12), ADR-0008 (D9 band on every surface, D13 superseded; step 44)]
 stories: docs/product/active/session-continuity-and-cache-visibility/sprint-1/keepalive-cache-status/stories.delta-r4.md (US-17.6); docs/product/backlog/ai-dlc-lens/cache-and-context-lab/stories.md (US-22.1 to US-22.5)
-sources: run.v4.md Next action 2b, 2c, 2i, 2j, 2n; the human's "one combined session" principle (2026-10-25, relayed at 17.1.31); the human's placement and click decisions relayed 2026-10-25; 17.1.10 (po decisions); 17.1.12 (surfaces, promptId); 17.1.6.3 (claude-lens formulas, MIT)
+sources: step 44: docs/handoffs/FEAT-20261020-ai-dlc-lens/44-live-findings.human.md (R44.1 to R44.6), 44-live-findings-2.human.md (R44.7 to R44.10), research 44.2.l1.2 (F1 to F6), run.v4.3.md entries 2eo to 2ff; run.v4.md Next action 2b, 2c, 2i, 2j, 2n; the human's "one combined session" principle (2026-10-25, relayed at 17.1.31); the human's placement and click decisions relayed 2026-10-25; 17.1.10 (po decisions); 17.1.12 (surfaces, promptId); 17.1.6.3 (claude-lens formulas, MIT)
 ---
 
 # Spec revision 4 (delta): both tracks always shown with buttons; Cache Lab
@@ -22,7 +22,7 @@ Revision 3 stays in force. Its ACs, D1 to D8, test seams and open questions are 
 
 ### Overview
 
-Today a track that rev 3 does not render, and every off line, hide what keep-alive would do. The human wants both tracks always visible, with keep-warm and pings even when off, and a button beside each track to switch it for this session. The status line cannot hold buttons (17.1.12), so the buttons live in an AbovePrompt band on Terminal and Desktop and in a Pane on VS Code; the status line keeps both lines as text.
+Today a track that rev 3 does not render, and every off line, hide what keep-alive would do. The human wants both tracks always visible, with keep-warm and pings even when off, and a button beside each track to switch it for this session. The status line cannot hold buttons (17.1.12), so the buttons live in an AbovePrompt band. *(Rev 4.8, step 44, ADR-0008: the band is drawn on every surface, VS Code included; keep-alive opens no Pane and writes no status line. Before step 44, VS Code had a Pane and the status line kept both lines as text.)*
 
 ### Acceptance criteria → design
 
@@ -32,13 +32,14 @@ Today a track that rev 3 does not render, and every off line, hide what keep-ali
 | AC-17.6.33 (hide rule; the seed line hidden too) | D3 amended, *Nothing allowed* | firm (human 2026-10-25, run.v4.md 2n.1) |
 | AC-17.6.34 (labels, published `keepWarmFrom`, setting `sourceNote`); AC-17.6.3 and AC-17.6.4 reworded | D3 amended, *Source note* | firm (human 2026-10-25, 2n.2; `sourceNote` 17.1.31.l1.1) |
 | AC-17.6.6 to 6.8 | D9 band | firm; 6.8 default of Q-SL3 |
-| AC-17.6.9 to 6.11 | D9 Pane | firm |
+| AC-17.6.9 to 6.11 | D9 Pane | **superseded** (rev 4.8, R44.7 revised, ADR-0008): no keep-alive Pane on any surface; the requirement-analyst rewords or retires them |
 | AC-17.6.12 to 6.18, 6.21, 6.32 | D10 session switch, D5 amended | firm; 6.15 Q-SL1 (human accepted 2026-10-25); 6.32 Q-SL8 |
 | AC-17.6.19 (superseded by 6.31), AC-17.6.23 to 6.31 (6.30 manual) | D11 master button, D5 amended | firm (human 2026-10-25, run.v4.md 2j); Q-SL4 withdrawn |
 | AC-17.6.20 | D8 amended | firm |
 | AC-17.6.22 | live check | firm (manual) |
 | AC-17.7.1 to 7.10 (US-17.7, ITEM-076: carry-over, `handoff.onWhenOff`, `handoff.carryOver`, the prefix rule) | D12 automatic-handoff chain, ADR-0007 | firm (human 2026-10-25, 2n.3, the combined-session principle, Q-SL9 and Q-SL10) |
-| AC-17.6.1 to 6.4, 6.34, 6.35 (now: the *full line*), 6.6, 6.9, 6.23 (title row text); AC-17.6.37 to 6.41 (summary, length rule, surface rule, `statusText`); AC-17.4.4 to 4.6 (the summary's ping and first-ping tokens) | D13 status-line summary | firm (human 2026-10-25, run.v4.md 2s, 2t; setting `statusText` 2v, Q-SL11); the live check of the `auto` rule stays manual |
+| AC-17.6.1 to 6.4, 6.34, 6.35 (now: the *full line*), 6.6, 6.9, 6.23 (title row text); AC-17.6.37 to 6.41 (summary, length rule, surface rule, `statusText`); AC-17.4.4 to 4.6 (the summary's ping and first-ping tokens) | D13 status-line summary | **superseded** (rev 4.8, R44.1, ADR-0008): no status line. The full line, the published `line` and the title row text stay (D9 band); the summary, length and surface-rule ACs are retired, and AC-17.4.4 to 4.6 hold for the band rows only. Rewording: requirement-analyst |
+| Step 44: R44.1, R44.2, R44.3, R44.6, R44.7 revised (AC ids from the requirement-analyst) | D9 band on every surface, D10 and D11 *Label* (rev 4.8), D3 *Seed row* | firm (the human, 2026-10-31, `44-live-findings.human.md`, `44-live-findings-2.human.md`; ADR-0008) |
 | AC-17.1.2, AC-17.3.4 (subagents), AC-17.3.7 (historical: conditional on 034.c in rev 3; firm since base spec rev 3.1) | rev 3 D2 transcript fallback, D2a until the subagent stops (*034.c result* below) | firm since 034.c (human's live check 2026-10-25, run.v4.md 2w): built as written for a stopped subagent; a running subagent reads `subagents: split unknown`; AC-17.3.7 restated in base spec rev 3.1 to both readings |
 
 ### Literals replaced
@@ -58,7 +59,8 @@ E1 to E5 of `stories.md` are replaced by E1' to E5' of `stories.delta-r4.md`; E8
     | `default` | no level sets it |
 
     The labels are exactly these four lower-case words. **Setting `sourceNote`** (human 2026-10-25, 17.1.31.l1.1): key `sourceNote`, variable `AI_DLC_KEEPALIVE_SOURCE_NOTE`, boolean, default `true`, not trust-gated (display only). With `false`, no line carries ` (<label>)`; `keepWarmFrom` is still published, and the command report is unchanged. The status line never names the file; the `/ai-dlc:cache-keepalive` report keeps its long source text (`this session, /ai-dlc:cache-keepalive`, `<name> in <file>`). AC-17.6.4 becomes "byte-for-byte as before, except the source note".
-  - **Nothing allowed (human 2026-10-25, run.v4.md 2n.1).** When neither track is allowed (D5), keep-alive draws **no status line**: both track lines and the `keepalive seed:` line are hidden, as `enabled: false` hides them today. The band and the Pane still draw the title row, both rows (`off (disabled)` with the suffix) and their Buttons, so the human can turn a track back on; the published value still carries both lines. As soon as one track is allowed (for example after a track `[on]`), the status line shows both lines again.
+  - **Nothing allowed (human 2026-10-25, run.v4.md 2n.1).** When neither track is allowed (D5), keep-alive draws **no status line**: both track lines and the `keepalive seed:` line are hidden, as `enabled: false` hides them today. The band and the Pane still draw the title row, both rows (`off (disabled)` with the suffix) and their Buttons, so the human can turn a track back on; the published value still carries both lines. As soon as one track is allowed (for example after a track `[on]`), the status line shows both lines again. *(Rev 4.8, R44.1: there is no status line at all now, so only the band part of this rule remains.)*
+  - **Seed row (rev 4.8, R44.6, the human 2026-10-31).** While both tracks are off, the band does not draw the seed row (`keepalive seed: cache hit, …`): it draws the title row `ai-dlc cache-keepalive: off` with its `on` Button, and the two track rows. The seed row shows again once a track is on.
 - **D5 amended, arming.** Before rev 3 D5 runs, the track must be *allowed*, decided in this order (first match wins):
   1. track switch `on`: allowed, whatever the master (the per-track `[on]` overrides the master for this session);
   2. track switch `off`: not allowed;
@@ -66,23 +68,26 @@ E1 to E5 of `stories.md` are replaced by E1' to E5' of `stories.delta-r4.md`; E8
 
   The effective master is the session master switch (D11) when set, else the settings `enabled`. A track that is not allowed does not arm, and its reason is `disabled`. An allowed track arms only as rev 3 D5 says: at a turn end with background tasks running and a warm cache of its lifetime (Q-SL1, human accepted 2026-10-25). *(17.1.16 said the switch never overrides the master; the human replaced that on 2026-10-25, run.v4.md 2j, and 17.1.23 rewrote this item.)*
 - **D9 surfaces (new).**
-  - Status line: *(replaced by D13, 17.1.35)* a one-line summary of both tracks; the full lines only where every attached surface is VS Code.
-  - Band: on Terminal and Desktop, one AbovePrompt element: a title row holding the **master Button** (D11), then the 5m row, then the 1h row (Q-SL5), each track row its line text and one Button, padding and gap 0 (Q-SL6). It follows auto-handoff's band pattern, which already puts a Button in an AbovePrompt.
-  - Pane: on VS Code, `/ai-dlc:cache-keepalive` (no arguments) also opens a keep-alive Pane with the same title row (master Button included), rows and Buttons, and updates it in place while open. No band on VS Code (AbovePrompt does not render there).
-  - The `status` setting hides all three.
-  - Surface detection (architect review, 17.1.16): the host gives a signal. `$.session.surfaces()` (d.ts:2864-2875) answers the surfaces, and a render hook reads `e.surface`. The lens already uses `$.session.surfaces()` (`plugins/claude/ai-dlc-lens/hooks/register.tsx`:1006), which is prior art. The fallback stays: draw the band always, since AbovePrompt is not raised on VS Code, and on VS Code the command also opens the Pane.
+  - **Rev 4.8 (step 44; the human 2026-10-31, R44.1 and R44.7 revised; ADR-0008).** Keep-alive has one view, its band, drawn on **every surface, VS Code included**, at every panel width. There is no keep-alive Pane and no status line. Why: VS Code moves the whole pane region (every module's panes, as tabs of one frame) between inline and docked by the panel width, and a module cannot choose its pane's seat (research 44.2.l1.2, F1 and F2). A keep-alive Pane therefore docked with the lens when the panel grew (R44.8). The `AbovePrompt` band is outside that region, and the probe (run.v4.3.md 2ff, Claude Code 2.1.310) saw it drawn in VS Code with surface `vscode`, against d.ts :10818. A resize does not move it. The bullets below are rev 4.7, kept for the record; where they differ, this bullet wins.
+  - Status line: *(replaced by D13, 17.1.35; removed by rev 4.8, R44.1: keep-alive writes no status line)* a one-line summary of both tracks; the full lines only where every attached surface is VS Code.
+  - Band: *(rev 4.8: on every surface, VS Code included)* on Terminal and Desktop, one AbovePrompt element: a title row holding the **master Button** (D11), then the 5m row, then the 1h row (Q-SL5), each track row its line text and one Button, padding and gap 0 (Q-SL6). It follows auto-handoff's band pattern, which already puts a Button in an AbovePrompt.
+  - Pane: *(superseded, rev 4.8, R44.7 revised: no keep-alive Pane; `/ai-dlc:cache-keepalive` opens none)* on VS Code, `/ai-dlc:cache-keepalive` (no arguments) also opens a keep-alive Pane with the same title row (master Button included), rows and Buttons, and updates it in place while open. No band on VS Code (AbovePrompt does not render there).
+  - The `status` setting hides all three. *(Rev 4.8: it hides the band, the only view left.)*
+  - Surface detection (architect review, 17.1.16): the host gives a signal. `$.session.surfaces()` (d.ts:2864-2875) answers the surfaces, and a render hook reads `e.surface`. The lens already uses `$.session.surfaces()` (`plugins/claude/ai-dlc-lens/hooks/register.tsx`:1006), which is prior art. The fallback stays: draw the band always, since AbovePrompt is not raised on VS Code, and on VS Code the command also opens the Pane. *(Rev 4.8: the band is drawn on every surface and no Pane opens; the premise "not raised on VS Code" was disproved by the probe, 2ff.)*
 - **D10 session switch (new).** One value per track, `on | off | unset`, unset when a new chain starts (a session started by hand; D12).
   - **Where it is kept** (amended at the architect review, 17.1.16): the switch is kept the way `/ai-dlc:cache-keepalive --session` overrides are kept. That is in `$.store`, keyed by the **chain id** (D12; amended 17.1.31, was the session id) like the `--session` overrides (`sessionOverrides`, `hooks/keepalive/keepalive.ts`:443, which move to the chain id too), bounded by `sessionOverridesMax`.
   - **Why not module memory:** a `/reload-plugins` or a module restart would forget an `[off]`, and the track would silently re-arm and spend.
   - **Settings files:** none is ever written, per AC-17.6.17.
-  - **Label (Q-SL8, human 2026-10-25, 17.1.26).** A track Button follows whether the track is *allowed* (D5), never whether it is running. It shows `[off]` whenever the track is allowed to arm (by its switch, the master or the settings), even before it arms or pings; it shows `[on]` only when the track is not allowed. The master Button follows the same idea (D11, *Label*).
+  - **Label (rev 4.8, R44.2, the human 2026-10-31; replaces Q-SL8 below).** A track row shows its switch in force, and its Button offers the opposite. Switched on and idle: `keepalive 5m: on, idle (no 5m cache write seen), ping 0/20, keep warm 1h`, with an `off` Button. Running: `on, <running text>`, with an `off` Button. Switched off: `off (disabled)`, with an `on` Button. Why: a Button that names the current state reads as the state, not the action (run.v4.2.md, *Deprecated*).
+  - **Label (Q-SL8, human 2026-10-25, 17.1.26; superseded by rev 4.8).** A track Button follows whether the track is *allowed* (D5), never whether it is running. It shows `[off]` whenever the track is allowed to arm (by its switch, the master or the settings), even before it arms or pings; it shows `[on]` only when the track is not allowed. The master Button follows the same idea (D11, *Label*).
   - `[off]` (the track is allowed): set the switch `off`. If the track is running, stop it now with the reason `disabled` (no stopped-line text) and cancel its timer; if it is not running, nothing else happens. Either way the track is no longer allowed and the Button shows `[on]`.
   - `[on]` (the track is not allowed): set the switch `on`; no ping; the track is now allowed, the Button shows `[off]`, and the track arms at the next Stop under D5.
   - A track press never changes the master switch (D11).
   - `/ai-dlc:cache-keepalive` reports a set switch per track, and the master switch when set.
 - **D11 master button (new; human 2026-10-25, run.v4.md 2j; replaces Q-SL4).** The title row of the band and of the Pane holds one master Button for keep-alive as a whole, this session only.
   - **Value.** One session master switch, `on | off | unset`, unset when a new chain starts, kept with the track switches in `$.store` by chain id (D10, D12). No settings file is ever written (AC-17.6.17).
-  - **Label.** `[off]` when the effective master is on, `[on]` when it is off.
+  - **Label (rev 4.8, R44.3, the human 2026-10-31).** The tracks decide the title row. It reads `ai-dlc cache-keepalive: on` when either track is on in force (a track's switch already folds in the master), with an `off` Button that turns the master and both tracks off; otherwise `ai-dlc cache-keepalive: off`, with an `on` Button that turns the master and both tracks on (the two presses below). So master on with both tracks off reads `off`, and master off with a track on in force reads `on`. The published `$.state` lines are unchanged.
+  - **Label (rev 4.7, superseded by rev 4.8).** `[off]` when the effective master is on, `[on]` when it is off.
   - **Master `[off]`.** Sets the master `off`, clears both track switches to unset, and stops each running track now as a track `[off]` does (reason `disabled`, timer cancelled). Both tracks end off, whatever they were.
   - **Master `[on]`.** Sets the master `on`, which overrides a settings `enabled: false` for this session, and sets **both track switches to `on`**, which overrides a settings `<track>.enabled: false` too (D5, rule 1). Both tracks are then allowed and arm at the next turn end under rev 3 D5. No ping is sent at the press. *(Q-SL7, human 2026-10-25, follow-up 17.1.23.l1.1: "Force both tracks on".)*
   - **Track presses.** A track `[on]` sets that track's switch `on` and overrides the master (D5, rule 1); a track `[off]` sets it `off`. Neither changes the master switch.
@@ -100,7 +105,7 @@ E1 to E5 of `stories.md` are replaced by E1' to E5' of `stories.delta-r4.md`; E8
     |---|---|---|---|---|---|
     | `handoff.carryOver` | `AI_DLC_KEEPALIVE_HANDOFF_CARRY_OVER` | boolean | `true` | no (it never starts spending on its own) | `true`: keep-alive's per-session state is keyed by chain id (2n.3 b). `false`: by session id, so every seeded session starts keep-alive clean, like one started by hand. It governs keep-alive only; the chain is still published (D8) for the lens. |
     | `handoff.onWhenOff` | `AI_DLC_KEEPALIVE_HANDOFF_ON_WHEN_OFF` | boolean | `true` | yes (it can start spending) | `true`: a seeded session whose chain's master in force is off acts as a master `[on]` press: master and both tracks on (2n.3 a, Q-SL9). `false`: the off state continues (with `carryOver` on), or the session starts from the settings (with it off). |
-    | `statusText` | `AI_DLC_KEEPALIVE_STATUS_TEXT` | `auto`, `summary` or `full` | `auto` | no (display only) | Which text the status line gets (D13). `auto`: the surface rule. `summary` / `full`: that text on every surface, the roster not read. |
+    | `statusText` | `AI_DLC_KEEPALIVE_STATUS_TEXT` | `auto`, `summary` or `full` | `auto` | no (display only) | Which text the status line gets (D13). `auto`: the surface rule. `summary` / `full`: that text on every surface, the roster not read. *Rev 4.8: no effect, since there is no status line (R44.1); whether it is retired is open, Q-SL12.* |
 
     `/ai-dlc:cache-keepalive-configure` lists `handoff.carryOver`, `handoff.onWhenOff`, `sourceNote` (D3) and `statusText` (D13) like every other keep-alive setting, and the README settings table carries their rows.
 
@@ -112,7 +117,7 @@ E1 to E5 of `stories.md` are replaced by E1' to E5' of `stories.delta-r4.md`; E8
   - So AC-17.1.2, AC-17.3.4 (subagents) and AC-17.3.7 are built as written for a subagent that has stopped; for one still running they read `subagents: split unknown` (AC-17.3.7 is restated in the base spec, rev 3.1, with both readings; the stories delta's E2'/E3' note points to it). Reading the transcript of a still-running subagent is not designed. The Windows `tail` failure and the forked-helper lines (2w b, a) are LLD fixes (3.7, 3.4), not spec changes.
   - This stays within what the human approved (rev 3 D2 and D2a, OQ4), so no `clarify:` was needed.
 - **D8 amended, published state.** `KeepaliveTrackState` gains an optional, additive `sessionSwitch?: 'on' | 'off'`, omitted when unset. The published keepalive value gains an optional, additive top-level `sessionMaster?: 'on' | 'off'`, omitted when unset (D11). `line` keeps its meaning and now carries the suffix on off lines and the source note on every keep-warm clause. Each track also publishes `keepWarmFrom?: KeepSource` (D3). The value gains an optional, additive `chain?: { id: string; sessions: string[] }` (D12: the chain id and the chain's session ids, newest first, as LLD 19.1 `chainSessions` returns them; the lens filters by membership, so the order changes no figure), published whatever `handoff.carryOver` says; the lens's Cache Lab reads it (`cache-lab.spec.md`, L7).
-- **D13 status-line summary (new, 17.1.35; human 2026-10-25, run.v4.md 2s "Summary + Pane", 2t).** The status line cannot draw a newline: the `\n` join (`hooks/keepalive/keepalive.ts`:268-272) shows as a replacement glyph in the terminal (research 17.1.34). `ui.status` takes one string per plugin, with no surface or title argument (claude-code.d.ts 2.1.310, :2503-2513; its hook event is `{ text }` alone, :7170-7172). No tooltip exists on any surface (17.1.34).
+- **D13 status-line summary (new, 17.1.35; human 2026-10-25, run.v4.md 2s "Summary + Pane", 2t). Superseded by rev 4.8 (the human 2026-10-31, R44.1; ADR-0008): keep-alive writes no status line, so the summary, the length rule, the surface rule and `statusText` no longer apply. Still in force from D13: the *full text* as the band rows and the published `line`, and the title row (now with its status word, D11 *Label*). Kept below for the record.** The status line cannot draw a newline: the `\n` join (`hooks/keepalive/keepalive.ts`:268-272) shows as a replacement glyph in the terminal (research 17.1.34). `ui.status` takes one string per plugin, with no surface or title argument (claude-code.d.ts 2.1.310, :2503-2513; its hook event is `{ text }` alone, :7170-7172). No tooltip exists on any surface (17.1.34).
   - **Two texts.** The *full text* is today's: the track lines (1h, then 5m) and the seed line, unchanged, D3 suffix and source note included. It is what `line` publishes, what the band and Pane rows show and what AC-17.6.2 to 6.4, 6.34 and 6.35 assert. The *summary* is one line, built by a pure function from the same track state:
 
     `keepalive <1h token> | <5m token>[ | <seed token>]`
@@ -138,18 +143,18 @@ E1 to E5 of `stories.md` are replaced by E1' to E5' of `stories.delta-r4.md`; E8
   - **Unchanged.** The hide rule (D3: nothing allowed, no status line, summary included), `status: false`, and clearing the status line during a turn (AC-17.6.8).
   - **Title row (band and Pane).** The mod's own bold `Text` `⚠ ai-dlc cache-keepalive:`, followed by the master Button (D11), replacing the title `keepalive`. The `⚠` is a character the mod writes, not the host's prefix, so the host's `⚠ ai-dlc:` on the status line is unaffected (17.1.34: the host draws it, the mod cannot set it). The Pane's frame title (`ui.open` `title`) becomes `ai-dlc cache-keepalive`. Then the 5m row and the 1h row (Q-SL5), each its full line and its Button, then **a seed row** (Text, no Button) while the seed line shows, so the band and the Pane carry the whole full text.
   - **Published state.** No new field: `line` stays the full line; the summary is display only.
-  - **No ADR.** A display rule, cheap to reverse; it fails the *hard to reverse* test.
+  - **No ADR.** A display rule, cheap to reverse; it fails the *hard to reverse* test. *(Its removal is recorded with the band decision in ADR-0008, because it follows from the band being drawn on every surface.)*
 
 ### Component boundaries
 
 | Part | Owner |
 |---|---|
 | D3 suffix, both lines; D13 summary tokens, length rule | `hooks/keepalive/cache-state.ts` (pure render) |
-| D13 surface rule (roster, attach / detach), stop kind per track | `hooks/keepalive/keepalive.ts` |
+| D13 surface rule (roster, attach / detach), stop kind per track *(rev 4.8: no status-line write, so no surface rule)* | `hooks/keepalive/keepalive.ts` |
 | D5 allowed check, D10 switches, D11 master switch, D12 chain keys and `applyHandoffSeed`, command report | `hooks/keepalive/keepalive.ts` |
 | D12 settings rows | `hooks/keepalive/settings.ts` (`SETTINGS`, `TRUST_GATED`), the `cache-keepalive-configure` skill's schema |
 | D12 chain-id reader | `hooks/auto-handoff/chain.ts` (new, shared); the seed call in `hooks/auto-handoff/register.tsx` |
-| D9 band and Pane components, track and master Button presses | a new keep-alive panel component under `hooks/keepalive/`, registered from `hooks/auto-handoff/register.tsx` with keep-alive's other registrations |
+| D9 band and Pane components, track and master Button presses *(rev 4.8: the band only, on every surface)* | a new keep-alive panel component under `hooks/keepalive/`, registered from `hooks/auto-handoff/register.tsx` with keep-alive's other registrations |
 | Published `sessionSwitch` | `plugins/claude/ai-dlc/types/index.d.ts` |
 | README | documentation-writer |
 
@@ -160,10 +165,10 @@ No request/response API; the `{ data, error }` envelope does not apply.
 - `SessionSwitch = 'on' | 'off'` per track, and one for the master, each absent when unset; stored per chain id in `$.store` (D12).
 - `ChainId = string`: `lineage:<sessionId>`.chain, else the session id (D12).
 - `KeepSource = 'session' | 'machine' | 'settings' | 'default'`, the source note's label (D3).
-- `TitleRow = { text: '⚠ ai-dlc cache-keepalive:'; button: 'on' | 'off' }`, `button` from the effective master (master on → `off`) (D13).
+- `TitleRow = { text: '⚠ ai-dlc cache-keepalive:'; status: 'on' | 'off'; button: 'on' | 'off' }` (rev 4.8): `status` `on` when either track is on in force, else `off`; `button` always the opposite of `status` (D11 *Label*). *(Rev 4.7: no status; `button` from the effective master.)*
 - `StopKind = 'done' | 'ping limit' | 'spend limit' | 'missed' | 'error' | 'expired' | 'handoff' | 'overage'`, recorded when a track stops, for the summary token (D13).
-- `StatusMode = 'full' | 'summary'`, from the surface roster (D13).
-- `TrackRow = { track: '5m' | '1h'; line: string; button: 'on' | 'off' }`, `button` from the D5 *allowed* check, never from `running` (allowed → `off`, not allowed → `on`; Q-SL8).
+- `StatusMode = 'full' | 'summary'`, from the surface roster (D13). *(Retired, rev 4.8.)*
+- `TrackRow = { track: '5m' | '1h'; line: string; button: 'on' | 'off' }` (rev 4.8): `line` leads with the switch in force (`on, …` or `off (disabled)`), and `button` is its opposite (on → `off`, off → `on`; D10 *Label*). *(Rev 4.7: `button` from the D5 *allowed* check, Q-SL8.)*
 
 ### Test seams
 
@@ -175,6 +180,7 @@ No request/response API; the `{ data, error }` envelope does not apply.
 - D13: the pure table gains one summary row per token state, the length drops (each step, and the 68-character 2t example kept whole); keep-alive tests with stubbed `surfaces` give `['vscode']` the full text, and `['terminal']`, `['desktop']`, `['terminal','vscode']`, `[]` and an unknown name the summary, and an attach or detach re-renders; `statusText: summary` gives `['vscode']` the summary and `full` gives `['terminal']` the full text, an invalid value falls back to the next level; the panel render test asserts the title row text and the seed row.
 - Manual: AC-17.6.7, 6.11, 6.22; D13 live check of `statusText: auto`: the terminal status line shows the summary with no replacement glyph, and a VS Code-only session shows the full text.
 - Pinned tests that change: every rev 3 test asserting an off line, including the E1 to E5 rows of the pure table.
+- **Rev 4.8 (step 44).** Panel render test: the band is drawn for `['vscode']`, `['terminal']`, `['desktop']` and a mix alike, and no Pane opens; each track row (switched on and idle, running, switched off) carries the opposite Button (R44.2); the title row's status word and Button for master on with both tracks off, master off with a track on in force, and both tracks on (R44.3); no seed row while both tracks are off, and the seed row back once a track is on (R44.6). Keep-alive tests: no `ui.status` write in any state (R44.1). The D13 summary and surface-rule tests are retired. Manual: in VS Code, keep-alive's band stays above the prompt while the panel is resized narrow to wide and back (R44.7, R44.8).
 
 ### Out of scope
 
@@ -190,6 +196,8 @@ Q-SL1 to Q-SL6 of `stories.delta-r4.md`. Q-SL1 is accepted (2026-10-25). Q-SL4 i
 - **Q-SL10 (closed, human 2026-10-25, 17.1.31.l1.1).** With `handoff.carryOver: false`, `handoff.onWhenOff` still applies: the seeded session starts clean from the settings, and if their `enabled` is off, it acts as the master `[on]` press (AC-17.7.6). A master `[off]` pressed in S1 is not carried, so it does not trigger the exception (D12, rev 4.6).
 
 - **Q-SL11 (decided, human 2026-10-25, run.v4.md 2v: yes; setting `statusText` in D13 and the D12 settings table).** The rule gives VS Code the full text only if a VS Code session lists exactly `vscode` in `$.session.surfaces()`, which no record verifies. If the live check finds it does not, VS Code gets the summary too (full text in the Pane). Should keep-alive also have an explicit setting, `statusText: auto | summary | full` (default `auto`, the rule above; not trust-gated), so the human can choose either way whatever the detection finds? Recommended: yes, it covers both outcomes and follows the human's preference for explicit switches over detection.
+
+- **Q-SL12 (open, rev 4.8).** With no status line, `statusText` has no effect (the build keeps it read and checked, `hooks/keepalive/settings.ts`). Is it retired (removed from `SETTINGS`, the configure schema and the README), or kept inert so that existing settings files stay valid? No record decides it. For the human or product-owner.
 
 The architect decided at 17.1.16 that the session switch needs **no ADR**, and at 17.1.23 that the master switch needs none either, for the same reasons. It is scoped to one session and cheap to reverse, and it follows the existing `--session` override precedent, so it fails the *hard to reverse* test. The source note and the hide rule need none either: they are display rules only.
 
@@ -218,5 +226,7 @@ Written in synthesis mode from decisions the human and po already made.
 
 - 17.1.40 (rev 4.6), gate critique 17.1.l2.2: Minor 1 (the D12 settings table joined), Minor 2 (the D13 AC-map row cites AC-17.6.37 to 6.41 and AC-17.4.4 to 4.6), Blocker 1 (D12 and Q-SL10: with `carryOver: false` the master in force is the settings `enabled`; a master `[off]` pressed in S1 does not trigger the exception, matching AC-17.7.6, requirement-analyst 17.1.39), 034.c (D2 / D2a amended, AC-map row added, agreed with system-engineer 17.1.41), `chainIdOf` (Major 4, LLD 19.1).
 - 17.1.50 (rev 4.7), gate critique 17.1.l2.4: Minor 3 (E2'/E3' firm since 034.c), Minor 4 (the AC-17.3.7 row's "conditional on 034.c" marked historical).
+
+- 44.1 (rev 4.8), step 44, the human's decisions of 2026-10-31 (R44.1, R44.2, R44.3, R44.6, R44.7 revised; ADR-0008): D9 is one band on every surface with no Pane; D13 superseded (no status line); D10 and D11 *Label* replaced (the status in force, the Button its opposite; the tracks decide the title row); the seed row hidden while both tracks are off; Q-SL12 opened. The ACs follow from the requirement-analyst and the LLD from the system-engineer.
 
 Part B moved to `cache-lab.spec.md`. Gate critique round 3 (17.1.l2.3), product-owner acceptance and the combined G1+G2+G3 stop are pending.

@@ -70,6 +70,7 @@ import {
   isWaiting,
   noticeWorkflow,
   REQS_CAP,
+  runListStatus,
   runningAndWaiting,
   statusLooks,
   taskKeyOf,
@@ -286,6 +287,13 @@ const viewA = atom({ plugin: 'ai-dlc-lens', key: 'view' } as const, VIEW0, { sha
  * the next spawn or `/ai-dlc:lens`, and never while a workflow is in progress.
  */
 const bandClosedA = atom({ plugin: 'ai-dlc-lens', key: 'bandClosed' } as const, false)
+/**
+ * Step 44 (R44.16, the human's option a): in VS Code, where the lens's view is its pane (R44.4), the person chose pinned
+ * with the mode button: the view is drawn in the band above the prompt (AbovePrompt, which VS Code raises, the probe of
+ * 44.2.l1.3) and its pane is closed. Cleared whenever a lens pane is opened or drawn, so the band and the pane are never
+ * both drawn (the bug R44.4 fixed).
+ */
+const vscodeBandA = atom({ plugin: 'ai-dlc-lens', key: 'vscodeBand' } as const, false)
 /** The view's `Panel Type` switch: `tab` or `drill-in` for this session; '' follows the `panelOpenMode` setting. */
 const openModeA = atom({ plugin: 'ai-dlc-lens', key: 'openMode' } as const, '')
 /** The workflow pane's last viewport (full screen asks for its rows and columns) and the session's surfaces (pinned needs the band). */
@@ -1240,9 +1248,10 @@ async function openWorkflowPane($: EngineInterface, v: LensView, focus = false) 
 }
 
 /**
- * Step 1.5: shows the view where its place says. Pinned: the band above the prompt (AbovePrompt, raised
- * on the terminal and desktop only, d.ts:10809-10819); the pane closes only when every attached surface
- * draws that band, else it stays a pane. Docked: the pane.
+ * Step 1.5: shows the view where its place says. Pinned: the band above the prompt (AbovePrompt, d.ts:10809-10819,
+ * whose "terminal and desktop only" the probe of step 44.2.l1.3 disproved: VS Code raises it too); the pane closes only
+ * when every attached surface is a terminal or desktop (`bandEverywhere`), else it stays a pane, the lens's rule for
+ * VS Code (R44.4). Docked: the pane.
  */
 async function showView($: EngineInterface, v: LensView, focus = false): Promise<void> {
   // Addendum A7: full screen is always the pane, raised, never the band (the band only has the rows the
@@ -1263,7 +1272,43 @@ async function showView($: EngineInterface, v: LensView, focus = false): Promise
 async function onBand($: EngineInterface, v: LensView): Promise<boolean> {
   if (v.size === 'fullscreen') return false
   const conf = await read($, lensA)
-  return placeOf(v, String(conf.settings.workflowPlace)) === 'pinned' && bandEverywhere(await surfacesNow($))
+  return placeOf(v, String(conf.settings.workflowPlace)) === 'pinned' && (await bandAllowed($))
+}
+
+/**
+ * Step 44 (R44.4, R44.16): whether the lens may draw its band now: every attached surface is a terminal or desktop
+ * (`bandEverywhere`), or, in VS Code, the person chose pinned with the mode button (`vscodeBandA`, its pane closed).
+ */
+async function bandAllowed($: EngineInterface): Promise<boolean> {
+  return bandEverywhere(await surfacesNow($)) || (await read($, vscodeBandA))
+}
+
+/**
+ * Step 44 (R44.16, the human's option a): the mode button (`pane-place`). Where every surface draws the band, it
+ * switches the place as before (`changeView`). Elsewhere (VS Code) the host seats the pane by the panel's width (F1), so
+ * the button switches what draws the view: from the pane (docked wide, above the prompt narrow) to pinned, the band
+ * above the prompt, the pane and the Run List tab closed first; from the band to docked, the pane, opened as
+ * `/ai-dlc:lens` opens it (its seat, R44.14's tabs). A press is the person's, so the pane is placed at any width.
+ */
+async function placePress($: EngineInterface, place: 'pinned' | 'docked', where: ControlSite) {
+  if (bandEverywhere(await surfacesNow($))) {
+    await changeView($, x => ({ ...x, place: place === 'pinned' ? 'docked' : 'pinned' }))
+    return
+  }
+  // The next lens pane drawn applies its seat afresh (R44.15), whatever seat the last one had.
+  lastSeat = null
+  if (where === 'band') {
+    await update($, vscodeBandA, () => false)
+    await update($, viewA, x => ({ ...(x as LensView), place: 'docked' }))
+    await openLens($)
+    return
+  }
+  await $.ui.close({ id: RUNS })
+  await $.ui.close({ id: CHART })
+  await update($, viewA, x => ({ ...(x as LensView), place: 'pinned' }))
+  await update($, bandClosedA, () => false)
+  await update($, vscodeBandA, () => true)
+  await bandStart($)
 }
 
 /**
@@ -1336,7 +1381,10 @@ async function openLens($: EngineInterface): Promise<string> {
       return rest
     })
   }
-  const r = seat === 'dock' && vscode ? await openRunsTab($) : await openWorkflowPane($, await read($, viewA), true)
+  // Step 44 (R44.14): the Run List tab only in tab mode (Panel Type); drill-in opens the workflow tab alone.
+  const tab = openModeOf(await read($, openModeA), String((await read($, lensA)).settings.panelOpenMode)) === 'tab'
+  if (seat === 'dock' && vscode && !tab) await $.ui.close({ id: RUNS })
+  const r = seat === 'dock' && vscode && tab ? await openRunsTab($) : await openWorkflowPane($, await read($, viewA), true)
   if (!r.isPlaced) return `${VIEW_TITLE} is open but not drawn yet: ${r.reason}`
   return `${VIEW_TITLE} ${wasOpen ? 'brought forward' : 'opened'}.`
 }
@@ -1403,6 +1451,98 @@ let paneSeat: { placement?: 'dock' | 'inline'; columns?: number } | null = null
 function notePaneSeat(placement: unknown, columns: unknown) {
   paneSeat = { ...(placement === 'dock' || placement === 'inline' ? { placement } : {}), ...(typeof columns === 'number' ? { columns } : {}) }
 }
+/**
+ * Step 44 (R44.9, R44.10, R44.12, R44.14, R44.15): the lens follows the seat the surface gives its panes. VS Code moves
+ * them by the panel's width (the probe of 44.2.l1.3: `placement` `inline` while narrow, `dock` once the panel is wide
+ * enough that the viewport reports `isFullscreen`), so narrow the lens sits above the prompt and wide in the right pane,
+ * with no action of ours. On each change of seat:
+ * - the view's place follows it (R44.15): `docked` in the right pane, `pinned` above the prompt;
+ * - inline, the view is exactly one pane: the Run List tab (`RUNS`) is closed;
+ * - docked again after being inline, in VS Code, the panel is laid out as `/ai-dlc:lens` lays out a wide one: in both
+ *   panel types the workflow tab on the newest run with its default steps open, so its flowchart shows (R44.19), and in
+ *   tab mode only (R44.14) the Run List tab opened without `focus`, so the workflow tab stays shown. That open is unasked (d.ts UiOpenResult, "never a timer"): the host
+ *   places it from 144 columns, or 110 once the person has opened the Run List tab and not closed it by hand, and below
+ *   that keeps it open but undrawn until the panel widens or the person opens it; the result is logged (E3).
+ * Every act runs after the render that saw the change, through `afterRender`, which tries it again when the host
+ * refuses it as made during a later render (R44.17); each act is safe to repeat. Never throws.
+ */
+let lastSeat: 'dock' | 'inline' | null = null
+
+/**
+ * Step 44 (R44.17): the acts a render asks for, run just after it. The host refuses a state write made while any
+ * `ui.render` is being dispatched (d.ts 3494: "Refused while a `ui.render` hook draws"). A timer only moves the write
+ * past the render that started it: with renders this frequent (each step of a resize, the 500 ms blink, the 2 s poll),
+ * the timer can fire while a later render is being dispatched, and the write is refused (live findings 4, an
+ * intermittent "state.set: denied"). So a refusal of that kind is not an error here: the whole act is tried again
+ * `AFTER_RENDER_RETRY_MS` later, up to `AFTER_RENDER_TRIES` times, which is why every act given here must be safe to
+ * repeat. Any other failure, or the last refusal, goes to `lensFail`. Never throws.
+ */
+const AFTER_RENDER_TRIES = 20
+const AFTER_RENDER_RETRY_MS = 100
+const isRenderDenial = (err: unknown): boolean => /ui\.render is being dispatched|drawing is pure/.test(String(err))
+function afterRender($: EngineInterface, site: string, act: () => Promise<unknown>, tries = AFTER_RENDER_TRIES) {
+  try {
+    $.clock.after(tries === AFTER_RENDER_TRIES ? 0 : AFTER_RENDER_RETRY_MS, () => {
+      void act().catch(err => {
+        if (tries > 1 && isRenderDenial(err)) afterRender($, site, act, tries - 1)
+        else lensFail(site, err)
+      })
+    })
+  } catch (err) {
+    lensFail(site, err)
+  }
+}
+// R44.16: one hand-over from the band to a pane is under way (`followSeat`), so the renders meanwhile ask for no other.
+let bandGivingWay = false
+
+function followSeat($: EngineInterface, placement: unknown, surface: unknown, pinnedBand: boolean) {
+  const seat = placement === 'dock' || placement === 'inline' ? placement : null
+  if (seat === null) return
+  // R44.16: a lens pane is drawn while the band was chosen (a pane opened another way, such as the band's ⤢): the band
+  // gives way, so the two are never both drawn, and the place follows the pane's seat.
+  if (pinnedBand && !bandGivingWay) {
+    bandGivingWay = true
+    afterRender($, 'band gives way', async () => {
+      try {
+        await update($, vscodeBandA, () => false)
+        await update($, viewA, x => ({ ...(x as LensView), place: seat === 'dock' ? 'docked' : 'pinned' }))
+      } finally {
+        bandGivingWay = false
+      }
+    })
+  }
+  if (seat === lastSeat) return
+  const was = lastSeat
+  lastSeat = seat
+  afterRender($, 'seat follow', () => seatChanged($, seat, was, surface))
+}
+
+/** The acts of a change of seat (`followSeat`), outside the render. */
+async function seatChanged($: EngineInterface, seat: 'dock' | 'inline', was: 'dock' | 'inline' | null, surface: unknown) {
+  if (surface === 'vscode') await update($, viewA, x => ({ ...(x as LensView), place: seat === 'dock' ? 'docked' : 'pinned' }))
+  if (seat === 'inline') {
+    await $.ui.close({ id: RUNS })
+    return
+  }
+  if (was !== 'inline' || surface !== 'vscode') return
+  // R44.19: in both panel types, the workflow view on the newest run with its current step open, and so its flowchart,
+  // which the right pane is the one place to show (R44.20).
+  const w = (await latestFlow($))?.w ?? null
+  await update($, viewA, x => commandOpenView(x as LensView, 'dock', w))
+  if (w !== null) {
+    await update($, cardOpenA, m => withoutStepKeys(m as Record<string, boolean>, w))
+    await update($, stepSelA, m => {
+      const { [w]: _gone, ...rest } = m as Record<string, string>
+      return rest
+    })
+  }
+  // R44.14: the Run List tab in tab mode only.
+  const conf = await read($, lensA)
+  if (openModeOf(await read($, openModeA), String(conf.settings.panelOpenMode)) !== 'tab') return
+  const r = await $.ui.open({ id: RUNS, title: RUNS_TITLE, closeOnEscape: true })
+  await plog($, 'E3', { open: RUNS, via: 'docked again', result: r })
+}
+
 /** Step 43: bumped while the pane beside the band is drawn, so the band and the pane redraw and `bandClosedOf` stays current. */
 const bandPingA = atom({ plugin: 'ai-dlc-lens', key: 'bandPing' } as const, 0)
 /** Step 43: one ping waits at a time (`pingBandSoon`). */
@@ -1417,7 +1557,8 @@ function pingBandSoon($: EngineInterface, goneMs: number) {
   bandPingWaiting = true
   $.clock.after(Math.floor(goneMs / 2), () => {
     bandPingWaiting = false
-    void update($, bandPingA, n => (n as number) + 1).catch(err => lensFail('band ping', err))
+    // Step 44 (R44.17): the same race as the seat follow's; a refused write is tried again (`afterRender`).
+    afterRender($, 'band ping', () => update($, bandPingA, n => (n as number) + 1))
   })
 }
 
@@ -1976,7 +2117,8 @@ function workflowInfo(
   // Round 6 (18.3-4): the spawner is named and left out by workflowStatus itself. Step 43 (C1): the members are
   // settled first (`settleMembers`: latest attempt wins, a done stage settles its step), as the step accordion's are.
   const settled = settleMembers(all, a => attemptOf(a, attemptKey(a)), a => stageDone(codeOfAgent(a), own(runs, runDirOf(a) ?? '')?.stageStatus))
-  return { members, parent, current, status: workflowStatus(settled, dirs.map(d => runs[d]?.status ?? ''), batch.parent), both: runningAndWaiting(settled, batch.parent) }
+  // Step 44 (R44.5): an active run is never completed in the list (`runListStatus`).
+  return { members, parent, current, status: runListStatus(settled, dirs.map(d => runs[d]?.status ?? ''), batch.parent), both: runningAndWaiting(settled, batch.parent) }
 }
 
 /**
@@ -2927,7 +3069,7 @@ function viewControls(
         {lead}
       </Box>
       <Box flexDirection="row" alignItems="center" columnGap={1}>
-        <Button key="pane-place" label={place} plain onPress={() => changeView($, x => ({ ...x, place: place === 'pinned' ? 'docked' : 'pinned' }))} />
+        <Button key="pane-place" label={place} plain onPress={() => placePress($, place, where)} />
         {sizeControls}
         {!band ? <Button key="pane-close" label="×" role="dismiss" plain onPress={() => $.ui.close({ id: CHART })} /> : null}
         {band && idle ? <Button key="band-close" label="×" role="dismiss" plain onPress={() => update($, bandClosedA, () => true)} /> : null}
@@ -3099,7 +3241,7 @@ async function latestFlow($: EngineInterface): Promise<{ w: string; title: strin
  * Where the workflow view is drawn: the pane (Pane props, d.ts:10867-10909) or the band above the prompt (AbovePrompt
  * props, d.ts:10809-10850). `placement`: the pane's (Pane `placement`, dock or inline, the surface's); none for the band.
  */
-type ViewSite = { surface: string; columns: number | undefined; rows: number; where: 'pane' | 'band'; placement?: 'dock' | 'inline'; runs?: true }
+type ViewSite = { surface: string; columns: number | undefined; rows: number; where: 'pane' | 'band'; placement?: 'dock' | 'inline'; runs?: true; wide?: boolean }
 
 /**
  * Live round 1 (the human, 2026-10-26): in a wide VS Code panel `/ai-dlc:lens` opens two docked tabs, the Run List
@@ -3276,7 +3418,8 @@ async function workflowBody($: EngineInterface, t: any, site: ViewSite) {
   // Step 42: the keep-alive band is a band of its own, after this one: no keep-alive line in the lens band.
   const keepalive = site.where === 'band' ? null : await keepaliveRow($, t)
   const pinnedNote =
-    site.where === 'pane' && place === 'pinned' && !BAND_SURFACES.has(site.surface) ? (
+    // Step 44 (R44.15): not in VS Code, where pinned is the pane above the prompt or the band the mode button chose.
+    site.where === 'pane' && place === 'pinned' && !BAND_SURFACES.has(site.surface) && site.surface !== 'vscode' ? (
       <Text dimColor wrap="wrap">
         pinned: this surface has no band above the prompt, so the view stays a pane.
       </Text>
@@ -3364,6 +3507,15 @@ async function workflowBody($: EngineInterface, t: any, site: ViewSite) {
   const stepOpen = (f: Flow, c: StepChart) => open[stepOpenKey(f, c)] ?? (f.steps[0]?.key === c.key || own(stepSel as Record<string, string>, f.w) === c.key)
   // Live 2d: the width a chart may take, in CSS px (the body's columns times cellPx); unknown columns: as drawn.
   const fitPx = site.columns !== undefined && site.columns > 0 ? site.columns * s.cellPx : undefined
+  // Step 44 (R44.20): in VS Code a flowchart is drawn in the right pane only (the docked pane), never in the band above
+  // the prompt (the inline pane, or the AbovePrompt band the mode button chose). No plugin can widen the Claude panel
+  // (no host op sizes a surface: d.ts 2382-2640; PaneOpenArgs `columns` 7646-7657 only sizes the dock), so there an open
+  // step says how to see it, and its full-screen control is drawn dim and does nothing (ButtonProps has no disabled flag,
+  // d.ts 1093-1198). The terminal and desktop keep drawing it in their band.
+  const chartOff = site.surface === 'vscode' && !(site.where === 'pane' && site.placement === 'dock')
+  // The full-screen control is off in pinned mode while the panel is narrow; on a band in a wide panel it opens the
+  // right pane on that step, as before.
+  const fullOff = chartOff && !(site.where === 'band' && site.wide === true)
   const stepChart = (f: Flow, c: StepChart, size: LensSettings, kp: string, bp: string, full = false) => {
     const lab = stepLabel(c)
     const look = stepLook(c)
@@ -3388,6 +3540,10 @@ async function workflowBody($: EngineInterface, t: any, site: ViewSite) {
           {full ? (
             // Live 2b.ii: full screen keeps the heading's button, as restore (⤡) where ⤢ was.
             <Button key={`${kp}step-restore`} label="⤡" plain onPress={() => changeView($, viewRestore)} />
+          ) : fullOff ? (
+            <Text key={`${kp}step-full-off`} dimColor>
+              ⤢
+            </Text>
           ) : (
             <Button
               key={`${kp}step-full`}
@@ -3402,7 +3558,12 @@ async function workflowBody($: EngineInterface, t: any, site: ViewSite) {
             />
           )}
         </Box>
-        {o && s.chartInPane ? chartNode(t, hasSvg, on1, c.ids, c.agents, lab, size, `${full ? 'Full screen chart' : 'Step chart'} ${c.key}: ${f.info.parent}`, av, kp, fitPx) : null}
+        {o && s.chartInPane && !chartOff ? chartNode(t, hasSvg, on1, c.ids, c.agents, lab, size, `${full ? 'Full screen chart' : 'Step chart'} ${c.key}: ${f.info.parent}`, av, kp, fitPx) : null}
+        {o && s.chartInPane && chartOff ? (
+          <Text key={`${kp}step-chart-off`} dimColor wrap="wrap">
+            Widen the Claude panel to see the flowchart in the right panel.
+          </Text>
+        ) : null}
         {o && agentButtons($, t, c.ids.filter(id => !c.bare.includes(id)), c.agents, lab, viewTarget, c.ids[0] ?? null, marks, bp)}
         {/* Open, the step shows the note of its Stop turn's last press and what it does. */}
         {o && pressNotes[`step:${f.w}:${c.key}`] !== undefined ? (
@@ -4093,8 +4254,8 @@ export const register: Register = on => {
       await refreshRuns($)
       await detectNow($)
       if (!workflowOpened) {
-        // Round 4 "pinned": VS Code has no band that stays at the top (AbovePrompt is terminal and
-        // desktop only); the workflow pane, outside the transcript, is the closest. Unasked, a surface may leave it undrawn.
+        // Round 4 "pinned": in VS Code the lens draws no band (R44.4; the site is raised there, the probe of step
+        // 44.2.l1.3 found); the workflow pane, outside the transcript, is its view. Unasked, a surface may leave it undrawn.
         workflowOpened = true
         // Round 6: Esc closes it once it holds the keys (no `focus`: an unasked open never takes the keyboard).
         // Where it goes is the surface's: PaneOpenArgs has no placement or order (d.ts:7588-7660), A9.
@@ -4327,12 +4488,13 @@ export const register: Register = on => {
     })
   })
 
-  // Round 4: the workflow pane, outside the transcript, opens on the first spawn and updates live (VS Code
-  // has no band at the top of the chat; AbovePrompt is terminal and desktop only). Step 1.5: its body is
+  // Round 4: the workflow pane, outside the transcript, opens on the first spawn and updates live (in VS Code it is
+  // the lens's only view: the lens draws no band there, R44.4, though the site is raised). Step 1.5: its body is
   // `workflowBody`, shared with the band below. No outer margin or padding (A9): the frame fits the tree
   // (d.ts:10904-10909); only full screen fills the rows.
   on('ui.render', { component: 'Pane', requestId: CHART }, async ($, e) => {
     notePaneSeat(e.props.placement, e.props.bodyColumns)
+    followSeat($, e.props.placement, e.surface, await read($, vscodeBandA))
     return guardPane($, e, 'workflow pane', async () => {
       const t = $.ui.resolve(e) as any
       if (e.viewport !== undefined) lastViewport = { columns: e.viewport.columns, rows: e.viewport.rows }
@@ -4344,14 +4506,16 @@ export const register: Register = on => {
   // Live round 1: the Run List tab, the view's list at its normal size (`ViewSite.runs`).
   on('ui.render', { component: 'Pane', requestId: RUNS }, async ($, e) => {
     notePaneSeat(e.props.placement, e.props.bodyColumns)
+    followSeat($, e.props.placement, e.surface, await read($, vscodeBandA))
     return guardPane($, e, 'runs pane', async () => {
       const t = $.ui.resolve(e) as any
       return workflowBody($, t, { surface: String(e.surface), columns: e.props.bodyColumns, rows: e.props.scroll.bodyRows, where: 'pane', placement: e.props.placement, runs: true })
     })
   })
 
-  // Step 1.5, "pinned": the same view in the band directly above the prompt (AbovePrompt, d.ts:10809-10850;
-  // raised on the terminal and desktop only). Drawn while the view is pinned (since step 36.2.3 with no workflow too); a
+  // Step 1.5, "pinned": the same view in the band directly above the prompt (AbovePrompt, d.ts:10809-10850). The d.ts
+  // says terminal and desktop only, but the probe of step 44.2.l1.3 saw VS Code raise it (surface `vscode`); the lens
+  // draws there only where every surface is a terminal or desktop (R44.4, below). Drawn while the view is pinned (since step 36.2.3 with no workflow too); a
   // survey holding the band (`hasSurvey`) and every other case pass to the hooks beneath, whose tree stays under ours.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     // Step 36.4 (rcm-spec): a /reload-plugins fires no session.start, so the old card goes at the first render after
@@ -4365,6 +4529,11 @@ export const register: Register = on => {
       // band is drawn with no workflow too, its minimised line reading "Nothing Here". Amendment 8: docked, the band
       // stays while a workflow is in progress; pinned, it is gone once closed with its `×` (only while none is).
       if (v.size === 'fullscreen') return next(e)
+      // Step 44 (R44.4): the band is drawn only where every attached surface draws it (`bandEverywhere`), as `onBand`
+      // says for `/ai-dlc:lens`. Elsewhere (VS Code, or surfaces unknown) the command opens the pane, which is the view
+      // there, so a band drawn too would be a second lens band, as in the VS Code narrow panel.
+      // Step 44 (R44.16): in VS Code, also while the person chose pinned (`vscodeBandA`, the pane closed).
+      if (!(await bandAllowed($))) return next(e)
       const pinned = placeOf(v, String(conf.settings.workflowPlace)) === 'pinned'
       const closed = pinned && (await read($, bandClosedA))
       if (!pinned || closed) {
@@ -4373,7 +4542,8 @@ export const register: Register = on => {
       }
       const t = $.ui.resolve(e) as any
       const { Box } = t
-      const ours = await workflowBody($, t, { surface: String(e.surface), columns: e.props.bodyColumns, rows: e.props.maxRows, where: 'band' })
+      // Step 44 (R44.20): whether the panel is wide (the viewport docks a pane), for the band's full-screen control.
+      const ours = await workflowBody($, t, { surface: String(e.surface), columns: e.props.bodyColumns, rows: e.props.maxRows, where: 'band', wide: e.viewport?.isFullscreen === true })
       // Step 43 (B4b, D5): the band is on screen; the pane beside it reads this to tell whether the band is closed.
       lastBandAt = nowMs()
       const below = await next(e)

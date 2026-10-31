@@ -1510,7 +1510,7 @@ describe('round 5: the task title at the top (requirement 2)', () => {
 
 describe('round 5: several workflows (requirement 3) and the status indicator (requirement 4)', () => {
   test('two workflows: a panel each, headed by its parent task and its status, all collapsed', async ($, on) => {
-    await seed($, on, { files: { 'docs/handoffs/R/run.md': RUN_R('build the lens', 'done (passed)') } })
+    await seed($, on, { files: { 'docs/handoffs/R/run.md': RUN_R('build the lens', 'done (passed)', 'done') } })
     await $.turn.start({ text: 'Test the change please', turnId: 'm2' })
     await $.tool.call({ tool: 'Agent', subagent_type: 'ai-dlc:sqa-engineer', description: 'later', prompt: 'SQA PROMPT: test the change.', tool_use_id: 'toolu_2' })
     await $.agent.spawn({ tool_use_id: 'toolu_2', prompt: 'SQA PROMPT: test the change.', description: 'later', subagentType: 'ai-dlc:sqa-engineer', provider: { plugin: 'ai-dlc', tier: 'user' }, parentModel: 'claude-opus-5-5', background: true, fork: false })
@@ -2917,18 +2917,27 @@ describe('step 8.1.5: pane view controls', () => {
     await ui.unmount()
   })
 
-  test('pinned on a surface without the band (VS Code): it stays a pane and says so; docked re-opens the pane', async ($, on) => {
+  // Step 44 (R44.15, R44.16): in VS Code the pane draws no "no band" note; the mode button switches between the pane and
+  // the band above the prompt (which VS Code raises): from the pane it closes the lens panes and pins the view to the band,
+  // from the band it docks the pane again.
+  test('[R44.15] [R44.16] VS Code: the pane has no "no band" note; the mode button pins the view to the band (the lens panes closed), and on the band docks the pane again', async ($, on) => {
     const { openArgs, closed } = await seed($, on)
     const ui = await chartPane($, 'vscode', false)
     expect((await ui.find({ type: 'Button', key: 'pane-place' }))?.text).toBe('pinned')
-    expect(await ui.find({ type: 'Text', text: /no band above the prompt/ })).toBeDefined()
-    const before = openArgs.length
+    expect(await ui.find({ type: 'Text', text: /no band above the prompt/ })).toBe(undefined) // R44.15
     await ui.press({ key: 'pane-place' })
-    expect((await ui.find({ type: 'Button', key: 'pane-place' }))?.text).toBe('docked')
-    expect(await ui.find({ type: 'Text', text: /no band above the prompt/ })).toBe(undefined)
-    expect(openArgs.slice(before).map((x: any) => x.id)).toEqual([CHART_PANE])
-    expect(closed).not.toContain(CHART_PANE)
+    expect(closed).toEqual(expect.arrayContaining([CHART_PANE, 'ai-dlc-lens-runs'])) // R44.16: both lens panes closed
     await ui.unmount()
+    const band = () => $.ui.mount({ plugin: PLUGIN, surface: 'vscode', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 20, bodyColumns: 100, scroll: { offset: 0, bodyRows: 20 }, view: {} } } as any)
+    const b = await band()
+    expect(await b.find({ type: 'Button', key: 'pane-place' })).toBeDefined() // the lens band is drawn (R44.16)
+    const before = openArgs.length
+    await b.press({ key: 'pane-place' })
+    expect(openArgs.slice(before).map((x: any) => x.id)).toContain(CHART_PANE) // the pane is opened again
+    await b.unmount()
+    const again = await band()
+    expect(await again.find({ type: 'Button', key: 'pane-place' })).toBe(undefined) // the band passes: the pane is the view
+    await again.unmount()
   })
 
   test('pinned where every surface draws the band (terminal): no pane opens on the first spawn; the band draws the view; docked opens the pane and the band passes', async ($, on) => {

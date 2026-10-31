@@ -1543,6 +1543,18 @@ export function workflowStatus(members: readonly StatusMember[], runStatuses: re
 }
 
 /**
+ * Step 44 (R44.5): a workflow's status in the run list and the band, `workflowStatus` but never `completed` while a run
+ * it names is `active`: with every agent ended, such a run waits for its next stage or for the human, so it reads
+ * `waiting`. A `blocked` run already reads `halted` (`workflowStatus`). Each run's `status:` is that of its current
+ * run-state version (`pickRunState`). A step's chart keeps `workflowStatus`, since a finished step of an active run is
+ * completed.
+ */
+export function runListStatus(members: readonly StatusMember[], runStatuses: readonly string[] = [], spawner: string | null = null): FlowStatus {
+  const st = workflowStatus(members, runStatuses, spawner)
+  return st === 'completed' && runStatuses.some(x => x.trim().toLowerCase() === 'active') ? 'waiting' : st
+}
+
+/**
  * Step 43 (C1): each *Stages* row's status by its step code, lower-cased, from a run state's text: the table under
  * a *Stages* heading or whose header has a `Stage` column, with a `Status` column (its `Step` column by header, else
  * the first). A row with no step code is skipped; a code listed twice keeps its first row. {} for null.
@@ -2207,10 +2219,13 @@ export function newestFirst<T extends { start: number | null; id: string }>(runs
   return [...runs].sort((a, b) => at(b) - at(a) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
 }
 
-/** Surfaces that draw the AbovePrompt band (d.ts:10809-10819: "Raised on the terminal and desktop surfaces only"). */
+/** Surfaces where the lens draws its view as the AbovePrompt band. d.ts:10809-10819 says the site is raised on the
+ * terminal and desktop only; the probe of step 44.2.l1.3 saw VS Code raise it too, but there the lens's view is its pane
+ * (R44.4), so VS Code stays out. */
 export const BAND_SURFACES = new Set(['terminal', 'desktop'])
 
-/** Whether every attached surface draws the band, so a pinned view needs no pane; none attached (or unknown) is false. */
+/** Whether every attached surface is one where the lens draws its band (`BAND_SURFACES`), so a pinned view needs no pane;
+ * none attached (or unknown) is false. */
 export const bandEverywhere = (surfaces: readonly string[]): boolean => surfaces.length > 0 && surfaces.every(s => BAND_SURFACES.has(s))
 
 // ---- step 8.6.1 (was 30.1): one flowchart per top-level step (feature root) of a run ----

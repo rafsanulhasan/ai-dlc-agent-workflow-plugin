@@ -42,3 +42,20 @@ None of the four is recorded in a later step or in the backlog. Bug 1a reverses 
 - **R44.3 (1b, master):** the head row reads `ai-dlc cache-keepalive: on` when the 1h or the 5m track is on, or the master is on, with an `off` button that turns both tracks off. It reads `ai-dlc cache-keepalive: off` when both tracks are off, or the master is off, with an `on` button that turns both tracks on. The same rule holds wherever the head row is drawn: the full pane and the minimised band.
 - **R44.4 (2a):** `/ai-dlc:lens` draws exactly one lens band in the narrow view: the first one (`AI-DLC Lens`, one-line list). The second is removed.
 - **R44.5 (2b):** the lens never shows an `active` or `blocked` run as `completed`. A run's state comes from the current version of its run state (`handoff`, *Run state*, Versions).
+
+## Clarification from the human (2026-10-31, asked by am-44)
+
+These readings are binding for R44.2 and R44.3. Cause, per am-44: an enabled but idle track's text read "off (no cache write seen)" (cache-state.ts:199), while its button followed the switch (cache-state.ts:289).
+- **R44.2:** a track row's status is its switch in force. Switched on and idle reads `keepalive 5m: on, idle (no 5m cache write seen), ping 0/20, keep warm 1h`, with an `off` button. Switched off reads `off (disabled)`, with an `on` button. A running track reads `on, <running text>`.
+- **R44.3:** the tracks decide the head row (a track's switch already folds in the master, cache-state.ts:268). It reads `on` when either track is on in force, with an `off` button that turns the master and both tracks off. Otherwise it reads `off`, with an `on` button that turns the master and both tracks on. So "master on, both tracks off" reads off, and "master off, a track on in force" reads on. The same rule holds in the pane and the minimised band. The published `$.state` lines are unchanged.
+
+## Second clarification from the human (2026-10-31, bug 2a, widened)
+
+The human, verbatim: "3. see keepalive-lens-naarow view: ok, you should keep the band that open keepalive and lens in the same band in different tabs. the other one should be removed". Then, asked whether that holds in every narrow case: "Remove B always".
+
+- **R44.4 (replaces the version above):** in the narrow VS Code view, only the tabbed pane is drawn (A: `ai-dlc cache-keepalive` and `AI-DLC Lens` as tabs of one pane). No band is drawn below it (B), whether keep-alive, the lens or both are open. That covers both the lens list band and the minimised keep-alive row (`ai-dlc cache-keepalive: on` with its buttons). Minimising happens inside the pane.
+- R44.3's "the same rule in the minimised band" now applies wherever keep-alive's head row is drawn: the pane in VS Code, and the band on surfaces that still draw one (Terminal, Desktop).
+
+## Third clarification from the human (2026-10-31, asked through sqa-44's finding F1)
+
+- **R44.6:** while both tracks are off, the band and the pane do not show the seed row (`keepalive seed: cache hit, …`). They show the head row `ai-dlc cache-keepalive: off`, with its `on` button, and the track rows. The seed row shows again once a track is on.

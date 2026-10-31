@@ -192,6 +192,29 @@ Clarifications answered by the human on 2026-10-22 (all three closed):
 - C2, context-view awareness: included, on by default, all five `awareness*` options configurable. Applied in sections 5, 6 (F6), 8 and 11.
 - C3, avatars: images (a path or data URI) allowed alongside the initials badge; a file path goes through the trust check; initials are the fallback; an image-render spike comes first. Applied in sections 5, 6 (F7), 11 and 13.
 
+## 12a. Step 44 revisions (the human, 2026-10-31)
+
+Added after live use of keep-alive and the lens in VS Code (steps 43 and 44). Sources: `docs/handoffs/FEAT-20261020-ai-dlc-lens/44-live-findings.human.md` (R44.1 to R44.6), `44-live-findings-2.human.md` (R44.7 to R44.10), `44.2.l1.2-agent-manager-to-orchestrator.handback.md` (host facts F1 to F6), `run.v4.3.md` entries 2eo to 2ff. Nothing below re-decides an older human decision except where the human reversed it, each marked.
+
+**Outcome served.** O1 (see the run at a glance) and O2 (know the cache position): the lens must be truthful about runs, and keep-alive's state must be readable and its switches honest, without the display moving or vanishing when the panel is resized.
+
+**What the human decided.**
+- Keep-alive writes no status line (R44.1); its state is in its own band above the prompt on every surface, VS Code included, and opens no pane (R44.7 revised). This reverses the human's 2026-10-25 "summary plus pane" decision (`run.v4.md` entry 2s) and the step 43 reading of "no band below the pane" for keep-alive.
+- Each keep-alive track row shows its switch in force and its button offers the opposite; the head row is decided by the tracks and its button turns the master and both tracks off or on; no seed row while both tracks are off (R44.2, R44.3, R44.6). This replaces the button-label rule D10 (run.v4.2, 17.1.26, "label follows allowed").
+- The lens shows no band of its own in VS Code (R44.4). It lives in the pane region, which VS Code puts above the prompt when narrow and in the right dock when wide; only the lens moves with the width, keep-alive's band does not (R44.9, R44.10 revised). Wide to narrow closes the wide-only Run List tab; narrow to wide does not open it (an unasked open; see the open question).
+- The lens never shows an `active` or `blocked` run as `completed`; the newest run-state version wins (R44.5).
+
+**Superseded text.** In this brief: nothing in sections 1 to 12 states the status line, the pane tab layout or the band layout of keep-alive, so nothing here needs rewriting. F6's keep-alive header line (state read from keep-alive, published value) is unchanged. Superseded stories are marked in `docs/product/active/session-continuity-and-cache-visibility/sprint-1/keepalive-cache-status/stories.delta-r4.md` (the status-line summary, the VS Code Pane, the button rule D10, the title row rule) and replaced by `stories.delta-step44.md` (US-17.8, AC-17.8.1 to AC-17.8.11); the lens side is in `stories.md` (*Step 44 revisions*: AC-1.6, AC-7.13, AC-12.12 to AC-12.16).
+
+**Scope and priority.** No new feature and no deferral: these correct shipped behaviour and ship in 1.0.0-preview1 with step 44 (C1, section 9). Priority follows the items they correct (P1); no P0 (no data loss, no security fix). **Assumption — needs human confirmation.** The product-manager records the items.
+
+**Risks added to section 11.** (1) Keep-alive's VS Code band depends on `AbovePrompt` rendering in VS Code, which the host's type file says it does not and which the probe on 2.1.310 shows it does; a later host version could change it. Handling: declare 2.1.310 as the probed version; decide the fallback with the human (story file, Q44-B). (2) VS Code moves the pane region between inline and dock by width and a module cannot choose the placement; a deferred open of a pane is placed only above 110 or 144 columns. Handling: only the lens moves; keep-alive is out of the region.
+
+**Open questions for the human** (each with its story file):
+- Whether a lens that appears in the right pane on narrow to wide without its Run List tab is what is wanted (`stories.md`, Q44-A).
+- Minimum host version and fallback for keep-alive's VS Code band (`stories.md`, Q44-B).
+- The exact text of the other idle track rows, what the settings `status` and `statusText` do now, and whether the source note stays in the track row examples (`stories.delta-step44.md`, Q44-1 to Q44-3).
+
 ## 13. Delegation list
 
 ### requirement-analyst (step 6 continues; use `spec-driven-development`)

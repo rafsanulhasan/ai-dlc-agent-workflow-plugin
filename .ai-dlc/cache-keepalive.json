@@ -3,7 +3,6 @@
   "enabled": true,
   "scope": "session",
   "status": true,
-  "statusText": "auto",
   "sourceNote": true,
   "pingPrompt": "Keep-alive ping. Reply with only: ok",
   "hitThreshold": 0.9,

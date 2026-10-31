@@ -105,10 +105,12 @@ function engine(on: On, o: Opts = {}) {
       for (let i = 0; i < 2000; i++) await Promise.resolve()
     },
   }
-  on('classic.Stop', () => ({}) as never)
-  on('classic.SubagentStop', () => (seen.subagentStops++, {}) as never)
-  on('turn.start', (_, e) => e as never)
-  on('session.end', (_, e) => ({ sessionId: e.sessionId }) as never)
+  // Step 44 (R44.1): a test reads a track's line from the published state (status() below), whose write goes out after the
+  // hook returns; these terminal handlers let it land first, so a read right after a call sees what the old status line showed.
+  on('classic.Stop', async () => (await settle(), {}) as never)
+  on('classic.SubagentStop', async () => (seen.subagentStops++, await settle(), {}) as never)
+  on('turn.start', async (_, e) => (await settle(), e) as never)
+  on('session.end', async (_, e) => (await settle(), { sessionId: e.sessionId }) as never)
   on('session.usage', () => ({ value: { context: { tokens: 1_000_000, window: 1_000_000, percent: 100 }, rateLimits: o.rateLimits ?? [] } }) as never)
   on('session.model', () => ({ value: 'claude-opus-5-5' }) as never)
   on('session.cwd', () => ({ value: typeof o.cwd === 'function' ? o.cwd() : o.cwd ?? ROOT }) as never)
@@ -174,7 +176,9 @@ function engine(on: On, o: Opts = {}) {
   })
   // A command no hook answers: what a bare keepalive command would get, since none is registered.
   on('command.run', (_, e) => ({ text: `unanswered: ${e.command}` }) as never)
-  const status = () => seen.statuses.at(-1)
+  // Step 44 (R44.1): keep-alive writes no status line. What this reads is the published state's lines, which are the
+  // text the old line carried (the seed row aside), and nothing while the master is off, as the old line was.
+  const status = () => { const s = seen.states.at(-1); return s && s.enabled ? s.tracks.map(t => t.line).join('\n') : undefined }
   const line = (track: '1h' | '5m') => status()?.split('\n').find(l => l.startsWith(`keepalive ${track}:`))
   // The keep-alive part of a track's line: the text after its cache part (LLD 7, T17.2)
   const part = (track: '1h' | '5m') => partOf(line(track))
@@ -675,20 +679,23 @@ describe('keep-alive', () => {
     expect(seen.forks).toBe(1)
   })
 
-  test('a new turn stops the pings and clears the status', async ($, on) => {
-    const { seen, clock, status } = engine(on)
+  test('a new turn stops the pings and shows both tracks off (turn running), with no status line', async ($, on) => {
+    const { seen, clock, line } = engine(on)
     await $.classic.Stop(stop())
     await $.turn.start({ turnId: 't-2' } as never)
-    expect(status()).toBeUndefined()
+    expect(line('1h')).toContain('off (turn running)')
+    expect(line('5m')).toContain('off (turn running)')
+    expect(seen.statuses.every(s => s === undefined)).toBe(true) // R44.1: keep-alive writes no status line
     await clock.fire(50)
     expect(seen.forks).toBe(0)
   })
 
   test('the session ending stops the pings', async ($, on) => {
-    const { seen, clock, status } = engine(on, { split: [0, 3] })
+    const { seen, clock, line } = engine(on, { split: [0, 3] })
     await $.classic.Stop(stop())
     await $.session.end({ reason: 'clear', sessionId: 's-1' } as never)
-    expect(status()).toBeUndefined()
+    expect(line('5m')).toContain('off (session ended)')
+    expect(seen.statuses.every(s => s === undefined)).toBe(true) // R44.1: keep-alive writes no status line
     await clock.fire(3)
     expect(seen.forks).toBe(0)
   })
@@ -709,12 +716,12 @@ describe('keep-alive', () => {
     expect(seen.forks).toBe(0)
   })
 
-  test('status=false keeps the pings but hides the lines', async ($, on) => {
-    const { seen, clock, status } = engine(on, { files: { [`${ROOT}/.claude/settings.local.json`]: JSON.stringify({ env: { AI_DLC_KEEPALIVE_STATUS: 'off' } }) } })
+  test('status=false keeps the pings and writes no status line (step 44: the setting only hides the band and the Pane)', async ($, on) => {
+    const { seen, clock } = engine(on, { files: { [`${ROOT}/.claude/settings.local.json`]: JSON.stringify({ env: { AI_DLC_KEEPALIVE_STATUS: 'off' } }) } })
     await $.classic.Stop(stop())
     await clock.fire(50)
     expect(seen.forks).toBe(1)
-    expect(status()).toBeUndefined()
+    expect(seen.statuses.every(s => s === undefined)).toBe(true) // R44.1: keep-alive writes no status line
   })
 
   test('an invalid setting is warned about once and the next level applies', async ($, on) => {
@@ -915,11 +922,11 @@ describe('the published state (read by ai-dlc-lens)', () => {
     expect(last(seen)?.tracks.some(t => t.running)).toBe(false)
   })
 
-  test('with the status line off the state is still published', async ($, on) => {
-    const { seen, status } = engine(on, { files: { [`${ROOT}/.claude/settings.local.json`]: JSON.stringify({ env: { AI_DLC_KEEPALIVE_STATUS: 'off' } }) } })
+  test('with status off the state is still published, and no status line is written', async ($, on) => {
+    const { seen } = engine(on, { files: { [`${ROOT}/.claude/settings.local.json`]: JSON.stringify({ env: { AI_DLC_KEEPALIVE_STATUS: 'off' } }) } })
     await $.classic.Stop(stop())
     await settle()
-    expect(status()).toBeUndefined()
+    expect(seen.statuses.every(s => s === undefined)).toBe(true) // R44.1: keep-alive writes no status line
     expect(track(last(seen), '1h')?.running).toBe(true)
   })
 
@@ -1475,7 +1482,7 @@ describe('/ai-dlc:cache-keepalive', () => {
   })
 
   test('[live3-5] /ai-dlc:cache-keepalive with arguments changes no setting and its reply names /ai-dlc:cache-keepalive-configure', async ($, on) => {
-    const { seen } = engine(on)
+    const { seen, status } = engine(on)
     for (const args of ['2h', '1d --machine', 'off', 'clear --track 5m']) {
       const { text } = await keepalive($, args)
       expect(text).toContain(`it takes no arguments, so "${args}" changed nothing`)
@@ -1485,7 +1492,7 @@ describe('/ai-dlc:cache-keepalive', () => {
     // Nothing was set: the time in force is still the default, and keep-alive is still on
     expect((await keepalive($)).text).toMatch(/^HIT: .*keep warm: 1h track 8h \(default\), 5m track 1h \(default\)$/)
     await $.classic.Stop(stop())
-    expect(seen.statuses.at(-1)).toBeDefined()
+    expect(status()).toBeDefined()
   })
 
   test('[live3-7] switched off for this session (configure off --session), the bare command pings nothing and says off; on again, it pings', async ($, on) => {
@@ -2240,12 +2247,12 @@ describe('[T17.2] the cache part and the reasons', () => {
       expect(bare(seen)).toEqual([])
     })
 
-    test('turn start (published; the status stays cleared while the turn runs)', async ($, on) => {
-      const { seen, status } = engine(on)
+    test('turn start (published; no status line is written while the turn runs)', async ($, on) => {
+      const { seen } = engine(on)
       await $.classic.Stop(stop())
       await $.turn.start({ turnId: 't-2' } as never)
       await settle()
-      expect(status()).toBeUndefined()
+      expect(seen.statuses.every(s => s === undefined)).toBe(true) // R44.1: keep-alive writes no status line
       expect(track(last(seen), '1h')?.line).toBe(`keepalive 1h: main warm until ${at(60)}; off (turn running), ping 0/9, keep warm 8h (default)`)
       expect(track(last(seen), '5m')?.line).toBe('keepalive 5m: off (turn running), ping 0/20, keep warm 1h (default)')
       expect(bare(seen)).toEqual([])
@@ -2736,8 +2743,8 @@ describe('[step 40] /ai-dlc:cache-keepalive on|off writes the env of .claude/set
     expect(written(seen)).toEqual({ env: { AI_DLC_KEEPALIVE_ENABLED: 'false' } })
     expect(text).toContain('AI_DLC_KEEPALIVE_ENABLED=false written to the env of .claude/settings.local.json')
     expect(text).toContain('(order: .claude/settings.local.json > .claude/settings.json > ~/.claude/settings.json > .ai-dlc/cache-keepalive.json)')
-    expect(status()).toBeUndefined()
-    await settle()
+    await settle() // the state goes out after the command returns
+    expect(status()).toBeUndefined() // the published state says the master is off
     expect(seen.states.at(-1)?.enabled).toBe(false)
   })
 
@@ -2839,6 +2846,33 @@ describe('[step 40] /ai-dlc:cache-keepalive on|off writes the env of .claude/set
     expect(t('5m').sessionSwitch).toBeUndefined()
   })
 
+  // Step 44 (R44.3; review 44.4.1): `on|off --session` is the head row's button, judged by what the head row reads (either track on),
+  // not by the master switch, which can disagree with the tracks.
+  const enabledOf = (seen: { states: { tracks: { name: string; enabled?: boolean }[] }[] }) => Object.fromEntries(seen.states.at(-1)!.tracks.map(t => [t.name, t.enabled]))
+
+  test('[R44.3] master on, both tracks switched off: the head row reads off, so `on --session` turns both tracks on', async ($, on) => {
+    const { seen } = engine(on, { split: [1_000, 2_000] })
+    await configure($, 'off --session --track 1h')
+    await configure($, 'off --session --track 5m')
+    await settle()
+    expect(enabledOf(seen)).toEqual({ '1h': false, '5m': false })
+    const { text } = await configure($, 'on --session')
+    await settle()
+    expect(text).toContain('keep-alive on for this session')
+    expect(enabledOf(seen)).toEqual({ '1h': true, '5m': true })
+  })
+
+  test('[R44.3] master off, one track switched on: the head row reads on, so `off --session` turns it off', async ($, on) => {
+    const { seen } = engine(on, { split: [1_000, 2_000] })
+    await configure($, 'off --session')
+    await configure($, 'on --session --track 1h')
+    await settle()
+    expect(enabledOf(seen)).toEqual({ '1h': true, '5m': false })
+    await configure($, 'off --session')
+    await settle()
+    expect(enabledOf(seen)).toEqual({ '1h': false, '5m': false })
+  })
+
   // Step 42: each published track carries `enabled`, the state in force, which the lens's Cache Lab buttons read.
   test('[42.3] the published tracks carry `enabled`: both on by default', async ($, on) => {
     const { seen } = engine(on)
@@ -2937,10 +2971,12 @@ describe('[step 40] the status line is hidden while the master is off', () => {
     expect(seen.states.at(-1)?.enabled).toBe(false)
   })
 
-  test('both tracks off in the settings: no status line either (no track allowed)', async ($, on) => {
-    const { status } = engine(on, { files: local({ AI_DLC_KEEPALIVE_1H_ENABLED: 'false', AI_DLC_KEEPALIVE_5M_ENABLED: 'false' }) })
+  test('both tracks off in the settings: both published disabled, and no status line (R44.1)', async ($, on) => {
+    const { seen, line } = engine(on, { files: local({ AI_DLC_KEEPALIVE_1H_ENABLED: 'false', AI_DLC_KEEPALIVE_5M_ENABLED: 'false' }) })
     await $.classic.Stop(stop())
-    expect(status()).toBeUndefined()
+    expect(line('1h')).toContain('off (disabled)')
+    expect(line('5m')).toContain('off (disabled)')
+    expect(seen.statuses.every(s => s === undefined)).toBe(true) // R44.1: keep-alive writes no status line
   })
 
   test('one track allowed is enough to show it', async ($, on) => {
@@ -2949,10 +2985,10 @@ describe('[step 40] the status line is hidden while the master is off', () => {
     expect(status()).toBeDefined()
   })
 
-  test('status off keeps hiding it with the master on (AC-17.6.5)', async ($, on) => {
-    const { status } = engine(on, { files: local({ AI_DLC_KEEPALIVE_STATUS: 'off' }) })
+  test('status off, with the master on, writes no status line either (AC-17.6.5)', async ($, on) => {
+    const { seen } = engine(on, { files: local({ AI_DLC_KEEPALIVE_STATUS: 'off' }) })
     await $.classic.Stop(stop())
-    expect(status()).toBeUndefined()
+    expect(seen.statuses.every(s => s === undefined)).toBe(true) // R44.1: keep-alive writes no status line
   })
 
   test('the command still answers while the master is off, so it can be turned back on', async ($, on) => {
@@ -3200,32 +3236,42 @@ describe('[T17.7] handoff.onWhenOff, the setting', () => {
   })
 })
 
-// AC-17.6.9 and 17.6.10: in VS Code the command opens the keep-alive Pane, which draws the band's tree
-// (title, master button, a row and a button per track), and its rows follow the state without reopening.
-describe('[T17.6] the keep-alive Pane (VS Code)', () => {
+// AC-17.6.10 and step 44 (R44.7): keep-alive is a band only, on every surface that raises AbovePrompt, VS Code included. The
+// band draws the tree (title, master button, a row and a button per track) and its rows follow the state without reopening.
+describe('[T17.6] the keep-alive band (every surface)', () => {
   const opened: { id: string; title?: string }[] = []
   const withPane = (on: On, o: Opts = {}) => {
     opened.length = 0
     const e = engine(on, o)
     on('ui.open', (_, ev) => (opened.push(ev as never), { value: { isPlaced: true } }) as never)
+    on('ui.render', { component: 'AbovePrompt' } as never, (() => ({ type: 'engine', ref: 0 })) as never) // what the engine draws beneath the band
     return e
   }
-  const pane = ($: Parameters<TestBody>[0], placement: 'dock' | 'inline' = 'dock') => $.ui.mount({ plugin: 'ai-dlc', surface: 'vscode', component: 'Pane', requestId: 'keepalive', props: { title: 'keepalive', isFocused: false, bodyColumns: 100, placement, scroll: { offset: 0, bodyRows: 40 }, view: {} } } as never)
+  // The band (AbovePrompt); `_placement` stays so the cases below read as they did for the retired Pane
+  const pane = ($: Parameters<TestBody>[0], _placement: string = 'band') => $.ui.mount({ plugin: 'ai-dlc', surface: 'vscode', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 20, bodyColumns: 100 } } as never)
   const textOf = (n: unknown): string => typeof n === 'string' ? n : Array.isArray(n) ? n.map(textOf).join('') : n && typeof n === 'object' ? Object.entries(n).map(([k, v]) => k === 'children' || k === 'text' || k === 'label' || k === 'props' ? textOf(v) : '').join('') : ''
 
-  test('[AC-17.6.9] the bare command opens the Pane with the title "ai-dlc cache-keepalive" when a VS Code surface is attached', async ($, on) => {
-    withPane(on)
-    await keepalive($)
-    expect(opened).toEqual([expect.objectContaining({ id: 'keepalive', title: 'ai-dlc cache-keepalive' })])
-  })
+  // R44.7: the command opens no pane on any surface, and its reply names none
+  for (const surfaces of [['vscode'], ['terminal', 'vscode'], [], ['terminal'], ['desktop']]) {
+    test(`[R44.7] the command on surfaces ${JSON.stringify(surfaces)} opens no pane and says nothing of one`, async ($, on) => {
+      withPane(on, { surfaces })
+      const { text } = await keepalive($)
+      expect(opened).toEqual([])
+      expect(text).not.toContain('pane not shown')
+    })
+  }
 
-  test('no Pane on the Terminal or Desktop alone (they have the band)', async ($, on) => {
-    withPane(on, { surfaces: ['terminal'] })
-    await keepalive($)
-    expect(opened).toEqual([])
-  })
+  // R44.7: the band is drawn on every surface that raises AbovePrompt, VS Code included
+  for (const surfaces of [['vscode'], ['terminal', 'vscode'], [], ['terminal'], ['desktop']]) {
+    test(`[R44.7] AbovePrompt on surfaces ${JSON.stringify(surfaces)} draws the keep-alive band`, async ($, on) => {
+      withPane(on, { surfaces })
+      const ui = await pane($)
+      expect(textOf(await ui.drawn())).toContain('⚠ ai-dlc cache-keepalive:')
+      await ui.unmount()
+    })
+  }
 
-  // Step 43 (live 1): the Pane, seated inline or docked, opens minimised and has the band's controls.
+  // Step 43 (live 1): the band opens minimised and has the controls.
   const kids = (n: any): any[] => {
     const c = n?.props?.children ?? n?.children
     return c === undefined || c === null ? [] : Array.isArray(c) ? c.flat(Infinity) : [c]
@@ -3233,7 +3279,7 @@ describe('[T17.6] the keep-alive Pane (VS Code)', () => {
   const walk = (n: any): any[] => (n !== null && typeof n === 'object' ? [n, ...kids(n).flatMap(walk)] : [])
   const buttons = (tree: any) => walk(tree).filter(n => n.type === 'Button')
   const press = async (ui: Awaited<ReturnType<typeof pane>>, key: string) => { await ui.press({ key }); await settle() }
-  const MIN_ROW = '⚠ ai-dlc cache-keepalive: on off⏻Ping now⟳Maximise⤢Restore□Close×' // live findings 3, point 8: each glyph is the Button's Text child, the label names the control
+  const MIN_ROW = '⚠ ai-dlc cache-keepalive: on off⏻Ping now⟳Restore□Close×' // live findings 3, point 8: each glyph is the Button's Text child, the label names the control
   const closes: unknown[] = []
   const withClose = (on: On, o: Opts = {}) => {
     closes.length = 0
@@ -3242,13 +3288,67 @@ describe('[T17.6] the keep-alive Pane (VS Code)', () => {
     return e
   }
 
-  for (const placement of ['inline', 'dock'] as const) {
-    test(`[43 live 1b] ${placement}: the Pane starts minimised, the master switch and the status only, with ka-max, ka-min and ka-close`, async ($, on) => {
+  // R44.7: a keep-alive Pane left open from before is closed once per load, at the first band draw (timer 0), never again
+  test('[R44.7] the first band draw closes an old keep-alive Pane once per load: one ui.close of its id, none on the second draw', async ($, on) => {
+    const { clock } = withClose(on)
+    const first = await pane($)
+    await clock.fire(0)
+    await settle()
+    expect(closes).toEqual([expect.objectContaining({ id: 'keepalive' })])
+    await first.unmount()
+    const second = await pane($)
+    await clock.fire(0)
+    await settle()
+    expect(closes.length).toBe(1)
+    await second.unmount()
+  })
+
+  test('[R44.7] the band has no maximise control, minimised or full', async ($, on) => {
+    withPane(on)
+    const ui = await pane($)
+    expect(await ui.find({ type: 'Button', key: 'ka-max' })).toBe(undefined)
+    expect(textOf(await ui.drawn())).not.toContain('⤢')
+    await press(ui, 'ka-min')
+    expect(await ui.find({ type: 'Button', key: 'ka-max' })).toBe(undefined)
+    expect(textOf(await ui.drawn())).not.toContain('Maximise')
+    await ui.unmount()
+  })
+
+  // Step 44 (R44.3): the head row reads on while either track is on in force and off while both are off, its button the
+  // opposite, in the Pane minimised and restored; each track row reads its own status first (R44.2).
+  for (const placement of ['band'] as const) {
+    test(`[R44.3] ${placement}: master off in the settings, both tracks off: the minimised head row reads off with an on button`, async ($, on) => {
+      withPane(on, { files: { [`${ROOT}/.claude/settings.local.json`]: JSON.stringify({ env: { AI_DLC_KEEPALIVE_ENABLED: 'false' } }) } })
+      await $.classic.Stop(stop()) // the settings are read at a Stop
+      const ui = await pane($, placement)
+      expect(textOf(await ui.drawn())).toBe('⚠ ai-dlc cache-keepalive: off on⏻Ping now⟳Restore□Close×')
+      await press(ui, 'ka-min')
+      const text = textOf(await ui.drawn())
+      expect(text.startsWith('⚠ ai-dlc cache-keepalive: off onPing nowMinimiseClose')).toBe(true)
+      expect(text).toContain('keepalive 5m: off (disabled)')
+      expect(text).toContain('keepalive 1h: off (disabled)')
+      await ui.unmount()
+    })
+
+    test(`[R44.2] [R44.3] ${placement}: one track switched off in the settings: the head row reads on (off button), that track reads off (on button), the other on (off button)`, async ($, on) => {
+      withPane(on, { files: { [`${ROOT}/.claude/settings.local.json`]: JSON.stringify({ env: { AI_DLC_KEEPALIVE_5M_ENABLED: 'false' } }) } })
+      await $.classic.Stop(stop()) // the settings are read at a Stop
+      const ui = await pane($, placement)
+      await press(ui, 'ka-min')
+      const text = textOf(await ui.drawn())
+      expect(text.startsWith('⚠ ai-dlc cache-keepalive: on offPing nowMinimiseClose')).toBe(true)
+      expect(text).toMatch(/[k]eepalive 5m: off \(disabled\)[^]*?onkeepalive 1h: on, armed[^]*?off$/)
+      await ui.unmount()
+    })
+  }
+
+  for (const placement of ['band'] as const) {
+    test(`[43 live 1b] ${placement}: the band starts minimised, the master switch and the status only, with ka-ping, ka-min and ka-close`, async ($, on) => {
       withPane(on)
       const ui = await pane($, placement)
       const text = textOf(await ui.drawn())
       expect(text).toBe(MIN_ROW)
-      for (const key of ['ka-master', 'ka-ping', 'ka-max', 'ka-min', 'ka-close']) expect(await ui.find({ type: 'Button', key })).toBeDefined()
+      for (const key of ['ka-master', 'ka-ping', 'ka-min', 'ka-close']) expect(await ui.find({ type: 'Button', key })).toBeDefined()
       expect(await ui.find({ type: 'Button', key: 'ka-5m' })).toBe(undefined)
       expect(await ui.find({ type: 'Button', key: 'ka-1h' })).toBe(undefined)
       expect(text).not.toContain('keepalive 5m:')
@@ -3266,7 +3366,7 @@ describe('[T17.6] the keep-alive Pane (VS Code)', () => {
       expect(text.indexOf('⚠ ai-dlc cache-keepalive:')).toBe(0)
       expect(text.indexOf('keepalive 5m:')).toBeGreaterThan(0)
       expect(text.indexOf('keepalive 1h:')).toBeGreaterThan(text.indexOf('keepalive 5m:'))
-      for (const key of ['ka-master', 'ka-5m', 'ka-1h', 'ka-ping', 'ka-max', 'ka-min', 'ka-close']) expect(await ui.find({ type: 'Button', key })).toBeDefined()
+      for (const key of ['ka-master', 'ka-5m', 'ka-1h', 'ka-ping', 'ka-min', 'ka-close']) expect(await ui.find({ type: 'Button', key })).toBeDefined()
       expect(((await ui.find({ type: 'Button', key: 'ka-min' })) as any)?.props?.label).toBe('Minimise') // full: the word
       await press(ui, 'ka-min')
       text = textOf(await ui.drawn())
@@ -3274,24 +3374,18 @@ describe('[T17.6] the keep-alive Pane (VS Code)', () => {
       await ui.unmount()
     })
 
-    test(`[43 live 1b] ${placement}: ka-max restores the Pane (rows shown) and raises it: the Pane is opened again, focused`, async ($, on) => {
-      withPane(on)
-      const ui = await pane($, placement)
-      await press(ui, 'ka-max')
-      expect(textOf(await ui.drawn())).toContain('keepalive 5m:')
-      expect(((await ui.find({ type: 'Button', key: 'ka-min' })) as any)?.props?.label).toBe('Minimise') // full: the word
-      expect(opened).toEqual([expect.objectContaining({ id: 'keepalive', focus: true })])
-      await ui.unmount()
-    })
-
-    test(`[43 live 1b] ${placement}: × closes the Pane (ui.close of its id), minimised and restored`, async ($, on) => {
+    test(`[43 live 1b] ${placement}: × hides the band (no ui.close: it is not a pane), minimised and restored; the command brings it back minimised`, async ($, on) => {
       withClose(on)
       const ui = await pane($, placement)
       await press(ui, 'ka-close')
-      expect(closes).toEqual([expect.objectContaining({ id: 'keepalive' })])
+      expect(textOf(await ui.drawn())).not.toContain('⚠ ai-dlc cache-keepalive:')
+      expect(closes.filter(c => (c as { id?: string }).id === 'keepalive').length).toBeLessThanOrEqual(1) // at most the one-off old-pane close
+      await keepalive($)
+      await settle()
+      expect(textOf(await ui.drawn())).toBe(MIN_ROW)
       await press(ui, 'ka-min')
       await press(ui, 'ka-close')
-      expect(closes.length).toBe(2)
+      expect(textOf(await ui.drawn())).not.toContain('⚠ ai-dlc cache-keepalive:')
       await ui.unmount()
     })
 
@@ -3299,11 +3393,11 @@ describe('[T17.6] the keep-alive Pane (VS Code)', () => {
       withPane(on)
       const ui = await pane($, placement)
       const min = buttons(await ui.drawn())
-      expect(min.length).toBe(5) // master, ping, max, min, close
+      expect(min.length).toBe(4) // master, ping, min, close
       for (const b of min) expect(b.props.plain).toBe(true)
       await press(ui, 'ka-min')
       const open = buttons(await ui.drawn())
-      expect(open.length).toBe(7) // master, ping, max, min, close, 5m, 1h
+      expect(open.length).toBe(6) // master, ping, min, close, 5m, 1h
       for (const b of open) expect(b.props.plain).toBe(true)
       await ui.unmount()
     })
@@ -3340,11 +3434,11 @@ describe('[T17.6] the keep-alive Pane (VS Code)', () => {
       }
       const minRows = rowsOf(await ui.drawn())
       expect(minRows.length).toBe(1)
-      check(minRows[0], 5)
+      check(minRows[0], 4)
       await press(ui, 'ka-min')
       const openRows = rowsOf(await ui.drawn())
       expect(openRows.length).toBe(3) // title, 5m, 1h
-      check(openRows[0], 5)
+      check(openRows[0], 4)
       check(openRows[1], 1)
       check(openRows[2], 1)
       expect(textOf(openRows[1])).toContain('keepalive 5m:')
@@ -3461,14 +3555,14 @@ describe('[T17.6] the keep-alive Pane (VS Code)', () => {
       await ui.unmount()
     })
 
-    test(`[43 live3 p8] ${placement}: minimised, five controls in order master, ping, max, min, close, each a glyph Text child named by its label`, async ($, on) => {
+    test(`[43 live3 p8] ${placement}: minimised, four controls in order master, ping, min, close, each a glyph Text child named by its label`, async ($, on) => {
       withPane(on)
       const ui = await pane($, placement)
       const bs = buttons(await ui.drawn())
-      expect(bs.map(b => b.props.key)).toEqual(['ka-master', 'ka-ping', 'ka-max', 'ka-min', 'ka-close'])
-      expect(bs.map(b => b.props.label)).toEqual(['off', 'Ping now', 'Maximise', 'Restore', 'Close']) // master reads the press: off|on
-      expect(bs.map(b => kids(b).map(c => [c.type, textOf(c)]))).toEqual([[['Text', '⏻']], [['Text', '⟳']], [['Text', '⤢']], [['Text', '□']], [['Text', '×']]])
-      expect(bs.map(b => b.props.role)).toEqual([undefined, undefined, undefined, undefined, 'dismiss'])
+      expect(bs.map(b => b.props.key)).toEqual(['ka-master', 'ka-ping', 'ka-min', 'ka-close'])
+      expect(bs.map(b => b.props.label)).toEqual(['off', 'Ping now', 'Restore', 'Close']) // master reads the press: off|on
+      expect(bs.map(b => kids(b).map(c => [c.type, textOf(c)]))).toEqual([[['Text', '⏻']], [['Text', '⟳']], [['Text', '□']], [['Text', '×']]])
+      expect(bs.map(b => b.props.role)).toEqual([undefined, undefined, undefined, 'dismiss'])
       await ui.unmount()
     })
 
@@ -3477,8 +3571,8 @@ describe('[T17.6] the keep-alive Pane (VS Code)', () => {
       const ui = await pane($, placement)
       await press(ui, 'ka-min')
       const bs = buttons(await ui.drawn())
-      expect(bs.map(b => b.props.key)).toEqual(['ka-master', 'ka-ping', 'ka-max', 'ka-min', 'ka-close', 'ka-5m', 'ka-1h'])
-      expect(bs.slice(0, 5).map(b => b.props.label)).toEqual(['off', 'Ping now', 'Maximise', 'Minimise', 'Close'])
+      expect(bs.map(b => b.props.key)).toEqual(['ka-master', 'ka-ping', 'ka-min', 'ka-close', 'ka-5m', 'ka-1h'])
+      expect(bs.slice(0, 4).map(b => b.props.label)).toEqual(['off', 'Ping now', 'Minimise', 'Close'])
       for (const b of bs) expect(kids(b)).toEqual([])
       expect(bs.find(b => b.props.key === 'ka-close').props.role).toBe('dismiss')
       await press(ui, 'ka-master')
@@ -3486,15 +3580,10 @@ describe('[T17.6] the keep-alive Pane (VS Code)', () => {
       await ui.unmount()
     })
 
-    test(`[43 live 1b] ${placement}: the command run again after a restore minimises the Pane again`, async ($, on) => {
+    test(`[43 live 1b] ${placement}: the command run again after a restore minimises the band again`, async ($, on) => {
       withPane(on)
       const ui = await pane($, placement)
       await press(ui, 'ka-min')
-      expect(textOf(await ui.drawn())).toContain('keepalive 5m:')
-      await keepalive($)
-      await settle()
-      expect(textOf(await ui.drawn())).toBe(MIN_ROW)
-      await press(ui, 'ka-max')
       expect(textOf(await ui.drawn())).toContain('keepalive 5m:')
       await keepalive($)
       await settle()
@@ -3519,7 +3608,7 @@ describe('[T17.6] the keep-alive Pane (VS Code)', () => {
     withPane(on)
     const ui = await pane($)
     await press(ui, 'ka-master')
-    expect(textOf(await ui.drawn())).toBe('⚠ ai-dlc cache-keepalive: off on⏻Ping now⟳Maximise⤢Restore□Close×')
+    expect(textOf(await ui.drawn())).toBe('⚠ ai-dlc cache-keepalive: off on⏻Ping now⟳Restore□Close×')
     await ui.unmount()
   })
 })
@@ -3765,8 +3854,8 @@ describe('[6a] /ai-dlc:cache-keepalive-configure --for writes the env of the fil
     const t = engine(on, { trusted: true })
     await $.classic.Stop(stop())
     await configure($, 'off --for team')
-    expect(t.status()).toBeUndefined()
     await settle()
+    expect(t.status()).toBeUndefined()
     expect(t.seen.states.at(-1)?.enabled).toBe(false)
   })
 
@@ -3783,6 +3872,7 @@ describe('[6a] /ai-dlc:cache-keepalive-configure --for writes the env of the fil
     const u = engine(on)
     await $.classic.Stop(stop())
     await configure($, 'off --for global')
+    await settle()
     expect(u.status()).toBeUndefined()
   })
 })

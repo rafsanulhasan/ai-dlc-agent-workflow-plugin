@@ -1,9 +1,9 @@
 // The state ai-dlc publishes for other plugins to read with `$.state.get`. Only ai-dlc writes it.
-// Keep-alive (hooks/keepalive/keepalive.ts) writes `keepalive` each time a track's status line
+// Keep-alive (hooks/keepalive/keepalive.ts) writes `keepalive` each time a track's line
 // changes; ai-dlc-lens reads it read-only and keeps its own copy of the fields it uses
 // (plugins/claude/ai-dlc-lens/types/index.d.ts), since it does not list ai-dlc under `dependencies`.
 
-/** One keep-alive track, as its status line describes it. Times are epoch milliseconds. */
+/** One keep-alive track, as its line describes it. Times are epoch milliseconds. */
 export type KeepaliveTrackState = {
   name: '1h' | '5m'
   /** A ping is scheduled on this track. */
@@ -22,7 +22,7 @@ export type KeepaliveTrackState = {
   pings: number
   /** The track's ping limit. */
   cap: number
-  /** The track's status line, as keep-alive shows it: its cache part, then its keep-alive part. */
+  /** The track's line (`lineOf`): its cache part, then its keep-alive part. The band and the Pane draw it with its status first (step 44). */
   line: string
   /** The caches of the track's lifetime keep-alive has seen this session, one per source (`main`, and
    * `subagents` for the latest of the subagents' caches), with when each is warm until and whether it

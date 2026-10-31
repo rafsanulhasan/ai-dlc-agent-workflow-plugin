@@ -982,7 +982,7 @@ export const register: Register = (on) => {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (e.props.hasSurvey) return next(e)
     const t = $.ui.resolve(e)
-    const ka = await keepaliveBand($, t, { where: 'band' })
+    const ka = await keepaliveBand($, t)
     const ho = shown ? panelTree(t, shown, frame, () => hidePanel($)) : undefined
     if (!ho && !ka) return next(e)
     const below = await next(e)

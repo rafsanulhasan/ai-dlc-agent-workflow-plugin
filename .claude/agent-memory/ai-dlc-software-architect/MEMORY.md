@@ -1,2 +1,3 @@
 - [Wave 2 tier 1 design](project_wave2-tier1-design.md) — ADR-0001..0005 (AAW variants, guards, taxonomy file, tag tree scan, offline lens renderer); bc lessons
-- [Wave 3 Cache Lab design](project_wave3-cache-lab-design.md) — ADR-0006 transcript reader, 4 MiB caps; ADR-0007 handoff chain = one session; next ADR 0008
+- [Wave 3 Cache Lab design](project_wave3-cache-lab-design.md) — ADR-0006 transcript reader, 4 MiB caps; ADR-0007 handoff chain = one session
+- [Step 44 band and pane seats](project_step44-band-and-pane-seats.md) — ADR-0008 keep-alive band everywhere, lens follows placement; host seat facts; next ADR 0009

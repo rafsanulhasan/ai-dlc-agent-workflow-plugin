@@ -96,7 +96,6 @@ describe("the schema against keep-alive's settings table", { skip: skipReason },
 const SAMPLES = {
   boolean: [true, false, "yes", "OFF", " 1 ", "maybe", 1, "", "  "],
   scope: ["session", " Machine ", "global", 3, ""],
-  statusText: ["auto", " Summary ", "FULL", "both", 3, ""],
   text: ["hi", "  padded  ", "", "   ", 5],
   threshold: [0, 0.5, "0.9", 1, -0.1, "x", ""],
   ratio: [0, 0.15, 1, "0.5", ""],
@@ -1224,18 +1223,18 @@ const rowOf = (rows, key) => rows.find((r) => r.key === key);
 
 describe("[6a] the global level: the env of ~/.claude/settings.json", () => {
   test("it sits between the team env and the repository file: team over global, global over the file, local over both", () => {
-    const h = home({ ".claude/settings.json": { env: { AI_DLC_KEEPALIVE_SCOPE: "machine", AI_DLC_KEEPALIVE_PING_PROMPT: "global", AI_DLC_KEEPALIVE_STATUS_TEXT: "full" } } });
+    const h = home({ ".claude/settings.json": { env: { AI_DLC_KEEPALIVE_SCOPE: "machine", AI_DLC_KEEPALIVE_PING_PROMPT: "global", AI_DLC_KEEPALIVE_STATUS: "true" } } });
     const root = repo({
-      ".ai-dlc/cache-keepalive.json": { scope: "session", pingPrompt: "file", statusText: "summary", sourceNote: false },
-      ".claude/settings.json": { env: { AI_DLC_KEEPALIVE_PING_PROMPT: "team", AI_DLC_KEEPALIVE_STATUS_TEXT: "summary" } },
-      ".claude/settings.local.json": { env: { AI_DLC_KEEPALIVE_STATUS_TEXT: "auto" } },
+      ".ai-dlc/cache-keepalive.json": { scope: "session", pingPrompt: "file", status: true, sourceNote: false },
+      ".claude/settings.json": { env: { AI_DLC_KEEPALIVE_PING_PROMPT: "team", AI_DLC_KEEPALIVE_STATUS: "true" } },
+      ".claude/settings.local.json": { env: { AI_DLC_KEEPALIVE_STATUS: "false" } },
     });
     const r = effective(root, keys, TRUSTED, h);
     assert.equal(rowOf(r.rows, "scope").value, "machine");
     assert.equal(rowOf(r.rows, "scope").source, `AI_DLC_KEEPALIVE_SCOPE in ${GLOBAL}`);
     assert.equal(rowOf(r.rows, "pingPrompt").value, "team");
     assert.equal(rowOf(r.rows, "pingPrompt").source, "AI_DLC_KEEPALIVE_PING_PROMPT in .claude/settings.json");
-    assert.equal(rowOf(r.rows, "statusText").value, "auto");
+    assert.equal(rowOf(r.rows, "status").value, false); // local over team, global and the file
     assert.equal(rowOf(r.rows, "sourceNote").value, false);
     assert.equal(rowOf(r.rows, "sourceNote").source, "sourceNote in .ai-dlc/cache-keepalive.json");
   });
@@ -1337,5 +1336,39 @@ describe("[6a] teamRecord: optional, a record only", () => {
     const doc = fileOf(root);
     assert.deepEqual(doc.teamRecord, TEAM);
     assert.equal(doc.oneHour.keepWarmFor, "2h");
+  });
+});
+
+// ---- Step 44, R44.11: statusText is retired (keep-alive writes no status line, R44.1) ------------------
+describe("[R44.11] statusText is retired", { skip: skipReason }, () => {
+  const withIt = () => repo({
+    ".ai-dlc/cache-keepalive.json": full({ statusText: "auto" }),
+    ".claude/settings.local.json": { env: { AI_DLC_KEEPALIVE_STATUS_TEXT: "full" } },
+  });
+
+  test("validate warns that the file key and the env variable are no longer used, not that they are not a setting", () => {
+    const r = cli(withIt(), ["validate"]);
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /statusText: no longer used \(keep-alive writes no status line\); run \/ai-dlc:cache-keepalive-merge to remove it/);
+    assert.match(r.out, /AI_DLC_KEEPALIVE_STATUS_TEXT: no longer used \(keep-alive writes no status line\); ignored, remove it/);
+    assert.doesNotMatch(r.out, /statusText: not a setting|STATUS_TEXT: not a setting/);
+  });
+
+  test("merge removes the key and keeps every other value", () => {
+    const root = repo({ ".ai-dlc/cache-keepalive.json": full({ statusText: "full", scope: "machine" }) });
+    assert.match(cli(root, ["merge", "--dry-run"]).out, /^- statusText: "full"$/m);
+    assert.equal(cli(root, ["merge"]).code, 0);
+    const doc = fileOf(root);
+    assert.ok(!("statusText" in doc));
+    assert.equal(doc.scope, "machine");
+    assert.match(cli(root, ["validate"]).out, /cache-keepalive\.json is valid/);
+  });
+
+  test("the module's settings and the schema have no statusText, and a level that sets it changes nothing", () => {
+    assert.ok(!mod.SETTINGS.some((s) => s.key === "statusText" || s.env === "AI_DLC_KEEPALIVE_STATUS_TEXT"));
+    assert.ok(!("statusText" in schema.properties) && !schema.required.includes("statusText"));
+    const r = effective(withIt(), keys, TRUSTED, home());
+    assert.ok(!r.rows.some((row) => row.key === "statusText"));
+    assert.equal(rowOf(r.rows, "status").value, true);
   });
 });

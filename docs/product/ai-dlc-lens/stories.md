@@ -358,6 +358,36 @@ As a user, I want to know what the lens does, what it can reach, and every setti
 
 ---
 
+## Step 44 revisions (the human, 2026-10-31; product-owner, handoff 44.1)
+
+Sources: `docs/handoffs/FEAT-20261020-ai-dlc-lens/44-live-findings.human.md` (R44.4, R44.5) and `44-live-findings-2.human.md` (R44.7 to R44.10, with the human's answers); host facts F1 to F6 in `44.2.l1.2-agent-manager-to-orchestrator.handback.md`; probe findings in `run.v4.3.md` entry 2ff. ACs below take the next free number in their story. Keep-alive's side of the same decisions is `docs/product/active/session-continuity-and-cache-visibility/sprint-1/keepalive-cache-status/stories.delta-step44.md` (US-17.8).
+
+**Superseded by step 44:** in the step 43 reading of R44.4, the lens and keep-alive were two tabs of one pane in a narrow VS Code panel with no band below it ("keepalive-lens narrow view: ok", then "Remove B always"). That is no longer the layout: keep-alive is its own band above the prompt (R44.7), and the lens lives only in the pane region. Likewise superseded: two lens bands in the narrow view (the first bug, 2a, which asked to keep one); the lens draws no band of its own in VS Code at all.
+
+**What a host fact means here.** The pane region is one framed region per surface that the host moves; VS Code puts it above the prompt when the panel is narrow and in the right dock when wide, at about 70 columns (probe, 2.1.310). There is no resize event; a module sees a width change as a fresh render with a new `placement` (F4). A pane a module opens while not asked is placed only from 144 columns, or 110 for an id the person opened before and did not close by hand, and otherwise "waits undrawn" (F6, d.ts 15067 to 15074).
+
+### Run state shown correctly (R44.5; extends US-1 and US-7)
+
+- AC-1.6 `[NT]` Given a run folder holding `run.v1.md`, `run.v4.md`, `run.v4.2.md` and `run.v4.3.md` with different `status` values, when the run state is read (by `parseRunState`'s caller, `workflow.mjs runs` and the lens), then the run's state is that of the newest version (`run.v4.3.md`; the order is by numeric version parts, so `run.v4.3` is above `run.v4.2`, above `run.v4`, and `run.v10` is above `run.v9`), and a folder with only `run.md` uses it. Given an older version that says `done` and the newest that says `active`, then the run is `active`.
+- AC-7.13 `[PT]` Given a fixture run whose newest run-state version has `status: active` or `status: blocked`, when the lens draws its run list, its compact list, its flowchart details and its report, then that run is never shown as `completed` anywhere, whatever an older version, a stage row or an agent status says; a run shows `completed` only when its newest version has `status: done`. Fixture pair: `FEAT-…` active with an older `done` version beside `RES-…` done; the first reads active, the second completed.
+
+### Placement of the lens in VS Code (R44.4, R44.9, R44.10; extends US-12)
+
+- AC-12.12 `[PT]` Given surface `vscode`, at every width and for any combination of the lens and keep-alive being open, when the lens renders, then it draws no `AbovePrompt` band of its own; its content is in the pane region only (compact list when `placement` is `inline`, flowchart when `dock`, as AC-12.1). Terminal and Desktop are unchanged.
+- AC-12.13 `[PT]` Given the lens open in a narrow VS Code panel (its content inline above the prompt, in the pane region) and keep-alive's band drawn, when the panel grows to wide (stubbed `placement` change `inline` to `dock`), then the lens is drawn in the right (docked) pane as its flowchart, and keep-alive's band is unchanged (R44.9: only the lens moves).
+- AC-12.14 `[PT]` Given the lens open in the right pane with the wide-only Run List tab present and keep-alive's band drawn, when the panel shrinks to narrow (`dock` to `inline`), then the Run List tab is closed (the right pane closes), the lens is drawn inline above the prompt, and keep-alive's band is unchanged (R44.10).
+- AC-12.15 `[PT]` Given the same narrow-to-wide change as AC-12.13, then the lens does not open the Run List tab: a pane opened by a module that was not asked is placed only from 110 or 144 columns and otherwise waits undrawn (F6), so no open is attempted for it (state writes are also refused while drawing, F5; any open is deferred out of the render). The wide-only tab appears only when the person opens it. See open question Q44-A.
+- AC-12.16 `[MV]` Given a live VS Code session (2.1.310 or later) with the lens open and keep-alive's band shown, when the human resizes the panel narrow to wide and wide to narrow, then: narrow to wide, the keep-alive band stays above the prompt and the lens appears in the right pane; wide to narrow, the right pane closes, the lens is inline above the prompt, and the keep-alive band is still there. At no width does a band disappear. Steps: reload plugins; open the lens (`/ai-dlc:lens`) in a narrow panel; widen past about 70 columns; read; narrow again; read; record each screen with the time.
+
+### Scope and priority
+
+These are corrections to shipped behaviour found live, inside F5, F7 and F8 and keep-alive's root 17; they add nothing new and defer nothing. They ship in 1.0.0-preview1 with step 44 (C1). Priority follows the items they correct (P1); the product-manager records it. A run shown as `completed` while it is `active` (R44.5) hides a gate or a blocked run, so it is a correctness defect on O1 and O3; I do not treat it as P0, since no data is lost. **Assumption — needs human confirmation.**
+
+### Open questions
+
+- **Q44-A (R44.9 wording versus the build).** The human wrote that on narrow to wide "the tab for ai-dlc:lens in the band gets closed and be opened in the right pane" (R44.9), and then, after the research, restricted it to the lens moving. The orchestrator's record of the human's decisions has the lens's wide-only Run List tab not opened on narrow to wide (an unasked open, d.ts 15070) but closed on wide to narrow. I have written AC-12.13 to AC-12.15 to that record; the human has not said in words that a lens that appears in the right pane without its Run List tab is what they want. Confirm, or say that the Run List tab must open too (which would need a deferred open that the host may leave undrawn under 110 columns).
+- **Q44-B (host documentation drift).** The host's type file says `AbovePrompt` is raised on the terminal and desktop only (F3); the probe shows it renders in VS Code on 2.1.310. Keep-alive's VS Code band (R44.7) depends on an undocumented behaviour. Decide whether the minimum host version for keep-alive's VS Code band is 2.1.310 (the version probed) and what keep-alive does on a surface that does not render the band; no product default is assumed.
+
 ## Process items
 
 Process items 003–006, 025, 026 and the spikes 027–029 have no story. Their ACs live in the backlog (`docs/backlog/backlog.md`, section *FEAT-20261020-ai-dlc-lens*): 004 is this file approved at G1; each spike's AC is its recorded result in the run folder, cited by the spec (ITEM-005). ACs above that depend on a spike are marked `(spike)`.
@@ -401,6 +431,7 @@ Process items 003–006, 025, 026 and the spikes 027–029 have no story. Their 
 | US-19 | 022 | F13 | UC4 | AC-19.1–19.4 |
 | US-20 | 023 | F13 | — | AC-20.1 |
 | US-21 | 024 | F14 | — | AC-21.1–21.3 |
+| Step 44 additions to US-1, US-7, US-12 | 007, 013, 015 (items for step 44: the product-manager's) | F1, F5, F7 | UC1, UC2 | AC-1.6, AC-7.13, AC-12.12–12.16 (R44.4, R44.5, R44.9, R44.10) |
 
 **Success measures (brief §10) to ACs:**
 

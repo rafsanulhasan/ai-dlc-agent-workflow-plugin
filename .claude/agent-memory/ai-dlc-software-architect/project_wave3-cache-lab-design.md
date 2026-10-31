@@ -24,6 +24,6 @@ On 2026-10-25 (step 17.1.16), the Cache Lab got its own spec, `docs/specs/cache-
 **Why:** these mods-API limits are not obvious, and will matter again for any lens feature that reads files.
 
 **How to apply:**
-- The next ADR number is 0008.
+- The next ADR number is 0009 (ADR-0008, step 44: [[step44-band-and-pane-seats]]; D13 superseded there).
 - Before designing any lens file read, check the 4 MiB caps.
 - Sizes are counted in software-engineer build+test sessions. Related: [[wave2-tier1-design]].

@@ -13,7 +13,6 @@ export type Settings = {
   enabled: boolean
   scope: Scope
   status: boolean
-  statusText: 'auto' | 'summary' | 'full'
   sourceNote: boolean
   pingPrompt: string
   hitThreshold: number
@@ -34,7 +33,7 @@ export type Settings = {
 }
 
 /** What a value must be. */
-export type Kind = 'boolean' | 'scope' | 'statusText' | 'text' | 'threshold' | 'percent' | 'minDuration' | 'duration' | 'whole' | 'positiveWhole' | 'nonNegative' | 'positive' | 'ratio' | 'prices'
+export type Kind = 'boolean' | 'scope' | 'text' | 'threshold' | 'percent' | 'minDuration' | 'duration' | 'whole' | 'positiveWhole' | 'nonNegative' | 'positive' | 'ratio' | 'prices'
 
 /** A setting: its key in .ai-dlc/cache-keepalive.json (a dot is one nesting level), its environment
  * variable, its kind and its default, written as a person would write it. */
@@ -50,8 +49,9 @@ export const SETTINGS: readonly Setting[] = [
   { key: 'enabled', env: 'AI_DLC_KEEPALIVE_ENABLED', kind: 'boolean', default: true },
   { key: 'scope', env: 'AI_DLC_KEEPALIVE_SCOPE', kind: 'scope', default: 'session' },
   { key: 'status', env: 'AI_DLC_KEEPALIVE_STATUS', kind: 'boolean', default: true },
-  // ITEM-068 (LLD rev 11, 20.7; rev 10, 11.2): display only, so neither is trust-gated.
-  { key: 'statusText', env: 'AI_DLC_KEEPALIVE_STATUS_TEXT', kind: 'statusText', default: 'auto' },
+  // ITEM-068 (LLD rev 11, 20.7; rev 10, 11.2): display only, so not trust-gated. Step 44 (R44.11): `statusText`
+  // (AI_DLC_KEEPALIVE_STATUS_TEXT) is retired, since keep-alive writes no status line (R44.1); a level that still
+  // sets it is not read, and /ai-dlc:cache-keepalive-configure says it is no longer used.
   { key: 'sourceNote', env: 'AI_DLC_KEEPALIVE_SOURCE_NOTE', kind: 'boolean', default: true },
   { key: 'pingPrompt', env: 'AI_DLC_KEEPALIVE_PING_PROMPT', kind: 'text', default: PING_PROMPT },
   { key: 'hitThreshold', env: 'AI_DLC_KEEPALIVE_HIT_THRESHOLD', kind: 'threshold', default: 0.9 },
@@ -181,10 +181,6 @@ export function check(kind: Kind, raw: unknown, by: Level['by'], minDuration: nu
     case 'scope': {
       const word = typeof raw === 'string' ? raw.trim().toLowerCase() : ''
       return word === 'session' || word === 'machine' ? word : bad('not session or machine')
-    }
-    case 'statusText': {
-      const word = typeof raw === 'string' ? raw.trim().toLowerCase() : ''
-      return word === 'auto' || word === 'summary' || word === 'full' ? word : bad('not auto, summary or full')
     }
     case 'text': return typeof raw === 'string' && raw.trim() ? raw.trim() : bad('blank or not text')
     case 'threshold': { const n = num(raw); return n !== undefined && n >= 0 && n < 1 ? n : bad('not a number from 0 up to, not including, 1') }

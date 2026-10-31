@@ -11,8 +11,8 @@ import type { TrustTarget } from '../auto-handoff/config.ts'
 import { homeDir, log, readRaw, repoRoot, trustGate, trustTarget } from '../auto-handoff/io.ts'
 import type { TrustCache } from '../auto-handoff/io.ts'
 import type { KeepaliveState, KeepaliveTrackState } from '../../types/index.d.ts'
-import { afterMasterPress, afterTrackPress, agentUnsettled, armUntil, bandModel, cachePart, cacheView, dropPending, emptyLedger, hhmm, isEmpty, lineOf, markAgent, masterOn, needsMainSeed, observe, observePing, onlyAgentsWarm, reasonText, seedMain, settleAgent, sourceLabel, statusModeOf, statusTextOf, trackOn } from './cache-state.ts'
-import type { BandModel, CompactionPhase, Ledger, Lifetimes, OffTail, Reason, SeedFact, SessionSwitch, StopKind, TrackFacts } from './cache-state.ts'
+import { afterMasterPress, afterTrackPress, agentUnsettled, armUntil, bandModel, cachePart, cacheView, dropPending, emptyLedger, hhmm, isEmpty, lineOf, markAgent, masterOn, needsMainSeed, observe, observePing, onlyAgentsWarm, reasonText, rowLineOf, seedMain, settleAgent, sourceLabel, trackOn } from './cache-state.ts'
+import type { BandModel, CompactionPhase, Ledger, Lifetimes, OffTail, Reason, SessionSwitch, StopKind } from './cache-state.ts'
 import { keepaliveTree } from './panel.tsx'
 
 // Keep-alive, folded into the ai-dlc hooks module from the vendored cache-keepalive mod (see
@@ -100,12 +100,9 @@ let context = 0
 // before a handoff; a new turn keeps it.
 let ledger: Ledger = emptyLedger()
 const life = (): Lifetimes => ({ '5m': settings.fiveMinute.ttl, '1h': settings.oneHour.ttl })
-// After an automatic handoff, what the seeded session's first request read from the cache, shown
-// under the track lines until the next turn starts (showSeedCache).
+// After an automatic handoff, what the seeded session's first request read from the cache, shown as the
+// band's seed row until the next turn starts (showSeedCache).
 let seedLine: string | undefined
-let seedFact: SeedFact | undefined
-// The surfaces the session draws on (LLD 20.4), read by refreshSurfaces; [] means the summary.
-let surfaces: readonly string[] = []
 
 /** The 1h/5m split of a usage object, when it carries one with a write: `cache_creation`'s
  * `ephemeral_1h_input_tokens` and `ephemeral_5m_input_tokens`. Undefined otherwise. */
@@ -241,7 +238,7 @@ async function seedFromTranscript($: EngineInterface, path: string | undefined, 
 
 const anyRunning = () => TRACKS.some(([n]) => tracks[n].timer !== undefined)
 
-// The settings a track's state and status line speak for (see Track, cfg).
+// The settings a track's state and line speak for (see Track, cfg).
 const cfgOf = (t: Track): TrackSettings => (t.timer !== undefined && t.cfg) || settings[t.key]
 
 function stopTrack(t: Track) {
@@ -262,8 +259,8 @@ function stopAll(line?: string, stop?: StopKind) {
 }
 
 // The state other plugins read (ai-dlc-lens, read-only): $.state { plugin: 'ai-dlc', key: 'keepalive' },
-// its contract in ../../types/index.d.ts (plugin.json `types`). Written each time the status lines
-// change, whether or not the status line is shown, so a reader sees what the lines say.
+// its contract in ../../types/index.d.ts (plugin.json `types`). Written each time the track lines
+// change, whether or not the band is shown, so a reader sees what the lines say.
 const STATE = { plugin: 'ai-dlc', key: 'keepalive' } as const
 // Writes go out one after another, in the order the snapshots were taken.
 let publishing: Promise<unknown> = Promise.resolve()
@@ -281,14 +278,9 @@ const capOf = (t: Track) => { const cfg = cfgOf(t); return pingCap(cfg.maxPings,
 const noteOf = (keep: Keep) => settings.sourceNote ? ` (${sourceLabel(keep)})` : ''
 const tailOf = (t: Track): OffTail => ({ cap: capOf(t), keepWarm: formatDuration(keepOf(t).ms), ...(settings.sourceNote ? { source: sourceLabel(keepOf(t)) } : {}) })
 
-// What the summary reads of a track (LLD 20.3): running from its timer, else its status.
-function factsOf(t: Track): TrackFacts {
-  if (t.timer !== undefined) return { kind: 'running', warmUntil: t.warmUntil, pings: t.pings, cap: capOf(t), ...(t.pings === 0 && t.nextPingAt !== null ? { firstPingAt: t.nextPingAt } : {}) }
-  const st = t.status
-  if (st && 'stop' in st) return { kind: 'stopped', stop: st.stop, ...(st.warm !== undefined ? { warmUntil: st.warm } : {}) }
-  if (st && 'compaction' in st) return { kind: 'compaction', phase: st.compaction }
-  return { kind: 'off', reason: st && 'off' in st ? st.off : 'noTasks' }
-}
+// A track's row in the band (step 44, R44.2): its status (the switch in force) first, then what
+// lineFor shows, built at the same moment from the same parts (rowLineOf).
+const rowFor = (t: Track, now: number, enabled: boolean) => rowLineOf(t.name, cachePart(cacheView(ledger, t.name, now)), t.part, enabled, tailOf(t))
 
 // ---- The session switches (LLD rev 8, 12.2): the master and one per track, this session only, kept in
 // $.store as [session id, SessionSwitch] pairs, so a module reload loses none. The mirror is this
@@ -359,19 +351,6 @@ function switchText(): string {
 }
 const withSwitches = (text: string) => { const sw = switchText(); return sw ? `${text}\n${sw}` : text }
 
-// The surface roster (LLD 20.4): read at the session's start, when a surface attaches or detaches, and
-// before each handler that renders, so a module reload never falls back to the summary for long. Not
-// read when statusText forces a mode. A read that fails stores [] (the summary) and logs one line.
-async function refreshSurfaces($: EngineInterface) {
-  if (settings.statusText !== 'auto') return
-  try {
-    surfaces = await $.session.surfaces()
-  } catch (err) {
-    surfaces = []
-    $.ui.log(`keepalive: surfaces not read (${err instanceof Error ? err.message : String(err)}); showing the summary`, { to: 'debug' })
-  }
-}
-
 // The id the per-session state is kept under (LLD rev 10, 19.2): the automatic handoff chain's id, so
 // a seeded session sees the switches and the --session overrides of the session it continues; with
 // handoff.carryOver off, the session's own id.
@@ -389,10 +368,9 @@ async function refreshChain($: EngineInterface) {
   }
 }
 
-// What a handler that renders reads first: this session's switches, the surface roster and the chain.
+// What a handler that renders reads first: this session's switches and the chain.
 async function prepare($: EngineInterface) {
   await loadSwitch($)
-  await refreshSurfaces($)
   await refreshChain($)
 }
 
@@ -449,45 +427,38 @@ function publish($: EngineInterface, now: number) {
     .catch(() => {})
 }
 
-// No keep-alive status line: `status` off (AC-17.6.5), the master off (step 40: the band and the Pane
-// still show the rows and buttons, so it can be turned back on there), or no track allowed (AC-17.6.33).
-const statusHidden = (): boolean => !settings.status || !masterNow() || !anyOn()
+// Step 44 (R44.1): keep-alive writes no status line; its state shows only in the band. A module
+// from before step 44 may have left one, and a /reload-plugins fires no session.start, so the first render or
+// band draw after a load clears it, once per load (`statusCleared`).
+let statusCleared = false
+function clearOldStatus($: EngineInterface) {
+  if (statusCleared) return
+  statusCleared = true
+  $.ui.status(undefined)
+}
 
-// The full text (the track lines, then the seed line while it shows) or its one-line summary, by the
-// status mode (LLD 20.4); nothing while the status line is hidden (statusHidden). The band and the
-// Pane redraw at every render (invalidate).
+// Publishes the state, and has the band redraw (invalidate).
 function render($: EngineInterface, now: number) {
+  clearOldStatus($)
   publish($, now)
   $.ui.invalidate('ui.render')
-  if (statusHidden()) return $.ui.status(undefined)
-  const full = [...TRACKS.map(([n]) => lineFor(tracks[n], now)), ...(seedLine ? [seedLine] : [])].join('\n')
-  const facts = { '1h': factsOf(tracks['1h']), '5m': factsOf(tracks['5m']) }
-  $.ui.status(statusTextOf(statusModeOf(settings.statusText, surfaces), full, facts, seedLine ? seedFact : undefined))
 }
 
-/** The band and Pane model now: the master button, both rows with their full lines, the seed row. */
+/** The band model now (step 44, R44.2 and R44.3): both rows, each its status and its button, the head
+ * row's status and button from them, and the seed row. */
 async function bandModelNow($: EngineInterface): Promise<BandModel> {
   const now = await $.clock.now()
-  const rows = { '1h': { line: lineFor(tracks['1h'], now), enabled: trackEnabled('1h', 'oneHour') }, '5m': { line: lineFor(tracks['5m'], now), enabled: trackEnabled('5m', 'fiveMinute') } }
-  return { ...bandModel(masterNow() ? 'off' : 'on', rows, seedLine), on: anyOn() }
+  const row = (n: TrackName, key: TrackKey) => { const enabled = trackEnabled(n, key); return { line: rowFor(tracks[n], now, enabled), enabled } }
+  return bandModel({ '1h': row('1h', 'oneHour'), '5m': row('5m', 'fiveMinute') }, seedLine)
 }
 
-// Whether the first band draw since the module loaded has checked the status line (keepaliveBand).
-let statusChecked = false
-
 // Step 42: the band's own size. It starts minimised at each load, as the lens band starts minimised when
-// it appears; the `–` / `□` on its title row change it. Module memory: the band's alone, never the Pane's;
-// a /reload-plugins loads the module again, so the band is minimised again after one (MANUAL-CHECKS P9).
+// it appears; the `–` / `□` on its title row change it. Module memory; a /reload-plugins loads the module
+// again, so the band is minimised again after one (MANUAL-CHECKS P9).
 let bandMinimised = true
-// Step 42: the band's `×` hides it for this session (the Pane is untouched); any run of /ai-dlc:cache-keepalive,
-// a new session (session.start) or a load brings it back.
+// Step 42: the band's `×` hides it for this session; any run of /ai-dlc:cache-keepalive, a new session
+// (session.start) or a load brings it back.
 let bandClosed = false
-// Step 43 (live 1b): the Pane's own size while the surface seats it inline (VS Code with a narrow Claude
-// panel, above the prompt). It is the Pane's alone, never the band's: the band's `⤢` must open the Pane full
-// on a terminal where the band stays minimised. Each run of /ai-dlc:cache-keepalive minimises it; the `⤢`
-// (on the band or on the Pane) restores it. Live round 1 (the human, 2026-10-26): the docked Pane too (VS Code
-// with a wide Claude panel) opens minimised, the master switch and the status only, with the same controls.
-let paneMinimised = true
 
 // Review round 4, W3: no ping overlaps another. `pressing`: a "Ping now" press is under way, from its first read to its
 // redraw, so a second press meanwhile does nothing. `pingBusy`: a ping of the command or of a press is out (pingReply).
@@ -536,40 +507,39 @@ async function pingReply($: EngineInterface): Promise<string> {
   }
 }
 
-/** Where keepaliveBand draws: the band (AbovePrompt) or, by default, the Pane, seated `inline` or `dock`
- * (the Pane's `placement` prop; absent: dock). */
-export type BandSite = { where: 'band' } | { where: 'pane'; placement?: 'dock' | 'inline' }
+// Step 44 (R44.7): keep-alive opens no pane; its band is its only view, on every surface. The keep-alive Pane's id,
+// kept so that a Pane a module from before step 44 left open is closed (`closeOldPane`).
+export const PANE = 'keepalive'
+// Whether this load has closed that old Pane (`closeOldPane`), once per load.
+let oldPaneSwept = false
+// Closes the old keep-alive Pane once per load, outside the render it may be called from (a close is an act, and a
+// render draws only): `$.ui.close` of an id that is not open does nothing. Never throws.
+function closeOldPane($: EngineInterface) {
+  if (oldPaneSwept) return
+  oldPaneSwept = true
+  try {
+    $.clock.after(0, () => { void $.ui.close({ id: PANE }).catch(() => {}) })
+  } catch {}
+}
 
-/** The keep-alive band (AbovePrompt, Terminal and Desktop) or the Pane's body: the tree, or undefined
- * when `status` is off (AC-17.6.5) or the band was closed. register.tsx draws it as a band of its own, after
- * the lens band (step 42). The band has its own maximise, minimise and close; so has the Pane seated inline
- * (step 43, live 1b) and, since live round 1, the docked Pane too, whose close closes the Pane. Never throws. */
-export async function keepaliveBand($: EngineInterface, t: { Box: any; Text: any; Button: any }, site: BandSite = { where: 'pane' }): Promise<unknown> {
+/** The keep-alive band above the prompt (AbovePrompt), drawn by register.tsx as a band of its own, after the lens
+ * band (step 42): the tree, or undefined when `status` is off (AC-17.6.5) or the band was closed. Step 44 (R44.7):
+ * drawn on every surface that raises the site, VS Code included (the probe of 44.2.l1.3 saw it raised there, surface
+ * `vscode`, in a narrow and a wide panel), and keep-alive opens no pane. The band has its own minimise and close.
+ * Never throws. */
+export async function keepaliveBand($: EngineInterface, t: { Box: any; Text: any; Button: any }): Promise<unknown> {
   try {
     await loadSwitch($)
-    // A /reload-plugins fires no session.start: the first draw after a load clears a status line the
-    // module left before it, when the switches read now hide it (step 40). Once per load.
-    if (!statusChecked) {
-      statusChecked = true
-      if (statusHidden()) $.ui.status(undefined)
-    }
-    if (!settings.status) return undefined
-    if (site.where === 'band' && bandClosed) return undefined
+    clearOldStatus($)
+    closeOldPane($)
+    if (!settings.status || bandClosed) return undefined
     const press = (n: TrackName) => { void pressTrack($, n) }
     const master = () => { void pressMaster($) }
-    // Step 43 (A2): the `⤢` opens the keep-alive Pane full (restored) on any surface, focused; on the inline
-    // Pane it restores that Pane and gives it the focus (there is no larger seat a hook can ask for).
-    const onMaximise = () => { paneMinimised = false; $.ui.invalidate('ui.render'); void openPane($, { anySurface: true }) }
-    // Live findings 3, point 8: "Ping Now" on the band and the Pane: the command's ping, with the settings in force.
+    // Live findings 3, point 8: "Ping Now" on the band: the command's ping, with the settings in force.
     const onPing = () => { void pressPing($) }
-    if (site.where === 'pane') {
-      const onToggle = () => { paneMinimised = !paneMinimised; $.ui.invalidate('ui.render') }
-      const onClose = () => { void $.ui.close({ id: PANE }).catch(() => {}) }
-      return keepaliveTree(t, await bandModelNow($), press, master, { minimised: paneMinimised, onToggle, onClose, onMaximise, onPing })
-    }
     const onToggle = () => { bandMinimised = !bandMinimised; $.ui.invalidate('ui.render') }
     const onClose = () => { bandClosed = true; $.ui.invalidate('ui.render') }
-    return keepaliveTree(t, await bandModelNow($), press, master, { minimised: bandMinimised, onToggle, onClose, onMaximise, onPing })
+    return keepaliveTree(t, await bandModelNow($), press, master, { minimised: bandMinimised, onToggle, onClose, onPing })
   } catch (err) {
     $.ui.log(`keepalive: band not drawn (${err instanceof Error ? err.message : String(err)})`, { to: 'debug' })
     return undefined
@@ -601,23 +571,29 @@ export async function pressTrack($: EngineInterface, n: TrackName): Promise<void
   }
 }
 
-/** The master button (LLD 12.3, Q-SL7): `[off]` stops both tracks and disables them for this session;
+/** The master button (LLD 12.3, Q-SL7; step 44, R44.3): it offers the opposite of what the head row reads. While
+ * either track is on in force, `[off]` stops both tracks and disables them for this session; while both are off,
  * `[on]` turns the master and both tracks on, with no ping. No settings file is written. Never throws. */
 export async function pressMaster($: EngineInterface): Promise<void> {
   try {
-    const before = await loadSwitch($)
-    const was = masterNow()
-    await saveSwitch($, afterMasterPress(before, settings.enabled))
-    for (const [n] of TRACKS) {
-      const t = tracks[n]
-      if (was) { stopTrack(t); setOff(t, 'disabled') }
-      else if (t.timer === undefined && isDisabledPart(t)) setOff(t, idleReason(n))
-    }
-    await refreshKeep($)
-    render($, await $.clock.now())
+    await loadSwitch($)
+    await switchAll($, !anyOn())
   } catch (err) {
     $.ui.log(`keepalive: master press failed (${err instanceof Error ? err.message : String(err)})`, { to: 'debug' })
   }
+}
+
+// Turns the master and both tracks on (`turnOn`) or off for this session (afterMasterPress), then redraws. Off stops
+// both tracks; on leaves a running track as it is and gives a disabled one its idle reason. Throws to its caller.
+async function switchAll($: EngineInterface, turnOn: boolean): Promise<void> {
+  await saveSwitch($, afterMasterPress(!turnOn))
+  for (const [n] of TRACKS) {
+    const t = tracks[n]
+    if (!turnOn) { stopTrack(t); setOff(t, 'disabled') }
+    else if (t.timer === undefined && isDisabledPart(t)) setOff(t, idleReason(n))
+  }
+  await refreshKeep($)
+  render($, await $.clock.now())
 }
 
 // ---- /ai-dlc:cache-keepalive on|off (step 40) ----
@@ -698,7 +674,8 @@ async function switchCommand($: EngineInterface, a: Extract<CommandArgs, { kind:
   const names = a.tracks
   const what = names ? names.map(n => `the ${n} track`).join(' and ') : 'keep-alive'
   if (a.where === 'session') {
-    if (!names) { if (masterNow() !== a.on) await pressMaster($) }
+    // Step 44 (R44.3; review round 44.4.l1.1, W1): as the head row's button, judged by what the head row reads (either track on).
+    if (!names) { await loadSwitch($); if (anyOn() !== a.on) await switchAll($, a.on) }
     else for (const n of names) if (trackEnabled(n, keyOf(n)) !== a.on) await pressTrack($, n)
     const ign = a.ignoredFor ? `; --for ${a.ignoredFor} ignored: --session wins and writes nothing` : ''
     return withSwitches(`keepalive: ${what} ${word} for this session; no settings file written${ign}`)
@@ -1170,7 +1147,7 @@ async function spendLimit($: EngineInterface, t: Track) {
 }
 
 /** Stops every keep-alive timer before an automatic handoff's /clear, so no ping of the old session
- * runs into the new one, and says so on the status line. Answers whether a timer was running. */
+ * runs into the new one, and says so in the track lines. Answers whether a timer was running. */
 export function stopForHandoff($: EngineInterface): boolean {
   const was = anyRunning()
   stopAll('handed off, stopped', 'handoff')
@@ -1188,23 +1165,17 @@ export function stopForHandoff($: EngineInterface): boolean {
 /** The seed line's text for the tokens the seeded session's first request read from the cache. */
 export const seedLineOf = (read: number) => read > 0 ? `keepalive seed: cache hit, ${k(read)} read` : 'keepalive seed: cache miss'
 
-/** After an automatic handoff, shows on the status line whether the seeded session's first request
- * read from the prompt cache, `keepalive seed: cache hit, 30k read` or `keepalive seed: cache miss`,
- * under the track lines until the next turn starts. Hidden, like the tracks, when keep-alive or its
- * status is off. register.tsx calls it from the seed turn, beside its panel line and log line. */
+/** After an automatic handoff, shows as the band's seed row whether the seeded session's first
+ * request read from the prompt cache, `keepalive seed: cache hit, 30k read` or `keepalive seed: cache miss`, under the
+ * track rows until the next turn starts; never on a status line (step 44, R44.1). register.tsx calls it from the seed
+ * turn, beside its panel line and log line. */
 export async function showSeedCache($: EngineInterface, cache: { read: number }): Promise<void> {
   seedLine = seedLineOf(cache.read)
-  seedFact = cache.read > 0 ? { hit: true, tokens: cache.read } : { hit: false }
   await load($)
   await prepare($)
   // A full read: publish the keep-warm time it leaves in force (no track runs during a turn)
   await refreshKeep($)
-  publish($, await $.clock.now())
-  $.ui.invalidate('ui.render')
-  if (statusHidden()) return
-  // No track runs during a turn (turn.start stops them), so the line stands alone until the turn's
-  // Stop arms one; render() then shows it under the track lines.
-  $.ui.status(seedLine)
+  render($, await $.clock.now())
 }
 
 /** At the seed turn of an automatic handoff (register.tsx, once per handoff, after the lineage record is
@@ -1216,7 +1187,8 @@ export async function applyHandoffSeed($: EngineInterface): Promise<void> {
     await load($)
     switchMirror = undefined
     const sw = await loadSwitch($)
-    if (settings.handoff.onWhenOff && !masterNow()) await saveSwitch($, afterMasterPress(sw, settings.enabled))
+    // Step 44 (R44.13): as the head row reads it, so a chain with a track still on is left as it is.
+    if (settings.handoff.onWhenOff && !anyOn()) await saveSwitch($, afterMasterPress(false))
     // The ended session left every track `session ended`; the seeded session starts from the switches in force
     // (carried with the chain, or none), as a press would: `disabled` for a track that is off, else its idle reason
     for (const [n, key] of TRACKS) if (tracks[n].timer === undefined) setOff(tracks[n], trackEnabled(n, key) ? idleReason(n) : 'disabled')
@@ -1229,41 +1201,20 @@ export async function applyHandoffSeed($: EngineInterface): Promise<void> {
   }
 }
 
-// A surface came or went, or the session started: the roster is read again and the line re-rendered.
+// A surface came or went, or the session started: the band redraws with the switches read now.
 async function rosterChanged($: EngineInterface) {
   try {
     await loadSwitch($)
-    await refreshSurfaces($)
     render($, await $.clock.now())
   } catch {}
 }
 
-// The Pane's id (an identifier) and its frame title (rev 11, 20.6).
-export const PANE = 'keepalive'
-const PANE_TITLE = 'ai-dlc cache-keepalive'
-
-// Opens the keep-alive Pane, focused: by the command only when a VS Code surface is attached (it has no
-// band); with `anySurface` (the band's `⤢`, step 43, A2) on every surface. '' when not opened, or the
-// reason it was not placed (`; pane not shown (<reason>)`). Never throws.
-async function openPane($: EngineInterface, opts: { anySurface?: boolean } = {}): Promise<string> {
-  try {
-    if (!opts.anySurface && !(await $.session.surfaces()).includes('vscode')) return ''
-    // Live findings 3 (VS Code, narrow: two panes): the command opens the Pane as before step 43, without `focus`;
-    // only the `⤢` (anySurface) asks for the focus, to raise the Pane it restores.
-    const r = await $.ui.open({ id: PANE, title: PANE_TITLE, closeOnEscape: true, ...(opts.anySurface ? { focus: true as const } : {}) })
-    return r.isPlaced ? '' : `; pane not shown (${(r as { reason?: string }).reason ?? 'not placed'})`
-  } catch (err) {
-    $.ui.log(`keepalive: pane not opened (${err instanceof Error ? err.message : String(err)})`, { to: 'debug' })
-    return ''
-  }
-}
 
 export function registerKeepalive(on: Parameters<Register>[0], deps: KeepaliveDeps) {
 
   on('turn.start', async ($, e, next) => {
     stopAll()
     seedLine = undefined
-    seedFact = undefined
     // The turn resets the keep-alive part only: the ledger, and so the cache part, is kept (AC-17.2.3).
     // A disabled track says so during the turn too (the band shows it, AC-17.6.8).
     await prepare($)
@@ -1280,9 +1231,7 @@ export function registerKeepalive(on: Parameters<Register>[0], deps: KeepaliveDe
     // A session's override outlives its turns (it is kept per session in the store), so the time
     // re-read here is still that override until it is cleared or the session ends
     await refreshKeep($)
-    publish($, await $.clock.now())
-    $.ui.invalidate('ui.render')
-    if (!compacting) $.ui.status(undefined)
+    render($, await $.clock.now())
     return next(e)
   })
 
@@ -1443,49 +1392,36 @@ export function registerKeepalive(on: Parameters<Register>[0], deps: KeepaliveDe
     // setting is what stays in force
     await refreshKeep($, { session: false })
     warned.clear()
-    publish($, await $.clock.now())
-    $.ui.invalidate('ui.render')
-    $.ui.status(undefined)
+    render($, await $.clock.now())
     return next(e)
   })
 
-  // The roster of surfaces (LLD 20.4): re-read when the session starts or a surface comes or goes, and
-  // the status line re-rendered in the mode it gives. The payloads are not read.
+  // The session starts or a surface comes or goes: the band redraws (step 44: no status line, so no surface roster
+  // is kept). The payloads are not read.
   on('session.start', async ($, e, next) => {
     bandClosed = false
-    paneMinimised = true
     await rosterChanged($)
     return next(e)
   })
   on('session.attach', async ($, e, next) => (await rosterChanged($), next(e)))
   on('session.detach', async ($, e, next) => (await rosterChanged($), next(e)))
 
-  // The keep-alive Pane (VS Code), opened by the command: the same tree as the band (AC-17.6.9); seated
-  // inline (a narrow Claude panel) it has the band's controls and opens minimised (step 43, live 1b).
-  on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e, next) => {
-    const tree = await keepaliveBand($, $.ui.resolve(e), { where: 'pane', placement: e.props.placement })
-    return tree === undefined ? next(e) : tree as never
-  })
-
   // /ai-dlc:cache-keepalive. Upstream it pinged now and set the keep-warm time. Since live findings 3 (points 5 and 7)
   // it pings now with the settings in force and shows the band; it ignores its arguments, and the grammar it took,
   // --for included, is /ai-dlc:cache-keepalive-configure's (the hook after this one).
   on('command.run', { command: COMMAND }, async ($, e) => {
     // Step 43 (A2): every run shows the band, minimised: it brings back a band closed with its `×` (step 42)
-    // and minimises an open one. The Pane is opened from the band's `⤢`, or below on VS Code, which has no band.
-    // Step 43 (live 1b): it minimises the Pane too. It changes no setting, and any arguments it is given change
-    // nothing (the reply says so); with keep-alive off it pings nothing and says why.
-    if (bandClosed || !bandMinimised || !paneMinimised) { bandClosed = false; bandMinimised = true; paneMinimised = true; $.ui.invalidate('ui.render') }
+    // and minimises an open one. Step 44 (R44.7): on every surface, VS Code included; it opens no pane. It changes
+    // no setting, and any arguments it is given change nothing (the reply says so); with keep-alive off it pings
+    // nothing and says why.
+    if (bandClosed || !bandMinimised) { bandClosed = false; bandMinimised = true; $.ui.invalidate('ui.render') }
     await load($)
     await prepare($)
     await refreshKeep($)
     publish($, await $.clock.now())
-    // In VS Code the command also opens the keep-alive Pane, the buttons' only place there (LLD 13);
-    // the Terminal and Desktop have the band, shown minimised above (step 43, A2), and open no Pane.
-    const pane = await openPane($)
     const extra = (e.args ?? '').trim() === '' ? '' : `; it takes no arguments, so "${(e.args ?? '').trim()}" changed nothing: keep-warm times, on and off are /${CONFIGURE}'s`
     // Live findings 3, point 7: it pings now, with the settings /ai-dlc:cache-keepalive-configure set (`pingReply`).
-    return { text: `${await pingReply($)}${pane}${extra}` }
+    return { text: `${await pingReply($)}${extra}` }
   })
 
   // Live findings 3, point 5: /ai-dlc:cache-keepalive-configure with the arguments /ai-dlc:cache-keepalive used to take.

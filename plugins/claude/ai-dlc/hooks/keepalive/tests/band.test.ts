@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 import {
   BAND_TITLE,
-  SUMMARY_MAX,
   afterMasterPress,
   afterTrackPress,
   bandModel,
@@ -10,19 +9,16 @@ import {
   lineOf,
   masterOn,
   offTail,
+  rowLineOf,
   reasonText,
   sourceLabel,
-  statusModeOf,
-  statusTextOf,
-  summaryOf,
-  surfaceMode,
   trackOn,
 } from '../cache-state.ts'
-import type { SessionSwitch, TrackFacts } from '../cache-state.ts'
+import type { SessionSwitch } from '../cache-state.ts'
 import { bandText, masterState } from '../panel.tsx'
 
 // ITEM-068 (T17.6; LLD rev 7 to 11): the off-line suffix and the source note, the session switches, the band
-// and Pane model, and the status-line summary. All pure, driven directly. Times are local, as the line writes them.
+// and Pane model (step 44: no status-line summary). All pure, driven directly. Times are local, as the line writes them.
 
 const T = (h: number, m: number) => new Date(2026, 9, 25, h, m).getTime()
 
@@ -85,115 +81,88 @@ describe('[AC-17.6] session switches: the master and one per track, this session
     expect(afterTrackPress({}, '5m', true)).toEqual({ '5m': 'off' })
     expect(afterTrackPress({ master: 'on', '1h': 'on' }, '5m', false)).toEqual({ master: 'on', '1h': 'on', '5m': 'on' })
   })
-  test('a master [off] sets the master off and clears both track switches; [on] sets the master and both tracks on', () => {
-    expect(afterMasterPress({ '1h': 'on', '5m': 'on' }, true)).toEqual({ master: 'off' })
-    expect(afterMasterPress({}, false)).toEqual({ master: 'on', '5m': 'on', '1h': 'on' })
-    expect(afterMasterPress({ master: 'off', '1h': 'off' }, true)).toEqual({ master: 'on', '5m': 'on', '1h': 'on' })
-    expect(afterMasterPress({ master: 'on', '5m': 'off' }, false)).toEqual({ master: 'off' })
+  test('[R44.3] a master press: reading on, its [off] sets the master off and clears both track switches; reading off, its [on] sets the master and both tracks on', () => {
+    expect(afterMasterPress(true)).toEqual({ master: 'off' })
+    expect(afterMasterPress(false)).toEqual({ master: 'on', '5m': 'on', '1h': 'on' })
   })
-  test('pressing the master twice returns to the setting\'s own state (off, then on)', () => {
-    let sw: SessionSwitch = {}
-    sw = afterMasterPress(sw, true)
-    expect(masterOn(sw, true)).toBe(false)
-    sw = afterMasterPress(sw, true)
-    expect(masterOn(sw, true)).toBe(true)
-    expect(trackOn(sw, '1h', true, false)).toBe(true) // [on] forces both tracks on, even one the setting turned off
+  test('[R44.3] [off] turns both tracks off whatever the settings say; [on] turns both on even one the setting turned off', () => {
+    const off = afterMasterPress(true)
+    expect(trackOn(off, '1h', true, true)).toBe(false)
+    expect(trackOn(off, '5m', true, true)).toBe(false)
+    const on = afterMasterPress(false)
+    expect(masterOn(on, false)).toBe(true)
+    expect(trackOn(on, '1h', false, false)).toBe(true)
+    expect(trackOn(on, '5m', false, false)).toBe(true)
   })
 })
 
-describe('[AC-17.6] the band and Pane model (Q-SL2, Q-SL5, Q-SL8)', () => {
-  const rows = { '5m': { line: 'keepalive 5m: off (disabled)', enabled: false }, '1h': { line: 'keepalive 1h: armed', enabled: true } }
-  test('title, the master button, then the 5m row before the 1h row, each button naming the press', () => {
-    const m = bandModel('off', rows)
+describe('[R44.2] a track row: its status first, the button the opposite', () => {
+  const tail = { cap: 20, keepWarm: '1h' }
+  test('switched on and idle: "on, idle (<reason>)" and the off-line suffix', () => {
+    expect(rowLineOf('5m', undefined, 'off (no 5m cache write seen)', true, tail)).toBe('keepalive 5m: on, idle (no 5m cache write seen), ping 0/20, keep warm 1h')
+    expect(rowLineOf('5m', undefined, 'off', true, tail)).toBe('keepalive 5m: on, idle, ping 0/20, keep warm 1h')
+  })
+  test('switched off: "off" and its reason, never "on"', () => {
+    expect(rowLineOf('5m', undefined, 'off (disabled)', false, tail)).toBe('keepalive 5m: off (disabled), ping 0/20, keep warm 1h')
+    expect(rowLineOf('1h', undefined, 'off', false, { cap: 9, keepWarm: '8h', source: 'settings' })).toBe('keepalive 1h: off, ping 0/9, keep warm 8h (settings)')
+  })
+  test('a part that is not off is led by the switch: "on, <part>", or "off, <part>" for a track switched off', () => {
+    expect(rowLineOf('1h', undefined, 'armed, 1 task(s), ping 0/9', true)).toBe('keepalive 1h: on, armed, 1 task(s), ping 0/9')
+    expect(rowLineOf('1h', undefined, 'kept warm 8h, stopped', false)).toBe('keepalive 1h: off, kept warm 8h, stopped')
+  })
+  test('the cache part, when there is one, comes last, after a "; "', () => {
+    expect(rowLineOf('5m', 'main warm until 10:05', 'off (no 5m cache write seen)', true, tail)).toBe('keepalive 5m: on, idle (no 5m cache write seen), ping 0/20, keep warm 1h; main warm until 10:05')
+    expect(rowLineOf('5m', 'main warm until 10:05', 'armed', true)).toBe('keepalive 5m: on, armed; main warm until 10:05')
+  })
+  test('the published line is untouched: lineOf still leads with the cache part and never says "on,"', () => {
+    expect(lineOf('5m', 'main warm until 10:05', 'off (disabled)', tail)).toBe('keepalive 5m: main warm until 10:05; off (disabled), ping 0/20, keep warm 1h')
+  })
+})
+
+describe('[AC-17.6] [R44.2] [R44.3] the band and Pane model (Q-SL2, Q-SL5, Q-SL8)', () => {
+  const rows = { '5m': { line: 'keepalive 5m: off (disabled)', enabled: false }, '1h': { line: 'keepalive 1h: on, armed', enabled: true } }
+  test('title, then the 5m row before the 1h row, each button naming the press (the opposite of its enabled state)', () => {
+    const m = bandModel(rows)
     expect(m.title).toBe(BAND_TITLE)
     expect(BAND_TITLE).toBe('⚠ ai-dlc cache-keepalive:')
-    expect(m.master).toBe('off')
-    expect(m.rows).toEqual([{ track: '5m', line: 'keepalive 5m: off (disabled)', button: 'on' }, { track: '1h', line: 'keepalive 1h: armed', button: 'off' }])
+    expect(m.rows).toEqual([{ track: '5m', line: 'keepalive 5m: off (disabled)', button: 'on' }, { track: '1h', line: 'keepalive 1h: on, armed', button: 'off' }])
     expect(m.seed).toBeUndefined()
   })
+  const row = (enabled: boolean) => ({ line: 'x', enabled })
+  for (const [a, b, on] of [[true, true, true], [true, false, true], [false, true, true], [false, false, false]] as const)
+    test(`[R44.3] 5m ${a ? 'on' : 'off'}, 1h ${b ? 'on' : 'off'}: the head row reads ${on ? 'on' : 'off'} and its button is ${on ? 'off' : 'on'}`, () => {
+      const m = bandModel({ '5m': row(a), '1h': row(b) })
+      expect(m.on).toBe(on)
+      expect(masterState(m)).toBe(on ? 'on' : 'off')
+      expect(m.master).toBe(on ? 'off' : 'on')
+    })
+  test('[R44.2] each track button is the opposite of its own status, independent of the other track', () => {
+    const m = bandModel({ '5m': row(true), '1h': row(false) })
+    expect(m.rows.map(r => r.button)).toEqual(['off', 'on'])
+  })
   test('the seed row only while the seed line shows', () => {
-    expect(bandModel('on', rows, 'keepalive seed: cache hit, 47k read').seed).toBe('keepalive seed: cache hit, 47k read')
-    expect('seed' in bandModel('on', rows)).toBe(false)
+    expect(bandModel(rows, 'keepalive seed: cache hit, 47k read').seed).toBe('keepalive seed: cache hit, 47k read')
+    expect('seed' in bandModel(rows)).toBe(false)
   })
-  test('as plain text, one row per line with its button in brackets', () => {
-    expect(bandText(bandModel('off', rows, 'keepalive seed: cache miss'))).toBe('⚠ ai-dlc cache-keepalive: [off]\nkeepalive 5m: off (disabled) [on]\nkeepalive 1h: armed [off]\nkeepalive seed: cache miss')
-    expect(bandText(bandModel('on', rows))).toBe('⚠ ai-dlc cache-keepalive: [on]\nkeepalive 5m: off (disabled) [on]\nkeepalive 1h: armed [off]')
+  test('[R44.6] the seed row is kept only while a track is on: both tracks off drop it, either track on keeps it', () => {
+    const row = (enabled: boolean) => ({ line: 'x', enabled })
+    const seed = 'keepalive seed: cache hit, 47k read'
+    expect('seed' in bandModel({ '5m': row(false), '1h': row(false) }, seed)).toBe(false)
+    expect(bandModel({ '5m': row(true), '1h': row(false) }, seed).seed).toBe(seed)
+    expect(bandModel({ '5m': row(false), '1h': row(true) }, seed).seed).toBe(seed)
+    expect(bandModel({ '5m': row(true), '1h': row(true) }, seed).seed).toBe(seed)
+    // the head row and the rows are untouched by the seed
+    const off = bandModel({ '5m': row(false), '1h': row(false) }, seed)
+    expect([off.on, off.master, off.rows.length]).toEqual([false, 'on', 2])
   })
-})
-
-describe('[D13] the status-line summary', () => {
-  const run1h: TrackFacts = { kind: 'running', warmUntil: T(10, 5), pings: 2, cap: 9 }
-  const idle5m: TrackFacts = { kind: 'off', reason: 'noTasks' }
-  test('running track: "<ttl> warm <H:MM>, ping k/m"; an idle one by its reason; the tracks 1h then 5m after "keepalive "', () => {
-    expect(summaryOf({ '1h': run1h, '5m': idle5m }, undefined)).toBe('keepalive 1h warm 10:05, ping 2/9 | 5m idle (no tasks)')
-  })
-  test('before its first ping a running track names the first ping time instead of ping 0/m', () => {
-    expect(summaryOf({ '1h': { kind: 'running', warmUntil: T(10, 5), pings: 0, cap: 9, firstPingAt: T(9, 50) }, '5m': idle5m }, undefined)).toBe('keepalive 1h warm 10:05, first ping 9:50 | 5m idle (no tasks)')
-    // once a ping landed the clause goes
-    expect(summaryOf({ '1h': { kind: 'running', warmUntil: T(10, 5), pings: 1, cap: 9, firstPingAt: T(9, 50) }, '5m': idle5m }, undefined)).toContain('ping 1/9')
-  })
-  const reasons: [TrackFacts, string][] = [
-    [{ kind: 'off', reason: 'noSplit' }, '5m idle (no write yet)'],
-    [{ kind: 'off', reason: { noWrite: '5m' } }, '5m idle (no write)'],
-    [{ kind: 'off', reason: 'turnRunning' }, '5m idle (turn)'],
-    [{ kind: 'off', reason: 'onlySubagents' }, '5m idle (subagents)'],
-    [{ kind: 'off', reason: 'sessionEnded' }, '5m idle (ended)'],
-    [{ kind: 'off', reason: 'disabled' }, '5m off'],
-    [{ kind: 'off', reason: 'expired' }, '5m expired'],
-    [{ kind: 'off', reason: 'overage' }, '5m off (overage)'],
-    [{ kind: 'stopped', stop: 'ping limit' }, '5m stopped: ping limit'],
-    [{ kind: 'stopped', stop: 'done', warmUntil: T(11, 0) }, '5m stopped: done, warm 11:00'],
-    [{ kind: 'compaction', phase: 'compacting' }, '5m compacting'],
-    [{ kind: 'compaction', phase: 'skipped' }, '5m compaction skipped'],
-    [{ kind: 'compaction', phase: 'refused' }, '5m compaction refused'],
-    [{ kind: 'compaction', phase: 'compacted' }, '5m compacted'],
-  ]
-  for (const [facts, token] of reasons) test(`the 5m token for ${JSON.stringify(facts)} is "${token}"`, () => expect(summaryOf({ '1h': idle5m, '5m': facts }, undefined)).toBe(`keepalive 1h idle (no tasks) | ${token}`))
-  test('the seed token: "seed hit <k>" or "seed miss", while the line fits', () => {
-    expect(summaryOf({ '1h': idle5m, '5m': idle5m }, { hit: true, tokens: 47000 })).toBe('keepalive 1h idle (no tasks) | 5m idle (no tasks) | seed hit 47k')
-    expect(summaryOf({ '1h': idle5m, '5m': idle5m }, { hit: false })).toBe('keepalive 1h idle (no tasks) | 5m idle (no tasks) | seed miss')
-  })
-  test('the length rule: past 72 characters the seed token goes first, then every "warm <H:MM>" clause', () => {
-    expect(SUMMARY_MAX).toBe(72)
-    const a: TrackFacts = { kind: 'running', warmUntil: T(10, 5), pings: 3, cap: 9 }
-    const b: TrackFacts = { kind: 'running', warmUntil: T(10, 7), pings: 12, cap: 20 }
-    const seed = { hit: true as const, tokens: 123000 }
-    const whole = summaryOf({ '1h': a, '5m': b }, seed)
-    expect(whole).toBe('keepalive 1h warm 10:05, ping 3/9 | 5m warm 10:07, ping 12/20')
-    const long: TrackFacts = { kind: 'stopped', stop: 'spend limit', warmUntil: T(10, 5) }
-    const noSeed = summaryOf({ '1h': long, '5m': { kind: 'stopped', stop: 'spend limit', warmUntil: T(10, 7) } }, seed)
-    expect(noSeed).not.toContain('seed')
-    expect(noSeed.length).toBeLessThanOrEqual(SUMMARY_MAX)
-    const tight = summaryOf({ '1h': { kind: 'running', warmUntil: T(10, 5), pings: 10, cap: 28, firstPingAt: undefined }, '5m': { kind: 'stopped', stop: 'spend limit', warmUntil: T(10, 7) } }, seed)
-    expect(tight.length).toBeLessThanOrEqual(SUMMARY_MAX)
-  })
-  test('the summary never loses a track, whatever it drops', () => {
-    const long: TrackFacts = { kind: 'stopped', stop: 'spend limit', warmUntil: T(10, 5) }
-    const s = summaryOf({ '1h': long, '5m': long }, { hit: true, tokens: 999000 })
-    expect(s.startsWith('keepalive 1h stopped: spend limit')).toBe(true)
-    expect(s).toContain(' | 5m stopped: spend limit')
+  test('as plain text, one row per line with its button in brackets; the head row carries its status', () => {
+    expect(bandText(bandModel(rows, 'keepalive seed: cache miss'))).toBe('⚠ ai-dlc cache-keepalive: on [off]\nkeepalive 5m: off (disabled) [on]\nkeepalive 1h: on, armed [off]\nkeepalive seed: cache miss')
+    const none = bandModel({ '5m': row(false), '1h': row(false) })
+    expect(bandText(none)).toBe('⚠ ai-dlc cache-keepalive: off [on]\nx [on]\nx [on]')
   })
 })
 
-describe('[D13] which text the status line carries', () => {
-  const facts = { '1h': { kind: 'off', reason: 'noTasks' } as TrackFacts, '5m': { kind: 'off', reason: 'noTasks' } as TrackFacts }
-  test('surfaceMode: full only when every surface is vscode and there is at least one', () => {
-    expect(surfaceMode(['vscode'])).toBe('full')
-    expect(surfaceMode(['vscode', 'vscode'])).toBe('full')
-    expect(surfaceMode(['vscode', 'terminal'])).toBe('summary')
-    expect(surfaceMode(['terminal'])).toBe('summary')
-    expect(surfaceMode([])).toBe('summary')
-  })
-  test('statusModeOf: summary and full override the surface rule; auto is the surface rule', () => {
-    expect(statusModeOf('summary', ['vscode'])).toBe('summary')
-    expect(statusModeOf('full', ['terminal'])).toBe('full')
-    expect(statusModeOf('auto', ['vscode'])).toBe('full')
-    expect(statusModeOf('auto', ['terminal'])).toBe('summary')
-  })
-  test('statusTextOf: full is the full text unchanged; summary is summaryOf', () => {
-    expect(statusTextOf('full', 'L1\nL2', facts, undefined)).toBe('L1\nL2')
-    expect(statusTextOf('summary', 'L1\nL2', facts, undefined)).toBe(summaryOf(facts, undefined))
-  })
+describe('hhmm', () => {
   test('hhmm: local H:MM with a two-digit minute and no padding on the hour', () => {
     expect(hhmm(T(9, 5))).toBe('9:05')
     expect(hhmm(T(0, 0))).toBe('0:00')
@@ -201,27 +170,20 @@ describe('[D13] which text the status line carries', () => {
   })
 })
 
-// Step 42: the keep-alive band minimises like the lens band: one row with whether keep-alive is on, and the master button only.
-describe('[42.2] the minimised keep-alive band', () => {
-  const rows = { '5m': { line: 'keepalive 5m: off (disabled)', enabled: false }, '1h': { line: 'keepalive 1h: armed', enabled: true } }
-  test('masterState names the state, the opposite of the master button (which names the press)', () => {
-    expect(masterState(bandModel('off', rows))).toBe('on')
-    expect(masterState(bandModel('on', rows))).toBe('off')
+// Step 42, 44: the minimised keep-alive band is one row: title, the status, the master button.
+describe('[42.2] [R44.3] the minimised keep-alive band', () => {
+  const row = (enabled: boolean) => ({ line: 'x', enabled })
+  test('minimised, the band is one row: title, on|off and the master button; no track row, no seed row', () => {
+    expect(bandText(bandModel({ '5m': row(false), '1h': row(true) }, 'keepalive seed: cache miss'), true)).toBe('⚠ ai-dlc cache-keepalive: on [off]')
+    expect(bandText(bandModel({ '5m': row(false), '1h': row(false) }), true)).toBe('⚠ ai-dlc cache-keepalive: off [on]')
   })
-  test('minimised, the band is one row: title, on|off, and the master button; no track row, no seed row', () => {
-    expect(bandText(bandModel('off', rows, 'keepalive seed: cache miss'), true)).toBe('⚠ ai-dlc cache-keepalive: on [off]')
-    expect(bandText(bandModel('on', rows), true)).toBe('⚠ ai-dlc cache-keepalive: off [on]')
+  test('[R44.3] the minimised row reads on when either track is on, off when both are off; its button is the opposite', () => {
+    for (const [a, b] of [[true, true], [true, false], [false, true]] as const) expect(bandText(bandModel({ '5m': row(a), '1h': row(b) }), true)).toBe('⚠ ai-dlc cache-keepalive: on [off]')
+    expect(bandText(bandModel({ '5m': row(false), '1h': row(false) }), true)).toBe('⚠ ai-dlc cache-keepalive: off [on]')
   })
-  test('[live3 p4] m.on decides the minimised row: master off with a track on reads on; nothing on reads off; the master button keeps naming the press', () => {
-    const masterOff = bandModel('on', rows) // the master is off: its button offers on
-    expect(bandText({ ...masterOff, on: true }, true)).toBe('⚠ ai-dlc cache-keepalive: on [on]')
-    expect(bandText({ ...bandModel('off', rows), on: false }, true)).toBe('⚠ ai-dlc cache-keepalive: off [off]')
-    expect(masterState({ ...masterOff, on: true })).toBe('on')
-    expect(masterState({ ...masterOff, on: false })).toBe('off')
-    expect(masterState(masterOff)).toBe('off') // no `on`: the master button decides, as before
-  })
-  test('not minimised (the default and the Pane) is the full band as before', () => {
-    expect(bandText(bandModel('on', rows), false)).toBe(bandText(bandModel('on', rows)))
-    expect(bandText(bandModel('on', rows)).split('\n')).toHaveLength(3)
+  test('not minimised (the default and the Pane) is the full band', () => {
+    const m = bandModel({ '5m': row(true), '1h': row(false) })
+    expect(bandText(m, false)).toBe(bandText(m))
+    expect(bandText(m).split('\n')).toHaveLength(3)
   })
 })

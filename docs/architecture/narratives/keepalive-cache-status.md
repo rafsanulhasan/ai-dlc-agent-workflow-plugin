@@ -3,8 +3,9 @@ feature: keepalive-cache-status
 root: 17
 audience: product owner, plugin maintainer
 author: software-architect
-date: 2026-10-24
-spec: docs/specs/keepalive-cache-status.spec.md
+date: 2026-10-24 (step 44 section added 2026-10-31)
+spec: docs/specs/keepalive-cache-status.spec.md; docs/specs/keepalive-cache-status.spec.r4-delta.md (rev 4.8)
+adrs: [ADR-0007, ADR-0008]
 ---
 
 # Narrative: a status line that tells the truth about the cache
@@ -54,3 +55,31 @@ Risks:
 - **The host may not repaint the status line between events** (AC-17.4.4, a live check). If it does not, `po`'s Q17-4 applies: a README limitation and a backlog item.
 - **E7 depends on what a ping's usage carries** (spec OQ2). It holds only if a 1h ping carries a 1h write.
 - **ITEM-034.a may fail.** Then the subagent-ping ACs go back to the human.
+
+## Later: where keep-alive's state is shown (revision 4 and step 44, 2026-10-31)
+
+The design above put the truth in the status line. Revision 4 added Buttons, which a status line cannot hold, so the state moved into a band above the prompt (terminal, Desktop) and a Pane (VS Code), with a one-line summary left in the status line. Step 44 settles where it lives.
+
+### The problem
+
+In a narrow VS Code panel the human saw the status line repeat the band, Buttons that named the state they were in instead of the action they take, and keep-alive's tab leaving the area above the prompt, with the lens's, when the panel was widened.
+
+### Constraints
+
+- **C7, host (research 44.2.l1.2, F1 and F2).** Every pane of every module is a tab of one region, and the surface seats that region. VS Code puts it inline above the prompt when narrow and docks it on the right when wide (about 70 columns, probe 2ff). A module cannot choose the seat.
+- **C8, host (probe 2ff).** The band above the prompt (`AbovePrompt`) is drawn in VS Code too, although the types say terminal and Desktop only.
+- **C9, human (R44.7, R44.9, R44.10).** Keep-alive stays above the prompt at every width; only the lens moves with the width.
+- **C10, human (R44.1 to R44.3, R44.6).** One view without repetition; a Button offers the action, not the state; the title row says on or off as the tracks do.
+
+Alternatives: keep-alive as a tab beside the lens (rejected, it docks with the lens, C9); its rows only inside the lens (rejected, nothing to see while the lens is closed); the lens moving its own panes (impossible, C7).
+
+### The design
+
+- **Keep-alive is its own band, everywhere (C7 to C9; ADR-0008).** It draws no Pane and writes no status line, so a resize never moves it.
+- **The lens stays in the pane region (C7, C9).** It follows the seat the surface gives it: above the prompt when narrow, in the right pane when wide. It draws no band of its own in VS Code, and it closes its wide-only Run List tab when it comes back inline.
+- **Rows say the state, Buttons the action (C10).** A track reads `on, …` or `off (disabled)` with the opposite Button; the title row reads `on` when either track is on, else `off`, with the opposite Button for the master and both tracks. While both tracks are off, the seed row is hidden.
+
+Risks:
+
+- C8 is observed on Claude Code 2.1.310 and contradicts the types. If a later version stops drawing the band in VS Code, keep-alive has no view there; the live check after a host update covers it.
+- Widening the panel does not bring the lens's Run List tab with it: the lens does not open it, since an open the person did not ask for can wait undrawn below 110 columns (d.ts :15070), so the person opens it.

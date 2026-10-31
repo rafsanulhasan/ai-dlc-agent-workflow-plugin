@@ -13,9 +13,14 @@
  * after; the run's `done` was never read; a pending member made the workflow pending; `refreshList` skipped a listed
  * `completed`; the 2 s poll never looked at a run folder): the [C1a], [C1] and [C1b] session tests and the pure tests
  * that name `settleMembers`, `stageDone`, `stageStatuses`, `attemptKey` or `runStateSig` (not exported there) cannot pass on it.
+ *
+ * Step 44 (appended at the end of the file, same harness): [R44.5] the list and the band never read an `active` or
+ * `blocked` run as completed (`runListStatus`, and the newest run-state version wins), [R44.4] the lens band is drawn
+ * only where every surface draws a band (`bandEverywhere`), so the narrow VS Code view has the pane alone. In this
+ * file the sessions are on a terminal, and the finished agent of an `active` run reads waiting, not completed.
  */
 import { describe, expect, test } from 'claude-code/testing'
-import { OPEN, attemptKey, runStateSig, settleMembers, stageDone, stageStatuses, workflowStatus } from '../hooks/lens'
+import { OPEN, attemptKey, bandEverywhere, runListStatus, runStateSig, settleMembers, stageDone, stageStatuses, workflowStatus } from '../hooks/lens'
 import type { StatusMember } from '../hooks/lens'
 
 const PLUGIN = 'ai-dlc-lens'
@@ -319,7 +324,11 @@ const heldClock = () => {
   return { clockEvery, tick }
 }
 
+// The surfaces the session answers (`session.surfaces`); a terminal unless a test sets it after `boot`.
+let surfaces: string[] = ['terminal']
+
 async function boot($: any, on: any, initial: Record<string, string>, clockEvery?: (e: { ms: number }) => unknown): Promise<Fs> {
+  surfaces = ['terminal']
   const files: Record<string, string> = { ...initial }
   const stamp: Record<string, number> = {}
   const lists: Record<string, number> = {}
@@ -342,6 +351,8 @@ async function boot($: any, on: any, initial: Record<string, string>, clockEvery
     return <Text>NATIVE ROW</Text>
   })
   on('clock.every', (_: unknown, e: any) => (clockEvery !== undefined ? clockEvery(e) : { value: undefined }))
+  // Step 44 (R44.4): the band hook draws only where every surface draws a band (bandEverywhere), so these sessions are on a terminal
+  on('session.surfaces', () => ({ value: surfaces }))
   on('session.start', (_: unknown, e: any) => ({ cwd: e.cwd }))
   on('session.end', (_: unknown, e: any) => ({ sessionId: e.sessionId }))
   on('session.usage', () => ({ value: { startedAt: 0, context: { window: 1_000_000, tokens: 10 }, rateLimits: [] } }))
@@ -435,7 +446,7 @@ const bandStatus = async ($: any): Promise<string> => {
 // ---------------------------------------------------------------- sessions
 
 describe('[C1a] a failed step that starts again: the latest attempt decides, the workflow is not halted', () => {
-  test('[C1a] a1 fails (halted), a2 starts the same step (in progress, not halted), a2 finishes (completed); pane and band agree', async ($, on) => {
+  test('[C1a] a1 fails (halted), a2 starts the same step (in progress, not halted), a2 finishes (waiting: the run is active); pane and band agree', async ($, on) => {
     await boot($, on, { [`${RUN_DIR}/run.md`]: runState('active') })
     await call($, 1, '1')
     expect(await paneStatus($)).toBe('status: in progress')
@@ -447,8 +458,9 @@ describe('[C1a] a failed step that starts again: the latest attempt decides, the
     expect(await paneStatus($, 'in progress')).toBe('status: in progress')
     expect(await bandStatus($)).toBe('status: in progress')
     await finish($, 'a2')
-    expect(await paneStatus($, 'completed')).toBe('status: completed')
-    expect(await bandStatus($)).toBe('status: completed')
+    // Step 44 (R44.5): every agent ended, but the run is `active`, so it waits for its next stage: waiting, never completed
+    expect(await paneStatus($, 'waiting')).toBe('status: waiting')
+    expect(await bandStatus($)).toBe('status: waiting')
   })
 
   test('[C1a] a retry of ANOTHER step does not clear the failure: still halted', async ($, on) => {
@@ -482,11 +494,11 @@ describe('[C1a] a failed step that starts again: the latest attempt decides, the
 })
 
 describe('[C1] a done run state or stage reads completed; blocked still halts', () => {
-  test('[C1] a pending placeholder (the Agent call not started) whose Stages row is done: completed, not pending', async ($, on) => {
+  test('[C1] a pending placeholder (the Agent call not started) whose Stages row is done: settled, not pending (the run is active, so it waits)', async ($, on) => {
     await boot($, on, { [`${RUN_DIR}/run.md`]: runState('active', ['| 1 | change it | agent-manager | done (passed) |', '| 2 | review it | code-reviewer | pending |']) })
     await call($, 1, '1', false)
-    expect(await paneStatus($, 'completed')).toBe('status: completed')
-    expect(await bandStatus($)).toBe('status: completed')
+    expect(await paneStatus($, 'waiting')).toBe('status: waiting')
+    expect(await bandStatus($)).toBe('status: waiting')
   })
 
   test('[C1] boundary: the same placeholder whose Stages row is in-progress stays pending', async ($, on) => {
@@ -499,7 +511,7 @@ describe('[C1] a done run state or stage reads completed; blocked still halts', 
   test('[C1] a done row of a PARENT step settles the placeholder of a sub-step (row 1 done, brief names 1.2)', async ($, on) => {
     await boot($, on, { [`${RUN_DIR}/run.md`]: runState('active', ['| 1 | change it | agent-manager | done |']) })
     await call($, 1, '1.2', false)
-    expect(await paneStatus($, 'completed')).toBe('status: completed')
+    expect(await paneStatus($, 'waiting')).toBe('status: waiting') // settled (not pending); the run is active (R44.5)
   })
 
   test('[C1] the run status `done` makes the workflow completed although its agent was never told it ended', async ($, on) => {
@@ -527,7 +539,7 @@ describe('[C1] a done run state or stage reads completed; blocked still halts', 
     expect(await paneStatus($, 'in progress')).toBe('status: in progress')
     fs.listed['a1'] = 'completed'
     await h.tick()
-    expect(await paneStatus($, 'completed')).toBe('status: completed')
+    expect(await paneStatus($, 'waiting')).toBe('status: waiting') // ended (not in progress); the run is active (R44.5)
   })
 
   test('[C1] boundary: a status that already ended is never changed by the list (failed stays failed though the list says completed)', async ($, on) => {
@@ -581,7 +593,7 @@ describe('[C1b] another session moved the run: the 2 s poll shows it, an unchang
     await call($, 1, '1')
     await finish($, 'a1')
     await h.tick()
-    expect(await paneStatus($, 'completed')).toBe('status: completed')
+    expect(await paneStatus($, 'waiting')).toBe('status: waiting')
     fs.put(`${RUN_DIR}/run.md`, BLOCKED)
     await h.tick()
     expect(await paneStatus($, 'halted')).toBe('status: halted')
@@ -625,4 +637,113 @@ describe('[C1b] another session moved the run: the 2 s poll shows it, an unchang
     fs.put(`${RUN_DIR}/1-agent-manager-to-orchestrator.handback.md`, 'hand-back text')
     expect(await polled(h, fs)).toBe(idle)
   })
+})
+
+// ---------------------------------------------------------------- step 44
+
+describe('[R44.5] runListStatus: an active run is never completed', () => {
+  const a = (status: string) => ({ status, type: 'x' }) as unknown as StatusMember
+  const ended = [a('completed')]
+  test('every agent ended and a run is active: waiting, where workflowStatus says completed', () => {
+    expect(workflowStatus(ended, ['active'])).toBe('completed')
+    expect(runListStatus(ended, ['active'])).toBe('waiting')
+  })
+  test('every run done (or no run named): completed; the other statuses are workflowStatus\'s', () => {
+    expect(runListStatus(ended, ['done'])).toBe('completed')
+    expect(runListStatus(ended, [])).toBe('completed')
+    expect(runListStatus(ended, ['blocked'])).toBe('halted')
+    expect(runListStatus([a('running')], ['active'])).toBe('in-progress')
+    expect(runListStatus([a('failed')], ['active'])).toBe('halted')
+    expect(runListStatus([a('pending')], ['active'])).toBe('pending')
+  })
+  test('one active run among done ones is enough; the status is read case-insensitively and trimmed', () => {
+    expect(runListStatus(ended, ['done', 'active'])).toBe('waiting')
+    expect(runListStatus(ended, ['done', ' Active '])).toBe('waiting')
+    expect(runListStatus(ended, ['done', 'DONE'])).toBe('completed')
+  })
+  test('the spawner is left out as in workflowStatus', () => {
+    const members = [{ status: 'running', type: 'x', id: 'main' }, { status: 'completed', type: 'x', id: 'a1' }] as unknown as StatusMember[]
+    expect(runListStatus(members, ['active'], 'main')).toBe('waiting')
+  })
+})
+
+describe('[R44.5] the list and the band: an active run is never completed, the newest run-state version wins', () => {
+  test('[R44.5] every agent ended, the run is active: waiting in the pane and the band, never completed', async ($, on) => {
+    await boot($, on, { [`${RUN_DIR}/run.md`]: runState('active', ['| 1 | change it | agent-manager | done |']) })
+    await call($, 1, '1')
+    await finish($, 'a1')
+    expect(await paneStatus($, 'waiting')).toBe('status: waiting')
+    expect(await bandStatus($)).toBe('status: waiting')
+  })
+
+  test('[R44.5] the same run once its state says done: completed', async ($, on) => {
+    await boot($, on, { [`${RUN_DIR}/run.md`]: runState('done', ['| 1 | change it | agent-manager | done |']) })
+    await call($, 1, '1')
+    await finish($, 'a1')
+    expect(await paneStatus($, 'completed')).toBe('status: completed')
+    expect(await bandStatus($)).toBe('status: completed')
+  })
+
+  test('[R44.5] the newest version wins: run.v2.md active over an older run.v1.md done reads waiting, and the reverse reads completed', async ($, on) => {
+    const done = runState('done', ['| 1 | change it | agent-manager | done |'])
+    const active = runState('active', ['| 1 | change it | agent-manager | done |'])
+    await boot($, on, { [`${RUN_DIR}/run.v1.md`]: done, [`${RUN_DIR}/run.v2.md`]: active })
+    await call($, 1, '1')
+    await finish($, 'a1')
+    expect(await paneStatus($, 'waiting')).toBe('status: waiting')
+    expect(await bandStatus($)).toBe('status: waiting')
+  })
+
+  test('[R44.5] an older active version under a newer done one reads completed (a minor version, v4.3 over v4.2)', async ($, on) => {
+    const done = runState('done', ['| 1 | change it | agent-manager | done |'])
+    const active = runState('active', ['| 1 | change it | agent-manager | done |'])
+    await boot($, on, { [`${RUN_DIR}/run.v4.2.md`]: active, [`${RUN_DIR}/run.v4.3.md`]: done, [`${RUN_DIR}/run.v4.md`]: active })
+    await call($, 1, '1')
+    await finish($, 'a1')
+    expect(await paneStatus($, 'completed')).toBe('status: completed')
+    expect(await bandStatus($)).toBe('status: completed')
+  })
+
+  test('[R44.5] a blocked run reads halted, not completed or waiting', async ($, on) => {
+    await boot($, on, { [`${RUN_DIR}/run.md`]: runState('blocked', ['| 1 | change it | agent-manager | done |']) })
+    await call($, 1, '1')
+    await finish($, 'a1')
+    expect(await paneStatus($, 'halted')).toBe('status: halted')
+    expect(await bandStatus($)).toBe('status: halted')
+  })
+})
+
+describe('[R44.4] the lens band is drawn only where every surface draws a band', () => {
+  test('bandEverywhere: terminal and desktop only; vscode, mixed or unknown surfaces draw none', () => {
+    expect(bandEverywhere(['terminal'])).toBe(true)
+    expect(bandEverywhere(['terminal', 'desktop'])).toBe(true)
+    expect(bandEverywhere(['vscode'])).toBe(false)
+    expect(bandEverywhere(['terminal', 'vscode'])).toBe(false)
+    expect(bandEverywhere([])).toBe(false)
+  })
+
+  const drawsBand = async ($: any): Promise<boolean> => {
+    const ui = await $.ui.mount(band())
+    const own = ((await ui.findAll({ type: 'Svg' })) as any[]).length > 0
+    const native = (await ui.find({ type: 'Text', text: 'NATIVE ROW' })) !== undefined
+    await ui.unmount()
+    expect(native).toBe(true) // the hook beneath is always reached
+    return own
+  }
+
+  test('[R44.4] a terminal: the lens band is drawn (above the row beneath)', async ($, on) => {
+    await boot($, on, { [`${RUN_DIR}/run.md`]: runState('active') })
+    await call($, 1, '1')
+    surfaces = ['terminal']
+    expect(await drawsBand($)).toBe(true)
+  })
+
+  for (const set of [['vscode'], ['terminal', 'vscode'], []]) {
+    test(`[R44.4] surfaces ${JSON.stringify(set)}: no lens band, so the pane the command opens is the only lens view`, async ($, on) => {
+      await boot($, on, { [`${RUN_DIR}/run.md`]: runState('active') })
+      await call($, 1, '1')
+      surfaces = set
+      expect(await drawsBand($)).toBe(false)
+    })
+  }
 })
