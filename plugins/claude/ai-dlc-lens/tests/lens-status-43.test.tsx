@@ -1275,4 +1275,40 @@ describe('[44.3.l2.3] a timeout halt is temporary (W1), on the engine clock (W-B
     await s.h.tick()
     expect(await paneStatus($)).toBe('status: halted')
   })
+
+  // Step 44.3.l2.4 (decision 18, M10): the `heard` call at turn.start. a1 is missing since t0. A turn.start just short of
+  // the limit starts its time again, so the poll at t0 + LIMIT does not halt it; without the call the old time stays and
+  // that poll halts it. The turn.start sets `running` itself, so only the restart of the time tells the call apart.
+  test('[W1] a turn.start of the dropped agent restarts its time: no halt at t0 + limit, halt a limit after the next poll that misses it', HEAVY, async ($, on) => {
+    const s = await session($, on)
+    delete s.fs.listed['a1']
+    await s.h.tick() // missing from t0
+    s.clk.set(s.clk.now() + LIMIT - 1000)
+    await s.h.tick()
+    expect(await paneStatus($)).toBe('status: in progress')
+    await $.turn.start({ text: 'p', turnId: 't2', agentId: 'a1' }) // heard: the time starts again
+    s.clk.set(s.clk.now() + 1000) // t0 + LIMIT
+    await s.h.tick()
+    expect(await paneStatus($)).toBe('status: in progress') // the poll that misses it again starts the new time
+    s.clk.set(s.clk.now() + LIMIT - 1)
+    await s.h.tick()
+    expect(await paneStatus($)).toBe('status: in progress')
+    s.clk.set(s.clk.now() + 1)
+    await s.h.tick()
+    expect(await paneStatus($, 'halted')).toBe('status: halted')
+  })
+
+  // Step 44.3.l2.4 (M19): the resume takes the timeout mark out, so a halt the list sets later is the list's own.
+  test('[W1] after a listed `running` resumed a timeout halt, a later halt the list set is not resumed by the next listed `running`', HEAVY, async ($, on) => {
+    const s = await halt($, on)
+    s.fs.listed['a1'] = 'running'
+    await s.h.tick() // resumed: the timeout mark is gone
+    expect(await paneStatus($, 'in progress')).toBe('status: in progress')
+    s.fs.listed['a1'] = 'failed'
+    await s.h.tick() // the list itself halts it
+    expect(await paneStatus($, 'halted')).toBe('status: halted')
+    s.fs.listed['a1'] = 'running'
+    await s.h.tick() // no mark covers a halt the list set
+    expect(await paneStatus($)).toBe('status: halted')
+  })
 })

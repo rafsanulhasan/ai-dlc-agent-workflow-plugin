@@ -756,6 +756,113 @@ export function ensureIn(m: Record<string, LensAgent>, id: string, make: () => L
   return m[id] ? m : { ...m, [id]: make() }
 }
 
+// ---- the agent list (step 44.2.l2.4, decision 17): `refreshList`'s merge, pure ----
+
+/** One row of `$.agent.list()` as the merge reads it (`AgentInfo`, .tsc/claude-code.d.ts). */
+export type ListedAgent = { id: string; type: string; status: string; parentId?: string | null; description?: string; teammateId?: string }
+
+/** What the dropped-subagent timeout decided: the `missingSince` entries to start and to clear, and the agents it halts. */
+export type DropPlan = { start: string[]; clear: string[]; halt: string[] }
+
+/** The module marks the merge reads and never writes: `haltedByTurn`, `haltedByTimeout` and `missingSince` in `register.tsx`. */
+export type AgentListMarks = {
+  turn: ReadonlySet<string>
+  timeout: ReadonlySet<string>
+  missingSince: ReadonlyMap<string, number>
+}
+
+/** The merge's result: the new agents map, the agents a listed `running` resumed, and the drop plan. */
+export type ListMerge = { agents: Record<string, LensAgent>; resumed: string[]; drops: DropPlan }
+
+/**
+ * Step 44.2.l2.2 (the human's decision 16): a subagent stored `running` that the list no longer has (the engine
+ * dropped its task) and that sent no event since shows halted after `limitMs` (0: never). The time counts only while
+ * it is missing: a listed row resets it, so an agent the list still shows is never timed out; an event resets it too
+ * (`heard` in `register.tsx`). It becomes `failed`: the lens cannot tell a stop (`killed`) from an error, and `failed`
+ * is what a non-answer turn end showed before step 44. Not reached when the list throws (`refreshList` returns
+ * first): no list, no evidence.
+ *
+ * Step 44.2.l2.4 (decision 17): pure. It reads `missingSince` as a parameter, returns a new agents map with the
+ * halted rows set and the plan `refreshList` applies once `update` has written; it writes neither its inputs nor the
+ * marks.
+ */
+export function planDrops(
+  agents: Readonly<Record<string, LensAgent>>,
+  listed: ReadonlySet<string>,
+  t: number,
+  limitMs: number,
+  missingSince: ReadonlyMap<string, number>,
+): { agents: Record<string, LensAgent>; plan: DropPlan } {
+  const out: Record<string, LensAgent> = { ...agents }
+  const plan: DropPlan = { start: [], clear: [], halt: [] }
+  if (limitMs === 0) {
+    plan.clear = [...missingSince.keys()]
+    return { agents: out, plan }
+  }
+  for (const [id, cur] of Object.entries(out)) {
+    const subagent = id !== 'main' && cur.type !== 'teammate' && cur.teammate !== true
+    if (!subagent || cur.status !== 'running' || listed.has(id)) {
+      if (missingSince.has(id)) plan.clear.push(id)
+      continue
+    }
+    const since = missingSince.get(id)
+    if (since === undefined) plan.start.push(id)
+    else if (t - since >= limitMs) {
+      out[id] = { ...cur, status: 'failed', endedAt: t }
+      plan.halt.push(id)
+    }
+  }
+  return { agents: out, plan }
+}
+
+/**
+ * Step 44.2.l2.4 (decision 17): the body of `refreshList`'s `update` updater, pure, so the engine may run it again on
+ * a version miss and a test can call it twice. It stamps each agent's listed children as background tasks (step 16
+ * Q6) at `t`, applies the listed statuses (resume, stale and ended rules below), flags teammates, then runs
+ * `planDrops`. It returns the new agents map, the ids a listed `running` resumed and the drop plan, and never writes
+ * `agents`, `list` or `marks`: `refreshList` applies `resumed` and `drops` to the marks after `update` resolves.
+ */
+export function mergeAgentList(
+  agents: Readonly<Record<string, LensAgent>>,
+  list: readonly ListedAgent[],
+  t: number,
+  limitMs: number,
+  marks: AgentListMarks,
+): ListMerge {
+  const resumed: string[] = []
+  const out: Record<string, LensAgent> = { ...agents }
+  for (const key of Object.keys(out)) {
+    const kids: LensTask[] = list
+      .filter(a => (a.parentId ?? 'main') === key)
+      .map(a => ({ id: String(a.id), type: 'subagent', agentType: String(a.type), status: String(a.status), description: String(a.description ?? ''), source: 'agent.list' }))
+    const stopTasks = out[key]!.bg.filter(task => task.source !== 'agent.list')
+    out[key] = { ...out[key]!, bg: stampTasks(out[key]!.bg, uniqueTasks([...kids, ...stopTasks]), t) }
+  }
+  for (const a of list) {
+    const cur = out[a.id]
+    // A list that still says `running` never undoes a `turn.complete` (finding 6).
+    // Round 6: nor puts `running` back over an `idle` the turn's end set (the list lags, E4); a turn's
+    // own start sets `running`. It may still start a pending agent or wake a waiting one.
+    const stale = a.status === 'running' && cur !== undefined && cur.status !== 'pending' && cur.status !== 'waiting'
+    // Step 44.2.l2.1: a listed `running` clears a `failed` / `killed` that the agent's own `turn.complete` set
+    // (`marks.turn`), or since step 44.2.l2.2 the timeout set (`marks.timeout`), never one the list set;
+    // `completed` stays ended (`ENDED`).
+    const id = String(a.id)
+    const resume = a.status === 'running' && cur !== undefined && (cur.status === 'failed' || cur.status === 'killed') && (marks.turn.has(id) || marks.timeout.has(id))
+    // Step 43 (C1), the `else if` below: a listed `completed` applies too (an agent whose `turn.complete` this
+    // session never saw, a pending one included); a status already ended (`ENDED`) is still never changed by the list.
+    if (resume) {
+      // Running again: the halting turn's end time no longer applies (a spawn sets null too).
+      out[a.id] = { ...cur!, status: 'running', endedAt: null }
+      resumed.push(id)
+    } else if (cur && cur.status !== a.status && !ENDED.has(cur.status) && !stale) out[a.id] = { ...cur, status: String(a.status) }
+    if (out[a.id] && typeof a.teammateId === 'string' && out[a.id]!.teammate !== true) out[a.id] = { ...out[a.id]!, teammate: true }
+  }
+  const listed = new Set(list.map(a => String(a.id)))
+  const dropped = planDrops(out, listed, t, limitMs, marks.missingSince)
+  return { agents: dropped.agents, resumed, drops: dropped.plan }
+}
+
 /**
  * Two-way arrow on spawn (L6): the same parent spawned this type before, under another call.
  * Not "the agent already exists": its own `turn.start` adds it first (headless run, step 17.l2).

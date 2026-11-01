@@ -50,6 +50,7 @@ import {
   drawOr,
   ENDED,
   ZERO,
+  mergeAgentList,
   addTokens,
   addToBatch,
   batchView,
@@ -185,7 +186,7 @@ import {
   cardCharts,
   spawnPlace,
 } from './lens'
-import type { ChartLabel, ChartSize, FlowStatus, KeepaliveCycle, StepChart, StepSource } from './lens'
+import type { ChartLabel, ChartSize, FlowStatus, KeepaliveCycle, ListMerge, StepChart, StepSource } from './lens'
 import { DEFAULTS, KEYS, agentEnvName, agentEnvPrefix, agentKeyParts, envLevel, envName, fileLevel, initialFile, resolve, resolveAgent, schema, setKey } from './settings'
 import type { Key, Level, LensSettings } from './settings'
 import { SVG_CAP, avatarKey, avatarSvg, checkBytes, classify, isInside, own, trustedFolders, typesOf } from './avatar'
@@ -376,13 +377,14 @@ const haltedByTimeout = new Set<string>()
 const missingSince = new Map<string, number>()
 /**
  * Step 44.2.l2.2: an event of the agent `key` arrived; its dropped-subagent time starts again. Step 44.2.l2.3
- * (spec W1): an agent the timeout halted is working after all, so it is `running` again (`endedAt` null), unless
- * something else has changed its status since.
+ * (spec W1): an agent the timeout halted is working after all, so it is `running` again (`endedAt` null). Step
+ * 44.2.l2.4 (decision 18): no status guard; an id is in `haltedByTimeout` only while its row is the timeout's
+ * `failed` (this function, a listed resume and `session.start` take it out), so the guard could never be false.
  */
 async function heard($: EngineInterface, key: string) {
   missingSince.delete(key)
   if (!haltedByTimeout.delete(key)) return
-  await patchAgent($, key, a => (a.status === 'failed' ? { ...a, status: 'running', endedAt: null } : a))
+  await patchAgent($, key, a => ({ ...a, status: 'running', endedAt: null }))
 }
 /**
  * Step 43.2.5: the session's SendMessage calls (`beforeCall`), for the Connections panel's Send Message accordion.
@@ -1120,49 +1122,21 @@ async function refreshList($: EngineInterface, reason: string) {
   let t: number
   try {
     t = await $.clock.now()
-  } catch {
+  } catch (err) {
     t = nowMs()
+    await plog($, 'E4', { reason, clock: 'wall', error: String(err) })
   }
-  const listed = new Set(list.map(a => String(a.id)))
   // Step 44.2.l2.3 (standards W-A): `update` reads, applies the updater, writes with `ifVersion` and runs the updater
-  // again on a miss (`UpdateFunction`, .tsc/claude-code.d.ts), so the updater only computes. What it decided about
-  // module state is kept here, reset on each run, and applied once `update` has written.
-  let resumed: string[] = []
-  let drops: DropPlan = { start: [], clear: [], halt: [] }
-  // Background tasks: each agent's listed children (step 16 Q6).
+  // again on a miss (`UpdateFunction`, .tsc/claude-code.d.ts), so the updater only computes. Step 44.2.l2.4
+  // (decision 17): it is the pure `mergeAgentList` (`lens.ts`), which reads the marks and never writes them; what it
+  // decided is kept from its last run and applied below, once `update` has written: the only place `refreshList`
+  // writes `haltedByTurn`, `haltedByTimeout` and `missingSince`.
+  let merged!: ListMerge
   await update($, agentsA, m => {
-    resumed = []
-    const out: Record<string, LensAgent> = { ...(m as Record<string, LensAgent>) }
-    for (const key of Object.keys(out)) {
-      const kids: LensTask[] = list
-        .filter(a => (a.parentId ?? 'main') === key)
-        .map(a => ({ id: String(a.id), type: 'subagent', agentType: String(a.type), status: String(a.status), description: String(a.description ?? ''), source: 'agent.list' }))
-      const stopTasks = out[key]!.bg.filter(t => t.source !== 'agent.list')
-      out[key] = { ...out[key]!, bg: stampTasks(out[key]!.bg, uniqueTasks([...kids, ...stopTasks]), nowMs()) }
-    }
-    for (const a of list) {
-      const cur = out[a.id]
-      // A list that still says `running` never undoes a `turn.complete` (finding 6).
-      // Round 6: nor puts `running` back over an `idle` the turn's end set (the list lags, E4); a turn's
-      // own start sets `running`. It may still start a pending agent or wake a waiting one.
-      const stale = a.status === 'running' && cur !== undefined && cur.status !== 'pending' && cur.status !== 'waiting'
-      // Step 44.2.l2.1: a listed `running` clears a `failed` / `killed` that the agent's own `turn.complete` set
-      // (`haltedByTurn`), or since step 44.2.l2.2 the timeout set (`haltedByTimeout`), never one the list set;
-      // `completed` stays ended (`ENDED`).
-      const id = String(a.id)
-      const resume = a.status === 'running' && cur !== undefined && (cur.status === 'failed' || cur.status === 'killed') && (haltedByTurn.has(id) || haltedByTimeout.has(id))
-      // Step 43 (C1), the `else if` below: a listed `completed` applies too (an agent whose `turn.complete` this
-      // session never saw, a pending one included); a status already ended (`ENDED`) is still never changed by the list.
-      if (resume) {
-        // Running again: the halting turn's end time no longer applies (a spawn sets null too).
-        out[a.id] = { ...cur!, status: 'running', endedAt: null }
-        resumed.push(id)
-      } else if (cur && cur.status !== a.status && !ENDED.has(cur.status) && !stale) out[a.id] = { ...cur, status: String(a.status) }
-      if (out[a.id] && typeof a.teammateId === 'string' && out[a.id]!.teammate !== true) out[a.id] = { ...out[a.id]!, teammate: true }
-    }
-    drops = haltDroppedSubagents(out, listed, t, cfg.droppedSubagentMinutes * 60_000)
-    return out
+    merged = mergeAgentList(m as Record<string, LensAgent>, list, t, cfg.droppedSubagentMinutes * 60_000, { turn: haltedByTurn, timeout: haltedByTimeout, missingSince })
+    return merged.agents
   })
+  const { resumed, drops } = merged
   for (const id of resumed) {
     haltedByTurn.delete(id)
     haltedByTimeout.delete(id)
@@ -1173,43 +1147,6 @@ async function refreshList($: EngineInterface, reason: string) {
     missingSince.delete(id)
     haltedByTimeout.add(id)
   }
-}
-
-/** Step 44.2.l2.3: what `haltDroppedSubagents` decided about `missingSince` and `haltedByTimeout`, applied after the write. */
-type DropPlan = { start: string[]; clear: string[]; halt: string[] }
-
-/**
- * Step 44.2.l2.2 (the human's decision 16): a subagent stored `running` that the list no longer has (the engine
- * dropped its task) and that sent no event since shows halted after `limitMs` (0: never). The time counts only while
- * it is missing: a listed row resets it, so an agent the list still shows is never timed out; an event resets it too
- * (`heard`). It becomes `failed`: the lens cannot tell a stop (`killed`) from an error, and `failed` is what a
- * non-answer turn end showed before step 44. Not reached when the list throws (`refreshList` returns first): no list,
- * no evidence.
- *
- * Step 44.2.l2.3 (standards W-A, S-A): pure over module state. It sets the halted rows in `out` (the updater's own
- * copy) and returns which `missingSince` entries to start, to clear and which agents to mark in `haltedByTimeout`
- * (so a later event or listed `running` brings them back); `refreshList` applies that once `update` has written.
- */
-function haltDroppedSubagents(out: Record<string, LensAgent>, listed: Set<string>, t: number, limitMs: number): DropPlan {
-  const plan: DropPlan = { start: [], clear: [], halt: [] }
-  if (limitMs === 0) {
-    plan.clear = [...missingSince.keys()]
-    return plan
-  }
-  for (const [id, cur] of Object.entries(out)) {
-    const subagent = id !== 'main' && cur.type !== 'teammate' && cur.teammate !== true
-    if (!subagent || cur.status !== 'running' || listed.has(id)) {
-      if (missingSince.has(id)) plan.clear.push(id)
-      continue
-    }
-    const since = missingSince.get(id)
-    if (since === undefined) plan.start.push(id)
-    else if (t - since >= limitMs) {
-      out[id] = { ...cur, status: 'failed', endedAt: t }
-      plan.halt.push(id)
-    }
-  }
-  return plan
 }
 
 /**
