@@ -45,6 +45,7 @@ We will keep every mark that guards an agent's status change in that agent's row
   - `session.start` clears the marks in every row.
   - `heard` and the turn handlers write the marks inside their existing `patchAgent` updaters.
   - The apply block after `refreshList`'s `update` and the three module collections are removed.
+  - When the list reports an agent the timeout halted as `failed` or `killed`, the same update clears its timeout mark, so a later event no longer revives a halt the list confirmed (spec S1 of code review round 3, `44.4.2.l3.3-code-reviewer-to-orchestrator.handback.md`; added by decision 22, `55-human-decisions.human.md`; a known limit until then).
 - **Why.** It removes the ITEM-104 race and the reload mismatch, and makes a re-run of the update harmless by construction, not by convention (Context, above).
 - **Acceptance criteria** (from the backlog row):
   - (a) the three marks are fields of the agent row, written in the same update as the status;

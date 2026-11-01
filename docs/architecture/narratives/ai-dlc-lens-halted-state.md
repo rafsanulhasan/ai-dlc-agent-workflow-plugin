@@ -4,7 +4,7 @@ root: 44 (follow-up ITEM-104)
 audience: product owner, the human decision maker, ITEM-106 implementers
 author: software-architect
 date: 2026-11-02
-status: in progress (the staged fix is built in 44.2.l2.4; its tests 44.3.l2.4 and code review round 3 of 3 are pending; manual check M35 not run)
+status: in progress (the staged fix is built in 44.2.l2.4 and tested in 44.3.l2.4; code review round 3 approved it on both axes; G4 is approved once the docs fixes of decision 21 pass review round 4; manual check M35 not run)
 spec: docs/specs/lens-view.lld.md (section 4, the per-agent halted rule)
 backlog: ITEM-104 (the fix), ITEM-105 (round-2 suggestions), ITEM-106 (halt marks in the agent row)
 adrs: [ADR-0009] (written now by decision 20; implementation pending ITEM-106)
@@ -12,7 +12,7 @@ adrs: [ADR-0009] (written now by decision 20; implementation pending ITEM-106)
 
 # Narrative: a working agent must never read "halted" (ITEM-104)
 
-> **In progress.** This tells the journey up to the staged design of decision 17 and the ADR of decision 20 ([ADR-0009](../decisions/ADR-0009-lens-marks-that-guard-an-agents-status-live-in-its-row-in-agentsa.md)). The code of the last step (44.2.l2.4) is built; its tests (44.3.l2.4) and the last review round are still to come, and the live check M35 has not run. Records are linked by step code; all of them are in [`docs/handoffs/FEAT-20261020-ai-dlc-lens/`](../../handoffs/FEAT-20261020-ai-dlc-lens/).
+> **In progress.** This tells the journey from the bug report through the staged design of decision 17, the ADR of decision 20 ([ADR-0009](../decisions/ADR-0009-lens-marks-that-guard-an-agents-status-live-in-its-row-in-agentsa.md)) and the human's G4 answers after code review round 3 (decisions 21 and 22). The code of the last step (44.2.l2.4) is built and tested (44.3.l2.4), and both review axes approved it. Still to come: the review round that checks the docs fixes of decision 21, and the live check M35. Records are linked by step code; all of them are in [`docs/handoffs/FEAT-20261020-ai-dlc-lens/`](../../handoffs/FEAT-20261020-ai-dlc-lens/).
 
 ## Act 1: the problem
 
@@ -36,7 +36,7 @@ The players: the human, who decided every turn below; research-assistant, who fo
 | Technical | The agent rows live in an engine atom (`agentsA`) whose `update` writes on a version check and runs the updater again on a miss (engine types, cited in 44.4.1.l3.2 and 44.2.l2.3). | Anything the updater does besides returning the new rows can happen twice. |
 | Technical | The test kit cannot make `update` miss (sqa 44.3.l2.3, mutant M2), and the hooks' `Date.now` cannot be moved from a test (sqa 44.3.l2.2). | Some correctness could only be shown by reading the code, until the design made it testable. |
 | Evidence | The cause was never captured live: the lens probe log was off (research 44.1.l2.1). | Every fix rests on the most likely cause, not a proven one; M35 is the live check. |
-| Process | The code-review loop has 2 rounds by default; the human raised it to 3 for this loop only ([51](../../handoffs/FEAT-20261020-ai-dlc-lens/51-human-decision.human.md)), and set an escalation trigger (run state entry 2jd). | Each round's Warnings went to the human, not silently into the next round. |
+| Process | The code-review loop has 2 rounds by default; the human raised it to 3 for this loop only ([51](../../handoffs/FEAT-20261020-ai-dlc-lens/51-human-decision.human.md)), then to 4 for the docs fixes of decision 21 ([55](../../handoffs/FEAT-20261020-ai-dlc-lens/55-human-decisions.human.md)), and set an escalation trigger (run state entry 2jd). | Each round's Warnings went to the human, not silently into the next round. |
 
 ### What the design had to deliver
 
@@ -98,7 +98,29 @@ The players: the human, who decided every turn below; research-assistant, who fo
 - **My design (software-architect, [44.1.l2.2](../../handoffs/FEAT-20261020-ai-dlc-lens/44.1.l2.2-software-architect-to-orchestrator.handback.md)): by construction.** Every mark guards one status change of one agent, yet the status is in an engine atom with a conditional, retried write and the marks are in module memory changed at other moments. One rule spread over two stores with no shared commit cannot be made atomic, however carefully the steps are ordered; W-A, the race and a lifetime mismatch (the marks are lost on a plugin reload, the rows are not) all come from that split. So: move the three marks onto each agent's row in `agentsA` (for example `haltedBy` and `missingSince`), written by the same `update` that changes the status; bump the atom's shape from `agents-3` to `agents-4`; have `session.start` clear the marks in every row. I rejected **a separate atom for the marks**, because `update` covers one atom and the race between two atoms would remain. Proposed rule: state that guards a status change lives in the same atom as the status; module memory holds only caches and diagnostics. I asked for ADR-0009 once the human chose it, and recommended fixing it inside ITEM-104.
 - **The trade-off between them.** The narrow design is small, keeps the persisted shape and makes the updater testable now; it leaves the race and the reload mismatch. Mine removes them, but changes the persisted shape (rows stored before a reload in the same session are dropped once), touches every reader of the marks and needs an ADR.
 - **Choice.** The human staged them (decision 17, [52](../../handoffs/FEAT-20261020-ai-dlc-lens/52-human-decisions.human.md)): the narrow design now, in ITEM-104, with the race as a documented known limit; the marks-in-rows design as follow-up ITEM-106 (P2), with ADR-0009 written when it is taken up. Later the same day the human brought the ADR forward: decision 20 ([54](../../handoffs/FEAT-20261020-ai-dlc-lens/54-human-decision.human.md)) has ADR-0009 written now, with this narrative, while ITEM-106 stays for later. Decision 18: try a timing test for M10 and remove the call if it shows no difference; remove the M16 guard.
-- **What was built** ([44.2.l2.4](../../handoffs/FEAT-20261020-ai-dlc-lens/44.2.l2.4-agent-manager-to-orchestrator.handback.md)). `mergeAgentList` and `planDrops` exported from `lens.ts`; the task stamp uses `t`; the guard in `heard` removed; on the clock fallback, an E4 probe line (`clock: 'wall'`) while `probes` is on, the optional note from my hand-back. The `turn.start` `heard` call is kept until the timing test reports.
+- **What was built** ([44.2.l2.4](../../handoffs/FEAT-20261020-ai-dlc-lens/44.2.l2.4-agent-manager-to-orchestrator.handback.md)). `mergeAgentList` and `planDrops` exported from `lens.ts`; the task stamp uses `t`; the guard in `heard` removed; on the clock fallback, an E4 probe line (`clock: 'wall'`) while `probes` is on, the optional note from my hand-back. The `turn.start` `heard` call was kept until the timing test reported.
+- **Tests, and how decision 18 turned out** ([44.3.l2.4](../../handoffs/FEAT-20261020-ai-dlc-lens/44.3.l2.4-sqa-engineer-to-orchestrator.handback.md)).
+  - **W-A is now caught by a test.** A new unit-test file calls `mergeAgentList` and `planDrops` twice on deep-frozen input and checks that the two results are equal and the marks unchanged. M2, the updater that writes a mark, is killed; it had survived in 44.3.l2.3.
+  - **The `turn.start` `heard` call stays.** A driven-clock timing test shows it has an effect: removing it (M10a) turns two tests red, because the old `missingSince` time survives the `turn.start` and the next poll halts the agent. Decision 18 said to keep the call in that case. What matters in the call is the timer restart; replacing the call with that alone (M10b) is equivalent.
+  - **Mutants.** 23 of 25 killed. Two survive and both are equivalent: M10b, and M17 (a redundant `!has` guard in the apply loop).
+  - **Runs.** lens 912 pass / 0 fail, ai-dlc 983/0, repository tests 876/0. Committed in 688e9d6.
+
+### Turn 6: review round 3 of 3, and the human's G4 answers (decisions 21 and 22)
+
+- **How the round ran.** At the human's request both axes ran on Opus 5.5 at medium effort (run state entry 2jc), after the Sonnet review lead of an earlier round had stopped on a model safeguard error. Both reviewers stopped waiting on their own background test runs and had to be resumed by message (entry 2jp). The standards reviewer re-ran the lens tests, 912/0 at 688e9d6; the spec reviewer's re-run did not complete, and it relied on the figures of 44.3.l2.4.
+- **As seen then** ([44.4.1.l3.3](../../handoffs/FEAT-20261020-ai-dlc-lens/44.4.1.l3.3-code-reviewer-to-orchestrator.handback.md), [44.4.2.l3.3](../../handoffs/FEAT-20261020-ai-dlc-lens/44.4.2.l3.3-code-reviewer-to-orchestrator.handback.md)). Both axes approved with zero Blockers, and every round-2 finding was closed on both (W-A, W-B, W1 and all suggestions). New findings:
+  - **W1 (both axes, docs):** the LLD and the backlog row of ITEM-106 still said ADR-0009 would be written later; decision 20 had it written now.
+  - **W2 (spec, docs):** this narrative and the LLD status line still said the 44.3.l2.4 tests were pending and that the `turn.start` call might be dead code.
+  - **Spec S1 (code, very unlikely):** an agent the timeout halted keeps its `haltedByTimeout` mark when the list later reports it `failed` or `killed`, because its row is already ended and does not change. A later event of that agent then revives it to `running`, against the documented rule that a halt the list confirmed is not undone by an event. It needs a dropped agent to come back listed as ended and still send events.
+  - **Standards S1:** the frozen-input test says a write "throws", but `Object.freeze` does not stop `add`, `delete` or `set` on a `Set` or `Map`, and the frozen `listed` set is never checked afterwards.
+  - **Standards S2:** the comment on `heard` proves its invariant only from the writers it names; a future writer of a timed-out row would break it silently.
+- **Options.** With no review round left, the orchestrator asked whether the docs fixes could be checked without another round, what to do with spec S1 and the two suggestions, and for G4 ([55-orchestrator-to-human](../../handoffs/FEAT-20261020-ai-dlc-lens/55-orchestrator-to-human.handoff.md)). For spec S1 the reviewer had offered two fixes: clear the timeout mark when the list confirms the halt, with one test, or narrow the documented rule to the order in which it holds.
+- **Choice** ([55](../../handoffs/FEAT-20261020-ai-dlc-lens/55-human-decisions.human.md)).
+  - **Decision 21:** "Fix + review round". documentation-writer fixes the LLD, I fix this narrative and product-manager the backlog, then one more code-review round; the loop goes from 3 to 4 rounds, for this run and loop only.
+  - **Decision 22:** spec S1 and standards S1 and S2 join ITEM-106 (the recommended option). Until then the docs state the spec-S1 edge as a known limit.
+  - **G4:** "Approve after docs fix": approved once the docs fixes pass that round. ITEM-104 stays In Progress until M35 has run.
+- **Why.** Not recorded beyond the choices. Spec S1 sits on the same seam as ITEM-106, a mark kept apart from the row it guards.
+- **Cost.** Until ITEM-106, one more known limit: in the very unlikely order above, an agent the list confirmed as ended can read running again after an event.
 
 ## Act 3: where it stands
 
@@ -107,7 +129,7 @@ The players: the human, who decided every turn below; research-assistant, who fo
 The halted rule has three parts, all in the LLD's section 4:
 
 1. **A turn end halts only with the list's agreement.** A non-answer turn end leaves a subagent running unless the agent list says it ended (`haltedByTurn` marks those halts); a listed `running` undoes such a halt; a `failed` the list itself reported is never undone by the lens.
-2. **A dropped, silent subagent halts after a timeout.** Missing from the list and silent for `droppedSubagentMinutes` (default 15) means `failed`, marked in `haltedByTimeout`; the timer (`missingSince`) counts only while the row is missing and restarts on any event; any event or a listed `running` revives it.
+2. **A dropped, silent subagent halts after a timeout.** Missing from the list and silent for `droppedSubagentMinutes` (default 15) means `failed`, marked in `haltedByTimeout`; the timer (`missingSince`) counts only while the row is missing and restarts on any event; any event or a listed `running` revives it. Known limit until ITEM-106 (spec S1, decision 22): if the list later reports that agent `failed` or `killed`, the mark is not cleared, so a later event can still revive it.
 3. **The poll's updater is pure.** `refreshList` reads the engine clock once, then its `update` calls `mergeAgentList` and `planDrops`, which read the marks as inputs and write nothing; one apply step after `update` writes the marks.
 
 ```mermaid
@@ -145,7 +167,10 @@ The dashed seam is the one ITEM-106 closes: the rows and the marks that guard th
 | Time-based fallback for a dropped subagent, configurable, default 15 min | human, decision 16 ([50](../../handoffs/FEAT-20261020-ai-dlc-lens/50-human-decisions.human.md)); default proposed by the orchestrator | Turn 3; the missing-row constraint; configurability |
 | Fix the round-2 Warnings before G4; loop raised to 3 rounds | human, [51](../../handoffs/FEAT-20261020-ai-dlc-lens/51-human-decision.human.md) | Turn 4; recoverability (W1), testability (W-A, W-B) |
 | Narrow pure planner now, marks-in-rows later | human, decision 17 ([52](../../handoffs/FEAT-20261020-ai-dlc-lens/52-human-decisions.human.md)) | Turn 5; the `update` re-run and kit constraints |
-| M16 guard removed; M10 call removed only if a timing test shows no difference | human, decision 18 (52) | Turn 4–5 mutant results |
+| M16 guard removed; M10 call removed only if a timing test shows no difference (it showed one, so the call stays) | human, decision 18 (52); outcome in 44.3.l2.4 | Turn 4–5 mutant results; testability |
+| Docs findings W1 and W2 fixed, then one more review round; loop raised to 4 | human, decision 21 ([55](../../handoffs/FEAT-20261020-ai-dlc-lens/55-human-decisions.human.md)) | Turn 6 |
+| Spec S1 and standards S1, S2 join ITEM-106; spec S1 a known limit until then | human, decision 22 (55) | Turn 6; the two-store split |
+| G4 approved once the docs fixes pass | human (55) | Turn 6 |
 | ADR-0009 "Lens marks that guard an agent's status live in its row in `agentsA`" | proposed by software-architect; accepted with its staging by the human (decision 17), written now by decision 20 ([54](../../handoffs/FEAT-20261020-ai-dlc-lens/54-human-decision.human.md)): [ADR-0009](../decisions/ADR-0009-lens-marks-that-guard-an-agents-status-live-in-its-row-in-agentsa.md), status accepted, implementation pending ITEM-106 | Turn 5; the two-store split |
 
 ### What ITEM-106 and ADR-0009 will change
@@ -159,6 +184,8 @@ The dashed seam is the one ITEM-106 closes: the rows and the marks that guard th
   - The atom's shape tag moves from `agents-3` to `agents-4`. Rows stored before a reload in the same session are dropped once, which is accepted, because the lens rebuilds them from events and the list.
   - `session.start` clears the marks in every row, keeping today's behaviour and its test.
   - `heard` and the turn handlers write the marks inside the `patchAgent` updaters they already call. The apply step after `update`, and the three module collections, go away.
+  - **Spec S1 of round 3** (decision 22): when the list reports an agent the timeout halted as `failed` or `killed`, the same update clears its timeout mark, so a later event no longer revives a halt the list confirmed; with a test. With the mark in the row, this is one more field the merge writes, not a second store to keep in step.
+  - **Standards S1 and S2 of round 3** (decision 22): the frozen-input test snapshots the `listed` set, because `Object.freeze` does not cover a `Set` or `Map`; and the comment on `heard` names the invariant it depends on (any new writer of a `failed` row must clear the timeout mark).
 - **Why.**
   - Each change of a status and its mark becomes one compare-and-set write on one atom, so the race goes away instead of only narrowing.
   - A re-run of the update is harmless by construction.
@@ -171,7 +198,9 @@ The dashed seam is the one ITEM-106 closes: the rows and the marks that guard th
   - (e) ADR-0009 is written and linked (done early, by decision 20);
   - (f) `node --test "tests/**/*.test.mjs"` and `claude plugin test ./plugins/claude/ai-dlc-lens` pass, with the output quoted.
 
-Until ITEM-106 is built, the decision 17 interim stands, with the race as a known limit.
+The backlog row holds the acceptance criteria for the three decision-22 additions (product-manager, 44.1.l1.10).
+
+Until ITEM-106 is built, the decision 17 interim stands, with the race and the spec-S1 edge as known limits.
 
 ### Open, and the risks
 
@@ -182,5 +211,6 @@ Until ITEM-106 is built, the decision 17 interim stands, with the race as a know
 | A subagent the list keeps showing as running stays in progress until the list drops or ends it. | Low | Medium: a stopped agent reads in progress | Documented known limit; inherent to "never time out a listed agent" (decision 16) |
 | The marks are lost on a plugin reload while the rows survive, so a halt stored before a reload is not undone by a listed `running`. | Low | Low | Documented in the `haltedByTurn` comment; removed by ITEM-106 |
 | The clock fallback shapes production code around a kit limit, and could hide a real host failure. | Low | Low | E4 probe line on fallback (44.2.l2.4); a `clock.now` stub in every test helper was the rejected alternative |
-| The `turn.start` `heard` call (M10) may be dead code. | — | Low | Decision 18: timing test in 44.3.l2.4, removed by agent-manager if no difference |
-| The pure planner is only proven pure by its new unit test. | — | — | 44.3.l2.4 (pending), then review round 3 of 3 |
+| **Spec S1.** An agent the timeout halted that the list later reports `failed` or `killed` keeps its timeout mark, so a later event revives it to running. | Very low: a dropped agent must come back listed as ended and still send events | Low: a stopped agent reads running | Known limit in the docs (decision 22); fixed in ITEM-106 |
+| Closed: the `turn.start` `heard` call (M10) might be dead code. | — | — | The timing test of 44.3.l2.4 shows it has an effect (M10a red), so it stays, as decision 18 said; M10b (the timer restart alone) is equivalent |
+| Closed: the planner was pure only by convention (W-A). | — | — | The double-call test on frozen input of 44.3.l2.4 kills M2; both axes of round 3 closed W-A. Its gap (standards S1: the frozen `Set` is not checked) joins ITEM-106 |
