@@ -288,7 +288,7 @@ type Fs = {
   listed: Record<string, string>
   /** Step 44.3.l2.2: true makes `agent.list` throw (a flag of its own, so no agent id or status is a magic value). */
   listThrows: boolean
-  put:(path: string, text: string) => void
+  put: (path: string, text: string) => void
 }
 
 const RUN_DIR = 'docs/handoffs/X'
@@ -347,7 +347,7 @@ async function boot($: any, on: any, initial: Record<string, string>, clockEvery
     lists,
     listed,
     listThrows: false,
-    put:(path, text) => {
+    put: (path, text) => {
       files[path] = text
       stamp[path] = ++clockT
     },
@@ -902,10 +902,11 @@ describe('[R44.4, R44.21] the lens band: a terminal or desktop render always dra
  * Step 44.3.l2.2 (the human's decision 16, ITEM-104 ACs (a)-(d)): a subagent shown running that the engine's list no
  * longer has, and that sent no event, shows halted (failed) after `droppedSubagentMinutes`.
  *
- * The lens reads the time with `Date.now()` inside the engine's own realm, which a test cannot move (the kit's
- * `mock.clock` answers `$.clock` only, and `Date.now` is not writable), and the setting is a whole number of minutes
- * from 1. So the timeline test below runs in real time against a limit of 1 minute (about two minutes), with seven
- * agents, each in a run of its own, so each agent's status is its own workflow's dot; it counts the halted dots.
+ * Step 44.3.l2.3 (standards W-B): the lens reads the time of the timeout with `$.clock.now()`, once per `refreshList`,
+ * so a test moves it: `driveClock` answers `clock.now` from a value the test sets, next to `heldClock`'s poll, and the
+ * setting is a whole number of minutes from 1, so the limit is 60 000 ms of that clock and nothing waits in real time.
+ * The timeline test runs seven agents, each in a run of its own, so each agent's status is its own workflow's dot; it
+ * counts the halted dots.
  */
 const stepOf = async ($: any, id: string) => {
   for await (const _ of $.turn.step({ turnId: 'm', index: 0, model: 'claude-sonnet-5-5', messageCount: 1, agentId: id })) {
@@ -929,16 +930,23 @@ const haltedCount = async ($: any): Promise<number> => {
   return n
 }
 const pause = (ms: number) => new Promise<void>(r => later(r, ms))
+/** Step 44.3.l2.3: answers `clock.now` from a value the test sets (the lens reads the timeout's time once per `refreshList`). */
+const driveClock = (on: any, start = 1_000_000) => {
+  let t = start
+  on('clock.now', () => ({ value: t }))
+  return { now: () => t, set: (v: number) => void (t = v) }
+}
 
 describe('[44.3.l2.2] AC (a)-(d): a subagent the list dropped shows halted after droppedSubagentMinutes', () => {
   test(
     '[a, b, c, d] timeline, limit 1 minute: dropped + silent halts at the limit and not before; a listed one never; a new session, a listed row and each event (turn.start, turn.step, tool.call, turn.complete) start the time again; a listed `running` resumes a timed-out agent',
-    { timeoutMs: 300000 },
+    HEAVY,
     async ($, on) => {
       const RUNS = ['R1', 'R2', 'R3', 'R4', 'R5', 'R6', 'R7']
       const h = heldClock()
       const files: Record<string, string> = { ...lensJson(1) }
       for (const r of RUNS) files[`docs/handoffs/${r}/run.md`] = runNamed(r)
+      const clk = driveClock(on) // before the first `$` call: boot starts the session
       const fs = await boot($, on, files, h.clockEvery)
       // a1 .. a7 = R1 .. R7. a1: dropped, silent, but a new session at 25 s. a2 turn.start, a3 turn.step, a4 tool.call,
       // a5 turn.complete (error), each at 50 s. a6 listed all along. a7 listed again for one poll at 50 s.
@@ -947,25 +955,18 @@ describe('[44.3.l2.2] AC (a)-(d): a subagent the list dropped shows halted after
       await h.tick() // all stored running now
       expect(await haltedCount($)).toBe(0)
       for (const id of ['a1', 'a2', 'a3', 'a4', 'a5', 'a7']) delete fs.listed[id]
-      const t0 = Date.now()
-      // Waits until `s` seconds after t0, polling every 1.5 s: the kit lets go a held clock wait after 10 s of real time (a hook that overran), which would end the poll.
-      const at = async (s: number) => {
-        for (;;) {
-          const left = t0 + s * 1000 - Date.now()
-          if (left <= 0) return
-          await pause(Math.min(left, 1500))
-          await h.tick()
-        }
-      }
+      const t0 = clk.now()
+      // Moves the engine's clock to `s` seconds after t0; nothing waits.
+      const at = (s: number) => clk.set(t0 + s * 1000)
       await h.tick() // t0: a1 .. a5 and a7 are missing from here
       expect(await haltedCount($)).toBe(0)
 
-      await at(25)
+      at(25)
       await $.session.start({ cwd: '/', surface: 'vscode', isInteractive: true }) // the marks start empty
       await h.tick() // missing from here (~25 s)
       expect(await haltedCount($)).toBe(0)
 
-      await at(50)
+      at(50)
       await $.turn.start({ text: 'p', turnId: 't2', agentId: 'a2' })
       await stepOf($, 'a3')
       await readCall($, 'a4', 1)
@@ -976,11 +977,15 @@ describe('[44.3.l2.2] AC (a)-(d): a subagent the list dropped shows halted after
       await h.tick() // a7 missing again from here
       expect(await haltedCount($)).toBe(0)
 
-      await at(70) // 45 s after the new session: a1 would be halted if the session had not reset it (70 s after t0)
+      at(70) // 45 s after the new session: a1 would be halted if the session had not reset it (70 s after t0)
       await h.tick()
       expect(await haltedCount($)).toBe(0)
 
-      await at(90) // a1: 65 s missing since the new session; the others 40 s since their event or listed row
+      at(84) // a1: 59 s missing since the new session: one second short of the limit
+      await h.tick()
+      expect(await haltedCount($)).toBe(0)
+
+      at(90) // a1: 65 s missing since the new session; the others 40 s since their event or listed row
       await h.tick()
       expect(await haltedCount($)).toBe(1)
 
@@ -988,22 +993,23 @@ describe('[44.3.l2.2] AC (a)-(d): a subagent the list dropped shows halted after
       await h.tick()
       expect(await haltedCount($)).toBe(0)
 
-      await at(115) // a2 .. a5 and a7: 65 s since their event or listed row; a6 and a1 are listed
+      at(115) // a2 .. a5 and a7: 65 s since their event or listed row; a6 and a1 are listed
       await h.tick()
       expect(await haltedCount($)).toBe(5)
     },
   )
 
-  test('[d] 0 = never: nothing halts however the poll runs (no limit, not a limit of 0 minutes)', HEAVY, async ($, on) => {
+  test('[d] 0 = never: nothing halts however far the engine clock runs (no limit, not a limit of 0 minutes)', HEAVY, async ($, on) => {
     const h = heldClock()
     const files: Record<string, string> = { ...lensJson(0), 'docs/handoffs/R1/run.md': runNamed('R1') }
+    const clk = driveClock(on)
     const fs = await boot($, on, files, h.clockEvery)
     await callIn($, 1, 'R1')
     fs.listed['a1'] = 'running'
     await h.tick()
     delete fs.listed['a1']
     for (let i = 0; i < 4; i++) {
-      await pause(50)
+      clk.set(clk.now() + 24 * 3_600_000)
       await h.tick()
     }
     expect(await haltedCount($)).toBe(0)
@@ -1089,6 +1095,184 @@ describe('[44.3.l2.2] halted-state marks: session.start reset, an ended agent st
     expect(await paneStatus($)).toBe('status: halted')
     delete fs.listed['a1']
     await endTurn($, 'a1', 'error')
+    expect(await paneStatus($)).toBe('status: halted')
+  })
+})
+
+// ---------------------------------------------------------------- step 44.3.l2.3
+
+/**
+ * Step 44.3.l2.3 (round 2 Warnings W-A, W-B, W1 of ITEM-104 / decision 16): the timeout reads the engine clock, its updater is
+ * pure under an `update` retry, and a timeout halt lasts only while the subagent stays silent (`haltedByTimeout`).
+ *
+ * W-A (the updater stays pure when `update` retries) has no test: the kit offers no way to beat a conditional `state.set`.
+ * A hook of the test that writes first through `next` leaves the poll's own write with its old `ifVersion` still landing
+ * (`isSet` true), so `update` never runs the updater twice; a mutant that made it impure survived, so no test is kept.
+ *
+ * The session: run X with two agents, a1 (the one dropped) and a2 (listed running throughout, so the poll keeps reading
+ * the list), limit 1 minute on a driven clock. `halt()` leaves a1 halted by the timeout.
+ */
+describe('[44.3.l2.3] a timeout halt is temporary (W1), on the engine clock (W-B)', () => {
+  const FILES = () => ({ [`${RUN_DIR}/run.md`]: runState('active'), ...lensJson(1) })
+  const LIMIT = 60_000
+  const startAgain = ($: any) => $.session.start({ cwd: '/', surface: 'vscode', isInteractive: true })
+  async function session($: any, on: any) {
+    const h = heldClock()
+    const clk = driveClock(on) // before the first `$` call: boot starts the session, and the kit refuses `on` after it
+    const fs = await boot($, on, FILES(), h.clockEvery)
+    await call($, 1, '1')
+    await call($, 2, '2')
+    fs.listed['a1'] = 'running'
+    fs.listed['a2'] = 'running'
+    await h.tick() // both stored running
+    return { h, fs, clk }
+  }
+  /** a1 dropped from the list: missing from now; `LIMIT` later it is halted. */
+  async function halt($: any, on: any) {
+    const s = await session($, on)
+    delete s.fs.listed['a1']
+    await s.h.tick()
+    s.clk.set(s.clk.now() + LIMIT - 1)
+    await s.h.tick()
+    expect(await paneStatus($)).toBe('status: in progress') // one millisecond short of the limit
+    s.clk.set(s.clk.now() + 1)
+    await s.h.tick()
+    expect(await paneStatus($)).toBe('status: halted')
+    return s
+  }
+
+  test('[W-B] the limit is on the engine clock: 1 ms short of droppedSubagentMinutes is running, at the limit halted', HEAVY, async ($, on) => {
+    await halt($, on)
+  })
+
+  test("[W-B] the time counts from the first poll that misses the agent, not from the agent's start", HEAVY, async ($, on) => {
+    const s = await session($, on)
+    s.clk.set(s.clk.now() + 10 * LIMIT) // long after the agent started, while it is still listed
+    await s.h.tick()
+    delete s.fs.listed['a1']
+    await s.h.tick() // missing from here
+    expect(await paneStatus($)).toBe('status: in progress')
+    s.clk.set(s.clk.now() + LIMIT)
+    await s.h.tick()
+    expect(await paneStatus($, 'halted')).toBe('status: halted')
+  })
+
+  test('[W-B] a clock.now that answers an error: the poll still applies the list (the wall-clock fallback), and nothing halts early', HEAVY, async ($, on) => {
+    const h = heldClock()
+    on('clock.now', () => {
+      throw new Error('no clock')
+    })
+    const fs = await boot($, on, FILES(), h.clockEvery)
+    await call($, 1, '1')
+    await call($, 2, '2')
+    fs.listed['a1'] = 'running'
+    fs.listed['a2'] = 'running'
+    await h.tick()
+    delete fs.listed['a1']
+    await h.tick()
+    expect(await paneStatus($)).toBe('status: in progress') // dropped for a moment: not halted
+    fs.listed['a2'] = 'completed' // the poll still applies this: it got past the clock
+    await h.tick()
+    await finish($, 'a1')
+    expect(await paneStatus($, 'waiting')).toBe('status: waiting')
+  })
+
+  test('[W-B] the list throws: no list, no evidence, no timeout; the time keeps counting from when it was last missing', HEAVY, async ($, on) => {
+    const s = await session($, on)
+    delete s.fs.listed['a1']
+    await s.h.tick() // missing from here
+    s.fs.listThrows = true
+    s.clk.set(s.clk.now() + 10 * LIMIT)
+    await s.h.tick()
+    await s.h.tick()
+    expect(await paneStatus($)).toBe('status: in progress')
+    s.fs.listThrows = false
+    await s.h.tick() // the list answers again: a1 is still missing, long enough
+    expect(await paneStatus($, 'halted')).toBe('status: halted')
+  })
+
+  for (const [name, send] of [
+    ['turn.start', ($: any) => $.turn.start({ text: 'p', turnId: 't2', agentId: 'a1' })],
+    ['turn.step', ($: any) => stepOf($, 'a1')],
+    ['tool.call', ($: any) => readCall($, 'a1', 1)],
+    ['turn.complete (error, no row in the list)', ($: any) => endTurn($, 'a1', 'error')],
+  ] as const) {
+    test(`[W1] an agent the timeout halted is running again after its ${name}`, HEAVY, async ($, on) => {
+      const s = await halt($, on)
+      await send($)
+      expect(await paneStatus($, 'in progress')).toBe('status: in progress')
+      expect(await bandStatus($)).toBe('status: in progress')
+      // Its time starts again: the limit counts from the next poll that misses it.
+      await s.h.tick()
+      s.clk.set(s.clk.now() + LIMIT - 1)
+      await s.h.tick()
+      expect(await paneStatus($)).toBe('status: in progress')
+      s.clk.set(s.clk.now() + 1)
+      await s.h.tick()
+      expect(await paneStatus($, 'halted')).toBe('status: halted')
+    })
+  }
+
+  test('[W1] the event of ANOTHER agent does not revive it', HEAVY, async ($, on) => {
+    const s = await halt($, on)
+    await s.h.tick()
+    await $.turn.start({ text: 'p', turnId: 't2', agentId: 'a2' })
+    await stepOf($, 'a2')
+    await readCall($, 'a2', 1)
+    expect(await paneStatus($)).toBe('status: halted')
+  })
+
+  test('[W1] a turn.complete with answer after the timeout halt gives completed (the run waits), not running or halted', HEAVY, async ($, on) => {
+    const s = await halt($, on)
+    await finish($, 'a1')
+    await finish($, 'a2')
+    expect(await paneStatus($, 'waiting')).toBe('status: waiting')
+    await s.h.tick()
+    expect(await paneStatus($)).toBe('status: waiting') // the poll does not undo it
+  })
+
+  test('[W1] a non-answer turn.complete while the list says the agent ended: halted by the turn (the list confirmed it), and the halt stays', HEAVY, async ($, on) => {
+    const s = await halt($, on)
+    s.fs.listed['a1'] = 'failed'
+    await endTurn($, 'a1', 'error')
+    expect(await paneStatus($)).toBe('status: halted')
+    await s.h.tick()
+    expect(await paneStatus($)).toBe('status: halted')
+  })
+
+  test('[W1] a listed `running` resumes a timeout halt', HEAVY, async ($, on) => {
+    const s = await halt($, on)
+    s.fs.listed['a1'] = 'running'
+    await s.h.tick()
+    expect(await paneStatus($, 'in progress')).toBe('status: in progress')
+    // and the mark is gone: a later poll that misses it again starts its time anew
+    delete s.fs.listed['a1']
+    await s.h.tick()
+    s.clk.set(s.clk.now() + LIMIT - 1)
+    await s.h.tick()
+    expect(await paneStatus($)).toBe('status: in progress')
+  })
+
+  test('[W1] session.start clears the timeout mark: a listed `running` in the next session does not resume the halt', HEAVY, async ($, on) => {
+    const s = await halt($, on)
+    await startAgain($)
+    s.fs.listed['a1'] = 'running'
+    await s.h.tick()
+    await s.h.tick()
+    expect(await paneStatus($)).toBe('status: halted')
+    await stepOf($, 'a1') // and an event of its own does not either: heard finds no mark
+    expect(await paneStatus($)).toBe('status: halted')
+  })
+
+  test('[W1] a halt the list confirmed (haltedByTurn) is not revived by turn.step or tool.call', HEAVY, async ($, on) => {
+    const s = await session($, on)
+    await fail($, 'a1')
+    expect(await paneStatus($)).toBe('status: halted')
+    await stepOf($, 'a1')
+    expect(await paneStatus($)).toBe('status: halted')
+    await readCall($, 'a1', 1)
+    expect(await paneStatus($)).toBe('status: halted')
+    await s.h.tick()
     expect(await paneStatus($)).toBe('status: halted')
   })
 })

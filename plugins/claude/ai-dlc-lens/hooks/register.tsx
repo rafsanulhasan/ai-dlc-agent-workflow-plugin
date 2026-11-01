@@ -352,23 +352,37 @@ const thinkBlocks: Record<string, number> = {}
 const stepOfCall: Record<string, { out: number; n: number }> = {}
 const lastStatus: Record<string, string> = {}
 /**
- * Step 44.2.l2.1: subagents whose `failed` / `killed` came from their own `turn.complete` (and was confirmed by
- * `$.agent.list()` then), or, since step 44.2.l2.2, from the dropped-subagent timeout (`missingSince`), never
- * from the list itself. A later listed `running` is a resume and clears it (`refreshList`).
+ * Step 44.2.l2.1: subagents whose `failed` / `killed` came from their own `turn.complete` and was confirmed by
+ * `$.agent.list()` then, never from the list itself. A later listed `running` is a resume and clears it
+ * (`refreshList`). The dropped-subagent timeout keeps its halts apart, in `haltedByTimeout` (step 44.2.l2.3).
  * Lifetime: module memory, cleared at `session.start` (agent ids are unique, so nothing is lost) and lost on a
  * plugin reload, after which a halt stored before the reload is not cleared by a listed `running`.
  */
 const haltedByTurn = new Set<string>()
 /**
- * Step 44.2.l2.2 (the human's decision 16): for each subagent stored `running` that `$.agent.list()` does not
- * list, the time (ms) from which it has been missing with no event of its own. A listed row, or any event of the
- * agent (`heard`), deletes the entry, so the time counts only while it is missing and silent. `refreshList` halts
- * the agent once its entry is `droppedSubagentMinutes` old. Module memory, reset at `session.start`.
+ * Step 44.2.l2.3 (spec W1): subagents the dropped-subagent timeout halted (`failed`), with no evidence from the
+ * engine that they ended. The halt holds only while they stay silent (decision 16: "has sent no events"): any later
+ * event of theirs (`heard`) or a listed `running` (`refreshList`) brings them back to `running`. Same lifetime as
+ * `haltedByTurn`.
  */
-let missingSince: Record<string, number> = {}
-/** Step 44.2.l2.2: an event of the agent `key` arrived; its dropped-subagent time starts again. */
-const heard = (key: string) => {
-  delete missingSince[key]
+const haltedByTimeout = new Set<string>()
+/**
+ * Step 44.2.l2.2 (the human's decision 16): for each subagent stored `running` that `$.agent.list()` does not
+ * list, the time (ms, `$.clock.now()`) from which it has been missing with no event of its own. A listed row, or
+ * any event of the agent (`heard`), deletes the entry, so the time counts only while it is missing and silent.
+ * `refreshList` halts the agent once its entry is `droppedSubagentMinutes` old. Module memory, cleared at
+ * `session.start` like `haltedByTurn`.
+ */
+const missingSince = new Map<string, number>()
+/**
+ * Step 44.2.l2.2: an event of the agent `key` arrived; its dropped-subagent time starts again. Step 44.2.l2.3
+ * (spec W1): an agent the timeout halted is working after all, so it is `running` again (`endedAt` null), unless
+ * something else has changed its status since.
+ */
+async function heard($: EngineInterface, key: string) {
+  missingSince.delete(key)
+  if (!haltedByTimeout.delete(key)) return
+  await patchAgent($, key, a => (a.status === 'failed' ? { ...a, status: 'running', endedAt: null } : a))
 }
 /**
  * Step 43.2.5: the session's SendMessage calls (`beforeCall`), for the Connections panel's Send Message accordion.
@@ -1100,8 +1114,24 @@ async function refreshList($: EngineInterface, reason: string) {
     lastStatus[a.id] = a.status
   }
   if (changes.length > 0) await plog($, 'E4', { reason, changes, listed: list.length })
+  // Step 44.2.l2.3 (standards W-B): the dropped-subagent timeout reads the engine's clock, read once here, before the
+  // write, so the sync updater below gets it as a value (and a test can move it with `mock.clock`). Where nothing
+  // answers `clock.now` (a test kit session that mocks no clock: "no implementation for clock.now"), the wall clock.
+  let t: number
+  try {
+    t = await $.clock.now()
+  } catch {
+    t = nowMs()
+  }
+  const listed = new Set(list.map(a => String(a.id)))
+  // Step 44.2.l2.3 (standards W-A): `update` reads, applies the updater, writes with `ifVersion` and runs the updater
+  // again on a miss (`UpdateFunction`, .tsc/claude-code.d.ts), so the updater only computes. What it decided about
+  // module state is kept here, reset on each run, and applied once `update` has written.
+  let resumed: string[] = []
+  let drops: DropPlan = { start: [], clear: [], halt: [] }
   // Background tasks: each agent's listed children (step 16 Q6).
   await update($, agentsA, m => {
+    resumed = []
     const out: Record<string, LensAgent> = { ...(m as Record<string, LensAgent>) }
     for (const key of Object.keys(out)) {
       const kids: LensTask[] = list
@@ -1117,41 +1147,69 @@ async function refreshList($: EngineInterface, reason: string) {
       // own start sets `running`. It may still start a pending agent or wake a waiting one.
       const stale = a.status === 'running' && cur !== undefined && cur.status !== 'pending' && cur.status !== 'waiting'
       // Step 44.2.l2.1: a listed `running` clears a `failed` / `killed` that the agent's own `turn.complete` set
-      // (`haltedByTurn`), never one the list set; `completed` stays ended (`ENDED`).
-      const resumed = a.status === 'running' && cur !== undefined && (cur.status === 'failed' || cur.status === 'killed') && haltedByTurn.has(String(a.id))
+      // (`haltedByTurn`), or since step 44.2.l2.2 the timeout set (`haltedByTimeout`), never one the list set;
+      // `completed` stays ended (`ENDED`).
+      const id = String(a.id)
+      const resume = a.status === 'running' && cur !== undefined && (cur.status === 'failed' || cur.status === 'killed') && (haltedByTurn.has(id) || haltedByTimeout.has(id))
       // Step 43 (C1), the `else if` below: a listed `completed` applies too (an agent whose `turn.complete` this
       // session never saw, a pending one included); a status already ended (`ENDED`) is still never changed by the list.
-      if (resumed) {
+      if (resume) {
         // Running again: the halting turn's end time no longer applies (a spawn sets null too).
         out[a.id] = { ...cur!, status: 'running', endedAt: null }
-        haltedByTurn.delete(String(a.id))
+        resumed.push(id)
       } else if (cur && cur.status !== a.status && !ENDED.has(cur.status) && !stale) out[a.id] = { ...cur, status: String(a.status) }
       if (out[a.id] && typeof a.teammateId === 'string' && out[a.id]!.teammate !== true) out[a.id] = { ...out[a.id]!, teammate: true }
     }
-    // Step 44.2.l2.2 (the human's decision 16): a subagent stored `running` that the list no longer has (the engine
-    // dropped its task) and that sent no event since shows halted after `droppedSubagentMinutes` (0: never). The
-    // time counts only while it is missing: a listed row resets it, so an agent the list still shows is never timed
-    // out; an event resets it too (`heard`). It becomes `failed`: the lens cannot tell a stop (`killed`) from an
-    // error, and `failed` is what a non-answer turn end showed before step 44. Marked in `haltedByTurn`, so a later
-    // listed `running` still resumes it. Not reached when the list throws (the `return` above): no list, no evidence.
-    const listed = new Set(list.map(a => String(a.id)))
-    const limitMs = cfg.droppedSubagentMinutes * 60_000
-    const t = nowMs()
-    for (const [id, cur] of Object.entries(out)) {
-      const subagent = id !== 'main' && cur.type !== 'teammate' && cur.teammate !== true
-      if (!subagent || cur.status !== 'running' || listed.has(id) || limitMs === 0) {
-        delete missingSince[id]
-        continue
-      }
-      const since = missingSince[id] ?? (missingSince[id] = t)
-      if (t - since >= limitMs) {
-        out[id] = { ...cur, status: 'failed', endedAt: t }
-        delete missingSince[id]
-        haltedByTurn.add(id)
-      }
-    }
+    drops = haltDroppedSubagents(out, listed, t, cfg.droppedSubagentMinutes * 60_000)
     return out
   })
+  for (const id of resumed) {
+    haltedByTurn.delete(id)
+    haltedByTimeout.delete(id)
+  }
+  for (const id of drops.clear) missingSince.delete(id)
+  for (const id of drops.start) if (!missingSince.has(id)) missingSince.set(id, t)
+  for (const id of drops.halt) {
+    missingSince.delete(id)
+    haltedByTimeout.add(id)
+  }
+}
+
+/** Step 44.2.l2.3: what `haltDroppedSubagents` decided about `missingSince` and `haltedByTimeout`, applied after the write. */
+type DropPlan = { start: string[]; clear: string[]; halt: string[] }
+
+/**
+ * Step 44.2.l2.2 (the human's decision 16): a subagent stored `running` that the list no longer has (the engine
+ * dropped its task) and that sent no event since shows halted after `limitMs` (0: never). The time counts only while
+ * it is missing: a listed row resets it, so an agent the list still shows is never timed out; an event resets it too
+ * (`heard`). It becomes `failed`: the lens cannot tell a stop (`killed`) from an error, and `failed` is what a
+ * non-answer turn end showed before step 44. Not reached when the list throws (`refreshList` returns first): no list,
+ * no evidence.
+ *
+ * Step 44.2.l2.3 (standards W-A, S-A): pure over module state. It sets the halted rows in `out` (the updater's own
+ * copy) and returns which `missingSince` entries to start, to clear and which agents to mark in `haltedByTimeout`
+ * (so a later event or listed `running` brings them back); `refreshList` applies that once `update` has written.
+ */
+function haltDroppedSubagents(out: Record<string, LensAgent>, listed: Set<string>, t: number, limitMs: number): DropPlan {
+  const plan: DropPlan = { start: [], clear: [], halt: [] }
+  if (limitMs === 0) {
+    plan.clear = [...missingSince.keys()]
+    return plan
+  }
+  for (const [id, cur] of Object.entries(out)) {
+    const subagent = id !== 'main' && cur.type !== 'teammate' && cur.teammate !== true
+    if (!subagent || cur.status !== 'running' || listed.has(id)) {
+      if (missingSince.has(id)) plan.clear.push(id)
+      continue
+    }
+    const since = missingSince.get(id)
+    if (since === undefined) plan.start.push(id)
+    else if (t - since >= limitMs) {
+      out[id] = { ...cur, status: 'failed', endedAt: t }
+      plan.halt.push(id)
+    }
+  }
+  return plan
 }
 
 /**
@@ -4069,7 +4127,8 @@ export const register: Register = on => {
     handbackChars = {}
     // Step 44.2.l2.2: the halted-state marks start empty with the rest of the module state.
     haltedByTurn.clear()
-    missingSince = {}
+    haltedByTimeout.clear()
+    missingSince.clear()
     // Both timers are made before the first `await`: a second `session.start` that overlaps this one (its
     // `stopTimers()` running while this one awaits) cancels both, and never leaves a second poller.
     // Timer-driven blink (kit check 2, and the terminal's text avatars).
@@ -4403,7 +4462,7 @@ export const register: Register = on => {
   on('turn.start', async ($, e, next) => {
     try {
       const key = e.agentId ?? 'main'
-      heard(key)
+      await heard($, key)
       // Step 43.2.5: the main loop's running turn, the one the Agents panel's Stop ends (`$.turn.abort`, d.ts:2989-3005).
       if (e.agentId === undefined) mainTurnId = e.turnId
       // Step 1.4: the arming that ends with this turn keeps its time before the next Stop re-arms.
@@ -4441,7 +4500,11 @@ export const register: Register = on => {
   // Pass-through observer (step 16 Q1, E2): every chunk is yielded on unchanged.
   on('turn.step', async function* ($, e, next) {
     const key = e.agentId ?? 'main'
-    heard(key)
+    try {
+      await heard($, key)
+    } catch (err) {
+      lensFail('turn.step heard', err)
+    }
     const ids: string[] = []
     const counts: Record<string, number> = {}
     let spent = 0
@@ -4507,7 +4570,11 @@ export const register: Register = on => {
   })
 
   on('tool.call', async ($, e, next) => {
-    heard(e.agentId ?? 'main')
+    try {
+      await heard($, e.agentId ?? 'main')
+    } catch (err) {
+      lensFail('tool.call heard', err)
+    }
     const ctx = await beforeCall($, e)
     const r: any = await next(e)
     if (ctx !== null) await afterCall($, ctx, r)
@@ -4520,7 +4587,8 @@ export const register: Register = on => {
     if (e.agentId === undefined && e.turnId === mainTurnId) mainTurnId = null
     try {
       const key = e.agentId ?? 'main'
-      heard(key)
+      // Step 44.2.l2.3 (spec W1): a timeout halt is undone first, so this turn end is read as one of a running agent.
+      await heard($, key)
       await ensureAgent($, key, key === 'main' ? null : 'main', '')
       const usage = e.usage ? fromUsage(e.usage) : null
       const agents = await read($, agentsA)
