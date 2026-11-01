@@ -4,7 +4,7 @@ root: 44 (follow-up ITEM-104)
 audience: product owner, the human decision maker, ITEM-106 implementers
 author: software-architect
 date: 2026-11-02
-status: in progress (the staged fix is built in 44.2.l2.4 and tested in 44.3.l2.4; code review round 3 approved it on both axes; G4 is approved once the docs fixes of decision 21 pass review round 4; manual check M35 not run)
+status: in progress (G4 for step 44 approved, record 57, after the fixes of decisions 23 and 24; ITEM-104 stays In Progress until manual check M35 is run; ITEM-106 with ADR-0009, and the known limits, stay open)
 spec: docs/specs/lens-view.lld.md (section 4, the per-agent halted rule)
 backlog: ITEM-104 (the fix), ITEM-105 (round-2 suggestions), ITEM-106 (halt marks in the agent row)
 adrs: [ADR-0009] (written now by decision 20; implementation pending ITEM-106)
@@ -12,7 +12,7 @@ adrs: [ADR-0009] (written now by decision 20; implementation pending ITEM-106)
 
 # Narrative: a working agent must never read "halted" (ITEM-104)
 
-> **In progress.** This tells the journey from the bug report through the staged design of decision 17, the ADR of decision 20 ([ADR-0009](../decisions/ADR-0009-lens-marks-that-guard-an-agents-status-live-in-its-row-in-agentsa.md)) and the human's G4 answers after code review round 3 (decisions 21 and 22). The code of the last step (44.2.l2.4) is built and tested (44.3.l2.4), and both review axes approved it. Still to come: the review round that checks the docs fixes of decision 21, and the live check M35. Records are linked by step code; all of them are in [`docs/handoffs/FEAT-20261020-ai-dlc-lens/`](../../handoffs/FEAT-20261020-ai-dlc-lens/).
+> **In progress.** This tells the journey from the bug report through the staged design of decision 17, the ADR of decision 20 ([ADR-0009](../decisions/ADR-0009-lens-marks-that-guard-an-agents-status-live-in-its-row-in-agentsa.md)) and the human's G4 answers after code review rounds 3 and 4 (decisions 21 to 24). The code of the last step (44.2.l2.4) is built and tested (44.3.l2.4); both review axes approved it in rounds 3 and 4, and the human approved G4 for step 44 once the fixes of decisions 23 and 24 were made and checked ([57](../../handoffs/FEAT-20261020-ai-dlc-lens/57-orchestrator-to-human.handoff.md)). Still open: the live check M35, until which ITEM-104 stays In Progress; ITEM-106, which implements ADR-0009; and the known limits listed at the end. Records are linked by step code; all of them are in [`docs/handoffs/FEAT-20261020-ai-dlc-lens/`](../../handoffs/FEAT-20261020-ai-dlc-lens/).
 
 ## Act 1: the problem
 
@@ -175,8 +175,11 @@ The dashed seam is the one ITEM-106 closes: the rows and the marks that guard th
 | M16 guard removed; M10 call removed only if a timing test shows no difference (it showed one, so the call stays) | human, decision 18 (52); outcome in 44.3.l2.4 | Turn 4–5 mutant results; testability |
 | Docs findings W1 and W2 fixed, then one more review round; loop raised to 4 | human, decision 21 ([55](../../handoffs/FEAT-20261020-ai-dlc-lens/55-human-decisions.human.md)) | Turn 6 |
 | Spec S1 and standards S1, S2 join ITEM-106; spec S1 a known limit until then | human, decision 22 (55) | Turn 6; the two-store split |
-| G4 approved once the docs fixes pass | human (55) | Turn 6 |
+| G4: approve once the docs fixes pass a fourth review round | human (55) | Turn 6 |
 | ADR-0009 "Lens marks that guard an agent's status live in its row in `agentsA`" | proposed by software-architect; accepted with its staging by the human (decision 17), written now by decision 20 ([54](../../handoffs/FEAT-20261020-ai-dlc-lens/54-human-decision.human.md)): [ADR-0009](../decisions/ADR-0009-lens-marks-that-guard-an-agents-status-live-in-its-row-in-agentsa.md), status accepted, implementation pending ITEM-106 | Turn 5; the two-store split |
+| The halt rule narrowed: a step, a tool call or a turn end does not undo a halt the list confirmed; the agent's own turn start does | human, decision 23 ([56](../../handoffs/FEAT-20261020-ai-dlc-lens/56-human-decisions.human.md)) | Turn 7 |
+| ADR-0009 brought in line with ITEM-106 (ACs (g)-(i), the spec-S1 edge, the "when it is done" list); ITEM-106's ACs put in order; checked by the orchestrator, no further review round | human, decision 24 (56) | Turn 7; the two-store split |
+| G4 for step 44 approved after the fixes of decisions 23 and 24; ITEM-104 stays In Progress until M35 is run | human (56), recorded in [57](../../handoffs/FEAT-20261020-ai-dlc-lens/57-orchestrator-to-human.handoff.md) | Turn 7; the evidence constraint |
 
 ### What ITEM-106 and ADR-0009 will change
 

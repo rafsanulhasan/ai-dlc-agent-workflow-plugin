@@ -12,7 +12,7 @@ owner: orchestrator
 session: 4e6863ff-eaf0-4710-998c-66dd771517f1 (automatic handoff from 6c983a53-897f-4d28-97f2-9cd286a0d6e8, 2026-11-01; 6c983a53 was an automatic handoff from ed3c07ca-2c20-4ea4-8880-00a4f1b6c8fa, 2026-10-31; ed3c07ca took over from 7ac45d8b with the human's OK)
 branch: feat/ai-dlc-lens (feat/wf-1 merged at 734b33d)
 commit: 1a00cfa
-last-record: 57-orchestrator-to-human.handoff.md
+last-record: 44.1.l2.7-orchestrator-to-research-assistant.handoff.md
 updated: 2026-11-02
 wave: 3 (Build)
 ---
@@ -497,6 +497,10 @@ T17.1 (51fedb5) and T17.2 (f9d29fe) committed by session 37788079. Human (2026-1
 2jz. software-architect 44.1.l2.5 stored, verified passed (ADR-0009 Status line, ACs (g)-(i), when-it-is-done list; narrative Turn 7). After G4: software-architect updates the narrative status, banner and decision table. Waiting: documentation-writer 44.5.l3.18.
 2ka. documentation-writer 44.5.l3.18 stored, verified passed (three halt sentences narrowed per decision 23). Its open item MANUAL-CHECKS.md:837 (M35) in scope of decision 23: sent back to the same agent.
 2kb. documentation-writer 44.5.l3.18 continued: M35 :837 narrowed (grep 0). G4 for step 44 APPROVED by the human (56-human-decisions.human.md, "Approve after these fixes"), record 57-orchestrator-to-human.handoff.md. Next: documentation-writer 44.5.l3.19 removes step 44 markers (ITEM-104 text stays in progress), software-architect 44.1.l2.6 updates the narrative status; then commit.
+2kc. software-architect 44.1.l2.6 stored, verified passed (narrative status, banner, decision table after G4). Waiting: documentation-writer 44.5.l3.19.
+2kd. Human (2026-11-02): reloaded plugins (3 load errors, as before) and opened /ai-dlc:lens: step 44 shows halted although G4 is approved. research-assistant 44.1.l2.7 (read only) finds why before any change. documentation-writer 44.5.l3.19 (markers) still in progress.
+2ke. research-assistant 44.1.l2.7 (hand-back stored): step 44 reads halted by design — the round-4 review lead 44.4.l2.4 failed (API error) and no later attempt with its key settles it (settleMembers settles only pending/open members; pinned test). Even settled, a step of an active run reads waiting, not completed (runListStatus, G4 decision 2). PAUSED for the human: settle a failed member once its step is done, and/or let a step whose gate is approved read done under an active run.
+2kf. documentation-writer 44.5.l3.19 stored, verified passed (step-44 in-progress markers removed in lens README, keepalive README, root README; stories and LLD status rewritten; ITEM-104 markers kept; ITEM-099 planned). Flags: keepalive ATTRIBUTION entry for the README edit (agent-manager), stories :7 draft/G1 wording and lens README :9 G1-G3 wording possibly stale, run state has no step-44 Stages rows. Committed below.
 ## Architecture records (ITEM-104 / ITEM-106)
 - Narrative, the ITEM-104 journey (why, alternatives, how it went): [ai-dlc-lens-halted-state.md](../../architecture/narratives/ai-dlc-lens-halted-state.md) — in progress (software-architect 44.1.l2.3; decision 19, 53-human-decision.human.md; covers ITEM-106 in full).
 - ADR-0009, lens marks that guard an agent's status live in its row in agentsA (Accepted, implementation pending ITEM-106): [ADR-0009-lens-marks-that-guard-an-agents-status-live-in-its-row-in-agentsa.md](../../architecture/decisions/ADR-0009-lens-marks-that-guard-an-agents-status-live-in-its-row-in-agentsa.md) (software-architect 44.1.l2.3; decision 20, 54-human-decision.human.md).
