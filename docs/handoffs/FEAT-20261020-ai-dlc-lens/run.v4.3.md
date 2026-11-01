@@ -11,8 +11,8 @@ current-stage: Step 44: tests (sqa-44) and doc requests (owners), then documenta
 owner: orchestrator
 session: 4e6863ff-eaf0-4710-998c-66dd771517f1 (automatic handoff from 6c983a53-897f-4d28-97f2-9cd286a0d6e8, 2026-11-01; 6c983a53 was an automatic handoff from ed3c07ca-2c20-4ea4-8880-00a4f1b6c8fa, 2026-10-31; ed3c07ca took over from 7ac45d8b with the human's OK)
 branch: feat/ai-dlc-lens (feat/wf-1 merged at 734b33d)
-commit: 1a00cfa
-last-record: 44.3.l2.5-orchestrator-to-sqa-engineer.handoff.md
+commit: 2789721
+last-record: 44.4.2.l4.1-code-reviewer-to-orchestrator.handback.md
 updated: 2026-11-02
 wave: 3 (Build)
 ---
@@ -509,6 +509,8 @@ T17.1 (51fedb5) and T17.2 (f9d29fe) committed by session 37788079. Human (2026-1
 2kk. Human (2026-11-02, 58-human-decision.human.md): brutal-critique round 2 and product-owner acceptance of the lens stories did happen; recorded in Gates and loops. documentation-writer 44.5.l3.21 adds them to stories.md:7.
 2kl. documentation-writer 44.5.l3.21 stored, verified passed (stories.md:7). Waiting: sqa-engineer 44.3.l2.5.
 2km. sqa-engineer 44.3.l2.5 stored, verified passed (lens 928/0 = 912 + 16 net new tests; ai-dlc 983/0, node 876/0; 9/9 mutants killed; the agent own count explanation was wrong). Committed below. Code review 44.4.l4.1 (round 1 of 2, new loop; opus medium) in-progress.
+2kn. Standards 44.4.1.l4.1 stored: APPROVE 0B/0W/3S (two duplicate tests, test helper reads UI shapes several ways and hard-codes a row key). Waiting: spec 44.4.2.l4.1.
+2ko. Spec 44.4.2.l4.1 stored: APPROVE 0B/1W/1S (W1: AC (e) evidenced by the mutant table, no raw failing run against a reverted lens.ts:1748 quoted; S1 the sqa count explanation, already corrected at 2km). Review round 1 of 2 done, both approved. Human asked to reload plugins: code final at 2789721. PAUSED for the human: W1 and the 3 standards suggestions.
 ## Architecture records (ITEM-104 / ITEM-106)
 - Narrative, the ITEM-104 journey (why, alternatives, how it went): [ai-dlc-lens-halted-state.md](../../architecture/narratives/ai-dlc-lens-halted-state.md) — in progress (software-architect 44.1.l2.3; decision 19, 53-human-decision.human.md; covers ITEM-106 in full).
 - ADR-0009, lens marks that guard an agent's status live in its row in agentsA (Accepted, implementation pending ITEM-106): [ADR-0009-lens-marks-that-guard-an-agents-status-live-in-its-row-in-agentsa.md](../../architecture/decisions/ADR-0009-lens-marks-that-guard-an-agents-status-live-in-its-row-in-agentsa.md) (software-architect 44.1.l2.3; decision 20, 54-human-decision.human.md).
