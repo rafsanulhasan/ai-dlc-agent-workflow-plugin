@@ -11,8 +11,8 @@ current-stage: Step 44: tests (sqa-44) and doc requests (owners), then documenta
 owner: orchestrator
 session: 4e6863ff-eaf0-4710-998c-66dd771517f1 (automatic handoff from 6c983a53-897f-4d28-97f2-9cd286a0d6e8, 2026-11-01; 6c983a53 was an automatic handoff from ed3c07ca-2c20-4ea4-8880-00a4f1b6c8fa, 2026-10-31; ed3c07ca took over from 7ac45d8b with the human's OK)
 branch: feat/ai-dlc-lens (feat/wf-1 merged at 734b33d)
-commit: bd2c340
-last-record: 47-human-decision.human.md
+commit: 783fbb4
+last-record: 48-orchestrator-to-human.handoff.md
 updated: 2026-11-01
 wave: 3 (Build)
 ---
@@ -439,3 +439,6 @@ T17.1 (51fedb5) and T17.2 (f9d29fe) committed by session 37788079. Human (2026-1
 2hw. agent-manager 44.2.l1.15 stored, verified passed (keepalive MANUAL-CHECKS P17-P19, P21-P26 not run, P20 retired left; ATTRIBUTION +5; build --check, ai-dlc 983/0, sync --check quoted). Waiting: sqa 44.3.l1.7, documentation-writer 44.5.l3.9.
 2hx. documentation-writer 44.5.l3.9 stored, verified passed (M34 'not run' at stories:7, :438, LLD:161, :182, ADR-0008:4; diff 5/5; node 876/0 on second run). New, outside step 44: tests/stop-sync-then-check.test.mjs:149 failed once (0.3 s timeout under load), passed on rerun — for the human at G4. Waiting: sqa 44.3.l1.7.
 2hy. sqa-engineer 44.3.l1.7 stored, verified passed (4 lens test files; hooks unchanged; decision-12 test red with register.tsx:1348 mutant 864/1, green 865/0; 3 mobile cases; kit dedup, 0 as any in manualclose; [C1a] 3 runs no repro, HEAVY 20 s timeout on four tests; lens 865/0, ai-dlc 983/0, node 876/0). Fix round committed below. Code review round 4 of 4 (44.4.l2.4) in-progress, range bd2c340..HEAD.
+2hz. Code review 44.4.l2.4 lead stopped with an API error (model safeguard flag) after a partial hand-back: Standards approved 0B/2W/9S (rest truncated); sub-hand-backs not on disk. Orchestrator asked both sub-reviewers to resend their reports verbatim; they are stored as 44.4.1.l2.4 and 44.4.2.l2.4 hand-backs when they arrive. Then G4.
+2ia. Spec 44.4.2.l2.4 stored verbatim (resent to the orchestrator): APPROVE 0B/0W/2S; all 4 round-3 findings closed; lens run 1 863/2 (names not captured, likely concurrent load), runs 2-4 865/0. Waiting: standards resend.
+2ib. Standards 44.4.1.l2.4 stored verbatim (resent): APPROVE 0B/2W/9S. Review round 4 of 4 done. G4 fourth presentation: 48-orchestrator-to-human.handoff.md, approver human. PAUSED for the human: W1 (decision 8, press surface vs own surface), mobile rules ratify, W2 N6 mutant; approve or fix.
