@@ -1239,6 +1239,17 @@ async function surfacesNow($: EngineInterface): Promise<string[]> {
 }
 
 /**
+ * Step 44 (R44.23, the human's G4 decision 6): the session's own surface, for the acts that have no render surface of
+ * their own (`/ai-dlc:lens`, the mode button): the first of `$.session.surfaces()`, which lists `terminal` first under
+ * the REPL, then the remote surfaces in the order they attached (d.ts:2864-2875; `session.start`'s `surface` is the
+ * same first entry, d.ts:12309-12312). Null when nothing draws (a `-p` run). `command.run` carries no surface
+ * (CommandRunInput, d.ts:1828-1857; its `presentation` is the terminal's layout and width, d.ts:1797-1811). Never throws.
+ */
+async function ownSurface($: EngineInterface): Promise<string | null> {
+  return (await surfacesNow($))[0] ?? null
+}
+
+/**
  * Step 1.5: (re)opens the workflow pane at the view's size. Full screen asks the whole viewport
  * (PaneOpenArgs `rows`, `columns`, d.ts:7638-7658); any other size asks nothing, so the surface's own
  * size applies again. Where it is seated (dock or inline) is the surface's (Pane `placement`, d.ts:10895-10902).
@@ -1249,9 +1260,9 @@ async function openWorkflowPane($: EngineInterface, v: LensView, focus = false) 
 
 /**
  * Step 1.5: shows the view where its place says. Pinned: the band above the prompt (AbovePrompt, d.ts:10809-10819,
- * whose "terminal and desktop only" the probe of step 44.2.l1.3 disproved: VS Code raises it too); the pane closes only
- * when every attached surface is a terminal or desktop (`bandEverywhere`), else it stays a pane, the lens's rule for
- * VS Code (R44.4). Docked: the pane.
+ * whose "terminal and desktop only" the probe of step 44.2.l1.3 disproved: VS Code raises it too); the pane closes
+ * when `onBand` holds (`viewBandOnly`): in a terminal or desktop session with no VS Code panel attached (R44.23), or
+ * by the R44.4 and R44.16 rules; else it opens or stays a pane, beside the band (R44.23 amended). Docked: the pane.
  */
 async function showView($: EngineInterface, v: LensView, focus = false): Promise<void> {
   // Addendum A7: full screen is always the pane, raised, never the band (the band only has the rows the
@@ -1268,11 +1279,31 @@ async function showView($: EngineInterface, v: LensView, focus = false): Promise
   await openWorkflowPane($, v, focus)
 }
 
-/** Step 1.5: whether the band above the prompt shows the view: pinned, not full screen, and every attached surface draws the band. */
+/**
+ * Step 1.5: whether the band above the prompt shows the view, with no pane: pinned, not full screen, and
+ * `viewBandOnly`.
+ */
 async function onBand($: EngineInterface, v: LensView): Promise<boolean> {
   if (v.size === 'fullscreen') return false
   const conf = await read($, lensA)
-  return placeOf(v, String(conf.settings.workflowPlace)) === 'pinned' && (await bandAllowed($))
+  return placeOf(v, String(conf.settings.workflowPlace)) === 'pinned' && (await viewBandOnly($))
+}
+
+/**
+ * Step 44 (R44.23, the human's G4 decisions 6 and 7): whether a pinned view is the band alone, so `/ai-dlc:lens` and
+ * the mode button open no pane. A terminal or desktop session (`ownSurface`) with no VS Code panel attached: yes,
+ * whatever else is attached. With a VS Code panel attached, that panel would then have no lens view (its band follows
+ * the VS Code rules, `bandAllowed`), so the pane opens for it, beside the terminal's band, unless the person moved the
+ * lens into the VS Code band with the mode button (`vscodeBandA`). A pane cannot be opened on one surface only: a pane
+ * is the session's (PaneOpenArgs has no surface, d.ts:7588-7665; each surface that places panes asks its render,
+ * UiPane, d.ts:15105-15111), so the terminal shows that pane too. Any other session (VS Code, or nothing drawing):
+ * the R44.4 and R44.16 rules.
+ */
+async function viewBandOnly($: EngineInterface): Promise<boolean> {
+  const all = await surfacesNow($)
+  const own = all[0] ?? null
+  if (own !== null && BAND_SURFACES.has(own) && !all.includes('vscode')) return true
+  return bandAllowed($)
 }
 
 /**
@@ -1280,7 +1311,7 @@ async function onBand($: EngineInterface, v: LensView): Promise<boolean> {
  * (`bandEverywhere`), or, in VS Code, the person chose pinned with the mode button (`vscodeBandA`, its pane closed).
  * Step 44 (R44.21, the human's G4 decision 1): the band's own render passes its surface (`e.surface`); a terminal or
  * desktop render draws the band whatever else is attached, and with an unknown roster. Any other surface (VS Code)
- * keeps the rule above. The commands, which have no surface of their own, pass none and keep the roster rule.
+ * keeps the rule above. The commands and the mode button pass no surface (`viewBandOnly`, R44.23).
  */
 async function bandAllowed($: EngineInterface, surface?: unknown): Promise<boolean> {
   if (typeof surface === 'string' && BAND_SURFACES.has(surface)) return true
@@ -1288,14 +1319,18 @@ async function bandAllowed($: EngineInterface, surface?: unknown): Promise<boole
 }
 
 /**
- * Step 44 (R44.16, the human's option a): the mode button (`pane-place`). Where every surface draws the band, it
- * switches the place as before (`changeView`). Elsewhere (VS Code) the host seats the pane by the panel's width (F1), so
+ * Step 44 (R44.16, the human's option a): the mode button (`pane-place`). Pressed on a terminal or desktop surface in a
+ * terminal or desktop session (`ownSurface`, R44.23), it switches the place as before (`changeView`). Pressed in VS Code
+ * (`pressSurface`, UiPressArgument `surface`, d.ts:1191-1196, 15167-15171), a VS Code session's press or a VS Code panel
+ * attached to a terminal or desktop session (R44.23 amended), it takes the VS Code path, so that panel always keeps a
+ * lens view: its pane or its band. In VS Code the host seats the pane by the panel's width (F1), so
  * the button switches what draws the view: from the pane (docked wide, above the prompt narrow) to pinned, the band
  * above the prompt, the pane and the Run List tab closed first; from the band to docked, the pane, opened as
  * `/ai-dlc:lens` opens it (its seat, R44.14's tabs). A press is the person's, so the pane is placed at any width.
  */
-async function placePress($: EngineInterface, place: 'pinned' | 'docked', where: ControlSite) {
-  if (bandEverywhere(await surfacesNow($))) {
+async function placePress($: EngineInterface, place: 'pinned' | 'docked', where: ControlSite, pressSurface?: unknown) {
+  const own = await ownSurface($)
+  if (pressSurface !== 'vscode' && own !== null && BAND_SURFACES.has(own)) {
     await changeView($, x => ({ ...x, place: place === 'pinned' ? 'docked' : 'pinned' }))
     return
   }
@@ -1374,7 +1409,9 @@ async function openLens($: EngineInterface): Promise<string> {
   // or not known yet) exactly one pane, the minimised list. Never an old full screen (`commandStartView`).
   // The narrow/wide split is VS Code's (live findings 2 and 3); docked elsewhere (terminal, desktop) the pane keeps the
   // human's rule 2: the workflow view on the newest run.
-  const vscode = (await surfacesNow($)).includes('vscode')
+  // Step 44 (R44.23): the VS Code seat rules apply to a VS Code session only (`ownSurface`), not to a terminal or
+  // desktop session that VS Code is attached to.
+  const vscode = (await ownSurface($)) === 'vscode'
   const seat = vscode ? commandSeatOf(paneSeat, Number((await read($, lensA)).settings.wideColumns)) : 'dock'
   await update($, viewA, x => commandOpenView(commandStartView(lensCommandView(x as LensView, false, live)), seat, w))
   await drillBack($, 'pane')
@@ -1450,16 +1487,21 @@ let lastBandAt = 0
 /**
  * Live findings 3: the last lens pane drawn (CHART, RUNS, AGENT or EDGE): its placement and body columns, module
  * memory set while drawing (no state write), read by `/ai-dlc:lens` to pick its seat (`commandSeatOf`).
+ * Step 44 (Q44-C, the human's G4 decision 9): only a render whose own surface is VS Code (`e.surface`) sets it. A pane
+ * is the session's, so a terminal or desktop render of the same pane (its own placement and width) is ignored, and
+ * the VS Code seat is never overwritten by another surface's.
  */
 let paneSeat: { placement?: 'dock' | 'inline'; columns?: number } | null = null
-function notePaneSeat(placement: unknown, columns: unknown) {
+function notePaneSeat(placement: unknown, columns: unknown, surface: unknown) {
+  if (surface !== 'vscode') return
   paneSeat = { ...(placement === 'dock' || placement === 'inline' ? { placement } : {}), ...(typeof columns === 'number' ? { columns } : {}) }
 }
 /**
  * Step 44 (R44.9, R44.10, R44.12, R44.14, R44.15): the lens follows the seat the surface gives its panes. VS Code moves
  * them by the panel's width (the probe of 44.2.l1.3: `placement` `inline` while narrow, `dock` once the panel is wide
  * enough that the viewport reports `isFullscreen`), so narrow the lens sits above the prompt and wide in the right pane,
- * with no action of ours. On each change of seat:
+ * with no action of ours. Only VS Code renders of a lens pane count (Q44-C, decision 9, `followSeat`). On each change
+ * of seat:
  * - the view's place follows it (R44.15): `docked` in the right pane, `pinned` above the prompt;
  * - inline, the view is exactly one pane: the Run List tab (`RUNS`) is closed;
  * - docked again after being inline, in VS Code, the panel is laid out as `/ai-dlc:lens` lays out a wide one: in both
@@ -1505,6 +1547,11 @@ function afterRender($: EngineInterface, site: string, act: () => Promise<unknow
 let bandGivingWay = false
 
 function followSeat($: EngineInterface, placement: unknown, surface: unknown, pinnedBand: boolean) {
+  // Step 44 (Q44-C, the human's G4 decision 9): only a lens pane render whose own surface is VS Code drives the seat
+  // memory (`lastSeat`) and the seat follow (the place, the band's hand-over, the Run List tab). A terminal or desktop
+  // render of the same pane (a pane is the session's, R44.23) never changes the place or closes a tab, so a terminal
+  // docked beside a narrow VS Code panel does not flip the place. A VS Code session's renders are all VS Code's.
+  if (surface !== 'vscode') return
   const seat = placement === 'dock' || placement === 'inline' ? placement : null
   if (seat === null) return
   // R44.16: a lens pane is drawn while the band was chosen (a pane opened another way, such as the band's ⤢): the band
@@ -3084,7 +3131,7 @@ function viewControls(
         {lead}
       </Box>
       <Box flexDirection="row" alignItems="center" columnGap={1}>
-        <Button key="pane-place" label={place} plain onPress={() => placePress($, place, where)} />
+        <Button key="pane-place" label={place} plain onPress={press => placePress($, place, where, press?.surface)} />
         {sizeControls}
         {!band ? <Button key="pane-close" label="×" role="dismiss" plain onPress={() => $.ui.close({ id: CHART })} /> : null}
         {band && idle ? <Button key="band-close" label="×" role="dismiss" plain onPress={() => update($, bandClosedA, () => true)} /> : null}
@@ -3510,7 +3557,9 @@ async function workflowBody($: EngineInterface, t: any, site: ViewSite) {
     const all = settled.map(a => (a.status === OPEN ? { ...a, status: 'pending' } : a))
     const spawner = c.key === NO_STEP ? (c.ids[0] ?? null) : null
     // Step 44 (R44.22, AC-7.13): the run list's rule (`runListStatus`), so a finished step of a run not `done` reads waiting.
-    return { st: runListStatus(all, run === undefined ? [] : [run.status], spawner), both: runningAndWaiting(all, spawner) }
+    // Step 44 (R44.22 extended, the human's G4 decision 5): a chart's run with no readable run state is named with an
+    // empty status, as the run list names it (`workflowInfo`), so its finished steps read waiting, never completed.
+    return { st: runListStatus(all, [run?.status ?? ''], spawner), both: runningAndWaiting(all, spawner) }
   }
   // The ▲ of a step: an anomaly of one of its agents, or of one of its steps in its run folder.
   const stepBad = (c: StepChart): LensAnomaly[] =>
@@ -4456,7 +4505,7 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'Pane', requestId: EDGE }, async ($, e) => {
-    notePaneSeat(e.props.placement, e.props.bodyColumns)
+    notePaneSeat(e.props.placement, e.props.bodyColumns, e.surface)
     return guardPane($, e, 'hand-off pane', async () => {
       const t = $.ui.resolve(e) as any
       const { agents, s, label, av, marks } = await snapshot($)
@@ -4470,7 +4519,7 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'Pane', requestId: AGENT }, async ($, e) => {
-    notePaneSeat(e.props.placement, e.props.bodyColumns)
+    notePaneSeat(e.props.placement, e.props.bodyColumns, e.surface)
     return guardPane($, e, 'agent pane', async () => {
       const t = $.ui.resolve(e) as any
       const { agents, defs, s, label, av, marks } = await snapshot($)
@@ -4509,7 +4558,7 @@ export const register: Register = on => {
   // `workflowBody`, shared with the band below. No outer margin or padding (A9): the frame fits the tree
   // (d.ts:10904-10909); only full screen fills the rows.
   on('ui.render', { component: 'Pane', requestId: CHART }, async ($, e) => {
-    notePaneSeat(e.props.placement, e.props.bodyColumns)
+    notePaneSeat(e.props.placement, e.props.bodyColumns, e.surface)
     followSeat($, e.props.placement, e.surface, await read($, vscodeBandA))
     return guardPane($, e, 'workflow pane', async () => {
       const t = $.ui.resolve(e) as any
@@ -4521,7 +4570,7 @@ export const register: Register = on => {
 
   // Live round 1: the Run List tab, the view's list at its normal size (`ViewSite.runs`).
   on('ui.render', { component: 'Pane', requestId: RUNS }, async ($, e) => {
-    notePaneSeat(e.props.placement, e.props.bodyColumns)
+    notePaneSeat(e.props.placement, e.props.bodyColumns, e.surface)
     followSeat($, e.props.placement, e.surface, await read($, vscodeBandA))
     return guardPane($, e, 'runs pane', async () => {
       const t = $.ui.resolve(e) as any
@@ -4546,8 +4595,9 @@ export const register: Register = on => {
       // stays while a workflow is in progress; pinned, it is gone once closed with its `×` (only while none is).
       if (v.size === 'fullscreen') return next(e)
       // Step 44 (R44.4): in a VS Code render the band is drawn only where every attached surface draws it
-      // (`bandEverywhere`), as `onBand` says for `/ai-dlc:lens`. Elsewhere the command opens the pane, which is the view
-      // in VS Code, so a band drawn there too would be a second lens band, as in the VS Code narrow panel.
+      // (`bandEverywhere`). There the command opens the pane, which is the view in VS Code, so a band drawn too would be
+      // a second lens band, as in the VS Code narrow panel. That holds for a VS Code panel attached to a terminal or
+      // desktop session too: the command opens the pane for it (`viewBandOnly`, R44.23 amended).
       // Step 44 (R44.16): in VS Code, also while the person chose pinned (`vscodeBandA`, the pane closed).
       // Step 44 (R44.21): gated on this render's own surface first: a terminal or desktop render always draws it.
       if (!(await bandAllowed($, e.surface))) return next(e)

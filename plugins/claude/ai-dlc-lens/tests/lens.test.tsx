@@ -1884,6 +1884,19 @@ describe('round 6: status (A5, A6, 18.2)', () => {
       expect(await stepSvgs()).toEqual([`step status: ${want}`])
       await wp.unmount()
     })
+
+  // Step 44 (R44.22 extended, the human's G4 decision 5): a chart whose run has records but no readable run state reads
+  // waiting, as the run list does (it names such a run with an empty status), never completed.
+  test('[R44.22][AC-7.13] the run has records but no run state, every agent of the step ended: the step heading and the run list both read waiting', async ($, on) => {
+    await seed($, on, { complete: false, files: { 'docs/handoffs/R/run.md': null } })
+    const wp = await chartPane($, 'vscode', false)
+    await completeAgent($, 'a1')
+    expect(await statusSvgs(wp)).toEqual(['status: waiting']) // the run list's row for the same run
+    await showRunL3(wp, 'toolu_1')
+    const stepSvgs = ((await wp.findAll({ type: 'Svg' })) as any[]).map((x: any) => String(x?.props?.alt ?? '')).filter(a => a.startsWith('step status: '))
+    expect(stepSvgs).toEqual(['step status: waiting'])
+    await wp.unmount()
+  })
 })
 
 describe('round 6: notices (A7)', () => {
