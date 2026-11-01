@@ -1559,7 +1559,12 @@ describe('round 5: several workflows (requirement 3) and the status indicator (r
     let src = await statusSource(wp)
     expect(src).toMatch(/fill="#2e7d32"/)
     expect(src).toMatch(/<animate [^>]*dur="0\.6s"/)
+    // Step 44 (R44.22): the step heading takes the run list's rule, so every agent ended under an active run reads waiting;
+    // completed needs the run done too.
     await completeAgent($, 'a1')
+    expect(await statusSvgs(wp)).toEqual(['status: waiting'])
+    files['docs/handoffs/R/run.md'] = RUN_R('build', 'done (passed)', 'done')
+    await $.tool.call({ tool: 'Write', file_path: 'docs/handoffs/R/run.md', content: 'x', tool_use_id: 'toolu_d' })
     expect(await statusSvgs(wp)).toEqual(['status: completed'])
     expect(await statusSource(wp)).not.toMatch(/<animate/)
     // The run is blocked: halted, red as lens.json says.
@@ -1867,6 +1872,18 @@ describe('round 6: status (A5, A6, 18.2)', () => {
     expect(await statusSource(wp)).toMatch(/fill="#ef6c00"/)
     await wp.unmount()
   })
+
+  // Step 44 (R44.22, AC-7.13): a step chart's heading takes the run list's rule (`runListStatus`).
+  for (const [runStatus, want] of [['active', 'waiting'], ['', 'waiting'], ['paused', 'waiting'], ['done', 'completed']] as const)
+    test(`[R44.22][AC-7.13] every agent of the step ended, the run's status is ${JSON.stringify(runStatus)}: the step heading reads ${want}`, async ($, on) => {
+      await seed($, on, { complete: false, files: { 'docs/handoffs/R/run.md': RUN_R('build', runStatus === 'done' ? 'done (passed)' : 'in-progress', runStatus) } })
+      const wp = await chartPane($, 'vscode', false)
+      await completeAgent($, 'a1')
+      await showRunL3(wp, 'toolu_1') // a done run may open on the run list
+      const stepSvgs = async () => ((await wp.findAll({ type: 'Svg' })) as any[]).map((x: any) => String(x?.props?.alt ?? '')).filter(a => a.startsWith('step status: '))
+      expect(await stepSvgs()).toEqual([`step status: ${want}`])
+      await wp.unmount()
+    })
 })
 
 describe('round 6: notices (A7)', () => {

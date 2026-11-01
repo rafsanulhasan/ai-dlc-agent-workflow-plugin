@@ -912,3 +912,9 @@ root 17, step 17.2.4; spec keepalive-cache-status line 82, D2a; LLD rev 5,
   that still sets it "no longer used" (`RETIRED`), and merge removes the key.
   `applyHandoffSeed` turns keep-alive on only when no track is on in force
   (`anyOn`), as the head row reads it.
+- **G4 fix round (step 44, 44.2.l1.10, 2026-10-31).** Comments only, plus
+  one log: the track `status` comment and a `cache-state.ts` section title
+  no longer name the retired summary or status line; `panel.tsx`'s head
+  comment is one sentence again; `closeOldPane` logs a failed or unscheduled
+  close to debug instead of swallowing it. The types' `TrackView` and
+  `KeepaliveState` comments name the band only (no Pane).

@@ -135,9 +135,6 @@ function engine(on: On, opts: { endOnClear?: boolean; beneath?: string; tokens: 
     if (text === undefined && path.endsWith("/templates/brief.md")) return { value: SHIPPED_BRIEF }
     if (text === undefined && path.endsWith("/templates/instructions.md")) return { value: SHIPPED_INSTRUCTIONS }
     if (text === undefined && path.endsWith("/templates/session-handoff.md")) return { value: SHIPPED_SESSION }
-    // Keep-alive's status line in full mode (its D13 summary has its own tests in hooks/keepalive/), so
-    // the track lines asserted here stay whole on the terminal surface this engine reports.
-    if (text === undefined && path === '/home/test/proj/.ai-dlc/cache-keepalive.json') return { value: JSON.stringify({ statusText: 'full' }) }
     if (text === undefined) throw new Error(`ENOENT ${e.path}`)
     return { value: text }
   })

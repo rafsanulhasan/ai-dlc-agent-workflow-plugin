@@ -162,6 +162,50 @@ describe('[AC-17.6] [R44.2] [R44.3] the band and Pane model (Q-SL2, Q-SL5, Q-SL8
   })
 })
 
+// AC-17.8.3 (step 44, R44.2): a row's status and the switch in force agree, for all 18 combinations of the master (on, off,
+// unset), the track's session switch (on, off, unset) and the settings' <track>.enabled (true, false). The oracle is written
+// out from the order of *Track enabled for this session* (the track's switch, else the master's switch over the settings' enabled,
+// and the track's own setting), not by calling `trackOn`; `trackOn` is then held to it.
+describe('[AC-17.8.3] [R44.2] a row never reads on while its switch is off, nor off while it is on: all 18 combinations', () => {
+  const switches = [undefined, 'on', 'off'] as const
+  const inForce = (master: 'on' | 'off' | undefined, track: 'on' | 'off' | undefined, settingMaster: boolean, settingTrack: boolean): boolean => {
+    if (track !== undefined) return track === 'on'
+    const m = master !== undefined ? master === 'on' : settingMaster
+    return m && settingTrack
+  }
+  let combos = 0
+  for (const master of switches)
+    for (const track of switches)
+      for (const settingTrack of [true, false]) {
+        combos++
+        test(`master ${master ?? 'unset'}, 5m switch ${track ?? 'unset'}, settings 5m.enabled ${settingTrack}: the row status is the switch in force`, () => {
+          const sw: SessionSwitch = { ...(master ? { master } : {}), ...(track ? { '5m': track } : {}) }
+          const want = inForce(master, track, true, settingTrack)
+          const enabled = trackOn(sw, '5m', true, settingTrack)
+          expect(enabled).toBe(want)
+          const line = rowLineOf('5m', undefined, want ? 'armed' : 'off (disabled)', enabled)
+          const m = bandModel({ '5m': { line, enabled }, '1h': { line: 'x', enabled: false } })
+          if (want) {
+            expect(line.startsWith('keepalive 5m: on')).toBe(true)
+            expect(line.startsWith('keepalive 5m: off')).toBe(false)
+            expect(m.rows[0]!.button).toBe('off')
+          } else {
+            expect(line.startsWith('keepalive 5m: off')).toBe(true)
+            expect(line.startsWith('keepalive 5m: on')).toBe(false)
+            expect(m.rows[0]!.button).toBe('on')
+          }
+        })
+      }
+  test('the loop covers 3 x 3 x 2 = 18 combinations', () => {
+    expect(combos).toBe(18)
+  })
+  test('the master setting also decides when no switch is set: master setting off, track setting on, nothing switched: off', () => {
+    expect(trackOn({}, '5m', false, true)).toBe(false)
+    expect(trackOn({ master: 'on' }, '5m', false, false)).toBe(false)
+    expect(trackOn({ master: 'on' }, '5m', false, true)).toBe(true)
+  })
+})
+
 describe('hhmm', () => {
   test('hhmm: local H:MM with a two-digit minute and no padding on the hour', () => {
     expect(hhmm(T(9, 5))).toBe('9:05')

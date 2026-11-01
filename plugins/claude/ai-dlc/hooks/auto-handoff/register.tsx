@@ -937,7 +937,7 @@ export const register: Register = (on) => {
       }
       await log($, `floor session=${seededSession} tokens=${floor} (seed turn's first request) ${seedCacheFields(cache)}`)
       showHandedOff($, floor, cache)
-      // Also on keep-alive's status line, until the next turn starts. A failure there is logged,
+      // Also on keep-alive's band, as its seed row, until the next turn starts. A failure there is logged,
       // never thrown: the floor is already set, and the tight-threshold warning below must still run.
       await orLog($, 'keepalive seed line', () => showSeedCache($, cache))
       await warnTightThreshold($, seededSession!)

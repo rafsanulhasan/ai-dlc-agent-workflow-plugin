@@ -294,7 +294,7 @@ const runState = (status: string, rows: string[] = ['| 1 | change it | agent-man
 const brief = (code: string, run = 'X') => `Your handoff record is docs/handoffs/${run}/${code}-orchestrator-to-agent-manager.handoff.md (root x).\nDo it.`
 
 const pane = () => ({ plugin: PLUGIN, component: 'Pane', requestId: CHART_PANE, surface: 'vscode', props: { title: CHART_PANE, isFocused: false, bodyColumns: 120, placement: 'dock', scroll: { offset: 0, bodyRows: 80 }, view: {} } }) as any
-const band = () => ({ plugin: PLUGIN, surface: 'vscode', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 40, bodyColumns: 120, scroll: { offset: 0, bodyRows: 40 }, view: {} } }) as any
+const band = (surface = 'vscode') => ({ plugin: PLUGIN, surface, component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 40, bodyColumns: 120, scroll: { offset: 0, bodyRows: 40 }, view: {} } }) as any
 
 const later = (fn: () => void, ms: number) => (globalThis as any).setTimeout(fn, ms)
 async function until(ok: () => boolean | Promise<boolean>, ms = 5000): Promise<boolean> {
@@ -661,6 +661,13 @@ describe('[R44.5] runListStatus: an active run is never completed', () => {
     expect(runListStatus(ended, ['done', ' Active '])).toBe('waiting')
     expect(runListStatus(ended, ['done', 'DONE'])).toBe('completed')
   })
+  test('[R44.22] a run that is not done (empty, unknown, paused) keeps the workflow from completed; only done runs, or none named, complete it', () => {
+    expect(runListStatus(ended, [''])).toBe('waiting')
+    expect(runListStatus(ended, ['paused'])).toBe('waiting')
+    expect(runListStatus(ended, ['done', ''])).toBe('waiting')
+    expect(runListStatus(ended, [])).toBe('completed')
+    expect(runListStatus(ended, ['done'])).toBe('completed')
+  })
   test('the spawner is left out as in workflowStatus', () => {
     const members = [{ status: 'running', type: 'x', id: 'main' }, { status: 'completed', type: 'x', id: 'a1' }] as unknown as StatusMember[]
     expect(runListStatus(members, ['active'], 'main')).toBe('waiting')
@@ -722,28 +729,36 @@ describe('[R44.4] the lens band is drawn only where every surface draws a band',
     expect(bandEverywhere([])).toBe(false)
   })
 
-  const drawsBand = async ($: any): Promise<boolean> => {
-    const ui = await $.ui.mount(band())
-    const own = ((await ui.findAll({ type: 'Svg' })) as any[]).length > 0
+  const drawsBand = async ($: any, surface = 'vscode'): Promise<boolean> => {
+    const ui = await $.ui.mount(band(surface))
+    // A VS Code band draws Svg dots; a terminal or desktop one is text, so any text beside the row beneath is the band.
+    const lines = ((await ui.findAll({ type: 'Text' })) as any[]).map((x: any) => String(x?.props?.text ?? x?.text ?? '')).filter(t => t.trim() !== '' && t !== 'NATIVE ROW')
+    const own = ((await ui.findAll({ type: 'Svg' })) as any[]).length > 0 || (surface !== 'vscode' && lines.length > 0)
     const native = (await ui.find({ type: 'Text', text: 'NATIVE ROW' })) !== undefined
     await ui.unmount()
     expect(native).toBe(true) // the hook beneath is always reached
     return own
   }
 
-  test('[R44.4] a terminal: the lens band is drawn (above the row beneath)', async ($, on) => {
-    await boot($, on, { [`${RUN_DIR}/run.md`]: runState('active') })
-    await call($, 1, '1')
-    surfaces = ['terminal']
-    expect(await drawsBand($)).toBe(true)
-  })
+  // Step 44 (R44.21, AC-12.12): the band is gated on the render's own surface first. A terminal or desktop render draws it
+  // whatever else is attached (or unknown); only a VS Code render keeps the roster rule (`bandEverywhere`, or `vscodeBandA`).
+  for (const surface of ['terminal', 'desktop']) {
+    for (const set of [['terminal'], ['terminal', 'vscode'], []]) {
+      test(`[R44.21] a ${surface} render with surfaces ${JSON.stringify(set)}: the lens band is drawn (above the row beneath)`, async ($, on) => {
+        await boot($, on, { [`${RUN_DIR}/run.md`]: runState('active') })
+        await call($, 1, '1')
+        surfaces = set
+        expect(await drawsBand($, surface)).toBe(true)
+      })
+    }
+  }
 
   for (const set of [['vscode'], ['terminal', 'vscode'], []]) {
-    test(`[R44.4] surfaces ${JSON.stringify(set)}: no lens band, so the pane the command opens is the only lens view`, async ($, on) => {
+    test(`[R44.4] a VS Code render with surfaces ${JSON.stringify(set)}: no lens band (the mode button has not chosen pinned), so the pane the command opens is the only lens view`, async ($, on) => {
       await boot($, on, { [`${RUN_DIR}/run.md`]: runState('active') })
       await call($, 1, '1')
       surfaces = set
-      expect(await drawsBand($)).toBe(false)
+      expect(await drawsBand($, 'vscode')).toBe(false)
     })
   }
 })

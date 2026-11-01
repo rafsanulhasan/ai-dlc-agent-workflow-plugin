@@ -603,3 +603,6 @@ root 17, step 17.3.4.l1.1, code-review fix round 1 for 17.2.4; see
   (the ai-dlc-lens band, then core's), then keep-alive's band, so the lens
   band and keep-alive's are two separate bands, the lens first. No Box of
   the tree has a width.
+- **Seed comment (step 44, 44.2.l1.10, 2026-10-31).** Comment only: the
+  handoff seed's cache shows on keep-alive's band as its seed row, not on a
+  status line (R44.1).

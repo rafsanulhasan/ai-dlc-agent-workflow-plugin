@@ -207,3 +207,67 @@ describe('[R44.17] [R44.18] the acts after a render are tried again when the hos
     noRefusals(kit)
   })
 })
+
+// Step 44 (G4 round): one hand-over from the band to a pane at a time (`bandGivingWay`); the flag stays set while
+// `afterRender` retries a refused hand-over and is cleared once it succeeded or was given up.
+describe('[R44.16] [R44.17] the band gives way to a pane once at a time', () => {
+  const wait40 = () => new Promise(r => (globalThis as any).setTimeout(r, 40))
+  /** The band chosen with the mode button on a mounted inline pane: its re-render starts the hand-over (a 0 ms timer, held). */
+  const bandChosen = async ($: any, kit: Kit) => {
+    const ui = await pane($, CHART, 'inline', kit)
+    await fire(kit)
+    await ui.press({ key: 'pane-place' })
+    await wait40()
+    return ui
+  }
+  /** How many hand-overs (0 ms timers) one more render of an inline pane queues. */
+  const queuedBy = async ($: any, kit: Kit) => {
+    const before = kit.timers.filter(t => t.ms === 0).length
+    const ui = await pane($, CHART, 'inline', kit)
+    await wait40()
+    const n = kit.timers.filter(t => t.ms === 0).length - before
+    await ui.unmount()
+    return n
+  }
+  const bandDrawn = async ($: any) => {
+    const b = await band($)
+    const yes = await has(b, 'pane-place')
+    await b.unmount()
+    return yes
+  }
+
+  test('while a refused hand-over is being retried, further renders ask for no second hand-over; it lands once and the band gives way', HEAVY, async ($, on) => {
+    const kit = await engine($, on)
+    const ui = await bandChosen($, kit)
+    await ui.unmount()
+    expect(await queuedBy($, kit)).toBe(0) // a hand-over is under way: the next renders ask for none
+    await fireInDraw(kit) // refused: the retry is queued
+    expect(kit.timers.some(t => t.ms === 100)).toBe(true)
+    expect(await queuedBy($, kit)).toBe(0) // still none, between the retries
+    await fire(kit) // outside a draw: it lands
+    expect(await bandDrawn($)).toBe(false) // the band gave way
+  })
+
+  test('after the hand-over landed, choosing the band again starts a new hand-over', HEAVY, async ($, on) => {
+    const kit = await engine($, on)
+    const ui = await bandChosen($, kit)
+    await fire(kit) // lands: the flag is cleared
+    await fire(kit)
+    await ui.press({ key: 'pane-place' }) // the band chosen again
+    await wait40()
+    expect(await bandDrawn($)).toBe(true) // chosen
+    await ui.unmount()
+    await fire(kit) // the new hand-over runs
+    await fire(kit)
+    expect(await bandDrawn($)).toBe(false) // and the band gave way again
+  })
+
+  test('after the hand-over was given up (refused 20 times), the next render asks for a new one', HEAVY, async ($, on) => {
+    const kit = await engine($, on)
+    const ui = await bandChosen($, kit)
+    await ui.unmount()
+    for (let i = 0; i < 25; i++) await fireInDraw(kit)
+    expect(kit.timers).toEqual([]) // given up: no 26th try
+    expect(await queuedBy($, kit)).toBeGreaterThan(0) // the band is still chosen (the writes never landed), the flag is clear
+  })
+})

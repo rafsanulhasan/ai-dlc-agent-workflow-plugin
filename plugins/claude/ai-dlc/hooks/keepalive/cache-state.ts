@@ -229,8 +229,8 @@ export function cachePart(v: CacheView): string | undefined {
   return parts.length ? parts.join(', ') : undefined
 }
 
-// ---- ITEM-068 (LLD rev 7 to 11): the off-line suffix, the source note, the session switches, the
-// band model and the status-line summary. Pure, like the ledger above.
+// ---- ITEM-068 (LLD rev 7 to 11): the off-line suffix, the source note, the session switches and the
+// band model. Pure, like the ledger above.
 
 /** True for a keep-alive part that says the track is off: every reasonText() result. Stopped texts
  * ('expired, stopped', 'missed, stopped', ...) are not off (LLD 11). */

@@ -67,7 +67,7 @@ export type Split = Record<TrackName, number>
 // arms the track (LLD 3.4), never by the cache part, which stays the ledger's: a landed 1h ping that
 // wrote no 1h tokens leaves the ledger's 1h entry, yet proves the cache warm. Cleared when the cache
 // is gone or unknown (expired, missed, an error), at session.end and before a handoff.
-// status (LLD rev 11, 20.3): what the summary reads of a track that is not running, written only by
+// status (LLD rev 11, 20.3): the state of a track that is not running, as its band line says it, written only by
 // setPart beside its part, so the two cannot disagree: why it is off, how it stopped (with the
 // warm-until its full line shows, for done, ping limit and spend limit) or the compaction's phase.
 type TrackStatus = { off: Reason } | { stop: StopKind; warm?: number } | { compaction: CompactionPhase }
@@ -518,8 +518,12 @@ function closeOldPane($: EngineInterface) {
   if (oldPaneSwept) return
   oldPaneSwept = true
   try {
-    $.clock.after(0, () => { void $.ui.close({ id: PANE }).catch(() => {}) })
-  } catch {}
+    $.clock.after(0, () => {
+      void $.ui.close({ id: PANE }).catch(err => $.ui.log(`keepalive: old pane not closed (${err instanceof Error ? err.message : String(err)})`, { to: 'debug' }))
+    })
+  } catch (err) {
+    $.ui.log(`keepalive: old pane close not scheduled (${err instanceof Error ? err.message : String(err)})`, { to: 'debug' })
+  }
 }
 
 /** The keep-alive band above the prompt (AbovePrompt), drawn by register.tsx as a band of its own, after the lens

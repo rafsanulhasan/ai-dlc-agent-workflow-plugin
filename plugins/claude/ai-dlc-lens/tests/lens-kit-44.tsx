@@ -5,7 +5,9 @@
  *    can fire a timer while another `ui.render` is being dispatched; here `fireInDraw` does that, and `fire` fires the
  *    timers outside any draw.
  *  - The render-purity guard (`RenderGuard`) belongs to the kit: a state write made while `guard.draw` is in progress is
- *    refused with the host's words ("state.set: denied: it was made while ui.render is being dispatched").
+ *    refused with the host's words ("state.set: denied: it was made while ui.render is being dispatched"). The guard
+ *    exempts the `tick` and `agents` keys: the lens writes them from its own timers (the status blink, the agent list poll),
+ *    which run beside a draw and not in one; the real host does not refuse those, so the kit must not either.
  * Not a test file: the test files import it.
  */
 import { expect } from 'claude-code/testing'
@@ -122,7 +124,8 @@ export async function engine($: any, on: any, o: KitOpts = {}): Promise<Kit> {
   on('state.set', (_: unknown, e: any, next: any) => {
     const denied = kit.guard.refusal(e.plugin, e.key)
     if (denied !== undefined) return { deny: denied } as never
-    return e.plugin === PLUGIN && seeds.delete(String(e.key)), next(e)
+    if (e.plugin === PLUGIN) seeds.delete(String(e.key))
+    return next(e)
   })
   on('state.get', (_: unknown, e: any, next: any) => (e.plugin === PLUGIN && seeds.has(String(e.key)) ? { value: { value: seeds.get(String(e.key)), version: 1 } } : next(e)))
   kit.seed = (key, value) => void seeds.set(key, value)

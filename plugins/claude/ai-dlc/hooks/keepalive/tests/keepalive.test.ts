@@ -3303,6 +3303,50 @@ describe('[T17.6] the keep-alive band (every surface)', () => {
     await second.unmount()
   })
 
+  // Step 44 (G4 round): a close the host refuses is logged to the debug log, never thrown, never retried.
+  test('[R44.7] the old keep-alive Pane close is refused: the debug line "keepalive: old pane not closed (...)" is logged and the band still draws', async ($, on) => {
+    const e = withPane(on)
+    on('ui.close', () => ({ deny: 'host said no' }) as never)
+    const first = await pane($)
+    await e.clock.fire(0)
+    await settle()
+    expect(e.seen.logs.filter(l => l.startsWith('keepalive: old pane not closed'))).toEqual(['keepalive: old pane not closed (ai-dlc: $.ui.close: host said no)'])
+    expect(textOf(await first.drawn())).toContain('cache-keepalive')
+    await first.unmount()
+    const second = await pane($)
+    await e.clock.fire(0)
+    await settle()
+    expect(e.seen.logs.filter(l => l.startsWith('keepalive: old pane not closed')).length).toBe(1) // once per load
+    await second.unmount()
+  })
+
+  // AC-17.8.9 (R44.8): the band is out of the region that moves. With the band mounted and the lens's pane drawn at the
+  // inline seat and then at the dock (stubbed render props), and back, the band keeps its rows and buttons.
+  test('[AC-17.8.9] [R44.8] the lens pane changes seat inline to dock and dock to inline: the band is drawn after each change with the same rows and buttons', async ($, on) => {
+    withPane(on)
+    on('ui.render', { component: 'Pane', requestId: 'ai-dlc-lens-chart' } as never, (() => ({ type: 'engine', ref: 0 })) as never)
+    const band = await pane($)
+    await press(band, 'ka-min')
+    const KEYS = ['ka-master', 'ka-ping', 'ka-min', 'ka-close', 'ka-5m', 'ka-1h']
+    const keys = async () => { const f: string[] = []; for (const k of KEYS) if ((await band.find({ type: 'Button', key: k })) !== undefined) f.push(k); return f }
+    const text = textOf(await band.drawn())
+    const same = async () => {
+      expect(textOf(await band.drawn())).toBe(text)
+      expect(await keys()).toEqual(KEYS)
+      expect(buttons(await band.drawn()).length).toBe(KEYS.length)
+    }
+    await same()
+    for (const placement of ['inline', 'dock', 'inline']) {
+      const lens = await $.ui.mount({ plugin: 'ai-dlc', surface: 'vscode', component: 'Pane', requestId: 'ai-dlc-lens-chart', props: { title: 'ai-dlc-lens-chart', isFocused: false, bodyColumns: 120, placement, scroll: { offset: 0, bodyRows: 80 }, view: {} } } as never)
+      await settle()
+      await same()
+      await lens.unmount()
+      await settle()
+      await same()
+    }
+    await band.unmount()
+  })
+
   test('[R44.7] the band has no maximise control, minimised or full', async ($, on) => {
     withPane(on)
     const ui = await pane($)
@@ -3313,6 +3357,24 @@ describe('[T17.6] the keep-alive band (every surface)', () => {
     expect(textOf(await ui.drawn())).not.toContain('Maximise')
     await ui.unmount()
   })
+
+  // AC-17.8.6: the head row is decided by the tracks alone, in the 8 fixtures of the master (on, off) x the 5m track (on, off) x
+  // the 1h track (on, off) in the settings: a track is on in force when the master and its own setting are on, and the head row
+  // reads on when either is, its button the opposite. The band is the minimised one and the restored one.
+  for (const master of [true, false])
+    for (const s5 of [true, false])
+      for (const s1 of [true, false]) {
+        const headOn = master && (s5 || s1)
+        test(`[AC-17.8.6] settings master ${master ? 'on' : 'off'}, 5m ${s5 ? 'on' : 'off'}, 1h ${s1 ? 'on' : 'off'}: the head row reads ${headOn ? 'on' : 'off'} with an ${headOn ? 'off' : 'on'} button`, async ($, on) => {
+          withPane(on, { files: { [`${ROOT}/.claude/settings.local.json`]: JSON.stringify({ env: { AI_DLC_KEEPALIVE_ENABLED: String(master), AI_DLC_KEEPALIVE_5M_ENABLED: String(s5), AI_DLC_KEEPALIVE_1H_ENABLED: String(s1) } }) } })
+          await $.classic.Stop(stop()) // the settings are read at a Stop
+          const ui = await pane($)
+          expect(textOf(await ui.drawn()).startsWith(`⚠ ai-dlc cache-keepalive: ${headOn ? 'on off' : 'off on'}⏻`)).toBe(true)
+          await press(ui, 'ka-min')
+          expect(textOf(await ui.drawn()).startsWith(`⚠ ai-dlc cache-keepalive: ${headOn ? 'on off' : 'off on'}`)).toBe(true)
+          await ui.unmount()
+        })
+      }
 
   // Step 44 (R44.3): the head row reads on while either track is on in force and off while both are off, its button the
   // opposite, in the Pane minimised and restored; each track row reads its own status first (R44.2).

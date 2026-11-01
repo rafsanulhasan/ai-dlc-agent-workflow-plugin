@@ -1278,8 +1278,12 @@ async function onBand($: EngineInterface, v: LensView): Promise<boolean> {
 /**
  * Step 44 (R44.4, R44.16): whether the lens may draw its band now: every attached surface is a terminal or desktop
  * (`bandEverywhere`), or, in VS Code, the person chose pinned with the mode button (`vscodeBandA`, its pane closed).
+ * Step 44 (R44.21, the human's G4 decision 1): the band's own render passes its surface (`e.surface`); a terminal or
+ * desktop render draws the band whatever else is attached, and with an unknown roster. Any other surface (VS Code)
+ * keeps the rule above. The commands, which have no surface of their own, pass none and keep the roster rule.
  */
-async function bandAllowed($: EngineInterface): Promise<boolean> {
+async function bandAllowed($: EngineInterface, surface?: unknown): Promise<boolean> {
+  if (typeof surface === 'string' && BAND_SURFACES.has(surface)) return true
   return bandEverywhere(await surfacesNow($)) || (await read($, vscodeBandA))
 }
 
@@ -1480,15 +1484,20 @@ let lastSeat: 'dock' | 'inline' | null = null
 const AFTER_RENDER_TRIES = 20
 const AFTER_RENDER_RETRY_MS = 100
 const isRenderDenial = (err: unknown): boolean => /ui\.render is being dispatched|drawing is pure/.test(String(err))
-function afterRender($: EngineInterface, site: string, act: () => Promise<unknown>, tries = AFTER_RENDER_TRIES) {
+function afterRender($: EngineInterface, site: string, act: () => Promise<unknown>, gaveUp: () => void = () => {}, tries = AFTER_RENDER_TRIES) {
+  // Step 44 (G4 round): `gaveUp` runs once when the act is given up (any other failure, or the last refusal).
   try {
     $.clock.after(tries === AFTER_RENDER_TRIES ? 0 : AFTER_RENDER_RETRY_MS, () => {
       void act().catch(err => {
-        if (tries > 1 && isRenderDenial(err)) afterRender($, site, act, tries - 1)
-        else lensFail(site, err)
+        if (tries > 1 && isRenderDenial(err)) afterRender($, site, act, gaveUp, tries - 1)
+        else {
+          gaveUp()
+          lensFail(site, err)
+        }
       })
     })
   } catch (err) {
+    gaveUp()
     lensFail(site, err)
   }
 }
@@ -1502,14 +1511,20 @@ function followSeat($: EngineInterface, placement: unknown, surface: unknown, pi
   // gives way, so the two are never both drawn, and the place follows the pane's seat.
   if (pinnedBand && !bandGivingWay) {
     bandGivingWay = true
-    afterRender($, 'band gives way', async () => {
-      try {
+    // The flag is cleared only when the hand-over is done or given up, never between the retries `afterRender` makes
+    // of a refused act, so the renders in that window ask for no second hand-over.
+    afterRender(
+      $,
+      'band gives way',
+      async () => {
         await update($, vscodeBandA, () => false)
         await update($, viewA, x => ({ ...(x as LensView), place: seat === 'dock' ? 'docked' : 'pinned' }))
-      } finally {
         bandGivingWay = false
-      }
-    })
+      },
+      () => {
+        bandGivingWay = false
+      },
+    )
   }
   if (seat === lastSeat) return
   const was = lastSeat
@@ -3494,7 +3509,8 @@ async function workflowBody($: EngineInterface, t: any, site: ViewSite) {
     )
     const all = settled.map(a => (a.status === OPEN ? { ...a, status: 'pending' } : a))
     const spawner = c.key === NO_STEP ? (c.ids[0] ?? null) : null
-    return { st: workflowStatus(all, run === undefined ? [] : [run.status], spawner), both: runningAndWaiting(all, spawner) }
+    // Step 44 (R44.22, AC-7.13): the run list's rule (`runListStatus`), so a finished step of a run not `done` reads waiting.
+    return { st: runListStatus(all, run === undefined ? [] : [run.status], spawner), both: runningAndWaiting(all, spawner) }
   }
   // The ▲ of a step: an anomaly of one of its agents, or of one of its steps in its run folder.
   const stepBad = (c: StepChart): LensAnomaly[] =>
@@ -4529,11 +4545,12 @@ export const register: Register = on => {
       // band is drawn with no workflow too, its minimised line reading "Nothing Here". Amendment 8: docked, the band
       // stays while a workflow is in progress; pinned, it is gone once closed with its `×` (only while none is).
       if (v.size === 'fullscreen') return next(e)
-      // Step 44 (R44.4): the band is drawn only where every attached surface draws it (`bandEverywhere`), as `onBand`
-      // says for `/ai-dlc:lens`. Elsewhere (VS Code, or surfaces unknown) the command opens the pane, which is the view
-      // there, so a band drawn too would be a second lens band, as in the VS Code narrow panel.
+      // Step 44 (R44.4): in a VS Code render the band is drawn only where every attached surface draws it
+      // (`bandEverywhere`), as `onBand` says for `/ai-dlc:lens`. Elsewhere the command opens the pane, which is the view
+      // in VS Code, so a band drawn there too would be a second lens band, as in the VS Code narrow panel.
       // Step 44 (R44.16): in VS Code, also while the person chose pinned (`vscodeBandA`, the pane closed).
-      if (!(await bandAllowed($))) return next(e)
+      // Step 44 (R44.21): gated on this render's own surface first: a terminal or desktop render always draws it.
+      if (!(await bandAllowed($, e.surface))) return next(e)
       const pinned = placeOf(v, String(conf.settings.workflowPlace)) === 'pinned'
       const closed = pinned && (await read($, bandClosedA))
       if (!pinned || closed) {

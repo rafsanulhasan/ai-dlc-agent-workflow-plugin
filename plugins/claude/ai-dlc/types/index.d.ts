@@ -22,7 +22,7 @@ export type KeepaliveTrackState = {
   pings: number
   /** The track's ping limit. */
   cap: number
-  /** The track's line (`lineOf`): its cache part, then its keep-alive part. The band and the Pane draw it with its status first (step 44). */
+  /** The track's line (`lineOf`): its cache part, then its keep-alive part. The band draws it with its status first (step 44). */
   line: string
   /** The caches of the track's lifetime keep-alive has seen this session, one per source (`main`, and
    * `subagents` for the latest of the subagents' caches), with when each is warm until and whether it
@@ -33,14 +33,14 @@ export type KeepaliveTrackState = {
   /** Whether the track is on in force: this session's switches, else the settings (step 42: the lens's
    * Cache Lab buttons show it). */
   enabled: boolean
-  /** This session's switch of the track (its band or Pane button), when one is set. */
+  /** This session's switch of the track (its band button), when one is set. */
   sessionSwitch?: 'on' | 'off'
 }
 
 export type KeepaliveState = {
   /** Keep-alive's master in force: this session's master switch, else the `enabled` setting as last read. */
   enabled: boolean
-  /** This session's master switch (the band or Pane title-row button), when one is set. */
+  /** This session's master switch (the band's title-row button), when one is set. */
   sessionMaster?: 'on' | 'off'
   /** The automatic handoff chain this session belongs to: the id of its first session, and its session
    * ids, newest first (a session started by hand is a chain of one). */

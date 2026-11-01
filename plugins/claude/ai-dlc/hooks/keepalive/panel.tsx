@@ -1,7 +1,6 @@
 // Keep-alive's band (AbovePrompt; on every surface since step 44, R44.7, which retired keep-alive's Pane). This file
-// only draws, like
-// ../auto-handoff/panel.tsx: keepalive.ts holds the state and the presses, since the host never follows
-// $ across an import.
+// only draws, like ../auto-handoff/panel.tsx: keepalive.ts holds the state and the presses, since the host never
+// follows $ across an import.
 import type { BandModel, Ttl } from './cache-state.ts'
 
 // The elements come from $.ui.resolve in the render hook.

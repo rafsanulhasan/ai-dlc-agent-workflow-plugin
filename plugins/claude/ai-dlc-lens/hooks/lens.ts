@@ -1546,12 +1546,14 @@ export function workflowStatus(members: readonly StatusMember[], runStatuses: re
  * Step 44 (R44.5): a workflow's status in the run list and the band, `workflowStatus` but never `completed` while a run
  * it names is `active`: with every agent ended, such a run waits for its next stage or for the human, so it reads
  * `waiting`. A `blocked` run already reads `halted` (`workflowStatus`). Each run's `status:` is that of its current
- * run-state version (`pickRunState`). A step's chart keeps `workflowStatus`, since a finished step of an active run is
- * completed.
+ * run-state version (`pickRunState`).
+ * Step 44 (R44.22, the human's G4 decision 2): a step's chart heading uses this rule too, and any run named that is not
+ * `done` (`active`, empty, or a status the lens does not know) keeps the workflow from `completed`: it reads `waiting`.
+ * With no run named, the agents decide, as in `workflowStatus`.
  */
 export function runListStatus(members: readonly StatusMember[], runStatuses: readonly string[] = [], spawner: string | null = null): FlowStatus {
   const st = workflowStatus(members, runStatuses, spawner)
-  return st === 'completed' && runStatuses.some(x => x.trim().toLowerCase() === 'active') ? 'waiting' : st
+  return st === 'completed' && runStatuses.some(x => x.trim().toLowerCase() !== 'done') ? 'waiting' : st
 }
 
 /**
