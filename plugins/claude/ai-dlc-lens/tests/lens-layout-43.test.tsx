@@ -19,7 +19,9 @@ const BASE: Record<string, string> = {
 }
 
 /** The engine's edges, as the lens tests' `seed` stubs them: files by path tail, panes opened, no clock. */
+const listedFailed: Record<string, string> = {}
 function engine(on: any, extra: Record<string, string> = {}) {
+  for (const k of Object.keys(listedFailed)) delete listedFailed[k]
   const files: Record<string, string> = { ...BASE, ...extra }
   on('ui.render', ($s: any, e: any) => {
     const { Text } = $s.ui.resolve(e)
@@ -44,7 +46,8 @@ function engine(on: any, extra: Record<string, string> = {}) {
   on('fs.list', () => ({ value: [] }))
   on('process.run', () => ({ value: { exitCode: 1, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }))
   on('ui.toast', () => ({ value: undefined }))
-  on('agent.list', () => ({ value: [] }))
+  // Step 44.3.l2.1: the engine's list says `failed` for an agent `failAgent` fails (an error turn end alone no longer halts a subagent).
+  on('agent.list', () => ({ value: Object.entries(listedFailed).map(([id, status]) => ({ id, description: id, type: 'ai-dlc:agent-manager', status })) }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('ui.close', () => ({ value: undefined }))
   on('ui.panes', () => ({ value: [] }))
@@ -70,7 +73,11 @@ async function start($: any, on: any, lens: Record<string, unknown> = {}) {
   await spawn($, 1, '17')
   await spawn($, 2, '18')
 }
-const failAgent = ($: any, agentId: string) => $.turn.complete({ reason: 'error', answer: '', durationMs: 1, isAborted: false, turnId: 't', agentId, usage: null } as any)
+const failAgent = ($: any, agentId: string) => {
+  listedFailed[agentId] = 'failed'
+  return failTurn($, agentId)
+}
+const failTurn = ($: any, agentId: string) => $.turn.complete({ reason: 'error', answer: '', durationMs: 1, isAborted: false, turnId: 't', agentId, usage: null } as any)
 
 const mountPane = ($: any, requestId: string, bodyColumns = 120) =>
   $.ui.mount({ plugin: PLUGIN, surface: 'vscode', component: 'Pane', requestId, props: { title: requestId, isFocused: false, bodyColumns, placement: 'dock', scroll: { offset: 0, bodyRows: 80 }, view: {} } })

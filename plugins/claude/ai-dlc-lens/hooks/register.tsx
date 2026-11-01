@@ -352,6 +352,11 @@ const thinkBlocks: Record<string, number> = {}
 const stepOfCall: Record<string, { out: number; n: number }> = {}
 const lastStatus: Record<string, string> = {}
 /**
+ * Step 44.2.l2.1: subagents whose `failed` / `killed` came from their own `turn.complete` (and was confirmed by
+ * `$.agent.list()` then), not from the list. A later listed `running` is a resume and clears it (`refreshList`).
+ */
+const haltedByTurn = new Set<string>()
+/**
  * Step 43.2.5: the session's SendMessage calls (`beforeCall`), for the Connections panel's Send Message accordion.
  * Module memory (reset at `session.start` and on reload); a new one bumps `avatarRevA`, which every drawing reads.
  */
@@ -1097,9 +1102,16 @@ async function refreshList($: EngineInterface, reason: string) {
       // Round 6: nor puts `running` back over an `idle` the turn's end set (the list lags, E4); a turn's
       // own start sets `running`. It may still start a pending agent or wake a waiting one.
       const stale = a.status === 'running' && cur !== undefined && cur.status !== 'pending' && cur.status !== 'waiting'
+      // Step 44.2.l2.1: a listed `running` clears a `failed` / `killed` that the agent's own `turn.complete` set
+      // (`haltedByTurn`), never one the list set; `completed` stays ended (`ENDED`).
+      const resumed = a.status === 'running' && cur !== undefined && (cur.status === 'failed' || cur.status === 'killed') && haltedByTurn.has(String(a.id))
+      if (resumed) {
+        out[a.id] = { ...cur!, status: 'running' }
+        haltedByTurn.delete(String(a.id))
+      }
       // Step 43 (C1): a listed `completed` applies too (an agent whose `turn.complete` this session never saw, a
       // pending one included); a status already ended (`ENDED`) is still never changed by the list.
-      if (cur && cur.status !== a.status && !ENDED.has(cur.status) && !stale) out[a.id] = { ...cur, status: String(a.status) }
+      else if (cur && cur.status !== a.status && !ENDED.has(cur.status) && !stale) out[a.id] = { ...cur, status: String(a.status) }
       if (out[a.id] && typeof a.teammateId === 'string' && out[a.id]!.teammate !== true) out[a.id] = { ...out[a.id]!, teammate: true }
     }
     return out
@@ -4359,6 +4371,7 @@ export const register: Register = on => {
       if (probeOn) await plog($, 'E9', { site: 'turn.start', agent: key, known: (await read($, agentsA))[key]?.toolUseId ?? null })
       await ensureAgent($, key, key === 'main' ? null : 'main', '')
       await patchAgent($, key, a => ({ ...a, status: 'running' }))
+      haltedByTurn.delete(key)
       const text = typeof (e as any).text === 'string' ? ((e as any).text as string) : ''
       // Round 5: only the human's request names the task. Round 6 (A7): a notice (an engine tag, or a
       // prompt `prompt.submit` saw arrive from something other than the person) is kept as a notice.
@@ -4470,13 +4483,30 @@ export const register: Register = on => {
       const agents = await read($, agentsA)
       const teammate = (agents[key]?.type ?? '') === 'teammate' || agents[key]?.teammate === true
       // Round 5: a teammate that answered waits for its next message (idle); one that errored or was stopped has halted.
-      const status = key === 'main' ? 'idle' : e.reason === 'answer' ? (teammate ? 'idle' : 'completed') : e.reason === 'aborted' ? 'killed' : 'failed'
+      const ended = key === 'main' ? 'idle' : e.reason === 'answer' ? (teammate ? 'idle' : 'completed') : e.reason === 'aborted' ? 'killed' : 'failed'
+      // Step 44.2.l2.1: a subagent's (not a teammate's) `error`, `refusal` or `aborted` turn end halts it only
+      // when the engine's own status for it (`$.agent.list()`, AgentStatus) says it ended too; else it is still
+      // running (a background subagent works on), and a later listed `failed` / `killed` applies (`refreshList`).
+      const halting = key !== 'main' && !teammate && e.reason !== 'answer'
+      let listedEnded = false
+      if (halting) {
+        try {
+          const row = ((await $.agent.list()) as any[]).find(x => String(x.id) === key)
+          listedEnded = row !== undefined && ENDED.has(String(row.status))
+        } catch {
+          // no list: the turn's end alone does not halt it
+        }
+      }
+      const keep = halting && !listedEnded
+      const status = keep ? 'running' : ended
+      if (halting && listedEnded) haltedByTurn.add(key)
+      else haltedByTurn.delete(key)
       await patchAgent($, key, a => ({
         ...a,
         status,
         model: e.usage?.model ?? a.model,
         turns: usage ? addTokens(a.turns, usage) : a.turns,
-        endedAt: nowMs(),
+        endedAt: keep ? a.endedAt : nowMs(),
       }))
       if (key === 'main') {
         try {

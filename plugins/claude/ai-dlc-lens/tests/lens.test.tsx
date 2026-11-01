@@ -482,7 +482,12 @@ async function seed($: any, on: any, opts: SeedOpts = {}) {
     toasts.push(String(e?.text ?? e))
     return { value: undefined }
   })
-  on('agent.list', () => ({ value: [{ id: 'a1', description: desc[0], type: 'ai-dlc:software-engineer', status: listStatus }] }))
+  // Step 44.3.l2.1: `agentList.status` is what the engine's list says about a1; a test sets it to `failed` / `killed` (or `throw`) before it fails the agent.
+  const agentList: { status: string } = { status: listStatus }
+  on('agent.list', () => {
+    if (agentList.status === 'throw') throw new Error('agent.list failed')
+    return { value: [{ id: 'a1', description: desc[0], type: 'ai-dlc:software-engineer', status: agentList.status }] }
+  })
   // Step 36.2: the panes open now, for `$.ui.panes()` (what `/ai-dlc:lens` reads to tell "open" from "closed").
   const openNow = new Set<string>(opts.openAtStart ?? [])
   /** Step 36.2.3: every open and close in order, `open:<id>` / `close:<id>`. */
@@ -566,7 +571,7 @@ async function seed($: any, on: any, opts: SeedOpts = {}) {
       fork: false,
     })
   if (complete) await completeAgent($, 'a1')
-  return { opened, nativeInputs, writes, files, openArgs, closed, statted, toasts, events, openNow }
+  return { opened, nativeInputs, writes, files, openArgs, closed, statted, toasts, events, openNow, agentList }
 }
 
 async function completeAgent($: any, agentId: string) {
@@ -3233,7 +3238,8 @@ describe('step 8.1.6.1: anomaly detection (in the lens)', () => {
   })
 
   test('an agent that failed: a red marker on its avatar Button; a respawn of its type for the run clears it', async ($, on) => {
-    const { toasts } = await seed($, on, { complete: false, files: { 'docs/handoffs/R/run.md': RUN_R('build') } })
+    const { toasts, agentList } = await seed($, on, { complete: false, files: { 'docs/handoffs/R/run.md': RUN_R('build') } })
+    agentList.status = 'failed' // step 44.3.l2.1: the engine's list ends the agent too, else the error turn end leaves it running
     await $.turn.complete({ reason: 'error', answer: '', durationMs: 1, isAborted: false, turnId: 't', agentId: 'a1', usage: null } as any)
     expect(toasts).toEqual(['ai-dlc-lens: Agent failed or stopped (run R, step 17, 17-orchestrator-to-agent-manager.handoff.md): failed'])
     const wp = await chartPane($)
@@ -3249,7 +3255,8 @@ describe('step 8.1.6.1: anomaly detection (in the lens)', () => {
   })
 
   test('an agent killed (turn aborted) is red', async ($, on) => {
-    const { toasts } = await seed($, on, { complete: false })
+    const { toasts, agentList } = await seed($, on, { complete: false })
+    agentList.status = 'killed' // step 44.3.l2.1: the engine's list says killed too
     await $.turn.complete({ reason: 'aborted', answer: '', durationMs: 1, isAborted: true, turnId: 't', agentId: 'a1', usage: null } as any)
     expect(toasts.map(x => x.replace(/ \(.*$/, ''))).toEqual(['ai-dlc-lens: Agent killed'])
   })
@@ -4163,13 +4170,14 @@ describe('anomaly markers follow the detector in every drawing', () => {
   })
 
   test('the chat card and the /ai-dlc:lens pane, already mounted, gain the ▲ when an agent fails and lose it when the stage runs again', async ($, on) => {
-    await seed($, on, { complete: false, files: { 'docs/handoffs/R/run.md': RUN_R('build') } })
+    const { agentList } = await seed($, on, { complete: false, files: { 'docs/handoffs/R/run.md': RUN_R('build') } })
     const card = await $.ui.mount(toolRow('toolu_1', 'vscode', SE_INPUT, 'Agent', 500))
     const lens = await chartPane($)
     const label = async (ui: any, key: string) => String((await ui.find({ type: 'Button', key }))?.text)
     expect(await label(card, 'card:agent-a1')).toBe('David Fowler')
     expect(await label(lens, 'agent-a1')).toBe('David Fowler')
     // Nothing is pressed and nothing remounted: the detector's write alone redraws both.
+    agentList.status = 'failed' // step 44.3.l2.1: the engine's list ends the agent too
     await $.turn.complete({ reason: 'error', answer: '', durationMs: 1, isAborted: false, turnId: 't', agentId: 'a1', usage: null } as any)
     expect(await label(card, 'card:agent-a1')).toBe('▲David Fowler')
     expect(await label(lens, 'agent-a1')).toBe('▲David Fowler')

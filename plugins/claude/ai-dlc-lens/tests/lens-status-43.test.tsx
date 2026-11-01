@@ -328,6 +328,9 @@ const heldClock = () => {
 // The surfaces the session answers (`session.surfaces`); a terminal unless a test sets it after `boot`.
 let surfaces: string[] = ['terminal']
 
+/** The fake file system of the session `boot` started last (step 44.3.l2.1: `fail` tells its agent list the agent failed). */
+let current: Fs | undefined
+
 async function boot($: any, on: any, initial: Record<string, string>, clockEvery?: (e: { ms: number }) => unknown): Promise<Fs> {
   surfaces = ['terminal']
   const files: Record<string, string> = { ...initial }
@@ -387,7 +390,11 @@ async function boot($: any, on: any, initial: Record<string, string>, clockEvery
     return { value: out }
   })
   on('ui.toast', () => ({ value: undefined }))
-  on('agent.list', () => ({ value: Object.entries(listed).map(([id, status]) => ({ id, description: id, type: 'ai-dlc:agent-manager', status })) }))
+  on('agent.list', () => {
+    // Step 44.3.l2.1: a test makes the engine's list throw by setting `listed['*throw']`.
+    if (listed['*throw'] !== undefined) throw new Error('agent.list failed')
+    return { value: Object.entries(listed).map(([id, status]) => ({ id, description: id, type: 'ai-dlc:agent-manager', status })) }
+  })
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('ui.close', () => ({ value: undefined }))
   on('ui.panes', () => ({ value: [] }))
@@ -402,6 +409,7 @@ async function boot($: any, on: any, initial: Record<string, string>, clockEvery
   on('turn.complete', (_: unknown, e: any) => ({ text: e.answer }))
   on('classic.SubagentStop', () => ({}))
   on('classic.Stop', () => ({}))
+  current = fs
   await $.session.start({ cwd: '/', surface: 'vscode', isInteractive: true })
   await $.turn.start({ text: 'do the thing', turnId: 'm0' })
   for await (const _ of $.turn.step({ turnId: 'm', index: 0, model: 'claude-opus-5-5', messageCount: 1 })) {
@@ -417,7 +425,12 @@ async function call($: any, n: number, code: string, spawn = true) {
   await $.tool.call({ tool: 'Agent', subagent_type: 'ai-dlc:agent-manager', description: `d${n}`, prompt, tool_use_id: `toolu_${n}` })
   if (spawn) await $.agent.spawn({ tool_use_id: `toolu_${n}`, prompt, description: `d${n}`, subagentType: 'ai-dlc:agent-manager', provider: { plugin: 'ai-dlc', tier: 'user' }, parentModel: 'claude-opus-5-5', background: true, fork: false })
 }
-const fail = ($: any, id: string) => $.turn.complete({ reason: 'error', answer: '', durationMs: 1, isAborted: false, turnId: 't', agentId: id, usage: null })
+/** Step 44.3.l2.1: a subagent's error turn end halts it only when the engine's list says it ended too, so the list says `failed` first. */
+const fail = ($: any, id: string) => {
+  current!.listed[id] = 'failed'
+  return failTurn($, id)
+}
+const failTurn = ($: any, id: string) => $.turn.complete({ reason: 'error', answer: '', durationMs: 1, isAborted: false, turnId: 't', agentId: id, usage: null })
 const finish = ($: any, id: string) =>
   $.turn.complete({ reason: 'answer', answer: 'done', durationMs: 1, isAborted: false, turnId: 't', agentId: id, usage: { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, model: 'claude-sonnet-5-5' } })
 
@@ -554,6 +567,114 @@ describe('[C1] a done run state or stage reads completed; blocked still halts', 
     fs.listed['a1'] = 'completed'
     await h.tick()
     expect(await paneStatus($, 'halted')).toBe('status: halted')
+  })
+})
+
+/** Step 44.3.l2.1: a subagent's turn end with `reason`, as the engine sends it. */
+const endTurn = ($: any, id: string, reason: 'error' | 'aborted' | 'refusal') =>
+  $.turn.complete({ reason, answer: '', durationMs: 1, isAborted: reason === 'aborted', turnId: 't', agentId: id, usage: null })
+const readCall = ($: any, id: string, n: number) => $.tool.call({ tool: 'Read', file_path: 'x.md', tool_use_id: `toolu_r${n}`, agentId: id })
+
+describe('[44.3.l2.1] a background subagent whose turn ends badly while the engine still lists it live keeps running', () => {
+  for (const reason of ['error', 'aborted', 'refusal'] as const) {
+    test(`[a, b] turn.complete ${reason} while the list says running: never halted through later events; a later turn.start: running`, HEAVY, async ($, on) => {
+      const fs = await boot($, on, { [`${RUN_DIR}/run.md`]: runState('active') })
+      await call($, 1, '1') // spawned with background: true, as in the real case
+      fs.listed['a1'] = 'running'
+      await endTurn($, 'a1', reason)
+      expect(await paneStatus($)).toBe('status: in progress')
+      expect(await bandStatus($)).toBe('status: in progress')
+      await readCall($, 'a1', 1)
+      await readCall($, 'a1', 2)
+      expect(await paneStatus($)).toBe('status: in progress')
+      expect(await bandStatus($)).toBe('status: in progress')
+      await $.turn.start({ text: 'p', turnId: 't2', agentId: 'a1' })
+      expect(await paneStatus($)).toBe('status: in progress')
+    })
+  }
+
+  test('[b] a listed `failed` that comes later still halts it (the list decides)', HEAVY, async ($, on) => {
+    const h = heldClock()
+    const fs = await boot($, on, { [`${RUN_DIR}/run.md`]: runState('active') }, h.clockEvery)
+    await call($, 1, '1')
+    fs.listed['a1'] = 'running'
+    await endTurn($, 'a1', 'error')
+    await h.tick()
+    expect(await paneStatus($)).toBe('status: in progress')
+    fs.listed['a1'] = 'failed'
+    await h.tick()
+    expect(await paneStatus($, 'halted')).toBe('status: halted')
+  })
+
+  for (const [reason, listedStatus] of [['error', 'failed'], ['refusal', 'failed'], ['aborted', 'killed']] as const) {
+    test(`[c] turn.complete ${reason} while the list says ${listedStatus}: halted (the ended path)`, HEAVY, async ($, on) => {
+      const fs = await boot($, on, { [`${RUN_DIR}/run.md`]: runState('active') })
+      await call($, 1, '1')
+      fs.listed['a1'] = listedStatus
+      await endTurn($, 'a1', reason)
+      expect(await paneStatus($, 'halted')).toBe('status: halted')
+      expect(await bandStatus($)).toBe('status: halted')
+    })
+  }
+
+  test('[d] a halt that came from turn.complete is cleared by a later listed `running`', HEAVY, async ($, on) => {
+    const h = heldClock()
+    const fs = await boot($, on, { [`${RUN_DIR}/run.md`]: runState('active') }, h.clockEvery)
+    await call($, 1, '1')
+    fs.listed['a1'] = 'failed'
+    await endTurn($, 'a1', 'error')
+    expect(await paneStatus($, 'halted')).toBe('status: halted')
+    // The 2 s poll reads the list only while an agent is at work: a2 is (the halted a1 alone would not be polled).
+    await call($, 2, '2')
+    expect(await paneStatus($, 'halted')).toBe('status: halted')
+    fs.listed['a1'] = 'running'
+    await h.tick()
+    expect(await paneStatus($, 'in progress')).toBe('status: in progress')
+    expect(await bandStatus($)).toBe('status: in progress')
+  })
+
+  test('[d] a `failed` the list itself set is not cleared by a later listed `running`', HEAVY, async ($, on) => {
+    const h = heldClock()
+    const fs = await boot($, on, { [`${RUN_DIR}/run.md`]: runState('active') }, h.clockEvery)
+    await call($, 1, '1')
+    await call($, 2, '2') // at work throughout, so every tick reads the list
+    fs.listed['a1'] = 'running'
+    await h.tick()
+    fs.listed['a1'] = 'failed'
+    await h.tick()
+    expect(await paneStatus($, 'halted')).toBe('status: halted')
+    fs.listed['a1'] = 'running'
+    await h.tick()
+    expect(await paneStatus($)).toBe('status: halted')
+  })
+
+  test('[d] boundary: a halt from turn.complete is cleared once, then the listed `running` is the old rule again (a later listed `failed` halts, `running` does not undo it)', HEAVY, async ($, on) => {
+    const h = heldClock()
+    const fs = await boot($, on, { [`${RUN_DIR}/run.md`]: runState('active') }, h.clockEvery)
+    await call($, 1, '1')
+    await call($, 2, '2') // at work throughout, so every tick reads the list
+    fs.listed['a1'] = 'failed'
+    await endTurn($, 'a1', 'error')
+    fs.listed['a1'] = 'running'
+    await h.tick()
+    expect(await paneStatus($, 'in progress')).toBe('status: in progress')
+    fs.listed['a1'] = 'failed'
+    await h.tick()
+    expect(await paneStatus($, 'halted')).toBe('status: halted')
+    fs.listed['a1'] = 'running'
+    await h.tick()
+    expect(await paneStatus($)).toBe('status: halted')
+  })
+
+  test('[e] agent.list throwing during turn.complete: the agent stays running', HEAVY, async ($, on) => {
+    const fs = await boot($, on, { [`${RUN_DIR}/run.md`]: runState('active') })
+    await call($, 1, '1')
+    fs.listed['*throw'] = 'yes'
+    await endTurn($, 'a1', 'error')
+    delete fs.listed['*throw']
+    fs.listed['a1'] = 'running'
+    expect(await paneStatus($)).toBe('status: in progress')
+    expect(await bandStatus($)).toBe('status: in progress')
   })
 })
 
