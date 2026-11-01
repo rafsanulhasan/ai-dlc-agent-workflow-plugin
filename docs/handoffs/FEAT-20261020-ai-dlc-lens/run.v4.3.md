@@ -11,8 +11,8 @@ current-stage: Step 44: tests (sqa-44) and doc requests (owners), then documenta
 owner: orchestrator
 session: 6c983a53-897f-4d28-97f2-9cd286a0d6e8 (automatic handoff from ed3c07ca-2c20-4ea4-8880-00a4f1b6c8fa, 2026-10-31; ed3c07ca took over from 7ac45d8b with the human's OK)
 branch: feat/ai-dlc-lens (feat/wf-1 merged at 734b33d)
-commit: 8e4db35
-last-record: 46-orchestrator-to-human.handoff.md
+commit: aec63a4
+last-record: 44.4.l2.3-orchestrator-to-code-reviewer.handoff.md
 updated: 2026-10-31
 wave: 3 (Build)
 ---
@@ -167,6 +167,7 @@ Note: the first spawn of 16.2 was stopped before it changed anything, because it
 | Gate critique 17.1.l2 (keep-alive), 20.1.l3 (diagramming) | maxRounds 6 (raised from 2 to 3, 4, 5, then 6, for this run; one-off; `gate-critique` default 2 / 1) | raised four times | human | 2026-10-25 |
 | AAWP/code-review step 43 (43.4) | raised from 3 to 4, then to 5 rounds / 1 failure (2026-10-31, to review the round-4 Warning fixes), for this run and step only (one-off; file unchanged; `rounds --json` AAWP/code-review 2 / 1, source loop) | raised to review rounds 43.4.l1.2 to l1.4 | human | 2026-10-31 |
 | AAWP/critique step 43 (43.5) | raised from 2 to 3, then to 4 rounds / 1 failure (2026-10-31, after the 43.5.l1.1 REVISE), for this run and step only (one-off; file unchanged; `rounds --json` AAWP/critique 2 / 1, source loop) | raised to critique the round-5 docs (SKILL.md, keep-alive README) | human | 2026-10-31 |
+| AAWP/code-review step 44 G4 fix round (44.4.l2) | raised from 2 to 3 rounds / 1 failure (2026-11-01, to review the round-2 finding fixes), for this run and step only (one-off; file unchanged; `rounds --json` AAWP/code-review 2 / 1, source loop) | raised to review round 44.4.l2.3 | human | 2026-11-01 |
 | AAWP step 44 (test, code-review, critique) | 2 rounds / 1 failure each (`rounds --json`, source loop) | recorded at step start | orchestrator | 2026-10-31 |
 | AAWP/critique step 44 (44.5) | raised from 2 to 3, then to 4 rounds / 1 failure (round 3 REVISE: 1 Major, 3 Minor), for this run and step only (one-off; file unchanged) | raised twice to critique the round-44.4.l1.1 doc edits | human | 2026-10-31 |
 | AAWP step 44, live round 2 | test 3 / 1, code-review 3 / 1, critique 5 / 1 (each raised by one round, this run and step only; one-off) | raised for live findings 2 (R44.7-R44.10) | human | 2026-10-31 |
@@ -425,3 +426,10 @@ T17.1 (51fedb5) and T17.2 (f9d29fe) committed by session 37788079. Human (2026-1
 2hj. documentation-writer 44.5.l3.4 continued stored, verified passed (ADR-0008 +64, narrative +15, backlog +9, stories +68, spec 2, LLD +81, README 6 in git diff; decisions 8-10 written in; node 876/0). Its Q2, Q5-Q7 accepted; Q3/Q4 (unchecked line refs) → 44.5.l3.5 line-ref check. Then commit and code review round 2 of 2.
 2hk. documentation-writer 44.5.l3.5 stored, verified passed (16 LLD line refs re-pointed to 060562f, 1 marked historical; stories and ADR refs already right; node 876/0). Docs stage of the fix round done; committed below. Code review round 2 of 2 (44.4.l2.2, lead + haiku standards + sonnet spec) in-progress, range 7ee6285..HEAD.
 2hl. Code review 44.4.l2.2 (round 2 of 2, last) stored, verified passed (4 sub-records exist): Standards APPROVE 0B/2W/3S, Spec APPROVE 0B/1W/3S. G4 second presentation: 46-orchestrator-to-human.handoff.md, approver human. PAUSED for the human: fix the open test/docs findings now (raise the review limit) or follow-up; approve G4.
+2hm. Human at G4 (second presentation, 2026-11-01, 46-human-decision.human.md): fix now, then G4. AAWP/code-review limit raised 2 → 3 for this run only (one-off; workflow.json unchanged). In-progress in parallel: sqa-engineer 44.3.l1.6 (tests), documentation-writer 44.5.l3.6 (two implicit rules), agent-manager 44.2.l1.14 (M33 'Terminal: not run' and other empty results). Then code review round 3 of 3 (44.4.l2.3), then G4.
+2hn. agent-manager 44.2.l1.14 stored, verified passed (MANUAL-CHECKS 9 lines, git agrees; M25-M31, M33 terminal, M34 all 'not run'; M32 and M33 VS Code pass kept; lens validate exit 0). Waiting: sqa 44.3.l1.6, dw 44.5.l3.6.
+2ho. documentation-writer 44.5.l3.6 stored, verified passed (stories AC-12.28(d), AC-12.29(f); ADR-0008 :45 :48; LLD 3.4 :91 :92, 3.6 row :118; README :30 :81; node 876/0). Waiting: sqa 44.3.l1.6.
+2hp. sqa-engineer 44.3.l1.6 stored by sqa-44, verified passed (items 1-6; new tests/lens-manualclose-44.test.tsx; mutants K2, K3, R1-R3 killed; lens 861/0, ai-dlc 983/0, node 876/0). Tension raised: Amendment 8 (agent.spawn resets bandClosed) brings a band closed with × back at the next spawn, against decision 10. Asked the human.
+2hq. Human (2026-11-01) decision 11: a band closed with × still comes back at the next spawn, /ai-dlc:lens or a new session (Amendment 8); decision 10 covers every other act. documentation-writer 44.5.l3.7 writes it in explicitly; then commit and code review round 3 of 3.
+2hr. documentation-writer 44.5.l3.7 stored, verified passed (decision 11 in stories, ADR-0008, narrative, LLD, backlog, README; node 876/0). Its open question (placePress :1348 and paneToBand :1633 also clear bandClosed) answered by the human, decision 12: the person's own press wins. documentation-writer 44.5.l3.8 writes decision 12 in and closes LLD section 8 item 6.
+2hs. documentation-writer 44.5.l3.8 stored, verified passed (decision 12 in stories, ADR-0008, narrative, LLD, backlog, README; LLD section 8 item 6 closed; node 876/0). Round-2 fixes committed below. Code review round 3 of 3 (44.4.l2.3, raised limit) in-progress, range aec63a4..HEAD.

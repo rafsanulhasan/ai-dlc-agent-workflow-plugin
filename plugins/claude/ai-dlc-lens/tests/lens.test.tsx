@@ -1563,13 +1563,17 @@ describe('round 5: several workflows (requirement 3) and the status indicator (r
     // completed needs the run done too.
     await completeAgent($, 'a1')
     expect(await statusSvgs(wp)).toEqual(['status: waiting'])
-    files['docs/handoffs/R/run.md'] = RUN_R('build', 'done (passed)', 'done')
-    await $.tool.call({ tool: 'Write', file_path: 'docs/handoffs/R/run.md', content: 'x', tool_use_id: 'toolu_d' })
+    // The Write event only tells the lens the run folder changed; the lens reads the run state from `files` (fs.read), so
+    // the event carries the same text the fixture now holds.
+    const DONE = RUN_R('build', 'done (passed)', 'done')
+    files['docs/handoffs/R/run.md'] = DONE
+    await $.tool.call({ tool: 'Write', file_path: 'docs/handoffs/R/run.md', content: DONE, tool_use_id: 'toolu_d' })
     expect(await statusSvgs(wp)).toEqual(['status: completed'])
     expect(await statusSource(wp)).not.toMatch(/<animate/)
     // The run is blocked: halted, red as lens.json says.
-    files['docs/handoffs/R/run.md'] = RUN_R('build', 'blocked', 'blocked')
-    await $.tool.call({ tool: 'Write', file_path: 'docs/handoffs/R/run.md', content: 'x', tool_use_id: 'toolu_w' })
+    const BLOCKED = RUN_R('build', 'blocked', 'blocked')
+    files['docs/handoffs/R/run.md'] = BLOCKED
+    await $.tool.call({ tool: 'Write', file_path: 'docs/handoffs/R/run.md', content: BLOCKED, tool_use_id: 'toolu_w' })
     expect(await statusSvgs(wp)).toEqual(['status: halted'])
     src = await statusSource(wp)
     expect(src).toMatch(/fill="#ff0000"/)

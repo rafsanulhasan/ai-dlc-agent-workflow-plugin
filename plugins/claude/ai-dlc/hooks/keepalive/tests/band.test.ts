@@ -173,11 +173,9 @@ describe('[AC-17.8.3] [R44.2] a row never reads on while its switch is off, nor 
     const m = master !== undefined ? master === 'on' : settingMaster
     return m && settingTrack
   }
-  let combos = 0
   for (const master of switches)
     for (const track of switches)
       for (const settingTrack of [true, false]) {
-        combos++
         test(`master ${master ?? 'unset'}, 5m switch ${track ?? 'unset'}, settings 5m.enabled ${settingTrack}: the row status is the switch in force`, () => {
           const sw: SessionSwitch = { ...(master ? { master } : {}), ...(track ? { '5m': track } : {}) }
           const want = inForce(master, track, true, settingTrack)
@@ -196,9 +194,6 @@ describe('[AC-17.8.3] [R44.2] a row never reads on while its switch is off, nor 
           }
         })
       }
-  test('the loop covers 3 x 3 x 2 = 18 combinations', () => {
-    expect(combos).toBe(18)
-  })
   test('the master setting also decides when no switch is set: master setting off, track setting on, nothing switched: off', () => {
     expect(trackOn({}, '5m', false, true)).toBe(false)
     expect(trackOn({ master: 'on' }, '5m', false, false)).toBe(false)

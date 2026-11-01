@@ -46,7 +46,7 @@ export class RenderGuard {
 }
 
 export type Timer = { ms: number; fire: () => void }
-export type KitOpts = { surface?: 'terminal' | 'vscode'; surfaces?: string[]; files?: Record<string, string> }
+export type KitOpts = { surface?: 'terminal' | 'vscode'; surfaces?: string[]; files?: Record<string, string>; /** The host leaves every opened pane undrawn (`isPlaced: false`). */ unplaced?: boolean }
 export type Kit = {
   guard: RenderGuard
   timers: Timer[]
@@ -100,7 +100,7 @@ export async function engine($: any, on: any, o: KitOpts = {}): Promise<Kit> {
   on('ui.open', (_: unknown, e: any) => {
     kit.openArgs.push(e)
     kit.openNow.add(e.id)
-    return { value: { isPlaced: true } }
+    return { value: o.unplaced === true ? { isPlaced: false, reason: 'the host left it undrawn' } : { isPlaced: true } }
   })
   on('ui.close', (_: unknown, e: any) => {
     kit.closed.push(e.id)

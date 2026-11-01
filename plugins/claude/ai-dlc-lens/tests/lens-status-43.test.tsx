@@ -15,8 +15,9 @@
  * that name `settleMembers`, `stageDone`, `stageStatuses`, `attemptKey` or `runStateSig` (not exported there) cannot pass on it.
  *
  * Step 44 (appended at the end of the file, same harness): [R44.5] the list and the band never read an `active` or
- * `blocked` run as completed (`runListStatus`, and the newest run-state version wins), [R44.4] the lens band is drawn
- * only where every surface draws a band (`bandEverywhere`), so the narrow VS Code view has the pane alone. In this
+ * `blocked` run as completed (`runListStatus`, and the newest run-state version wins), [R44.4, R44.21] the lens band: a
+ * terminal or desktop render draws it whatever else is attached, and a VS Code render draws it only where every attached
+ * surface draws a band (`bandEverywhere`), so the narrow VS Code view has the pane alone. In this
  * file the sessions are on a terminal, and the finished agent of an `active` run reads waiting, not completed.
  */
 import { describe, expect, test } from 'claude-code/testing'
@@ -720,7 +721,7 @@ describe('[R44.5] the list and the band: an active run is never completed, the n
   })
 })
 
-describe('[R44.4] the lens band is drawn only where every surface draws a band', () => {
+describe('[R44.4, R44.21] the lens band: a terminal or desktop render always draws it; a VS Code render only where every surface draws a band', () => {
   test('bandEverywhere: terminal and desktop only; vscode, mixed or unknown surfaces draw none', () => {
     expect(bandEverywhere(['terminal'])).toBe(true)
     expect(bandEverywhere(['terminal', 'desktop'])).toBe(true)

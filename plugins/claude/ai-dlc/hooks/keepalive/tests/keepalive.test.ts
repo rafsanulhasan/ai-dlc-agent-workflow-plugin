@@ -3376,6 +3376,23 @@ describe('[T17.6] the keep-alive band (every surface)', () => {
         })
       }
 
+  // AC-17.8.6, the master-off fixtures with a track on in force: the settings turn the master off and a session switch turns a
+  // track (or both) on; the head row reads on with an off button, since the tracks alone decide it.
+  for (const tracks of [['5m'], ['1h'], ['5m', '1h']] as const)
+    test(`[AC-17.8.6] settings master off, session switch on for ${tracks.join(' and ')}: the head row reads on with an off button`, async ($, on) => {
+      withPane(on, { files: { [`${ROOT}/.claude/settings.local.json`]: JSON.stringify({ env: { AI_DLC_KEEPALIVE_ENABLED: 'false' } }) } })
+      await $.classic.Stop(stop()) // the settings are read at a Stop
+      for (const t of tracks) await configure($, `on --session --track ${t}`)
+      await settle()
+      const ui = await pane($)
+      expect(textOf(await ui.drawn()).startsWith('⚠ ai-dlc cache-keepalive: on off⏻')).toBe(true)
+      await press(ui, 'ka-min')
+      const text = textOf(await ui.drawn())
+      expect(text.startsWith('⚠ ai-dlc cache-keepalive: on off')).toBe(true)
+      for (const t of tracks) expect(text).toContain(`keepalive ${t}: on`)
+      await ui.unmount()
+    })
+
   // Step 44 (R44.3): the head row reads on while either track is on in force and off while both are off, its button the
   // opposite, in the Pane minimised and restored; each track row reads its own status first (R44.2).
   for (const placement of ['band'] as const) {
