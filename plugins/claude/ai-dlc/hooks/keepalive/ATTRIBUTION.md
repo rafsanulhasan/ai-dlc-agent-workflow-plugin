@@ -923,3 +923,7 @@ root 17, step 17.2.4; spec keepalive-cache-status line 82, D2a; LLD rev 5,
   left as it is) now reads "not run" for every surface it names, so the
   pending checks are written explicitly (decision 3, ITEM-098). No code
   changes.
+- **README markers removed after G4 (step 44, 44.5.l3.19, commit babe63a,
+  2026-11-02).** `README.md` only, written by documentation-writer: the
+  *In progress* markers on the band, head row, on/off and no-status-line
+  sections are removed now that step 44 is done. Docs only; no code changes.

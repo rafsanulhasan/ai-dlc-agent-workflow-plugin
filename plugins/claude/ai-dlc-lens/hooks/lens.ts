@@ -1714,6 +1714,9 @@ export function attemptKey(a: Pick<LensAgent, 'handoff' | 'prompt'>): string | n
   return rec === null ? null : `${runIdOf(rec.dir)}|${rec.code}`
 }
 
+/** Step 43 (C1), step 44 (decision 25): the statuses a done stage settles to `completed` (`settleMembers`, rule 2). */
+const SETTLED_BY_DONE_STAGE: ReadonlySet<string> = new Set(['pending', OPEN, 'failed', 'killed'])
+
 /** What `settleMembers` reads of a member: its status, and when it started (0: not yet, so after every started one). */
 export type SettleMember = StatusMember & { startedAt?: number }
 
@@ -1722,8 +1725,10 @@ export type SettleMember = StatusMember & { startedAt?: number }
  * 1. Latest attempt wins: a `failed` or `killed` member is left out when a later member of the same workflow has the
  *    same attempt key (`keyOf`, the record's step code: a restarted step). Later: started after it, a member not
  *    started yet (`startedAt` 0) being later than every started one; equal times go by list order.
- * 2. A done stage settles its step: a `pending` member (a `call:` placeholder) or an OPEN record (no hand-back) whose
- *    step's *Stages* row is done (`isDone`) counts as `completed`. Anything else is kept as it is.
+ * 2. A done stage settles its step: a `pending` member (a `call:` placeholder), an OPEN record (no hand-back), or a
+ *    `failed` or `killed` member left after rule 1, whose step's *Stages* row is done (`isDone`) counts as
+ *    `completed`. Step 44 (the human's decision 25): once its stage is done, a failed or killed agent no longer halts
+ *    the step. Anything else (running, waiting, completed) is kept as it is.
  */
 export function settleMembers<T extends SettleMember>(members: readonly T[], keyOf: (a: T) => string | null, isDone: (a: T) => boolean = () => false): T[] {
   const rank = (a: T, i: number) => [a.startedAt === undefined || a.startedAt <= 0 ? Number.POSITIVE_INFINITY : a.startedAt, i] as const
@@ -1740,7 +1745,7 @@ export function settleMembers<T extends SettleMember>(members: readonly T[], key
         return u > t || (u === t && m > n)
       })
     })
-    .map(a => ((a.status === 'pending' || a.status === OPEN) && isDone(a) ? { ...a, status: 'completed' } : a))
+    .map(a => (SETTLED_BY_DONE_STAGE.has(a.status) && isDone(a) ? { ...a, status: 'completed' } : a))
 }
 
 /**

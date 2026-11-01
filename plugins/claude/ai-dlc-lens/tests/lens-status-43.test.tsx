@@ -145,9 +145,74 @@ describe('[C1] settleMembers: a done stage settles its step', () => {
     expect(kept.map(a => a.status)).toEqual(['completed', OPEN])
   })
 
-  test('[C1] a running, failed (no retry) or waiting member is NOT settled by a done stage (only pending and OPEN are)', () => {
-    const kept = settleMembers([m('running', { key: 'R|1', done: true }), m('failed', { key: 'R|2', done: true }), m('waiting', { key: 'R|3', done: true })], KEY, (a: any) => a.done === true)
-    expect(kept.map(a => a.status)).toEqual(['running', 'failed', 'waiting'])
+  // Step 44 (decision 25, ITEM-107): the old test here pinned a failed member of a done stage as unsettled; it is split in two.
+  // Its running and waiting half is unchanged.
+  test('[C1] a running or waiting member is NOT settled by a done stage (only pending, OPEN, failed and killed are)', () => {
+    const kept = settleMembers([m('running', { key: 'R|1', done: true }), m('waiting', { key: 'R|3', done: true }), m('completed', { key: 'R|4', done: true })], KEY, (a: any) => a.done === true)
+    expect(kept.map(a => a.status)).toEqual(['running', 'waiting', 'completed'])
+  })
+
+  test('[D25] a failed or killed member (no retry) of a done stage is settled: it counts as completed and no longer halts', () => {
+    const kept = settleMembers([m('failed', { key: 'R|2', done: true }), m('killed', { key: 'R|3', done: true })], KEY, (a: any) => a.done === true)
+    expect(kept.map(a => a.status)).toEqual(['completed', 'completed'])
+    expect(workflowStatus(kept)).toBe('completed')
+  })
+})
+
+describe('[D25] settleMembers: a done stage settles a failed or killed member (decision 25, ITEM-107)', () => {
+  const done = (a: any) => a.done === true
+
+  test('[D25] a failed member of a done stage settles to completed, the other fields kept', () => {
+    const kept = settleMembers([m('failed', { key: 'R|1', done: true, id: 'a1' })], KEY, done)
+    expect(kept).toEqual([{ status: 'completed', type: 'x', key: 'R|1', done: true, id: 'a1' }])
+  })
+
+  test('[D25] a killed member of a done stage settles to completed', () => {
+    expect(settleMembers([m('killed', { key: 'R|1', done: true })], KEY, done).map(a => a.status)).toEqual(['completed'])
+  })
+
+  test('[D25] a failed or killed member of a stage that is NOT done stays and halts', () => {
+    const kept = settleMembers([m('failed', { key: 'R|1', done: false }), m('killed', { key: 'R|2', done: false })], KEY, done)
+    expect(kept.map(a => a.status)).toEqual(['failed', 'killed'])
+    expect(workflowStatus([kept[0]!])).toBe('halted')
+    expect(workflowStatus([kept[1]!])).toBe('halted')
+  })
+
+  test('[D25] per member: the done step settles, the open step beside it still halts the workflow', () => {
+    const kept = settleMembers([m('failed', { key: 'R|1', done: true }), m('failed', { key: 'R|2', done: false })], KEY, done)
+    expect(kept.map(a => a.status)).toEqual(['completed', 'failed'])
+    expect(workflowStatus(kept)).toBe('halted')
+  })
+
+  test('[D25] latest attempt wins first: a failed attempt a later attempt of its step superseded is left out, not settled', () => {
+    // If the done stage settled it before the retry rule ran, it would stay in the list as `completed`.
+    const kept = settleMembers([m('failed', { key: 'R|1', startedAt: 1, done: true }), m('running', { key: 'R|1', startedAt: 2, done: true })], KEY, done)
+    expect(kept.map(a => a.status)).toEqual(['running'])
+    expect(settleMembers([m('killed', { key: 'R|1', startedAt: 1, done: true }), m('completed', { key: 'R|1', startedAt: 2, done: true })], KEY, done).map(a => a.status)).toEqual(['completed'])
+    // The retried member itself is not touched by the done stage when it is still running: the workflow is in progress.
+    expect(workflowStatus(kept)).toBe('in-progress')
+  })
+
+  test('[D25] a failure AFTER a completed attempt in a done stage settles too (no halt)', () => {
+    const kept = settleMembers([m('completed', { key: 'R|1', startedAt: 1, done: true }), m('failed', { key: 'R|1', startedAt: 2, done: true })], KEY, done)
+    expect(kept.map(a => a.status)).toEqual(['completed', 'completed'])
+  })
+
+  test('[D25] a blocked run still halts although its failed member was settled', () => {
+    const kept = settleMembers([m('failed', { key: 'R|1', done: true })], KEY, done)
+    expect(workflowStatus(kept, ['blocked'])).toBe('halted')
+    expect(runListStatus(kept, ['blocked'])).toBe('halted')
+  })
+
+  test('[D25] decision 2: with the failure settled, a run that is not done reads waiting and a done run reads completed', () => {
+    const kept = settleMembers([m('failed', { key: 'R|1', done: true })], KEY, done)
+    expect(runListStatus(kept, ['active'])).toBe('waiting')
+    expect(runListStatus(kept, [''])).toBe('waiting')
+    expect(runListStatus(kept, ['done'])).toBe('completed')
+  })
+
+  test('[D25] without an isDone predicate a failed member is not settled', () => {
+    expect(settleMembers([m('failed', { key: 'R|1' })], KEY).map(a => a.status)).toEqual(['failed'])
   })
 
   test('without an isDone predicate nothing is settled, and the input is not changed', () => {
@@ -1310,5 +1375,100 @@ describe('[44.3.l2.3] a timeout halt is temporary (W1), on the engine clock (W-B
     s.fs.listed['a1'] = 'running'
     await s.h.tick() // no mark covers a halt the list set
     expect(await paneStatus($)).toBe('status: halted')
+  })
+})
+
+// ---------------------------------------------------------------- step 44, decision 25 (ITEM-107)
+
+/** The step headings' status dots (`step status: <label>`), as the pane draws them. */
+const stepDots = async (ui: any): Promise<string[]> =>
+  ((await ui.findAll({ type: 'Svg' })) as any[]).map((x: any) => String(x?.props?.alt ?? x?.alt ?? '')).filter(a => a.startsWith('step status: '))
+const stepStatus = async ($: any, want?: string): Promise<string[]> => {
+  const ui = await $.ui.mount(pane())
+  // The pane may open on the run list: go into the run (its row is `wf-<call id>`), then open every closed step accordion
+  // (its `step-min` Button reads □), since a step heading is drawn inside its run only.
+  if ((await ui.find({ type: 'Button', key: 'runs-back' })) !== undefined) await ui.press({ key: 'runs-back' })
+  if ((await ui.find({ type: 'Button', key: 'wf-toolu_1' })) !== undefined) await ui.press({ key: 'wf-toolu_1' })
+  for (const b of (await ui.findAll({ type: 'Button' })) as any[]) {
+    if (/step-min$/.test(String(b.key)) && String(b.text ?? b.label ?? b.props?.label ?? '') === '□') await ui.press({ key: b.key })
+  }
+  let got = await stepDots(ui)
+  if (want !== undefined) {
+    await until(async () => {
+      got = await stepDots(ui)
+      return got.length > 0 && got.every(g => g === `step status: ${want}`)
+    })
+  }
+  await ui.unmount()
+  return got
+}
+
+describe('[D25] a failed or killed agent of a done stage: the workflow, the band and the step heading', () => {
+  const ROWS_DONE = ['| 1 | change it | agent-manager | done |']
+  const ROWS_OPEN = ['| 1 | change it | agent-manager | in-progress |']
+
+  test('[D25] decision 2: a failed agent of a done step, the run active: the step heading, the pane and the band read waiting; the run done: completed', HEAVY, async ($, on) => {
+    const h = heldClock()
+    const fs = await boot($, on, { [`${RUN_DIR}/run.md`]: runState('active', ROWS_DONE) }, h.clockEvery)
+    await call($, 1, '1')
+    await fail($, 'a1')
+    expect(await paneStatus($, 'waiting')).toBe('status: waiting')
+    expect(await bandStatus($)).toBe('status: waiting')
+    expect(await stepStatus($, 'waiting')).toEqual(['step status: waiting'])
+    fs.put(`${RUN_DIR}/run.md`, runState('done', ROWS_DONE))
+    await h.tick()
+    expect(await paneStatus($, 'completed')).toBe('status: completed')
+    expect(await until(async () => (await bandStatus($)) === 'status: completed')).toBe(true)
+    expect(await stepStatus($, 'completed')).toEqual(['step status: completed'])
+  })
+
+  test('[D25] a killed agent (the list says so) of a done step, the run active: waiting, not halted', HEAVY, async ($, on) => {
+    const h = heldClock()
+    const fs = await boot($, on, { [`${RUN_DIR}/run.md`]: runState('active', ROWS_DONE) }, h.clockEvery)
+    await call($, 1, '1')
+    fs.listed['a1'] = 'killed'
+    await h.tick()
+    expect(await paneStatus($, 'waiting')).toBe('status: waiting')
+    expect(await bandStatus($)).toBe('status: waiting')
+    expect(await stepStatus($, 'waiting')).toEqual(['step status: waiting'])
+  })
+
+  test('[D25] boundary: the same failure while the step is still in progress halts the pane, the band and the step heading', HEAVY, async ($, on) => {
+    await boot($, on, { [`${RUN_DIR}/run.md`]: runState('active', ROWS_OPEN) })
+    await call($, 1, '1')
+    await fail($, 'a1')
+    expect(await paneStatus($, 'halted')).toBe('status: halted')
+    expect(await bandStatus($)).toBe('status: halted')
+    expect(await stepStatus($, 'halted')).toEqual(['step status: halted'])
+  })
+
+  test('[D25] the step finishing settles the failure: the row moves from in-progress to done and the next poll reads waiting', HEAVY, async ($, on) => {
+    const h = heldClock()
+    const fs = await boot($, on, { [`${RUN_DIR}/run.md`]: runState('active', ROWS_OPEN) }, h.clockEvery)
+    await call($, 1, '1')
+    await fail($, 'a1')
+    expect(await paneStatus($, 'halted')).toBe('status: halted')
+    fs.put(`${RUN_DIR}/run.md`, runState('active', ROWS_DONE))
+    await h.tick()
+    expect(await paneStatus($, 'waiting')).toBe('status: waiting')
+    expect(await stepStatus($, 'waiting')).toEqual(['step status: waiting'])
+  })
+
+  test('[D25] a blocked run still halts although its failed agent sits in a done step', HEAVY, async ($, on) => {
+    await boot($, on, { [`${RUN_DIR}/run.md`]: runState('blocked', ROWS_DONE) })
+    await call($, 1, '1')
+    await fail($, 'a1')
+    expect(await paneStatus($, 'halted')).toBe('status: halted')
+    expect(await bandStatus($)).toBe('status: halted')
+    expect(await stepStatus($, 'halted')).toEqual(['step status: halted'])
+  })
+
+  test('[D25] latest attempt wins first, in a done step: a1 failed, a2 started the same step and is running: in progress, not waiting', HEAVY, async ($, on) => {
+    await boot($, on, { [`${RUN_DIR}/run.md`]: runState('active', ROWS_DONE) })
+    await call($, 1, '1')
+    await fail($, 'a1')
+    await call($, 2, '1')
+    expect(await paneStatus($, 'in progress')).toBe('status: in progress')
+    expect(await bandStatus($)).toBe('status: in progress')
   })
 })

@@ -12,7 +12,7 @@ owner: orchestrator
 session: 4e6863ff-eaf0-4710-998c-66dd771517f1 (automatic handoff from 6c983a53-897f-4d28-97f2-9cd286a0d6e8, 2026-11-01; 6c983a53 was an automatic handoff from ed3c07ca-2c20-4ea4-8880-00a4f1b6c8fa, 2026-10-31; ed3c07ca took over from 7ac45d8b with the human's OK)
 branch: feat/ai-dlc-lens (feat/wf-1 merged at 734b33d)
 commit: 1a00cfa
-last-record: 44.1.l2.7-orchestrator-to-research-assistant.handoff.md
+last-record: 44.3.l2.5-orchestrator-to-sqa-engineer.handoff.md
 updated: 2026-11-02
 wave: 3 (Build)
 ---
@@ -162,6 +162,7 @@ Note: the first spawn of 16.2 was stopped before it changed anything, because it
 | Gate or loop | Approver / round | Decision | By | Date |
 |---|---|---|---|---|
 | G1, G2, G3 (tier 1) | human | approved | human | 2026-10-24 |
+| Lens stories: brutal-critique round 2, product-owner acceptance | done (before G1-G3; not recorded at the time) | confirmed | human (58-human-decision.human.md) | 2026-11-02 |
 | Build loops (test, code review, critique) | 2 rounds / 1 failure (`rounds --json`, source `loop`) | recorded | orchestrator | 2026-10-24 |
 | G4 (tier 1), release | human | pending | — | — |
 | Gate critique 17.1.l2 (keep-alive), 20.1.l3 (diagramming) | maxRounds 6 (raised from 2 to 3, 4, 5, then 6, for this run; one-off; `gate-critique` default 2 / 1) | raised four times | human | 2026-10-25 |
@@ -501,6 +502,13 @@ T17.1 (51fedb5) and T17.2 (f9d29fe) committed by session 37788079. Human (2026-1
 2kd. Human (2026-11-02): reloaded plugins (3 load errors, as before) and opened /ai-dlc:lens: step 44 shows halted although G4 is approved. research-assistant 44.1.l2.7 (read only) finds why before any change. documentation-writer 44.5.l3.19 (markers) still in progress.
 2ke. research-assistant 44.1.l2.7 (hand-back stored): step 44 reads halted by design — the round-4 review lead 44.4.l2.4 failed (API error) and no later attempt with its key settles it (settleMembers settles only pending/open members; pinned test). Even settled, a step of an active run reads waiting, not completed (runListStatus, G4 decision 2). PAUSED for the human: settle a failed member once its step is done, and/or let a step whose gate is approved read done under an active run.
 2kf. documentation-writer 44.5.l3.19 stored, verified passed (step-44 in-progress markers removed in lens README, keepalive README, root README; stories and LLD status rewritten; ITEM-104 markers kept; ITEM-099 planned). Flags: keepalive ATTRIBUTION entry for the README edit (agent-manager), stories :7 draft/G1 wording and lens README :9 G1-G3 wording possibly stale, run state has no step-44 Stages rows. Committed below.
+2kg. Human (2026-11-02, 57-human-decisions.human.md): decision 25, a done stage settles a failed or killed member (code change); decision 2 kept. Follow-up to step 44 after its G4: agent-manager 44.2.l2.5 (settleMembers, ATTRIBUTION entries) and product-manager 44.1.l1.12 (backlog item) in parallel; then sqa 44.3.l2.5, docs, code review 44.4.l4 (new loop, 2 / 1), then the human.
+2kh. product-manager 44.1.l1.12 stored, verified passed (ITEM-107 at :202, P1 In Progress). Waiting: agent-manager 44.2.l2.5.
+2ki. agent-manager 44.2.l2.5 stored, verified passed (settleMembers rule 2 settles failed/killed in a done stage; ATTRIBUTION entries; lens 911/1, the 1 = the test pinned to the old rule). In-progress in parallel: sqa-engineer 44.3.l2.5, documentation-writer 44.5.l3.20 (settle rule; stories :7 and lens README :9 checked against the run state). Then code review 44.4.l4.1 (new loop, 2 / 1, opus medium).
+2kj. documentation-writer 44.5.l3.20 stored, verified passed (decision 25 in README :47, LLD :137, MANUAL-CHECKS :45; lens README :9 and stories :7 corrected to G1-G3 approved 2026-10-24). Open for the human: stories :7 dropped "awaiting brutal-critique round 2, product-owner acceptance" (not in the run state). Waiting: sqa-engineer 44.3.l2.5.
+2kk. Human (2026-11-02, 58-human-decision.human.md): brutal-critique round 2 and product-owner acceptance of the lens stories did happen; recorded in Gates and loops. documentation-writer 44.5.l3.21 adds them to stories.md:7.
+2kl. documentation-writer 44.5.l3.21 stored, verified passed (stories.md:7). Waiting: sqa-engineer 44.3.l2.5.
+2km. sqa-engineer 44.3.l2.5 stored, verified passed (lens 928/0 = 912 + 16 net new tests; ai-dlc 983/0, node 876/0; 9/9 mutants killed; the agent own count explanation was wrong). Committed below. Code review 44.4.l4.1 (round 1 of 2, new loop; opus medium) in-progress.
 ## Architecture records (ITEM-104 / ITEM-106)
 - Narrative, the ITEM-104 journey (why, alternatives, how it went): [ai-dlc-lens-halted-state.md](../../architecture/narratives/ai-dlc-lens-halted-state.md) — in progress (software-architect 44.1.l2.3; decision 19, 53-human-decision.human.md; covers ITEM-106 in full).
 - ADR-0009, lens marks that guard an agent's status live in its row in agentsA (Accepted, implementation pending ITEM-106): [ADR-0009-lens-marks-that-guard-an-agents-status-live-in-its-row-in-agentsa.md](../../architecture/decisions/ADR-0009-lens-marks-that-guard-an-agents-status-live-in-its-row-in-agentsa.md) (software-architect 44.1.l2.3; decision 20, 54-human-decision.human.md).
