@@ -11,8 +11,8 @@ current-stage: Step 44: tests (sqa-44) and doc requests (owners), then documenta
 owner: orchestrator
 session: 6c983a53-897f-4d28-97f2-9cd286a0d6e8 (automatic handoff from ed3c07ca-2c20-4ea4-8880-00a4f1b6c8fa, 2026-10-31; ed3c07ca took over from 7ac45d8b with the human's OK)
 branch: feat/ai-dlc-lens (feat/wf-1 merged at 734b33d)
-commit: ca1c5b4
-last-record: 44.3.l1.5-orchestrator-to-sqa-engineer.handoff.md
+commit: 060562f
+last-record: 44.4.l2.2-orchestrator-to-code-reviewer.handoff.md
 updated: 2026-10-31
 wave: 3 (Build)
 ---
@@ -419,3 +419,8 @@ T17.1 (51fedb5) and T17.2 (f9d29fe) committed by session 37788079. Human (2026-1
 2hd. Human (2026-11-01) decisions 9 (seat follow driven only by VS Code renders) and 10 (manual closes are allowed exceptions). agent-manager 44.2.l1.13 (code for decision 9, M34 rows). Then sqa adds tests, then documentation-writer applies the four owner requests (44.1.l1.4) plus decisions 8-10 explicitly, then code review round 2 of 2.
 2he. sqa-engineer 44.3.l1.4 stored by sqa-44, verified passed (new tests/lens-surface-44.test.tsx 20 tests + lens.test.tsx AC-7.14; mutants N1-N8 killed, N6 equivalent; lens 846/0, ai-dlc 981/0, node 876/0). Limits: a press with no argument cannot be made in the harness (fallback untested); the final lens run may have read register.tsx mid-edit by agent-manager 44.2.l1.13, so the lens suite must run again after it. sqa-44 waits for go on decision 9.
 2hf. agent-manager 44.2.l1.13 stored, verified passed (3 paths; lens 846/0 log .scratch/44-l1-13-test-lens.log; node 876/0; checks quoted; saw no mutated file). notePaneSeat and followSeat return unless surface vscode; side effect (intended by decision 9): a terminal-only session no longer closes the Run List tab on an inline render. M34 gains the decision-9 case and VS Code + Desktop. Committed below. Next in parallel: sqa-engineer 44.3.l1.5 (decision 9 tests, clean lens rerun) and documentation-writer 44.5.l3.4 (four owner requests 44.1.l1.4 + decisions 8-10 + 44.2.l1.13 docs request).
+2hg. In-progress in parallel: sqa-engineer 44.3.l1.5 (go given) and documentation-writer 44.5.l3.4 (four owner requests + decisions 8-10, explicit). Then code review round 2 of 2 (44.4.l2.2), then G4 (human).
+2hh. documentation-writer 44.5.l3.4 stored: failed for items 1-4 (refused lifecycle artifacts; my brief did not restate the human's one-off override of 2fr, my fault); item 5 lens README applied (L81-L83, decisions 8-10), verified by git diff; node 876/0. Resent as 44.5.l3.4 continued with the override quoted.
+2hi. sqa-engineer 44.3.l1.5 stored by sqa-44, verified passed (tests/lens-seatsurface-44.test.tsx 10 tests; mutants Q1-Q5 killed; register.tsx unchanged vs 060562f per git status; clean suites lens 856/0, ai-dlc 981/0, node 876/0). Waiting: documentation-writer 44.5.l3.4 continued. Then commit and code review round 2 of 2.
+2hj. documentation-writer 44.5.l3.4 continued stored, verified passed (ADR-0008 +64, narrative +15, backlog +9, stories +68, spec 2, LLD +81, README 6 in git diff; decisions 8-10 written in; node 876/0). Its Q2, Q5-Q7 accepted; Q3/Q4 (unchecked line refs) → 44.5.l3.5 line-ref check. Then commit and code review round 2 of 2.
+2hk. documentation-writer 44.5.l3.5 stored, verified passed (16 LLD line refs re-pointed to 060562f, 1 marked historical; stories and ADR refs already right; node 876/0). Docs stage of the fix round done; committed below. Code review round 2 of 2 (44.4.l2.2, lead + haiku standards + sonnet spec) in-progress, range 7ee6285..HEAD.
