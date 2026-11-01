@@ -1,20 +1,13 @@
 import { describe, expect, test } from 'claude-code/testing'
-import { CHART, band, engine, fire, has, lensCmd, pane, spawn } from './lens-kit-44'
-import type { Kit } from './lens-kit-44'
+import { BOTH, CHART, band, bandDrawn, engine, fire, has, lensCmd, pane, spawn } from './lens-kit-44'
+import type { Kit, KitOpts } from './lens-kit-44'
 
 // Step 44, the human's G4 decisions 10 (AC-12.30) and AC-12.29 (e). Decision 10: when the person closes the lens pane or
 // the band by hand, or the host leaves the pane undrawn, the lens reopens nothing by its own acts that follow. The engine is
 // the shared kit (lens-kit-44.tsx).
 
 const HEAVY = { timeoutMs: 20000 }
-const BOTH = { surface: 'terminal', surfaces: ['terminal', 'vscode'] } as const
 const chartOpens = (kit: Kit) => kit.openArgs.filter(x => x.id === CHART).length
-const bandDrawn = async ($: any, surface: string): Promise<boolean> => {
-  const b = await band($, surface)
-  const yes = await has(b, 'pane-place')
-  await b.unmount()
-  return yes
-}
 /** The lens's own acts that follow in a session: timers firing, another agent spawned, a turn ending, a pane drawn. */
 const acts = async ($: any, kit: Kit) => {
   await fire(kit)
@@ -26,7 +19,7 @@ const acts = async ($: any, kit: Kit) => {
 
 describe('[AC-12.30] decision 10: the lens reopens nothing the person closed', () => {
   test('the person closes the lens pane by hand: the acts that follow do not open it again', HEAVY, async ($, on) => {
-    const kit = await engine($, on, BOTH as any)
+    const kit = await engine($, on, BOTH)
     await lensCmd($) // the pane is open
     expect(chartOpens(kit)).toBeGreaterThan(0)
     const ui = await pane($, CHART, 'dock', kit, { surface: 'terminal' })
@@ -41,7 +34,8 @@ describe('[AC-12.30] decision 10: the lens reopens nothing the person closed', (
   })
 
   test('the host leaves the pane undrawn (isPlaced: false): the lens does not try again by itself', HEAVY, async ($, on) => {
-    const kit = await engine($, on, { ...BOTH, unplaced: true } as any)
+    const unplacedHost: KitOpts = { ...BOTH, unplaced: true }
+    const kit = await engine($, on, unplacedHost)
     const reply = await lensCmd($)
     expect(reply).toContain('not drawn yet')
     const opens = chartOpens(kit)
@@ -50,7 +44,7 @@ describe('[AC-12.30] decision 10: the lens reopens nothing the person closed', (
   })
 
   test('the lens moved into the VS Code band and the person closed the band with ×: the acts that follow (not a new spawn) restore no band and open no pane', HEAVY, async ($, on) => {
-    const kit = await engine($, on, BOTH as any)
+    const kit = await engine($, on, BOTH)
     kit.seed('vscodeBand', true)
     await $.turn.complete({ reason: 'answer', answer: 'done', durationMs: 1, isAborted: false, turnId: 't0', agentId: 'a1' }) // the run is idle: the band has its ×
     await fire(kit)

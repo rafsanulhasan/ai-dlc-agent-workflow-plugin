@@ -918,3 +918,8 @@ root 17, step 17.2.4; spec keepalive-cache-status line 82, D2a; LLD rev 5,
   comment is one sentence again; `closeOldPane` logs a failed or unscheduled
   close to debug instead of swallowing it. The types' `TrackView` and
   `KeepaliveState` comments name the band only (no Pane).
+- **Manual checks marked not run (step 44, 44.2.l1.15, 2026-11-01).**
+  `MANUAL-CHECKS.md` only: each blank Result of P17 to P26 (P20 retired,
+  left as it is) now reads "not run" for every surface it names, so the
+  pending checks are written explicitly (decision 3, ITEM-098). No code
+  changes.

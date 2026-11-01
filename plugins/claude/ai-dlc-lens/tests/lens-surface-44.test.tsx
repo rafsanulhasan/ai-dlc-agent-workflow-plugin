@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'claude-code/testing'
-import { CHART, RUNS, band, engine, fire, has, lensCmd, pane } from './lens-kit-44'
+import { BOTH, CHART, RUNS, band, bandDrawn, engine, fire, has, lensCmd, pane } from './lens-kit-44'
 import type { Kit } from './lens-kit-44'
 
 // Step 44, G4 decisions 6 and 7 (R44.23, R44.21): the lens in a terminal or desktop session with the VS Code panel
@@ -10,13 +10,6 @@ import type { Kit } from './lens-kit-44'
 const HEAVY = { timeoutMs: 20000 }
 const opened = (kit: Kit, id: string) => kit.openArgs.filter(x => x.id === id)
 const MINIMISED = 'shown minimised'
-/** Whether a lens band render on `surface` draws the lens band. */
-const bandDrawn = async ($: any, surface: string): Promise<boolean> => {
-  const b = await band($, surface)
-  const yes = await has(b, 'pane-place')
-  await b.unmount()
-  return yes
-}
 /** The mode button's label on a lens pane drawn on `surface` (the place it reads), at `placement`. */
 const placeRead = async ($: any, kit: Kit, surface: string, placement: 'dock' | 'inline' = 'dock'): Promise<string> => {
   const ui = await pane($, CHART, placement, kit, { surface })
@@ -93,9 +86,8 @@ describe('[R44.23] the restore from full screen follows the same rule (showView,
 })
 
 describe('[R44.16] [R44.23] the mode button follows the surface it was pressed on', () => {
-  const BOTH = { surface: 'terminal', surfaces: ['terminal', 'vscode'] } as const
   test('pressed in VS Code, in the pane: both lens panes close and VS Code draws the band', HEAVY, async ($, on) => {
-    const kit = await engine($, on, BOTH as any)
+    const kit = await engine($, on, BOTH)
     const ui = await pane($, CHART, 'inline', kit, { surface: 'vscode' })
     await fire(kit)
     await ui.press({ key: 'pane-place', surface: 'vscode' } as any)
@@ -105,8 +97,24 @@ describe('[R44.16] [R44.23] the mode button follows the surface it was pressed o
     expect(await bandDrawn($, 'terminal')).toBe(true)
   })
 
+  test('[AC-12.30] decision 12: the band closed with ×, then the mode button pressed in VS Code (in the pane): the band is back', HEAVY, async ($, on) => {
+    const kit = await engine($, on, BOTH)
+    kit.seed('vscodeBand', true)
+    await $.turn.complete({ reason: 'answer', answer: 'done', durationMs: 1, isAborted: false, turnId: 't0', agentId: 'a1' }) // idle: the band has its ×
+    await fire(kit)
+    const b = await band($, 'vscode')
+    await b.press({ key: 'band-close' })
+    await b.unmount()
+    expect(await bandDrawn($, 'vscode')).toBe(false) // the person's × took it away
+    const ui = await pane($, CHART, 'inline', kit, { surface: 'vscode' })
+    await fire(kit)
+    await ui.press({ key: 'pane-place', surface: 'vscode' } as any) // the person's own press
+    await ui.unmount()
+    expect(await bandDrawn($, 'vscode')).toBe(true) // the press wins over the ×
+  })
+
   test('pressed in VS Code, on the band: the band gives way and the pane opens (docked)', HEAVY, async ($, on) => {
-    const kit = await engine($, on, BOTH as any)
+    const kit = await engine($, on, BOTH)
     kit.seed('vscodeBand', true)
     expect(await bandDrawn($, 'vscode')).toBe(true)
     const b = await band($, 'vscode')
@@ -118,7 +126,7 @@ describe('[R44.16] [R44.23] the mode button follows the surface it was pressed o
   })
 
   test('pressed on the terminal: the place toggles, VS Code\'s band choice is untouched and the pane stays open', HEAVY, async ($, on) => {
-    const kit = await engine($, on, BOTH as any)
+    const kit = await engine($, on, BOTH)
     const ui = await pane($, CHART, 'dock', kit, { surface: 'terminal' })
     await fire(kit)
     const before = String(((await ui.find({ type: 'Button', key: 'pane-place' })) as any)?.text)
@@ -134,7 +142,7 @@ describe('[R44.16] [R44.23] the mode button follows the surface it was pressed o
   // The harness fills a press's surface from the pane it presses on, so a press with no argument at all (the fallback to the
   // session's own surface) cannot be made; this is the same rule with the surface left to the harness.
   test('a terminal pane press, no surface named: a terminal session toggles the place', HEAVY, async ($, on) => {
-    const kit = await engine($, on, BOTH as any)
+    const kit = await engine($, on, BOTH)
     const ui = await pane($, CHART, 'dock', kit, { surface: 'terminal' })
     await fire(kit)
     const before = String(((await ui.find({ type: 'Button', key: 'pane-place' })) as any)?.text)
@@ -152,6 +160,38 @@ describe('[R44.16] [R44.23] the mode button follows the surface it was pressed o
     await ui.unmount()
     expect(kit.closed).toEqual(expect.arrayContaining([RUNS, CHART]))
     expect(await bandDrawn($, 'vscode')).toBe(true)
+  })
+})
+
+describe('[R44.23] the surface mobile', () => {
+  test('[AC-12.29 (f)] a mobile press in a terminal session (mobile attached) switches pinned and docked, as a terminal press does', HEAVY, async ($, on) => {
+    const kit = await engine($, on, { surface: 'terminal', surfaces: ['terminal', 'mobile'] })
+    const ui = await pane($, CHART, 'dock', kit, { surface: 'mobile' })
+    await fire(kit)
+    const before = String(((await ui.find({ type: 'Button', key: 'pane-place' })) as any)?.text)
+    await ui.press({ key: 'pane-place', surface: 'mobile' } as any)
+    await ui.unmount()
+    expect(await placeRead($, kit, 'terminal')).not.toBe(before) // pinned <-> docked
+    expect(await bandDrawn($, 'vscode')).toBe(false) // vscodeBandA untouched
+  })
+
+  test('[AC-12.29 (f)] a mobile press in a Desktop session switches pinned and docked too', HEAVY, async ($, on) => {
+    const kit = await engine($, on, { surface: 'desktop', surfaces: ['desktop', 'mobile'] })
+    const ui = await pane($, CHART, 'dock', kit, { surface: 'mobile' })
+    await fire(kit)
+    const before = String(((await ui.find({ type: 'Button', key: 'pane-place' })) as any)?.text)
+    await ui.press({ key: 'pane-place', surface: 'mobile' } as any)
+    await ui.unmount()
+    expect(await placeRead($, kit, 'desktop')).not.toBe(before)
+    expect(await bandDrawn($, 'vscode')).toBe(false)
+  })
+
+  test('[AC-12.28 (d)] a session whose own surface is mobile follows the VS Code rules: the pane opens, no minimised band', HEAVY, async ($, on) => {
+    const kit = await engine($, on, { surface: 'mobile', surfaces: ['mobile'] })
+    const before = opened(kit, CHART).length
+    const reply = await lensCmd($)
+    expect(reply).not.toContain(MINIMISED)
+    expect(opened(kit, CHART).length).toBeGreaterThan(before)
   })
 })
 

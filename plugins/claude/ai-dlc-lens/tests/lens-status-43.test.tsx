@@ -444,10 +444,13 @@ const bandStatus = async ($: any): Promise<string> => {
   return got
 }
 
+/** The C1a session tests boot a whole engine and take 1 to 4 s idle: the default timeout is too close under load. */
+const HEAVY = { timeoutMs: 20000 }
+
 // ---------------------------------------------------------------- sessions
 
 describe('[C1a] a failed step that starts again: the latest attempt decides, the workflow is not halted', () => {
-  test('[C1a] a1 fails (halted), a2 starts the same step (in progress, not halted), a2 finishes (waiting: the run is active); pane and band agree', async ($, on) => {
+  test('[C1a] a1 fails (halted), a2 starts the same step (in progress, not halted), a2 finishes (waiting: the run is active); pane and band agree', HEAVY, async ($, on) => {
     await boot($, on, { [`${RUN_DIR}/run.md`]: runState('active') })
     await call($, 1, '1')
     expect(await paneStatus($)).toBe('status: in progress')
@@ -464,7 +467,7 @@ describe('[C1a] a failed step that starts again: the latest attempt decides, the
     expect(await bandStatus($)).toBe('status: waiting')
   })
 
-  test('[C1a] a retry of ANOTHER step does not clear the failure: still halted', async ($, on) => {
+  test('[C1a] a retry of ANOTHER step does not clear the failure: still halted', HEAVY, async ($, on) => {
     await boot($, on, { [`${RUN_DIR}/run.md`]: runState('active') })
     await call($, 1, '1')
     await fail($, 'a1')
@@ -473,7 +476,7 @@ describe('[C1a] a failed step that starts again: the latest attempt decides, the
     expect(await bandStatus($)).toBe('status: halted')
   })
 
-  test('[C1a] a failure AFTER a completed attempt of the same step halts', async ($, on) => {
+  test('[C1a] a failure AFTER a completed attempt of the same step halts', HEAVY, async ($, on) => {
     await boot($, on, { [`${RUN_DIR}/run.md`]: runState('active') })
     await call($, 1, '1')
     await finish($, 'a1')
@@ -482,7 +485,7 @@ describe('[C1a] a failed step that starts again: the latest attempt decides, the
     expect(await paneStatus($, 'halted')).toBe('status: halted')
   })
 
-  test('[C1a] a killed agent (the agent list says so) that started again: the retry decides', async ($, on) => {
+  test('[C1a] a killed agent (the agent list says so) that started again: the retry decides', HEAVY, async ($, on) => {
     const h = heldClock()
     const fs = await boot($, on, { [`${RUN_DIR}/run.md`]: runState('active') }, h.clockEvery)
     await call($, 1, '1')

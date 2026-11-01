@@ -46,7 +46,8 @@ export class RenderGuard {
 }
 
 export type Timer = { ms: number; fire: () => void }
-export type KitOpts = { surface?: 'terminal' | 'vscode'; surfaces?: string[]; files?: Record<string, string>; /** The host leaves every opened pane undrawn (`isPlaced: false`). */ unplaced?: boolean }
+export type KitSurface = 'terminal' | 'desktop' | 'vscode' | 'mobile'
+export type KitOpts = { surface?: KitSurface; surfaces?: string[]; files?: Record<string, string>; /** The host leaves every opened pane undrawn (`isPlaced: false`). */ unplaced?: boolean }
 export type Kit = {
   guard: RenderGuard
   timers: Timer[]
@@ -181,6 +182,15 @@ export async function pane($: any, id: string, placement: 'dock' | 'inline', kit
 export const band = ($: any, surface = 'vscode') =>
   $.ui.mount({ plugin: PLUGIN, surface, component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 40, bodyColumns: 120, scroll: { offset: 0, bodyRows: 40 }, view: {} } } as any)
 
+/** Whether a lens band render on `surface` draws the lens band (the band's mode button is there). */
+export const bandDrawn = async ($: any, surface: string): Promise<boolean> => {
+  const b = await band($, surface)
+  const yes = await has(b, 'pane-place')
+  await b.unmount()
+  return yes
+}
+/** A terminal session with a VS Code panel attached: the session most of the surface tests start from. */
+export const BOTH: KitOpts = { surface: 'terminal', surfaces: ['terminal', 'vscode'] }
 export const has = async (ui: any, key: string) => (await ui.find({ type: 'Button', key })) !== undefined
 export const texts = async (ui: any): Promise<string[]> => ((await ui.findAll({})) as any[]).filter(x => x.type === 'Text').map(x => String(x.text ?? ''))
 export const lensCmd = async ($: any) => String(((await ($.command.run as any)({ command: 'ai-dlc:lens', args: '' })) as any)?.text)

@@ -11,8 +11,8 @@ current-stage: Step 44: tests (sqa-44) and doc requests (owners), then documenta
 owner: orchestrator
 session: 4e6863ff-eaf0-4710-998c-66dd771517f1 (automatic handoff from 6c983a53-897f-4d28-97f2-9cd286a0d6e8, 2026-11-01; 6c983a53 was an automatic handoff from ed3c07ca-2c20-4ea4-8880-00a4f1b6c8fa, 2026-10-31; ed3c07ca took over from 7ac45d8b with the human's OK)
 branch: feat/ai-dlc-lens (feat/wf-1 merged at 734b33d)
-commit: 5500326
-last-record: 47-orchestrator-to-human.handoff.md
+commit: bd2c340
+last-record: 47-human-decision.human.md
 updated: 2026-11-01
 wave: 3 (Build)
 ---
@@ -167,7 +167,7 @@ Note: the first spawn of 16.2 was stopped before it changed anything, because it
 | Gate critique 17.1.l2 (keep-alive), 20.1.l3 (diagramming) | maxRounds 6 (raised from 2 to 3, 4, 5, then 6, for this run; one-off; `gate-critique` default 2 / 1) | raised four times | human | 2026-10-25 |
 | AAWP/code-review step 43 (43.4) | raised from 3 to 4, then to 5 rounds / 1 failure (2026-10-31, to review the round-4 Warning fixes), for this run and step only (one-off; file unchanged; `rounds --json` AAWP/code-review 2 / 1, source loop) | raised to review rounds 43.4.l1.2 to l1.4 | human | 2026-10-31 |
 | AAWP/critique step 43 (43.5) | raised from 2 to 3, then to 4 rounds / 1 failure (2026-10-31, after the 43.5.l1.1 REVISE), for this run and step only (one-off; file unchanged; `rounds --json` AAWP/critique 2 / 1, source loop) | raised to critique the round-5 docs (SKILL.md, keep-alive README) | human | 2026-10-31 |
-| AAWP/code-review step 44 G4 fix round (44.4.l2) | raised from 2 to 3 rounds / 1 failure (2026-11-01, to review the round-2 finding fixes), for this run and step only (one-off; file unchanged; `rounds --json` AAWP/code-review 2 / 1, source loop) | raised to review round 44.4.l2.3 | human | 2026-11-01 |
+| AAWP/code-review step 44 G4 fix round (44.4.l2) | raised from 2 to 3 rounds, then to 4 (2026-11-01, 47-human-decision.human.md) / 1 failure (2026-11-01, to review the round-2 finding fixes), for this run and step only (one-off; file unchanged; `rounds --json` AAWP/code-review 2 / 1, source loop) | raised to review round 44.4.l2.3 | human | 2026-11-01 |
 | AAWP step 44 (test, code-review, critique) | 2 rounds / 1 failure each (`rounds --json`, source loop) | recorded at step start | orchestrator | 2026-10-31 |
 | AAWP/critique step 44 (44.5) | raised from 2 to 3, then to 4 rounds / 1 failure (round 3 REVISE: 1 Major, 3 Minor), for this run and step only (one-off; file unchanged) | raised twice to critique the round-44.4.l1.1 doc edits | human | 2026-10-31 |
 | AAWP step 44, live round 2 | test 3 / 1, code-review 3 / 1, critique 5 / 1 (each raised by one round, this run and step only; one-off) | raised for live findings 2 (R44.7-R44.10) | human | 2026-10-31 |
@@ -435,3 +435,7 @@ T17.1 (51fedb5) and T17.2 (f9d29fe) committed by session 37788079. Human (2026-1
 2hs. documentation-writer 44.5.l3.8 stored, verified passed (decision 12 in stories, ADR-0008, narrative, LLD, backlog, README; LLD section 8 item 6 closed; node 876/0). Round-2 fixes committed below. Code review round 3 of 3 (44.4.l2.3, raised limit) in-progress, range aec63a4..HEAD.
 2ht. Session 4e6863ff (automatic handoff from 6c983a53, 2026-11-01): round-2 fixes commit landed (5500326, tree clean). Code review round 3 of 3 (44.4.l2.3) dispatched to the code-reviewer lead, range aec63a4..5500326. Then G4 (human).
 2hu. Code review 44.4.l2.3 (round 3 of 3, last) stored, verified passed (4 sub-records exist; plugins diff only tests/README/MANUAL-CHECKS): Standards APPROVE 0B/2W/3S, Spec APPROVE 0B/1W/3S; sub-hand-backs condensed by the lead, not verbatim. G4 third presentation: 47-orchestrator-to-human.handoff.md, approver human. PAUSED for the human.
+2hv. Human at G4 (third presentation, 2026-11-01, 47-human-decision.human.md): option b, fix every round-3 finding, then review, then G4. AAWP/code-review raised 3 → 4 rounds for this run and step only (one-off; workflow.json unchanged). Finding 2 = the 2fr override, nothing to fix. In-progress in parallel: sqa-engineer 44.3.l1.7 (tests: decision 12 mode press, mobile surface cases, helpers/casts, [C1a] flakiness), documentation-writer 44.5.l3.9 (M34 wording), agent-manager 44.2.l1.15 (keepalive P17-P26 not run). Then code review round 4 of 4 (44.4.l2.4), then G4.
+2hw. agent-manager 44.2.l1.15 stored, verified passed (keepalive MANUAL-CHECKS P17-P19, P21-P26 not run, P20 retired left; ATTRIBUTION +5; build --check, ai-dlc 983/0, sync --check quoted). Waiting: sqa 44.3.l1.7, documentation-writer 44.5.l3.9.
+2hx. documentation-writer 44.5.l3.9 stored, verified passed (M34 'not run' at stories:7, :438, LLD:161, :182, ADR-0008:4; diff 5/5; node 876/0 on second run). New, outside step 44: tests/stop-sync-then-check.test.mjs:149 failed once (0.3 s timeout under load), passed on rerun — for the human at G4. Waiting: sqa 44.3.l1.7.
+2hy. sqa-engineer 44.3.l1.7 stored, verified passed (4 lens test files; hooks unchanged; decision-12 test red with register.tsx:1348 mutant 864/1, green 865/0; 3 mobile cases; kit dedup, 0 as any in manualclose; [C1a] 3 runs no repro, HEAVY 20 s timeout on four tests; lens 865/0, ai-dlc 983/0, node 876/0). Fix round committed below. Code review round 4 of 4 (44.4.l2.4) in-progress, range bd2c340..HEAD.

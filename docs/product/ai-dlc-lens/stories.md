@@ -4,7 +4,7 @@ kind: user-stories
 author: requirement-analyst
 date: 2026-10-22
 revision: 2.2 (2026-11-01, step 44 G4 fix round: R44.21 to R44.23 from `45-human-decisions.human.md` decisions 1, 2, 5, 6, 7, 8, 9, 10, 11 and 12; AC-7.13 and AC-12.12 revised, AC-12.17, AC-12.18, AC-12.19 and AC-12.25 revised, AC-7.14 and AC-12.27 to AC-12.31 added, step 44 host assumptions A1 to A4 (labelled "(step 44)") recorded, decisions 9 and 10 replace Q44-C and Q44-D, decision 11 narrows decision 10, and decision 12 says the person's own press wins); 2.1 (2026-10-31, step 44: AC-12.12 to 12.16 revised, AC-12.17 to 12.23 added for R44.12 and R44.14 to R44.18; AC-12.15 and 12.22 revised and AC-12.24 to 12.26 added for R44.19 and R44.20); 2 (gate-critique round 1 findings applied; Q1–Q12 decided by the human 2026-10-22)
-status: draft, awaiting brutal-critique round 2, product-owner acceptance and G1; step 44 revisions (AC-1.6, AC-7.13, AC-7.14, AC-12.12 to AC-12.31) in progress: the G4 fix round for R44.21 to R44.23, building done (44.2.l1.10 to 44.2.l1.13), tests in progress, critique, code re-review and G4 pending; manual checks M25 to M31 and P17 to P26 pending (G4 decision 3), M34 not run (its Results are empty)
+status: draft, awaiting brutal-critique round 2, product-owner acceptance and G1; step 44 revisions (AC-1.6, AC-7.13, AC-7.14, AC-12.12 to AC-12.31) in progress: the G4 fix round for R44.21 to R44.23, building done (44.2.l1.10 to 44.2.l1.13), tests in progress, critique, code re-review and G4 pending; manual checks M25 to M31 and P17 to P26 pending (G4 decision 3), M34 not run (a live check for the human later, decision 3 / ITEM-098)
 milestone: 1.0.0-preview1 (C1)
 inputs: brief.md (§13 delegation list), 00b-approved-plan-2026-10-22.md, run.md clarifications C1–C3, Q1–Q12 answers (8.l1 handoff), backlog ITEM-003…029, research 3.2, 4.2–4.5, handoff skill *Run state*
 ---
@@ -435,7 +435,7 @@ The lens band's own render (R44.21, AC-12.27) is gated on that render's surface 
   - whether Desktop is the first surface (A1 (step 44)); if it is not, the lens follows VS Code's rules there, and the same for a VS Code session with Desktop attached;
   - that the VS Code panel never shows no lens view, except after a manual close (AC-12.30, decisions 10, 11 and 12);
   - any `lens hook error` text.
-  M34 has not been run: its Results are empty.
+  M34 has not been run (a live check for the human later, decision 3 / ITEM-098).
 
 ### Scope and priority
 
