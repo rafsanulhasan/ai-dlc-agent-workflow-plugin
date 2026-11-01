@@ -130,6 +130,14 @@ export const SPEC = {
   anomalyWaitingMinutes: { kind: 'int', min: 0, max: 1440, def: 30, doc: 'How long an agent may wait before it is an anomaly, minutes; 0: as soon as it waits' },
   anomalyHandbackFailed: { kind: 'bool', def: true, doc: "Check: a hand-back failed its check (verification: failed in its front matter, or a first line 'handoff <file>: failed'), in the newest round of its step" },
   anomalyHandbackFailedColor: { kind: 'color', def: '#f9a825', doc: 'Marker colour: a hand-back that failed its check (yellow)' },
+  // Step 44.2.l2.2 (the human's decision 16, 2026-11-01): the dropped-subagent fallback of the halted state (register.tsx `refreshList`).
+  droppedSubagentMinutes: {
+    kind: 'int',
+    min: 0,
+    max: 1440,
+    def: 15,
+    doc: 'How long a subagent shown running may be missing from the engine\'s agent list, with no event of its own, before it shows halted (failed), minutes; the time counts only while it is missing, and a listed row or any event starts it again; 0: never',
+  },
   probes: { kind: 'bool', def: false, doc: "Log the spike's experiments E1, E2, E4, E5, E7, E9 and E10 to PROBE-LOG.jsonl in the plugin folder (diagnostics only)" },
 } as const satisfies Record<string, Spec>
 

@@ -11,8 +11,8 @@ current-stage: Step 44: tests (sqa-44) and doc requests (owners), then documenta
 owner: orchestrator
 session: 4e6863ff-eaf0-4710-998c-66dd771517f1 (automatic handoff from 6c983a53-897f-4d28-97f2-9cd286a0d6e8, 2026-11-01; 6c983a53 was an automatic handoff from ed3c07ca-2c20-4ea4-8880-00a4f1b6c8fa, 2026-10-31; ed3c07ca took over from 7ac45d8b with the human's OK)
 branch: feat/ai-dlc-lens (feat/wf-1 merged at 734b33d)
-commit: 783fbb4
-last-record: 44.3.l2.1-orchestrator-to-sqa-engineer.handoff.md
+commit: 16d7584
+last-record: 44.3.l2.2-orchestrator-to-sqa-engineer.handoff.md
 updated: 2026-11-01
 wave: 3 (Build)
 ---
@@ -453,3 +453,12 @@ T17.1 (51fedb5) and T17.2 (f9d29fe) committed by session 37788079. Human (2026-1
 2ik. agent-manager 44.2.l2.1 stored, verified passed with a deviation (register.tsx +31/-5, M35 not run; validate, build --check, node 876/0; lens 854/11: the 11 tests encode the old behaviour). Risk for the human: a subagent the engine never lists as ended after an error now shows running. In-progress in parallel: sqa-engineer 44.3.l2.1 (update the 11 fixtures, new tests a-e), documentation-writer 44.5.l3.12 (halted definition README:47, LLD:135, MANUAL-CHECKS:45). Then code review 44.4.l3.1, then G4.
 2il. documentation-writer 44.5.l3.12 stored, verified passed (halted definition with known limit, ITEM-104, in progress: README:47, LLD new bullet :136, MANUAL-CHECKS:45; node 876/0). Waiting: sqa-engineer 44.3.l2.1.
 2im. sqa-engineer 44.3.l2.1 stored, verified passed (11 fixtures updated, 11 new tests, mutants M1-M6 red; gap: [c] tests killed by no mutant; lens 876/0, ai-dlc 983/0, node 876/0). Fix, tests and docs committed below. Code review 44.4.l3.1 (round 1 of 2) in-progress.
+2in. Code review 44.4.l3.1 round 1 of 2 (AAWP/code-review 2 / 1, new loop): orchestrator spawns the two axes directly (the 44.4.l2.4 lead failed on an API error): 44.4.1.l3.1 standards (haiku high), 44.4.2.l3.1 spec (sonnet high), range f19763d..16d7584.
+2io. Spec 44.4.2.l3.1 stored: APPROVE 0B/0W/5S (S1 haltedByTurn not cleared at session.start; S2 [c] mutant keep=halting not run; S3 a stray turn.complete can move an ended agent back to running; S4 ITEM-104 cites 'decision 15' wrongly, recover wording; S5 LLD status line). Waiting: standards 44.4.1.l3.1.
+2ip. Standards 44.4.1.l3.1 stored: APPROVE 0B/3W/4S (W1 an absent list row counts as live: a failed agent the engine drops reads in progress forever; W2 [c] tests poll up to 5 s, so they do not guard the listedEnded branch; W3 cause unconfirmed, keep ITEM-104 In Progress until M35). Review round 1 of 2 done, Warnings open. PAUSED for the human: time-based fallback (W1) and the fix round.
+2iq. Human (2026-11-01, 50-human-decisions.human.md): decision 16, time-based fallback for a subagent missing from the agent list, configurable, default 15 min (orchestrator's proposal), never while listed running; fix round = W1-W3 + all 9 suggestions, then review round 2 of 2, then G4. In-progress in parallel: agent-manager 44.2.l2.2 (code), product-manager 44.1.l1.7 (ITEM-104 text). Then sqa 44.3.l2.2 and documentation-writer 44.5.l3.13, then review 44.4.l3.2.
+2ir. product-manager 44.1.l1.7 stored, verified passed (ITEM-104 :199: reference fixed, recovery wording, decision 16 ACs a-e, stays In Progress until M35). Stop hook blocked: plugins/claude/ai-dlc/agents/orchestrator.md lost its trailing newline (not in any brief); agent-manager 44.2.l2.2 asked to restore it and quote build --check. Waiting: agent-manager 44.2.l2.2.
+2is. agent-manager 44.2.l2.2 stored, verified passed (decision 16 fallback droppedSubagentMinutes default 15, 0-1440, 0 = never; W1 comment; S1-S3; M35 converse case not run; orchestrator.md restored to HEAD, Copilot build up to date; lens 876/0, validate, build --check, node 876/0). In-progress in parallel: sqa-engineer 44.3.l2.2, documentation-writer 44.5.l3.13. Then code review round 2 of 2 (44.4.l3.2), then G4.
+2it. documentation-writer 44.5.l3.13 verified passed (README settings row :143 and :47; LLD status line :9 and :136 with new code refs; root README unchanged; node 876/0). Its flag: MANUAL-CHECKS.md:45 still states the old known limit -> documentation-writer 44.5.l3.14 (that line only). Waiting: sqa 44.3.l2.2.
+2iu. documentation-writer 44.5.l3.14 stored, verified passed (MANUAL-CHECKS.md:45 decision-16 rule). Docs for the fix round done. Waiting: sqa 44.3.l2.2.
+2iv. sqa-engineer 44.3.l2.2 stored, verified passed (lens 885/0, ai-dlc 983/0, node 876/0; [c] tests now killed by M6/M7; timeline test for decision 16 ~115 s real time; T1-T13 red). Fix round committed below. Code review round 2 of 2 (44.4.1.l3.2 standards, 44.4.2.l3.2 spec) in-progress.

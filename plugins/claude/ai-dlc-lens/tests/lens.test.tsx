@@ -482,10 +482,10 @@ async function seed($: any, on: any, opts: SeedOpts = {}) {
     toasts.push(String(e?.text ?? e))
     return { value: undefined }
   })
-  // Step 44.3.l2.1: `agentList.status` is what the engine's list says about a1; a test sets it to `failed` / `killed` (or `throw`) before it fails the agent.
-  const agentList: { status: string } = { status: listStatus }
+  // Step 44.3.l2.1: `agentList.status` is what the engine's list says about a1; a test sets it to `failed` / `killed` (`throws` true makes the list throw) before it fails the agent.
+  const agentList: { status: string; throws: boolean } = { status: listStatus, throws: false }
   on('agent.list', () => {
-    if (agentList.status === 'throw') throw new Error('agent.list failed')
+    if (agentList.throws) throw new Error('agent.list failed')
     return { value: [{ id: 'a1', description: desc[0], type: 'ai-dlc:software-engineer', status: agentList.status }] }
   })
   // Step 36.2: the panes open now, for `$.ui.panes()` (what `/ai-dlc:lens` reads to tell "open" from "closed").

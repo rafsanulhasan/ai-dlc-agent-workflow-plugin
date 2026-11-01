@@ -353,9 +353,23 @@ const stepOfCall: Record<string, { out: number; n: number }> = {}
 const lastStatus: Record<string, string> = {}
 /**
  * Step 44.2.l2.1: subagents whose `failed` / `killed` came from their own `turn.complete` (and was confirmed by
- * `$.agent.list()` then), not from the list. A later listed `running` is a resume and clears it (`refreshList`).
+ * `$.agent.list()` then), or, since step 44.2.l2.2, from the dropped-subagent timeout (`missingSince`), never
+ * from the list itself. A later listed `running` is a resume and clears it (`refreshList`).
+ * Lifetime: module memory, cleared at `session.start` (agent ids are unique, so nothing is lost) and lost on a
+ * plugin reload, after which a halt stored before the reload is not cleared by a listed `running`.
  */
 const haltedByTurn = new Set<string>()
+/**
+ * Step 44.2.l2.2 (the human's decision 16): for each subagent stored `running` that `$.agent.list()` does not
+ * list, the time (ms) from which it has been missing with no event of its own. A listed row, or any event of the
+ * agent (`heard`), deletes the entry, so the time counts only while it is missing and silent. `refreshList` halts
+ * the agent once its entry is `droppedSubagentMinutes` old. Module memory, reset at `session.start`.
+ */
+let missingSince: Record<string, number> = {}
+/** Step 44.2.l2.2: an event of the agent `key` arrived; its dropped-subagent time starts again. */
+const heard = (key: string) => {
+  delete missingSince[key]
+}
 /**
  * Step 43.2.5: the session's SendMessage calls (`beforeCall`), for the Connections panel's Send Message accordion.
  * Module memory (reset at `session.start` and on reload); a new one bumps `avatarRevA`, which every drawing reads.
@@ -1105,14 +1119,36 @@ async function refreshList($: EngineInterface, reason: string) {
       // Step 44.2.l2.1: a listed `running` clears a `failed` / `killed` that the agent's own `turn.complete` set
       // (`haltedByTurn`), never one the list set; `completed` stays ended (`ENDED`).
       const resumed = a.status === 'running' && cur !== undefined && (cur.status === 'failed' || cur.status === 'killed') && haltedByTurn.has(String(a.id))
+      // Step 43 (C1), the `else if` below: a listed `completed` applies too (an agent whose `turn.complete` this
+      // session never saw, a pending one included); a status already ended (`ENDED`) is still never changed by the list.
       if (resumed) {
-        out[a.id] = { ...cur!, status: 'running' }
+        // Running again: the halting turn's end time no longer applies (a spawn sets null too).
+        out[a.id] = { ...cur!, status: 'running', endedAt: null }
         haltedByTurn.delete(String(a.id))
-      }
-      // Step 43 (C1): a listed `completed` applies too (an agent whose `turn.complete` this session never saw, a
-      // pending one included); a status already ended (`ENDED`) is still never changed by the list.
-      else if (cur && cur.status !== a.status && !ENDED.has(cur.status) && !stale) out[a.id] = { ...cur, status: String(a.status) }
+      } else if (cur && cur.status !== a.status && !ENDED.has(cur.status) && !stale) out[a.id] = { ...cur, status: String(a.status) }
       if (out[a.id] && typeof a.teammateId === 'string' && out[a.id]!.teammate !== true) out[a.id] = { ...out[a.id]!, teammate: true }
+    }
+    // Step 44.2.l2.2 (the human's decision 16): a subagent stored `running` that the list no longer has (the engine
+    // dropped its task) and that sent no event since shows halted after `droppedSubagentMinutes` (0: never). The
+    // time counts only while it is missing: a listed row resets it, so an agent the list still shows is never timed
+    // out; an event resets it too (`heard`). It becomes `failed`: the lens cannot tell a stop (`killed`) from an
+    // error, and `failed` is what a non-answer turn end showed before step 44. Marked in `haltedByTurn`, so a later
+    // listed `running` still resumes it. Not reached when the list throws (the `return` above): no list, no evidence.
+    const listed = new Set(list.map(a => String(a.id)))
+    const limitMs = cfg.droppedSubagentMinutes * 60_000
+    const t = nowMs()
+    for (const [id, cur] of Object.entries(out)) {
+      const subagent = id !== 'main' && cur.type !== 'teammate' && cur.teammate !== true
+      if (!subagent || cur.status !== 'running' || listed.has(id) || limitMs === 0) {
+        delete missingSince[id]
+        continue
+      }
+      const since = missingSince[id] ?? (missingSince[id] = t)
+      if (t - since >= limitMs) {
+        out[id] = { ...cur, status: 'failed', endedAt: t }
+        delete missingSince[id]
+        haltedByTurn.add(id)
+      }
     }
     return out
   })
@@ -4031,6 +4067,9 @@ export const register: Register = on => {
     mainTurnId = null
     pressNotes = {}
     handbackChars = {}
+    // Step 44.2.l2.2: the halted-state marks start empty with the rest of the module state.
+    haltedByTurn.clear()
+    missingSince = {}
     // Both timers are made before the first `await`: a second `session.start` that overlaps this one (its
     // `stopTimers()` running while this one awaits) cancels both, and never leaves a second poller.
     // Timer-driven blink (kit check 2, and the terminal's text avatars).
@@ -4364,6 +4403,7 @@ export const register: Register = on => {
   on('turn.start', async ($, e, next) => {
     try {
       const key = e.agentId ?? 'main'
+      heard(key)
       // Step 43.2.5: the main loop's running turn, the one the Agents panel's Stop ends (`$.turn.abort`, d.ts:2989-3005).
       if (e.agentId === undefined) mainTurnId = e.turnId
       // Step 1.4: the arming that ends with this turn keeps its time before the next Stop re-arms.
@@ -4401,6 +4441,7 @@ export const register: Register = on => {
   // Pass-through observer (step 16 Q1, E2): every chunk is yielded on unchanged.
   on('turn.step', async function* ($, e, next) {
     const key = e.agentId ?? 'main'
+    heard(key)
     const ids: string[] = []
     const counts: Record<string, number> = {}
     let spent = 0
@@ -4466,6 +4507,7 @@ export const register: Register = on => {
   })
 
   on('tool.call', async ($, e, next) => {
+    heard(e.agentId ?? 'main')
     const ctx = await beforeCall($, e)
     const r: any = await next(e)
     if (ctx !== null) await afterCall($, ctx, r)
@@ -4478,6 +4520,7 @@ export const register: Register = on => {
     if (e.agentId === undefined && e.turnId === mainTurnId) mainTurnId = null
     try {
       const key = e.agentId ?? 'main'
+      heard(key)
       await ensureAgent($, key, key === 'main' ? null : 'main', '')
       const usage = e.usage ? fromUsage(e.usage) : null
       const agents = await read($, agentsA)
@@ -4492,15 +4535,23 @@ export const register: Register = on => {
       if (halting) {
         try {
           const row = ((await $.agent.list()) as any[]).find(x => String(x.id) === key)
+          // No row (`row === undefined`) counts as live, not ended: the list also drops a finished task (`agent.list`:
+          // an entry lasts "until the engine drops its task"), so a missing row cannot tell a dropped failure from a
+          // subagent that works on. Halting it here would show a working background subagent halted (ITEM-104);
+          // a dropped one shows halted after the dropped-subagent timeout instead (`refreshList`, decision 16).
           listedEnded = row !== undefined && ENDED.has(String(row.status))
         } catch {
           // no list: the turn's end alone does not halt it
         }
       }
       const keep = halting && !listedEnded
-      const status = keep ? 'running' : ended
+      // Spec S3: a kept (non-answer) turn end never moves an agent already stored as ended (`ENDED`) back to
+      // `running`; it keeps that status, and its `haltedByTurn` mark, as they are.
+      const prev = agents[key]?.status ?? ''
+      const stayEnded = keep && ENDED.has(prev)
+      const status = stayEnded ? prev : keep ? 'running' : ended
       if (halting && listedEnded) haltedByTurn.add(key)
-      else haltedByTurn.delete(key)
+      else if (!stayEnded) haltedByTurn.delete(key)
       await patchAgent($, key, a => ({
         ...a,
         status,

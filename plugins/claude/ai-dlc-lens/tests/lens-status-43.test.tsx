@@ -23,6 +23,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 import { OPEN, attemptKey, bandEverywhere, runListStatus, runStateSig, settleMembers, stageDone, stageStatuses, workflowStatus } from '../hooks/lens'
 import type { StatusMember } from '../hooks/lens'
+import { DEFAULTS, envLevel, fileLevel, resolve } from '../hooks/settings'
 
 const PLUGIN = 'ai-dlc-lens'
 const CHART_PANE = 'ai-dlc-lens-chart'
@@ -285,7 +286,9 @@ type Fs = {
   lists: Record<string, number>
   /** The status `agent.list` gives each agent id. */
   listed: Record<string, string>
-  put: (path: string, text: string) => void
+  /** Step 44.3.l2.2: true makes `agent.list` throw (a flag of its own, so no agent id or status is a magic value). */
+  listThrows: boolean
+  put:(path: string, text: string) => void
 }
 
 const RUN_DIR = 'docs/handoffs/X'
@@ -343,7 +346,8 @@ async function boot($: any, on: any, initial: Record<string, string>, clockEvery
     stamp,
     lists,
     listed,
-    put: (path, text) => {
+    listThrows: false,
+    put:(path, text) => {
       files[path] = text
       stamp[path] = ++clockT
     },
@@ -391,8 +395,8 @@ async function boot($: any, on: any, initial: Record<string, string>, clockEvery
   })
   on('ui.toast', () => ({ value: undefined }))
   on('agent.list', () => {
-    // Step 44.3.l2.1: a test makes the engine's list throw by setting `listed['*throw']`.
-    if (listed['*throw'] !== undefined) throw new Error('agent.list failed')
+    // Step 44.3.l2.1: a test makes the engine's list throw by setting `fs.listThrows` (step 44.3.l2.2: a flag, not a magic id).
+    if (fs.listThrows) throw new Error('agent.list failed')
     return { value: Object.entries(listed).map(([id, status]) => ({ id, description: id, type: 'ai-dlc:agent-manager', status })) }
   })
   on('ui.open', () => ({ value: { isPlaced: true } }))
@@ -608,11 +612,15 @@ describe('[44.3.l2.1] a background subagent whose turn ends badly while the engi
 
   for (const [reason, listedStatus] of [['error', 'failed'], ['refusal', 'failed'], ['aborted', 'killed']] as const) {
     test(`[c] turn.complete ${reason} while the list says ${listedStatus}: halted (the ended path)`, HEAVY, async ($, on) => {
-      const fs = await boot($, on, { [`${RUN_DIR}/run.md`]: runState('active') })
+      // Step 44.3.l2.2 (standards W2): a held clock that is never ticked, so the 2 s poll never reads the list and applies its `failed` / `killed`:
+      // the halt below can only come from the turn.complete branch.
+      const h = heldClock()
+      const fs = await boot($, on, { [`${RUN_DIR}/run.md`]: runState('active') }, h.clockEvery)
       await call($, 1, '1')
       fs.listed['a1'] = listedStatus
       await endTurn($, 'a1', reason)
-      expect(await paneStatus($, 'halted')).toBe('status: halted')
+      // Step 44.3.l2.2 (standards W2): read at once, no wait, so a later refresh cannot satisfy it: only the turn.complete branch halts it.
+      expect(await paneStatus($)).toBe('status: halted')
       expect(await bandStatus($)).toBe('status: halted')
     })
   }
@@ -669,9 +677,9 @@ describe('[44.3.l2.1] a background subagent whose turn ends badly while the engi
   test('[e] agent.list throwing during turn.complete: the agent stays running', HEAVY, async ($, on) => {
     const fs = await boot($, on, { [`${RUN_DIR}/run.md`]: runState('active') })
     await call($, 1, '1')
-    fs.listed['*throw'] = 'yes'
+    fs.listThrows = true
     await endTurn($, 'a1', 'error')
-    delete fs.listed['*throw']
+    fs.listThrows = false
     fs.listed['a1'] = 'running'
     expect(await paneStatus($)).toBe('status: in progress')
     expect(await bandStatus($)).toBe('status: in progress')
@@ -886,4 +894,201 @@ describe('[R44.4, R44.21] the lens band: a terminal or desktop render always dra
       expect(await drawsBand($, 'vscode')).toBe(false)
     })
   }
+})
+
+// ---------------------------------------------------------------- step 44.3.l2.2
+
+/**
+ * Step 44.3.l2.2 (the human's decision 16, ITEM-104 ACs (a)-(d)): a subagent shown running that the engine's list no
+ * longer has, and that sent no event, shows halted (failed) after `droppedSubagentMinutes`.
+ *
+ * The lens reads the time with `Date.now()` inside the engine's own realm, which a test cannot move (the kit's
+ * `mock.clock` answers `$.clock` only, and `Date.now` is not writable), and the setting is a whole number of minutes
+ * from 1. So the timeline test below runs in real time against a limit of 1 minute (about two minutes), with seven
+ * agents, each in a run of its own, so each agent's status is its own workflow's dot; it counts the halted dots.
+ */
+const stepOf = async ($: any, id: string) => {
+  for await (const _ of $.turn.step({ turnId: 'm', index: 0, model: 'claude-sonnet-5-5', messageCount: 1, agentId: id })) {
+    // drain
+  }
+}
+const lensJson = (minutes: number) => ({ '.ai-dlc/lens.json': JSON.stringify({ droppedSubagentMinutes: minutes }) })
+const runNamed = (n: string) => runState('active').replace('run: X', `run: ${n}`).replace('# Run: X: the thing', `# Run: ${n}: the thing`)
+/** The orchestrator's background Agent call `toolu_<n>` for the step 1 of run `run`; its agent id is `a<n>`. */
+const callIn = async ($: any, n: number, run: string) => {
+  await nextMs()
+  const prompt = brief('1', run)
+  await $.tool.call({ tool: 'Agent', subagent_type: 'ai-dlc:agent-manager', description: `d${n}`, prompt, tool_use_id: `toolu_${n}` })
+  await $.agent.spawn({ tool_use_id: `toolu_${n}`, prompt, description: `d${n}`, subagentType: 'ai-dlc:agent-manager', provider: { plugin: 'ai-dlc', tier: 'user' }, parentModel: 'claude-opus-5-5', background: true, fork: false })
+}
+/** How many of the workflow pane's status dots read halted. */
+const haltedCount = async ($: any): Promise<number> => {
+  const ui = await $.ui.mount(pane())
+  const n = (await dots(ui)).filter(d => d === 'status: halted').length
+  await ui.unmount()
+  return n
+}
+const pause = (ms: number) => new Promise<void>(r => later(r, ms))
+
+describe('[44.3.l2.2] AC (a)-(d): a subagent the list dropped shows halted after droppedSubagentMinutes', () => {
+  test(
+    '[a, b, c, d] timeline, limit 1 minute: dropped + silent halts at the limit and not before; a listed one never; a new session, a listed row and each event (turn.start, turn.step, tool.call, turn.complete) start the time again; a listed `running` resumes a timed-out agent',
+    { timeoutMs: 300000 },
+    async ($, on) => {
+      const RUNS = ['R1', 'R2', 'R3', 'R4', 'R5', 'R6', 'R7']
+      const h = heldClock()
+      const files: Record<string, string> = { ...lensJson(1) }
+      for (const r of RUNS) files[`docs/handoffs/${r}/run.md`] = runNamed(r)
+      const fs = await boot($, on, files, h.clockEvery)
+      // a1 .. a7 = R1 .. R7. a1: dropped, silent, but a new session at 25 s. a2 turn.start, a3 turn.step, a4 tool.call,
+      // a5 turn.complete (error), each at 50 s. a6 listed all along. a7 listed again for one poll at 50 s.
+      for (let i = 0; i < RUNS.length; i++) await callIn($, i + 1, RUNS[i]!)
+      for (let i = 1; i <= 7; i++) fs.listed[`a${i}`] = 'running'
+      await h.tick() // all stored running now
+      expect(await haltedCount($)).toBe(0)
+      for (const id of ['a1', 'a2', 'a3', 'a4', 'a5', 'a7']) delete fs.listed[id]
+      const t0 = Date.now()
+      // Waits until `s` seconds after t0, polling every 1.5 s: the kit lets go a held clock wait after 10 s of real time (a hook that overran), which would end the poll.
+      const at = async (s: number) => {
+        for (;;) {
+          const left = t0 + s * 1000 - Date.now()
+          if (left <= 0) return
+          await pause(Math.min(left, 1500))
+          await h.tick()
+        }
+      }
+      await h.tick() // t0: a1 .. a5 and a7 are missing from here
+      expect(await haltedCount($)).toBe(0)
+
+      await at(25)
+      await $.session.start({ cwd: '/', surface: 'vscode', isInteractive: true }) // the marks start empty
+      await h.tick() // missing from here (~25 s)
+      expect(await haltedCount($)).toBe(0)
+
+      await at(50)
+      await $.turn.start({ text: 'p', turnId: 't2', agentId: 'a2' })
+      await stepOf($, 'a3')
+      await readCall($, 'a4', 1)
+      await endTurn($, 'a5', 'error') // no row in the list: counts as live, stays running
+      fs.listed['a7'] = 'running'
+      await h.tick() // a7 listed: its time starts again; a2 .. a5 missing again from here (~50 s)
+      delete fs.listed['a7']
+      await h.tick() // a7 missing again from here
+      expect(await haltedCount($)).toBe(0)
+
+      await at(70) // 45 s after the new session: a1 would be halted if the session had not reset it (70 s after t0)
+      await h.tick()
+      expect(await haltedCount($)).toBe(0)
+
+      await at(90) // a1: 65 s missing since the new session; the others 40 s since their event or listed row
+      await h.tick()
+      expect(await haltedCount($)).toBe(1)
+
+      fs.listed['a1'] = 'running' // the list shows the timed-out agent again: it resumes
+      await h.tick()
+      expect(await haltedCount($)).toBe(0)
+
+      await at(115) // a2 .. a5 and a7: 65 s since their event or listed row; a6 and a1 are listed
+      await h.tick()
+      expect(await haltedCount($)).toBe(5)
+    },
+  )
+
+  test('[d] 0 = never: nothing halts however the poll runs (no limit, not a limit of 0 minutes)', HEAVY, async ($, on) => {
+    const h = heldClock()
+    const files: Record<string, string> = { ...lensJson(0), 'docs/handoffs/R1/run.md': runNamed('R1') }
+    const fs = await boot($, on, files, h.clockEvery)
+    await callIn($, 1, 'R1')
+    fs.listed['a1'] = 'running'
+    await h.tick()
+    delete fs.listed['a1']
+    for (let i = 0; i < 4; i++) {
+      await pause(50)
+      await h.tick()
+    }
+    expect(await haltedCount($)).toBe(0)
+  })
+})
+
+describe('[44.3.l2.2] settings: droppedSubagentMinutes', () => {
+  const val = (v: unknown) => resolve([fileLevel('.ai-dlc/lens.json', JSON.stringify({ droppedSubagentMinutes: v })).level])
+  test('[d] the default is 15', () => {
+    expect(DEFAULTS.droppedSubagentMinutes).toBe(15)
+    expect(resolve([]).settings.droppedSubagentMinutes).toBe(15)
+  })
+  test('[d] 0, 1 and 1440 are valid', () => {
+    for (const v of [0, 1, 1440]) {
+      const r = val(v)
+      expect(r.settings.droppedSubagentMinutes).toBe(v)
+      expect(r.ignored).toEqual([])
+    }
+  })
+  test('[d] invalid values (-1, 1441, 1.5, text, a boolean) fall back to 15 with the warning', () => {
+    for (const v of [-1, 1441, 1.5, 'ten', true]) {
+      const r = val(v)
+      expect(r.settings.droppedSubagentMinutes).toBe(15)
+      expect(r.ignored.length).toBe(1)
+      expect(r.ignored[0]).toContain('droppedSubagentMinutes')
+      expect(r.ignored[0]).toContain('is invalid, ignored')
+    }
+  })
+  test('[d] the environment name is AI_DLC_LENS_DROPPED_SUBAGENT_MINUTES; "abc" there falls back with the warning, "0" and "30" are accepted', () => {
+    const env = (v: string) => resolve([envLevel('.claude/settings.json', JSON.stringify({ env: { AI_DLC_LENS_DROPPED_SUBAGENT_MINUTES: v } })).level])
+    expect(env('abc').settings.droppedSubagentMinutes).toBe(15)
+    expect(env('abc').ignored[0]).toContain('AI_DLC_LENS_DROPPED_SUBAGENT_MINUTES')
+    expect(env('0').settings.droppedSubagentMinutes).toBe(0)
+    expect(env('30').settings.droppedSubagentMinutes).toBe(30)
+  })
+})
+
+describe('[44.3.l2.2] halted-state marks: session.start reset, an ended agent stays ended', () => {
+  const FILES = () => ({ [`${RUN_DIR}/run.md`]: runState('active') })
+  const startAgain = ($: any) => $.session.start({ cwd: '/', surface: 'vscode', isInteractive: true })
+
+  test('[S1] haltedByTurn is cleared at session.start: a halt from a turn end is not undone by a listed `running` in the next session', HEAVY, async ($, on) => {
+    const h = heldClock()
+    const fs = await boot($, on, FILES(), h.clockEvery)
+    await call($, 1, '1')
+    await call($, 2, '2')
+    fs.listed['a2'] = 'running'
+    fs.listed['a1'] = 'failed'
+    await endTurn($, 'a1', 'error')
+    expect(await paneStatus($)).toBe('status: halted')
+    await startAgain($)
+    fs.listed['a1'] = 'running'
+    await h.tick()
+    await h.tick()
+    expect(await paneStatus($)).toBe('status: halted')
+  })
+
+  test('[S3] a non-answer turn end never moves an ended agent back to running, and keeps its mark (a listed `running` still resumes it)', HEAVY, async ($, on) => {
+    const h = heldClock()
+    const fs = await boot($, on, FILES(), h.clockEvery)
+    await call($, 1, '1')
+    await call($, 2, '2') // at work, so the poll reads the list
+    fs.listed['a2'] = 'running'
+    fs.listed['a1'] = 'failed'
+    await endTurn($, 'a1', 'error')
+    expect(await paneStatus($)).toBe('status: halted')
+    // The list now says running (no tick yet): the second error end is kept, but a1 was already ended.
+    fs.listed['a1'] = 'running'
+    await endTurn($, 'a1', 'error')
+    expect(await paneStatus($)).toBe('status: halted')
+    expect(await bandStatus($)).toBe('status: halted')
+    // The mark is kept: the poll's listed `running` resumes it.
+    await h.tick()
+    expect(await paneStatus($, 'in progress')).toBe('status: in progress')
+  })
+
+  test('[S3] the same with no row for the agent in the list (it counts as live): still halted', HEAVY, async ($, on) => {
+    const h = heldClock()
+    const fs = await boot($, on, FILES(), h.clockEvery)
+    await call($, 1, '1')
+    fs.listed['a1'] = 'failed'
+    await endTurn($, 'a1', 'error')
+    expect(await paneStatus($)).toBe('status: halted')
+    delete fs.listed['a1']
+    await endTurn($, 'a1', 'error')
+    expect(await paneStatus($)).toBe('status: halted')
+  })
 })
