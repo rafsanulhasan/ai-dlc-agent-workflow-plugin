@@ -122,6 +122,11 @@ The players: the human, who decided every turn below; research-assistant, who fo
 - **Why.** Not recorded beyond the choices. Spec S1 sits on the same seam as ITEM-106, a mark kept apart from the row it guards.
 - **Cost.** Until ITEM-106, one more known limit: in the very unlikely order above, an agent the list confirmed as ended can read running again after an event.
 
+### Turn 7: review round 4 of 4, and the human's last G4 answers (decisions 23 and 24)
+
+- **As seen then** ([44.4.1.l3.4](../../handoffs/FEAT-20261020-ai-dlc-lens/44.4.1.l3.4-code-reviewer-to-orchestrator.handback.md), [44.4.2.l3.4](../../handoffs/FEAT-20261020-ai-dlc-lens/44.4.2.l3.4-code-reviewer-to-orchestrator.handback.md)). Docs only, no code since 688e9d6. Both axes approved with zero Blockers and closed round-3 W1 and W2. Standards W1: the docs say a halt the list confirmed first "is never undone by an event", but the agent's own `turn.start` does set it running again. Spec S1, S2: ADR-0009 listed only ITEM-106's ACs (a)-(f), named only the race in its Status line, and left `MANUAL-CHECKS.md` and this narrative's risk rows out of its "when it is done" list. Standards S1: ITEM-106's AC letters were out of order.
+- **Choice** ([56](../../handoffs/FEAT-20261020-ai-dlc-lens/56-human-decisions.human.md)). **Decision 23:** fix the wording; documentation-writer narrows the rule in the LLD, README and MANUAL-CHECKS: a step, a tool call or a turn end does not undo such a halt, the agent's own turn start does. **Decision 24:** fix now, with the orchestrator checking each edit and no further review round; I bring ADR-0009 in line, product-manager orders ITEM-106's ACs. **G4:** approved once these fixes are made and checked; ITEM-104 stays In Progress until M35 has run.
+
 ## Act 3: where it stands
 
 ### The design now

@@ -11,8 +11,8 @@ current-stage: Step 44: tests (sqa-44) and doc requests (owners), then documenta
 owner: orchestrator
 session: 4e6863ff-eaf0-4710-998c-66dd771517f1 (automatic handoff from 6c983a53-897f-4d28-97f2-9cd286a0d6e8, 2026-11-01; 6c983a53 was an automatic handoff from ed3c07ca-2c20-4ea4-8880-00a4f1b6c8fa, 2026-10-31; ed3c07ca took over from 7ac45d8b with the human's OK)
 branch: feat/ai-dlc-lens (feat/wf-1 merged at 734b33d)
-commit: 688e9d6
-last-record: 55-human-decisions.human.md
+commit: 1a00cfa
+last-record: 57-orchestrator-to-human.handoff.md
 updated: 2026-11-02
 wave: 3 (Build)
 ---
@@ -169,6 +169,7 @@ Note: the first spawn of 16.2 was stopped before it changed anything, because it
 | AAWP/critique step 43 (43.5) | raised from 2 to 3, then to 4 rounds / 1 failure (2026-10-31, after the 43.5.l1.1 REVISE), for this run and step only (one-off; file unchanged; `rounds --json` AAWP/critique 2 / 1, source loop) | raised to critique the round-5 docs (SKILL.md, keep-alive README) | human | 2026-10-31 |
 | AAWP/code-review step 44 G4 fix round (44.4.l2) | raised from 2 to 3 rounds, then to 4 (2026-11-01, 47-human-decision.human.md) / 1 failure (2026-11-01, to review the round-2 finding fixes), for this run and step only (one-off; file unchanged; `rounds --json` AAWP/code-review 2 / 1, source loop) | raised to review round 44.4.l2.3 | human | 2026-11-01 |
 | AAWP/code-review ITEM-104 fix (44.4.l3) | raised from 2 to 3, then to 4 (2026-11-02, 55-human-decisions.human.md) rounds / 1 failure (2026-11-02, 51-human-decision.human.md: fix the round-2 Warnings first), this run and loop only (one-off; file unchanged; `rounds --json` AAWP/code-review 2 / 1, source loop) | raised for review round 44.4.l3.3 | human | 2026-11-02 |
+| G4 step 44 (with ITEM-104) | human | approved, per 56-human-decisions.human.md ("Approve after these fixes"): decisions 23 and 24 made and checked by the orchestrator (44.5.l3.18, 44.1.l2.5, 44.1.l1.11); ITEM-104 stays In Progress until M35 is run | human | 2026-11-02 |
 | AAWP step 44 (test, code-review, critique) | 2 rounds / 1 failure each (`rounds --json`, source loop) | recorded at step start | orchestrator | 2026-10-31 |
 | AAWP/critique step 44 (44.5) | raised from 2 to 3, then to 4 rounds / 1 failure (round 3 REVISE: 1 Major, 3 Minor), for this run and step only (one-off; file unchanged) | raised twice to critique the round-44.4.l1.1 doc edits | human | 2026-10-31 |
 | AAWP step 44, live round 2 | test 3 / 1, code-review 3 / 1, critique 5 / 1 (each raised by one round, this run and step only; one-off) | raised for live findings 2 (R44.7-R44.10) | human | 2026-10-31 |
@@ -489,6 +490,13 @@ T17.1 (51fedb5) and T17.2 (f9d29fe) committed by session 37788079. Human (2026-1
 2js. product-manager 44.1.l1.10 stored, verified passed (ITEM-106: ADR-0009 written, AC (e) done early, ACs (g)-(i) for decision 22). Waiting: documentation-writer 44.5.l3.17, software-architect 44.1.l2.4.
 2jt. documentation-writer 44.5.l3.17 stored, verified passed (LLD :9, :136, :176 ADR-0009 linked; known limit and narrowed rule in LLD, README :47, MANUAL-CHECKS :45; node 876/0). Waiting: software-architect 44.1.l2.4.
 2ju. software-architect 44.1.l2.4 stored, verified passed (narrative +39/-9: Turn 5 outcome, Turn 6, risks; ADR-0009 +1 line spec S1). All decision-21 docs fixes done; committed below. Code review round 4 of 4 (44.4.1.l3.4, 44.4.2.l3.4, opus medium, docs only).
+2jv. Spec 44.4.2.l3.4 stored: APPROVE 0B/0W/2S (round-3 W1, W2 closed; S1 ADR-0009 lists ACs (a)-(f) only and its Status line names only the race; S2 ADR "when it is done" list misses MANUAL-CHECKS and the narrative risks). Waiting: standards 44.4.1.l3.4.
+2jw. Standards 44.4.1.l3.4 stored: APPROVE 0B/1W/1S (W1: docs say a list-confirmed halt is never undone by an event, but the agent own turn.start sets it running; S1 ITEM-106 AC order). Review loop 44.4.l3 done (4 of 4). G4 seventh presentation: 56-orchestrator-to-human.handoff.md. PAUSED for the human.
+2jx. Human at G4 (seventh presentation, 2026-11-02, 56-human-decisions.human.md): decision 23 fix the halt-rule wording (turn start revives; step, tool call, turn end do not); decision 24 ADR-0009 and ITEM-106 small fixes now, orchestrator checks, no review round; G4 approved once these are made and checked. In-progress in parallel: documentation-writer 44.5.l3.18, software-architect 44.1.l2.5, product-manager 44.1.l1.11.
+2jy. product-manager 44.1.l1.11 stored, verified passed (ITEM-106 ACs (a)-(i) in order). Waiting: documentation-writer 44.5.l3.18, software-architect 44.1.l2.5.
+2jz. software-architect 44.1.l2.5 stored, verified passed (ADR-0009 Status line, ACs (g)-(i), when-it-is-done list; narrative Turn 7). After G4: software-architect updates the narrative status, banner and decision table. Waiting: documentation-writer 44.5.l3.18.
+2ka. documentation-writer 44.5.l3.18 stored, verified passed (three halt sentences narrowed per decision 23). Its open item MANUAL-CHECKS.md:837 (M35) in scope of decision 23: sent back to the same agent.
+2kb. documentation-writer 44.5.l3.18 continued: M35 :837 narrowed (grep 0). G4 for step 44 APPROVED by the human (56-human-decisions.human.md, "Approve after these fixes"), record 57-orchestrator-to-human.handoff.md. Next: documentation-writer 44.5.l3.19 removes step 44 markers (ITEM-104 text stays in progress), software-architect 44.1.l2.6 updates the narrative status; then commit.
 ## Architecture records (ITEM-104 / ITEM-106)
 - Narrative, the ITEM-104 journey (why, alternatives, how it went): [ai-dlc-lens-halted-state.md](../../architecture/narratives/ai-dlc-lens-halted-state.md) — in progress (software-architect 44.1.l2.3; decision 19, 53-human-decision.human.md; covers ITEM-106 in full).
 - ADR-0009, lens marks that guard an agent's status live in its row in agentsA (Accepted, implementation pending ITEM-106): [ADR-0009-lens-marks-that-guard-an-agents-status-live-in-its-row-in-agentsa.md](../../architecture/decisions/ADR-0009-lens-marks-that-guard-an-agents-status-live-in-its-row-in-agentsa.md) (software-architect 44.1.l2.3; decision 20, 54-human-decision.human.md).

@@ -1,7 +1,7 @@
 # ADR-0009: Lens marks that guard an agent's status live in its row in `agentsA`
 
 **Date**: 2026-11-02
-**Status**: Accepted, implementation pending ITEM-106. The human accepted the rule and its staging: decision 17 in `docs/handoffs/FEAT-20261020-ai-dlc-lens/52-human-decisions.human.md`, and decision 20 in `54-human-decision.human.md`, which has this record written now. Until ITEM-106 is built, the code follows the interim design below, and the race is a documented known limit.
+**Status**: Accepted, implementation pending ITEM-106. The human accepted the rule and its staging: decision 17 in `docs/handoffs/FEAT-20261020-ai-dlc-lens/52-human-decisions.human.md`, and decision 20 in `54-human-decision.human.md`, which has this record written now. Until ITEM-106 is built, the code follows the interim design below, and two edges are documented known limits: the race, and the spec-S1 edge (an agent the timeout halted that the list later reports `failed` or `killed` keeps its timeout mark, so a later event revives it; spec S1 of `44.4.2.l3.3-code-reviewer-to-orchestrator.handback.md`, decision 22 in `55-human-decisions.human.md`).
 **Deciders**: the human (decisions 17 and 20); software-architect (the rule, proposed in `44.1.l2.2-software-architect-to-orchestrator.handback.md`); system-engineer (the interim pure planner, `44.1.l2.2-system-engineer-to-orchestrator.handback.md`)
 **Narrative**: [`docs/architecture/narratives/ai-dlc-lens-halted-state.md`](../narratives/ai-dlc-lens-halted-state.md) tells how the work got here, from the bug report to this decision.
 
@@ -47,14 +47,17 @@ We will keep every mark that guards an agent's status change in that agent's row
   - The apply block after `refreshList`'s `update` and the three module collections are removed.
   - When the list reports an agent the timeout halted as `failed` or `killed`, the same update clears its timeout mark, so a later event no longer revives a halt the list confirmed (spec S1 of code review round 3, `44.4.2.l3.3-code-reviewer-to-orchestrator.handback.md`; added by decision 22, `55-human-decisions.human.md`; a known limit until then).
 - **Why.** It removes the ITEM-104 race and the reload mismatch, and makes a re-run of the update harmless by construction, not by convention (Context, above).
-- **Acceptance criteria** (from the backlog row):
+- **Acceptance criteria** ((a)-(f) of the backlog row; (g)-(i) added by decision 22, `55-human-decisions.human.md`):
   - (a) the three marks are fields of the agent row, written in the same update as the status;
   - (b) the shape tag is `agents-4`, and a stored `agents-3` value is dropped once;
   - (c) `session.start` clears the marks in every row;
   - (d) a test re-runs the `refreshList` update on the same input and gets the same rows (no race), and the ITEM-104 tests still pass;
   - (e) ADR-0009 is written and linked (done early, by decision 20: this record);
-  - (f) `node --test "tests/**/*.test.mjs"` and `claude plugin test ./plugins/claude/ai-dlc-lens` pass, with the output quoted.
-- **When it is done.** Change this record's status to Accepted (implemented in ITEM-106), and remove the known-limit text of the interim from the LLD and the README.
+  - (f) `node --test "tests/**/*.test.mjs"` and `claude plugin test ./plugins/claude/ai-dlc-lens` pass, with the output quoted;
+  - (g) (spec S1 of `44.4.2.l3.3`) when the list reports an agent the timeout halted as `failed` or `killed`, its timeout mark is cleared, so a later event no longer revives it; a test fails without the fix and passes with it; until then the docs state this edge as a known limit;
+  - (h) (standards S1 of `44.4.1.l3.3`) in `lens-agent-list-44.test.ts` the frozen-input test snapshots the listed set, because `Object.freeze` does not cover a `Set` or `Map`;
+  - (i) (standards S2 of `44.4.1.l3.3`) the comment at the `heard` site names the invariant it depends on.
+- **When it is done.** Change this record's status to Accepted (implemented in ITEM-106), and remove the known-limit text of the interim (the race, the reload mismatch and the spec-S1 edge) from the LLD (`docs/specs/lens-view.lld.md`, section 4), the README (`plugins/claude/ai-dlc-lens/README.md`), `plugins/claude/ai-dlc-lens/MANUAL-CHECKS.md`, and the risk rows of the narrative (`docs/architecture/narratives/ai-dlc-lens-halted-state.md`, *Open, and the risks*), closing those rows.
 
 ## Alternatives Considered
 
@@ -78,7 +81,7 @@ We will keep every mark that guards an agent's status change in that agent's row
 
 - The shape bump drops the rows stored before a reload once, in the session where the new version first loads. This is accepted: the lens rebuilds them from events and the list.
 - Rows carry bookkeeping. `blankAgent`, fixtures and deep-equal assertions on `LensAgent` need the new fields.
-- Until ITEM-106 is built, the code does not follow this record. The interim and its known limit must stay stated in the LLD and the README.
+- Until ITEM-106 is built, the code does not follow this record. The interim and its known limits (the race and the spec-S1 edge) must stay stated in the LLD, the README, `MANUAL-CHECKS.md` and the narrative's risk rows.
 
 ### Neutral
 
