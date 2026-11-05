@@ -9,7 +9,7 @@
     "models": "https://platform.claude.com/docs/en/models/overview",
     "deprecations": "https://platform.claude.com/docs/en/about-claude/model-deprecations"
   },
-  "fetchedAt": "2026-10-23T03:06:17.477Z",
+  "fetchedAt": "2026-11-05T18:23:05.354Z",
   "longContextThresholdTokensOverride": null,
   "models": [
     {
@@ -301,7 +301,7 @@
       ],
       "name": "Claude Opus 4.1",
       "status": "retired",
-      "note": "retired, except on Bedrock and Claude Models on Google Cloud (Google managed)",
+      "note": "retired, except on Claude Models on Google Cloud (Google managed) and Bedrock",
       "contextWindow": null,
       "longContextWindow": null,
       "maxInputTokens": null,
@@ -471,7 +471,7 @@
       "aliases": [],
       "name": "Claude Sonnet 4",
       "status": "retired",
-      "note": "retired, except on Bedrock and Claude Models on Google Cloud (Google managed)",
+      "note": "retired, except on Claude Models on Google Cloud (Google managed) and Bedrock",
       "contextWindow": null,
       "longContextWindow": null,
       "maxInputTokens": null,

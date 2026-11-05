@@ -145,18 +145,13 @@ describe('[C1] settleMembers: a done stage settles its step', () => {
     expect(kept.map(a => a.status)).toEqual(['completed', OPEN])
   })
 
-  // Step 44 (decision 25, ITEM-107): the old test here pinned a failed member of a done stage as unsettled; it is split in two.
-  // Its running and waiting half is unchanged.
+  // Step 44 (decision 25, ITEM-107): the old test here pinned a failed member of a done stage as unsettled. Its running and
+  // waiting half stays here; the failed and killed half moved to the [D25] describe below.
   test('[C1] a running or waiting member is NOT settled by a done stage (only pending, OPEN, failed and killed are)', () => {
     const kept = settleMembers([m('running', { key: 'R|1', done: true }), m('waiting', { key: 'R|3', done: true }), m('completed', { key: 'R|4', done: true })], KEY, (a: any) => a.done === true)
     expect(kept.map(a => a.status)).toEqual(['running', 'waiting', 'completed'])
   })
 
-  test('[D25] a failed or killed member (no retry) of a done stage is settled: it counts as completed and no longer halts', () => {
-    const kept = settleMembers([m('failed', { key: 'R|2', done: true }), m('killed', { key: 'R|3', done: true })], KEY, (a: any) => a.done === true)
-    expect(kept.map(a => a.status)).toEqual(['completed', 'completed'])
-    expect(workflowStatus(kept)).toBe('completed')
-  })
 })
 
 describe('[D25] settleMembers: a done stage settles a failed or killed member (decision 25, ITEM-107)', () => {
@@ -211,11 +206,8 @@ describe('[D25] settleMembers: a done stage settles a failed or killed member (d
     expect(runListStatus(kept, ['done'])).toBe('completed')
   })
 
-  test('[D25] without an isDone predicate a failed member is not settled', () => {
+  test('without an isDone predicate nothing is settled (a failed member included), and the input is not changed', () => {
     expect(settleMembers([m('failed', { key: 'R|1' })], KEY).map(a => a.status)).toEqual(['failed'])
-  })
-
-  test('without an isDone predicate nothing is settled, and the input is not changed', () => {
     const all = [m('pending', { key: 'R|1' })]
     expect(settleMembers(all, KEY).map(a => a.status)).toEqual(['pending'])
     settleMembers(all, KEY, () => true)
@@ -487,8 +479,11 @@ async function boot($: any, on: any, initial: Record<string, string>, clockEvery
   return fs
 }
 
+/** The id of the Agent call `call` made last (the run's row in the pane is `wf-<id>`). */
+let lastCallId = ''
 /** The orchestrator's Agent call `toolu_<n>` with the brief of step `code`; `spawn` false leaves it a `call:` placeholder. */
 async function call($: any, n: number, code: string, spawn = true) {
+  lastCallId = `toolu_${n}`
   await nextMs()
   const prompt = brief(code)
   await $.tool.call({ tool: 'Agent', subagent_type: 'ai-dlc:agent-manager', description: `d${n}`, prompt, tool_use_id: `toolu_${n}` })
@@ -503,9 +498,10 @@ const failTurn = ($: any, id: string) => $.turn.complete({ reason: 'error', answ
 const finish = ($: any, id: string) =>
   $.turn.complete({ reason: 'answer', answer: 'done', durationMs: 1, isAborted: false, turnId: 't', agentId: id, usage: { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, model: 'claude-sonnet-5-5' } })
 
+/** The `alt` of every Svg the test UI finds (one node shape: `props.alt`; a UI change fails loudly here). */
+const altsOf = async (ui: any): Promise<string[]> => ((await ui.findAll({ type: 'Svg' })) as any[]).map((x: any) => String(x.props.alt ?? ''))
 /** The status dots the workflow pane draws (`status: <label>`), the first being the workflow's. */
-const dots = async (ui: any): Promise<string[]> =>
-  ((await ui.findAll({ type: 'Svg' })) as any[]).map((x: any) => String(x?.props?.alt ?? x?.alt ?? '')).filter(a => a.startsWith('status: '))
+const dots = async (ui: any): Promise<string[]> => (await altsOf(ui)).filter(a => a.startsWith('status: '))
 /** The workflow's status as the pane draws it now, after at most a few seconds for a redraw. */
 const paneStatus = async ($: any, want?: string): Promise<string> => {
   const ui = await $.ui.mount(pane())
@@ -1381,14 +1377,13 @@ describe('[44.3.l2.3] a timeout halt is temporary (W1), on the engine clock (W-B
 // ---------------------------------------------------------------- step 44, decision 25 (ITEM-107)
 
 /** The step headings' status dots (`step status: <label>`), as the pane draws them. */
-const stepDots = async (ui: any): Promise<string[]> =>
-  ((await ui.findAll({ type: 'Svg' })) as any[]).map((x: any) => String(x?.props?.alt ?? x?.alt ?? '')).filter(a => a.startsWith('step status: '))
+const stepDots = async (ui: any): Promise<string[]> => (await altsOf(ui)).filter(a => a.startsWith('step status: '))
 const stepStatus = async ($: any, want?: string): Promise<string[]> => {
   const ui = await $.ui.mount(pane())
   // The pane may open on the run list: go into the run (its row is `wf-<call id>`), then open every closed step accordion
   // (its `step-min` Button reads □), since a step heading is drawn inside its run only.
   if ((await ui.find({ type: 'Button', key: 'runs-back' })) !== undefined) await ui.press({ key: 'runs-back' })
-  if ((await ui.find({ type: 'Button', key: 'wf-toolu_1' })) !== undefined) await ui.press({ key: 'wf-toolu_1' })
+  if ((await ui.find({ type: 'Button', key: `wf-${lastCallId}` })) !== undefined) await ui.press({ key: `wf-${lastCallId}` })
   for (const b of (await ui.findAll({ type: 'Button' })) as any[]) {
     if (/step-min$/.test(String(b.key)) && String(b.text ?? b.label ?? b.props?.label ?? '') === '□') await ui.press({ key: b.key })
   }
