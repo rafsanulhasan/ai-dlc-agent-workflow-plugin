@@ -2,3 +2,4 @@
 - [Wave 3 Cache Lab design](project_wave3-cache-lab-design.md) — ADR-0006 transcript reader, 4 MiB caps; ADR-0007 handoff chain = one session
 - [Step 44 band and pane seats](project_step44-band-and-pane-seats.md) — ADR-0008 keep-alive band everywhere, lens follows placement; host seat facts; next ADR was 0009
 - [ITEM-104 halted state, ADR-0009](project_item104-halted-state-adr0009.md) — marks in agentsA row, staged via ITEM-106; journey narrative; next ADR 0010
+- [herdr design, ADR-0010](project_herdr-design-adr0010.md) — orchestrator drives herdr panes via skill script; result-file hand-back; next ADR 0011
