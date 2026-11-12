@@ -1,12 +1,12 @@
 ---
 run: AAWP-20261112-herdr-skill
-status: active
+status: done
 lifecycle: AAWP
 mode: subagent
 branch: feat/ai-dlc-lens
 session: session_01UvATr6zeybknGfETHs416Y
-commit: f0e7df2
-last-record: 1.3.l1-sqa-engineer-to-orchestrator.handback.md
+commit: 915b66b
+last-record: 1.5.1.l3-documentation-writer-to-orchestrator.handback.md
 updated: 2026-11-12
 ---
 # Run: herdr skill, and herdr panes for spawned agents
@@ -27,6 +27,7 @@ Agent Artifact (plugin skill + orchestrator / agent-invocation / request-routing
 
 ## Gates and loops
 AAWP/lld 2/1 · AAWP/test 2/1 · AAWP/code-review 2/1 · AAWP/critique 2/1 · clarify 2/1 (from `rounds --json`, source `loop`). AAWP has no gates.
+- **AAWP/test and AAWP/code-review raised to 3 rounds for this run** (one-off; workflow file unchanged) — the human, 2026-11-12: "Fix it, 1 more round" for the 1.4.1.l1 SIGHUP Warning.
 
 ## Stages
 | Step | Stage | Agent | Status | Record |
@@ -48,10 +49,20 @@ AAWP/lld 2/1 · AAWP/test 2/1 · AAWP/code-review 2/1 · AAWP/critique 2/1 · cl
 | 1.2.l1 | fix round 1: all findings + AC-10 main/fallback + AC-16..23 | agent-manager | done (passed) · herdr.mjs (code), SKILL.md, orchestrator.md (docs), AGENTS.md + templates + Copilot (generated); checks exit 0; tests 7 fail, all deliberate LLD changes → 1.3.l1; live probes file path + pane fallback OK; uncommitted (git locked) | 1.2.l1-agent-manager-to-orchestrator.handback.md |
 | 1.3.l1 | re-test, round 2 / 2 | sqa-engineer | done (passed) · 1220 tests, 1216 pass, 0 fail, 4 skipped, 0 todo; +herdr-run-fallback (73), +herdr-settings-levels (24); no defects | 1.3.l1-sqa-engineer-to-orchestrator.handback.md |
 | 1.5.1.l2 | docs update: run-in-pane results (in progress) | documentation-writer | done (passed) · 3 docs + generated Copilot README | 1.5.1.l2-documentation-writer-to-orchestrator.handback.md |
+| 1.2.l2 | fix round 2: SIGHUP, unref kill timer, marker wrap | agent-manager | done (passed) · a7e8068; + stdout EPIPE listener (beyond brief); checks exit 0, 1220 / 1216 / 0 fail | 1.2.l2-agent-manager-to-orchestrator.handback.md |
+| 1.3.l2 | re-test, round 3 / 3 | sqa-engineer | done (passed) · 3c01bf0 herdr-run-fix2 (47); 1267 / 1260 pass / 0 fail / 7 skipped; no defects; manual mutation checks reverted (production clean) | 1.3.l2-sqa-engineer-to-orchestrator.handback.md |
+| 1.4.1.l2 | re-review standards, round 3 / 3 | code-reviewer | done (passed) · **APPROVE**; Warning + 2 Suggestions closed; EPIPE listener sound; 1 optional Suggestion (stderr guard) accepted as is | 1.4.1.l2-code-reviewer-to-orchestrator.handback.md |
+| 1.5.1.l3 | docs: remove in-progress markers (status done) + plugins.md:84 wording | documentation-writer | done (passed) · 915b66b | 1.5.1.l3-documentation-writer-to-orchestrator.handback.md |
+| 1.4.1.l1 | re-review standards, round 2 / 2 | code-reviewer | done (passed) · **approve**; round-1 findings closed; 1 Warning: SIGHUP regression (detached child orphaned if herdr closes the pane, herdr.mjs:711-715, unverified); 2 Suggestions (unref kill timer; marker wrap test) → human (review limits used up) | 1.4.1.l1-code-reviewer-to-orchestrator.handback.md |
+| 1.4.2.l1 | re-review spec, round 2 / 2 | code-reviewer | done (passed) · **APPROVE**; W1, W2 closed; all amended / new ACs evidenced; 3 Suggestions (retag settings tests, AC-22 check weak, Copilot Skill("herdr") carry-over) | 1.4.2.l1-code-reviewer-to-orchestrator.handback.md |
+| 1.5.2.l1 | re-critique docs, round 2 / 2 | brutal-critique | done (passed) · **PASS**; M1, M2, Minor 1 closed; 1 Minor (docs/plugins.md:84 `--agent` wording vs READMEs) — cosmetic, fold into the final docs stage | 1.5.2.l1-brutal-critique-to-orchestrator.handback.md |
 | 1.5.1.l1 | docs fix: teammate panes (critique Minor 1) | documentation-writer | done (passed) · 3 docs + generated Copilot README, 1 line each; uncommitted (git locked) | 1.5.1.l1-documentation-writer-to-orchestrator.handback.md |
 | 1.4.2 | code review, spec, round 1 / 2 | code-reviewer | done (passed) · **approve**; W: AC-11 recovery (known); W: SKILL.md:130 (known); S: AC-10 vs D4 → human; S: settings above AC-5 → human; S: Copilot dangling Skill("herdr") (accepted, guarded) | 1.4.2-code-reviewer-to-orchestrator.handback.md |
 | 1.5.1 | docs (README herdr entry, in progress) | documentation-writer | done (passed) · bc834ea; 3 READMEs + docs/plugins.md marked in progress | 1.5.1-documentation-writer-to-orchestrator.handback.md |
 | 1.5.2 | critique (docs of 1.2, 1.2.1, 1.5.1), round 1 / 2 | brutal-critique | done (passed) · **PASS** with 2 Major (M1 SKILL.md:71/135 no recovery branch when line 1 is not the handoff line → store failed hand-back, re-spawn with Agent; M2 SKILL.md:130 "nothing beyond Agent" overstated) + Minor 1 (READMEs: teammate pane stays until shutdown) → next fix round with test / review findings; Minors 2-5 acceptable | 1.5.2-brutal-critique-to-orchestrator.handback.md |
+
+## Feature 2 status
+Closed 2026-11-12: critique 2.5 PASS; the human kept the memory-only write rule for brutal-critique and research-assistant (Minor 1 resolved as "keep"). Minor 5 (build-copilot NotebookEdit→edit alias quirk) → backlog item at run close.
 
 ## Feature 2 (joined 2026-11-12): Write and Edit for every agent
 Request (human, after 1.1.3's write was refused): "give every agent the Write tool, edit tool, and multiple file edit tool so that they can write files. its a part of this run." Then: "both. skip multiedit now." Clarified: (a) agent-manager adds Write and Edit to every plugin agent that lacks them (read-only agents gain write access, the human accepted the role change); MultiEdit skipped; (b) for this run, every writing agent is spawned with worktree isolation, because the refusal ("parent bg session hasn't isolated yet, so writes to the shared checkout are blocked") is environmental, not a missing tool. Orchestrator merges each worktree branch after checking it.
