@@ -5,8 +5,8 @@ lifecycle: AAWP
 mode: subagent
 branch: feat/ai-dlc-lens
 session: session_01UvATr6zeybknGfETHs416Y
-commit: 3514805
-last-record: 1.1.6-orchestrator-to-system-engineer.handoff.md
+commit: 63b662d
+last-record: 1.2-orchestrator-to-agent-manager.handoff.md
 updated: 2026-11-12
 ---
 # Run: herdr skill, and herdr panes for spawned agents
@@ -37,8 +37,10 @@ AAWP/lld 2/1 · AAWP/test 2/1 · AAWP/code-review 2/1 · AAWP/critique 2/1 · cl
 | 1.1.4 | design | software-architect (worktree) | done (passed) · design + ADR-0010 (Proposed); D1-D9; open Q1-Q5 → 1.1.5.x; O1 → human: add `off` | 1.1.4-software-architect-to-orchestrator.handback.md |
 | 1.1.5.1 | clarify: herdr CLI (Q1) | research-assistant | done (passed) · syntax confirmed (0.9.5); unknown: no-server behaviour, liveness call, Windows transport/shell, rename/run/close output → live probes at 1.1.6 | 1.1.5.1-research-assistant-to-orchestrator.handback.md |
 | 1.1.5.2 | clarify: Claude Code (Q2-Q5) | research-assistant | done (passed) · subagent jsonl path; -p Manual mode, --allowedTools / --permission-prompts none; claude.exe native; unknown: -p --agent plugin load, live jsonl growth, session id in Bash → live probes at 1.1.6 | 1.1.5.2-research-assistant-to-orchestrator.handback.md |
-| 1.1.6 | low-level design (+ live probes) | system-engineer | in-progress | 1.1.6-orchestrator-to-system-engineer.handoff.md |
-| 1.2 | change | agent-manager | pending | — |
+| 1.1.6 | low-level design (+ live probes) | system-engineer | done (passed) · LLD 1.1.6-lld.md (6ff361e); probes: herdr 0.9.5 running, no-server exit 0 (read status line), claude.cmd npm shim, `claude -p --agent ai-dlc:…` loads plugin agent; U1 HERDR_ENV absent in herdr pane → human | 1.1.6-system-engineer-to-orchestrator.handback.md |
+| 1.1.6.l1 | LLD revision: detection fallback (lld loop round 1 / 2) | system-engineer | done (passed) · 63b662d; detect: off → --version → status running → HERDR_ENV anchor, else unique working claude pane in this cwd, else inactive; AC-4/D8 change in LLD §9.4 | 1.1.6.l1-system-engineer-to-orchestrator.handback.md |
+| 1.2 | change | agent-manager | in-progress | 1.2-orchestrator-to-agent-manager.handoff.md |
+| 1.2.1 | change: plugin-management mention (owned skill; fresh agent-manager) | agent-manager (fresh) | pending | — |
 | 1.3 | test (code) | sqa-engineer | pending | — |
 | 1.4.1 / 1.4.2 | code review standards / spec | code-reviewer ×2 | pending | — |
 | 1.5.1 | docs | documentation-writer | pending | — |
@@ -59,7 +61,9 @@ Change kinds (2.2): docs — 5 plugins/claude/ai-dlc/agents/*.md; generated — 
 - 2026-11-12: worktrees are created from main, not feat/ai-dlc-lens; both agents reset their branch to a520afa first.
 - 2026-11-12, human: set `worktree.bgIsolation: none` in the main repo `.claude/settings.local.json`; agents now write to the checkout directly; an agent that uses a worktree copies that file into it. Worktree isolation no longer required.
 - 2026-11-12, human (O1): the herdr setting also accepts `off` (mode: watch default | run-in-pane | off).
+- 2026-11-12, human: commits are GPG-signed; signing timed out until the human unlocked GPG. Agents never disable signing.
+- 2026-11-12, human (U1): fallback detection — active on HERDR_ENV=1, or, when missing, herdr server running AND this session's pane identified reliably; else inactive. Changes AC-4.
 - 2026-11-12, orchestrator: 1.1.3 hand-back accepted as the intent artifact (content complete; only the file write failed).
 
 ## Next action
-Feature 2 done (PASS); Minor 1 (memory-only wording) open with the human. Wait for 1.1.6 (system-engineer LLD); then 1.2 agent-manager change. Note: the 2.2 tool change needs /reload-plugins to take effect (research-assistant still lacked Write at 1.1.5.2).
+Feature 2 done (PASS); Minor 1 (memory-only wording) open with the human. Wait for 1.2 (agent-manager change); then 1.2.1 (fresh agent-manager, plugin-management text from 1.2), then reviews by kind (1.3 sqa, 1.4.x code-reviewer, critique, docs). Note: the 2.2 tool change needs /reload-plugins to take effect (research-assistant still lacked Write at 1.1.5.2).
