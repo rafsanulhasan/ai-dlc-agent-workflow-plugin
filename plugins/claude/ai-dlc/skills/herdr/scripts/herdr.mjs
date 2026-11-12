@@ -454,6 +454,9 @@ export const PANE_COPY_MAX_BYTES = 16384;
 export const PANE_COPY_WIDTH = 76;
 const sha256 = (buf) => crypto.createHash("sha256").update(buf).digest("hex");
 
+/** A regex source for a literal with optional whitespace between its characters (its own spaces included). */
+const looseLiteral = (s) => [...s].filter((c) => !/\s/.test(c)).map((c) => c.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("\\s*");
+
 /** The line-1 shape of a hand-back: `handoff <file>: passed|failed — <why>`. */
 export const HANDOFF_LINE = /^handoff \S+: (passed|failed) — /;
 
@@ -469,22 +472,25 @@ export function encodePaneCopy(text, nonce) {
 /**
  * The result in a pane's text: { ok: true, text } or { ok: false, reason }. Takes the last END marker of this nonce and
  * the last BEGIN marker before it; markers of another nonce are ignored. All whitespace between them is removed, so CRLF,
- * trailing blanks and wrapped lines do not matter; text around the block (a shell prompt) is ignored.
+ * trailing blanks and wrapped lines do not matter; text around the block (a shell prompt) is ignored. The markers match
+ * with any whitespace between their characters too, so a marker line the pane wrapped still decodes.
  */
 export function decodePaneCopy(paneText, nonce) {
   const text = String(paneText ?? "");
   if (typeof nonce !== "string" || !NONCE.test(nonce)) return { ok: false, reason: "markers missing" };
+  const endRe = new RegExp(`${looseLiteral(`<<<HERDR-RESULT-END-${nonce} sha256=`)}\\s*((?:[0-9a-f]\\s*){63}[0-9a-f])\\s*${looseLiteral(">>>")}`, "g");
+  const beginRe = new RegExp(`${looseLiteral(`<<<HERDR-RESULT-BEGIN-${nonce} encoding=base64 bytes=`)}\\s*([0-9](?:\\s*[0-9])*)\\s*${looseLiteral(">>>")}`, "g");
   let end;
-  for (const m of text.matchAll(new RegExp(`<<<HERDR-RESULT-END-${nonce} sha256=([0-9a-f]{64})>>>`, "g"))) end = m;
+  for (const m of text.matchAll(endRe)) end = m;
   if (!end) return { ok: false, reason: "markers missing" };
   let begin;
-  for (const m of text.slice(0, end.index).matchAll(new RegExp(`<<<HERDR-RESULT-BEGIN-${nonce} encoding=base64 bytes=([0-9]+)>>>`, "g"))) begin = m;
+  for (const m of text.slice(0, end.index).matchAll(beginRe)) begin = m;
   if (!begin) return { ok: false, reason: "markers missing" };
   const body = text.slice(begin.index + begin[0].length, end.index).replace(/\s+/g, "");
   if (body.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(body)) return { ok: false, reason: "invalid base64" };
   const buf = Buffer.from(body, "base64");
-  if (buf.length !== Number(begin[1])) return { ok: false, reason: "size mismatch" };
-  if (sha256(buf) !== end[1]) return { ok: false, reason: "hash mismatch" };
+  if (buf.length !== Number(begin[1].replace(/\s+/g, ""))) return { ok: false, reason: "size mismatch" };
+  if (sha256(buf) !== end[1].replace(/\s+/g, "")) return { ok: false, reason: "hash mismatch" };
   return { ok: true, text: buf.toString("utf8") };
 }
 
@@ -633,7 +639,7 @@ export function killTree(child, platform = process.platform) {
   if (platform === "win32") { try { execFileSync("taskkill", ["/pid", String(pid), "/t", "/f"], { stdio: "ignore", windowsHide: true }); } catch {} return; }
   const signal = (s) => { try { process.kill(-pid, s); } catch { try { child.kill(s); } catch {} } };
   signal("SIGTERM");
-  setTimeout(() => signal("SIGKILL"), 5000);
+  setTimeout(() => signal("SIGKILL"), 5000).unref();
 }
 
 /**
@@ -711,8 +717,11 @@ async function runChild(job, { file, args, shell }, finish) {
   const opts = { cwd: job.root, env, stdio: ["ignore", "pipe", "pipe"], windowsHide: false, detached: process.platform !== "win32" };
   const child = shell ? spawn(shellLine(file, args), { ...opts, shell: true }) : spawn(file, args, opts);
   const onSignal = () => killTree(child);
+  // A closed pane hangs up the wrapper: stop the child's tree; a write to the gone pane must not crash before `.exit`.
+  const onHangup = () => { process.stdout.on("error", () => {}); killTree(child); };
   process.on("SIGINT", onSignal);
   process.on("SIGTERM", onSignal);
+  process.on("SIGHUP", onHangup);
   let result, timedOut = false, spawnError;
   const minutes = job.timeoutMinutes;
   const timer = setTimeout(() => { timedOut = true; killTree(child); }, minutes * 60_000);
@@ -731,6 +740,7 @@ async function runChild(job, { file, args, shell }, finish) {
   clearTimeout(timer);
   process.off("SIGINT", onSignal);
   process.off("SIGTERM", onSignal);
+  process.off("SIGHUP", onHangup);
   const u = timedOut ? { usable: false, reason: `timed out after ${minutes} min` } : spawnError ? { usable: false, reason: `claude: ${spawnError}` } : usableResult(code, result);
   await finish({
     usable: u.usable, ...(u.usable ? {} : { reason: u.reason }), ...(typeof result?.result === "string" ? { text: result.result } : {}),
