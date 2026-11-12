@@ -13,6 +13,9 @@
 // Pane commands (run inside a pane; always exit 0):
 //   watch <job.json>     the progress view, read only
 //   child <job.json>     the run-in-pane wrapper around `claude -p`
+// run's result comes from the result file the child writes (main); when that channel lost a result the child produced,
+// from a base64 copy the child prints in its pane, read with `pane read` and checked by byte count and sha256 (fallback).
+// run's ok:true means "the agent's final text was copied to the result file", never "the hand-back is valid".
 // Settings commands (for people; the format of configure-auto-handoff's auto-handoff.mjs):
 //   show [--json] | merge [--dry-run] | set <key>=<value>... [--dry-run] | validate
 //
@@ -23,6 +26,7 @@
 // Test hooks, not settings: AI_DLC_HERDR_CALL_TIMEOUT_MS (5000), AI_DLC_HERDR_POLL_MS,
 // AI_DLC_HERDR_TRANSCRIPT_ROOT.
 
+import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -228,7 +232,7 @@ export function runExe(name, args, { timeoutMs = callTimeoutMs(), input, env = p
   const exe = resolveExe(name, env);
   if (!exe) return { ok: false, status: null, stdout: "", stderr: "", reason: `${name} is not on PATH`, missing: true };
   if (exe.shell && !args.every(safeArg)) return { ok: false, status: null, stdout: "", stderr: "", reason: "unsafe argument" };
-  const options = { timeout: timeoutMs, encoding: "utf8", windowsHide: true, env, input, stdio: [input === undefined ? "ignore" : "pipe", "pipe", "pipe"] };
+  const options = { timeout: timeoutMs, encoding: "utf8", windowsHide: true, env, input, maxBuffer: 16 * 1024 * 1024, stdio: [input === undefined ? "ignore" : "pipe", "pipe", "pipe"] };
   let r;
   try { r = exe.shell ? spawnSync(shellLine(exe.file, args), { ...options, shell: true }) : spawnSync(exe.file, args, options); }
   catch (e) { return { ok: false, status: null, stdout: "", stderr: "", reason: `${name}: ${e.message}` }; }
@@ -358,7 +362,11 @@ function liveIds() {
   return panes ? new Set(panes.map((p) => p?.pane_id).filter((x) => typeof x === "string")) : undefined;
 }
 
-/** Split, label and start one pane. { ok, pane?, reason?, warnings }. */
+/**
+ * Split, label and start one pane. { ok, pane?, reason?, warnings }.
+ * The only place that closes a pane after a failure: once the split succeeded, any later failure closes the new pane
+ * here, once, and its callers (open, run) never close it again.
+ */
 function openPane({ root, runId, det, step, agent, job, mode, live }) {
   const warnings = [];
   const anchor = det.anchor;
@@ -372,18 +380,21 @@ function openPane({ root, runId, det, step, agent, job, mode, live }) {
   if (!r.ok) return { ok: false, reason: `pane split failed: ${r.reason}`, warnings };
   const pane = paneIdFrom(r.json);
   if (typeof pane !== "string" || !pane) return { ok: false, reason: "unexpected herdr output", warnings };
-  const rn = runExe("herdr", ["pane", "rename", pane, `${agent} ${step}`]);
-  if (!rn.ok) warnings.push(`pane rename ${pane}: ${rn.reason}`);
-  const jobFile = jobPath(root, runId, step, agent);
-  atomicWrite(jobFile, `${JSON.stringify(job, null, 2)}\n`);
-  atomicWrite(paneFile(root, runId, step, agent), `${JSON.stringify({ pane, mode, step, agent, opened: job.opened ?? new Date().toISOString() })}\n`);
-  live?.add(pane);
-  const run = runExe("herdr", ["pane", "run", pane, paneCommand(job.kind, jobFile)]);
-  if (!run.ok) {
+  const fail = (reason) => {
     runExe("herdr", ["pane", "close", pane]);
     try { fs.rmSync(paneFile(root, runId, step, agent), { force: true }); } catch {}
-    return { ok: false, pane, reason: `pane run failed: ${run.reason}`, warnings };
-  }
+    return { ok: false, pane, reason, warnings };
+  };
+  try {
+    const rn = runExe("herdr", ["pane", "rename", pane, `${agent} ${step}`]);
+    if (!rn.ok) warnings.push(`pane rename ${pane}: ${rn.reason}`);
+    const jobFile = jobPath(root, runId, step, agent);
+    atomicWrite(jobFile, `${JSON.stringify(job, null, 2)}\n`);
+    atomicWrite(paneFile(root, runId, step, agent), `${JSON.stringify({ pane, mode, step, agent, opened: job.opened ?? new Date().toISOString() })}\n`);
+    live?.add(pane);
+    const run = runExe("herdr", ["pane", "run", pane, paneCommand(job.kind, jobFile)]);
+    if (!run.ok) return fail(`pane run failed: ${run.reason}`);
+  } catch (e) { return fail(`internal: ${e.message}`); }
   return { ok: true, pane, warnings };
 }
 
@@ -430,45 +441,144 @@ function closeCommand({ root, runId, pairs }) {
 // ---- run (run-in-pane) ----------------------------------------------------------------------------
 const SAFE_PATH = /^[A-Za-z0-9._\/-]+$/;
 const safeRel = (p) => typeof p === "string" && SAFE_PATH.test(p) && !p.split("/").includes("..") && !p.startsWith("/");
+const WORKTREE = /^[A-Za-z0-9._-]+$/;
+const NONCE = /^[0-9a-f]{12}$/;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const isDir = (p) => { try { return fs.statSync(p).isDirectory(); } catch { return false; } };
+
+// ---- result retrieval: the result file (main) and the pane copy (fallback) --------------------------
+// Probed on herdr 0.9.5 / Windows: `pane read` without --lines is only a tail; plain text loses tabs, trailing blanks
+// and ANSI; scrollback is bounded (a 39 KB base64 block lost its first marker). Hence base64, a per-run nonce in the
+// markers (an older block stays in the scrollback) and a 16 KiB cap on the copy.
+export const PANE_COPY_MAX_BYTES = 16384;
+export const PANE_COPY_WIDTH = 76;
+const sha256 = (buf) => crypto.createHash("sha256").update(buf).digest("hex");
+
+/** The line-1 shape of a hand-back: `handoff <file>: passed|failed — <why>`. */
+export const HANDOFF_LINE = /^handoff \S+: (passed|failed) — /;
+
+/** The pane copy block of a result: BEGIN marker, base64 at 76 columns, END marker with the sha256; LF line ends. */
+export function encodePaneCopy(text, nonce) {
+  const buf = Buffer.from(String(text), "utf8");
+  const b64 = buf.toString("base64");
+  const lines = [];
+  for (let i = 0; i < b64.length; i += PANE_COPY_WIDTH) lines.push(b64.slice(i, i + PANE_COPY_WIDTH));
+  return [`<<<HERDR-RESULT-BEGIN-${nonce} encoding=base64 bytes=${buf.length}>>>`, ...lines, `<<<HERDR-RESULT-END-${nonce} sha256=${sha256(buf)}>>>`, ""].join("\n");
+}
+
+/**
+ * The result in a pane's text: { ok: true, text } or { ok: false, reason }. Takes the last END marker of this nonce and
+ * the last BEGIN marker before it; markers of another nonce are ignored. All whitespace between them is removed, so CRLF,
+ * trailing blanks and wrapped lines do not matter; text around the block (a shell prompt) is ignored.
+ */
+export function decodePaneCopy(paneText, nonce) {
+  const text = String(paneText ?? "");
+  if (typeof nonce !== "string" || !NONCE.test(nonce)) return { ok: false, reason: "markers missing" };
+  let end;
+  for (const m of text.matchAll(new RegExp(`<<<HERDR-RESULT-END-${nonce} sha256=([0-9a-f]{64})>>>`, "g"))) end = m;
+  if (!end) return { ok: false, reason: "markers missing" };
+  let begin;
+  for (const m of text.slice(0, end.index).matchAll(new RegExp(`<<<HERDR-RESULT-BEGIN-${nonce} encoding=base64 bytes=([0-9]+)>>>`, "g"))) begin = m;
+  if (!begin) return { ok: false, reason: "markers missing" };
+  const body = text.slice(begin.index + begin[0].length, end.index).replace(/\s+/g, "");
+  if (body.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(body)) return { ok: false, reason: "invalid base64" };
+  const buf = Buffer.from(body, "base64");
+  if (buf.length !== Number(begin[1])) return { ok: false, reason: "size mismatch" };
+  if (sha256(buf) !== end[1]) return { ok: false, reason: "hash mismatch" };
+  return { ok: true, text: buf.toString("utf8") };
+}
+
+/** `pane read` of a run-in-pane pane: { ok, text? , gone?, reason? }. */
+function readPaneText(pane) {
+  const r = runExe("herdr", ["pane", "read", pane, "--source", "recent-unwrapped", "--lines", "100000"]);
+  if (r.ok) return { ok: true, text: r.stdout };
+  let code;
+  for (const t of [r.stderr, r.stdout]) { try { const j = JSON.parse(String(t).trim()); if (isObj(j?.error)) code = j.error.code; } catch {} if (code) break; }
+  return code === "pane_not_found" ? { ok: false, gone: true, reason: "pane not found" } : { ok: false, reason: `pane read failed: ${code ?? r.reason}` };
+}
+
+/**
+ * The result of a run (LLD 3.8.2). Main: `.exit` says usable and the result file matches its sha256 → source "file".
+ * Fallback, only when the file channel lost a result the child may have produced (usable but the file missing, empty
+ * or changed; writeError; `.exit` missing or unparsable): the pane copy → source "pane", written to the result file.
+ * Never when `.exit.usable` is false: the child's own verdict stands.
+ * job: { outFile, nonce, pane, missingReason } (missingReason: why there is no parsable `.exit`); ex: `.exit` or undefined.
+ * deps: { readPane(pane), sleep(ms), attempts }. Returns { ok: true, source, text } or { ok: false, reason }.
+ */
+export async function retrieveResult({ outFile, nonce, pane, missingReason }, ex, deps = {}) {
+  const readPane = deps.readPane ?? readPaneText;
+  const wait = deps.sleep ?? sleep;
+  const attempts = deps.attempts ?? 3;
+  let mainReason;
+  if (isObj(ex)) {
+    if (ex.usable === false) return { ok: false, reason: ex.reason ?? "no usable result" };
+    if (ex.usable === true && !ex.writeError) {
+      let buf;
+      try { buf = fs.readFileSync(outFile); } catch {}
+      if (buf && buf.length && buf.toString("utf8").trim() && typeof ex.sha256 === "string" && sha256(buf) === ex.sha256) {
+        return { ok: true, source: "file", text: buf.toString("utf8") };
+      }
+      mainReason = !buf || !buf.length || !buf.toString("utf8").trim() ? "result file missing or empty" : "result file does not match .exit";
+    } else if (ex.writeError) mainReason = `result file not written: ${ex.writeError}`;
+    else mainReason = "no usable result";
+  } else mainReason = missingReason ?? "no .exit file";
+  let last;
+  for (let i = 0; i < attempts; i++) {
+    if (i) await wait(pollMs(500));
+    const read = readPane(pane);
+    if (!read.ok) { if (read.gone) return { ok: false, reason: mainReason }; last = read.reason; continue; }
+    const got = decodePaneCopy(read.text, nonce);
+    if (got.ok) {
+      if (!got.text.trim()) return { ok: false, reason: "pane copy unusable: blank result" };
+      try { atomicWrite(outFile, got.text); } catch (e) { return { ok: false, reason: `pane copy not written: ${e.message}` }; }
+      return { ok: true, source: "pane", text: got.text };
+    }
+    last = got.reason;
+    if (got.reason !== "markers missing") break;
+  }
+  return { ok: false, reason: `pane copy unusable: ${last}` };
+}
 
 async function runCommand({ root, run, runId, step, agent, record, out, worktree, timeout }) {
   const det = detectState({ root, runId });
   if (!det.active) return { ok: false, stage: "launch", reason: det.reason };
   if (det.mode !== "run-in-pane") return { ok: false, stage: "launch", reason: `mode is ${det.mode}, not run-in-pane` };
-  if (!safeRel(record) || !safeRel(out) || !fs.existsSync(path.join(root, record)) || (worktree !== undefined && !/^[A-Za-z0-9._-]+$/.test(worktree))) {
+  if (!safeRel(record) || !safeRel(out) || !fs.existsSync(path.join(root, record)) || !AGENT.test(agent) || (worktree !== undefined && !WORKTREE.test(worktree))) {
     return { ok: false, stage: "launch", reason: "unsafe or missing path" };
   }
   const timeoutMinutes = timeout ?? det.runTimeoutMinutes;
   const outFile = path.join(root, out), exitFile = `${outFile}.exit`;
   for (const f of [outFile, exitFile]) fs.rmSync(f, { force: true });
-  const job = { kind: "child", agent, record, out, ...(worktree ? { worktree } : {}), timeoutMinutes, root, opened: new Date().toISOString() };
+  const nonce = crypto.randomBytes(6).toString("hex");
+  const job = { kind: "child", agent, record, out, ...(worktree ? { worktree } : {}), timeoutMinutes, root, nonce, opened: new Date().toISOString() };
   const opened = openPane({ root, runId, det, step, agent, job, mode: "run-in-pane", live: liveIds() });
-  if (!opened.ok) {
-    if (opened.pane) runExe("herdr", ["pane", "close", opened.pane]);
-    return { ok: false, stage: "launch", reason: opened.reason };
-  }
+  if (!opened.ok) return { ok: false, stage: "launch", reason: opened.reason };
   const pane = opened.pane;
   const every = pollMs(1000);
   const deadline = Date.now() + timeoutMinutes * 60_000 + 15_000;
-  let polls = 0, stopped;
+  let polls = 0, missingReason;
   while (!fs.existsSync(exitFile)) {
-    if (Date.now() > deadline) { stopped = `no result within ${timeoutMinutes} min`; break; }
+    if (Date.now() > deadline) { missingReason = `no result within ${timeoutMinutes} min`; break; }
     await sleep(every);
     if (++polls % 10 === 0 && !fs.existsSync(exitFile)) {
       const ids = liveIds();
-      if (ids && !ids.has(pane) && !fs.existsSync(exitFile)) { stopped = "pane closed before the agent finished"; break; }
+      if (ids && !ids.has(pane)) {
+        if (fs.existsSync(exitFile)) break; // it finished just before the pane closed
+        return { ok: false, stage: "run", reason: "pane closed before the agent finished", exit: null, pane };
+      }
     }
   }
-  if (stopped) return { ok: false, stage: "run", reason: stopped, exit: null, pane };
-  const ex = readJson(exitFile);
-  if (!isObj(ex)) return { ok: false, stage: "run", reason: "unreadable .exit file", exit: null, pane };
-  const text = readMaybe(outFile);
-  if (ex.usable === true && text !== undefined && text.trim()) {
-    closeOne(root, runId, step, agent);
-    return { ok: true, result: out, exit: ex.exit ?? 0, permissionDenials: ex.permissionDenials ?? 0, sessionId: ex.sessionId ?? null, costUsd: ex.costUsd ?? null };
-  }
-  return { ok: false, stage: "run", reason: ex.reason ?? "no usable result", exit: ex.exit ?? null, pane };
+  let ex;
+  if (!missingReason) { ex = readJson(exitFile); if (!isObj(ex)) { ex = undefined; missingReason = "unreadable .exit file"; } }
+  const got = await retrieveResult({ outFile, nonce, pane, missingReason }, ex);
+  if (!got.ok) return { ok: false, stage: "run", reason: got.reason, exit: ex?.exit ?? null, pane };
+  if (got.source === "pane" && ex) { try { atomicWrite(exitFile, JSON.stringify({ ...ex, resultSource: "pane" })); } catch {} }
+  closeOne(root, runId, step, agent);
+  const line1 = got.text.replace(/^﻿/, "").split(/\r?\n/, 1)[0];
+  return {
+    ok: true, result: out, source: got.source, exit: ex ? (ex.exit ?? 0) : null, line1: line1.slice(0, 200), handoffLine: HANDOFF_LINE.test(line1),
+    permissionDenials: ex?.permissionDenials ?? 0, sessionId: ex?.sessionId ?? null, costUsd: ex?.costUsd ?? null,
+  };
 }
 
 // ---- pane side: child ----------------------------------------------------------------------------
@@ -512,27 +622,99 @@ export function usableResult(exit, result) {
   return { usable: true };
 }
 
-function killTree(child) {
-  if (process.platform === "win32") { try { execFileSync("taskkill", ["/pid", String(child.pid), "/t", "/f"], { stdio: "ignore", windowsHide: true }); } catch {} return; }
-  try { child.kill("SIGTERM"); } catch {}
-  setTimeout(() => { try { child.kill("SIGKILL"); } catch {} }, 5000).unref();
+/**
+ * Stop a child and everything it started; never throws. Windows: `taskkill /t /f`. POSIX: the child was spawned
+ * detached, so it leads its own process group: SIGTERM to the group, SIGKILL 5 s later (the child alone if the group
+ * signal fails).
+ */
+export function killTree(child, platform = process.platform) {
+  const pid = child?.pid;
+  if (!pid) return;
+  if (platform === "win32") { try { execFileSync("taskkill", ["/pid", String(pid), "/t", "/f"], { stdio: "ignore", windowsHide: true }); } catch {} return; }
+  const signal = (s) => { try { process.kill(-pid, s); } catch { try { child.kill(s); } catch {} } };
+  signal("SIGTERM");
+  setTimeout(() => signal("SIGKILL"), 5000);
 }
 
-async function childCommand(jobFile) {
-  const job = readJson(jobFile);
-  if (!isObj(job) || job.kind !== "child" || !safeRel(job.record) || !safeRel(job.out) || typeof job.root !== "string") { console.log("[no usable result: bad job file]"); return 0; }
-  const outFile = path.join(job.root, job.out), exitFile = `${outFile}.exit`;
-  const finish = (fields) => { atomicWrite(exitFile, JSON.stringify(fields)); };
-  const exe = resolveExe("claude");
-  if (!exe) { finish({ usable: false, exit: null, reason: "claude is not on PATH" }); console.log("[no usable result: claude is not on PATH]"); return 0; }
+/**
+ * Validate a child job and build its claude call; pure apart from finding claude on PATH.
+ * { ok: true, file, args, shell } or { ok: false, field } (an invalid job field) or { ok: false, reason }.
+ */
+export function childCommand(job, env = process.env) {
+  if (!isObj(job) || job.kind !== "child") return { ok: false, field: "kind" };
+  if (typeof job.root !== "string" || !isDir(job.root)) return { ok: false, field: "root" };
+  if (!safeRel(job.out)) return { ok: false, field: "out" };
+  if (!safeRel(job.record)) return { ok: false, field: "record" };
+  if (typeof job.agent !== "string" || !AGENT.test(job.agent)) return { ok: false, field: "agent" };
+  if (job.worktree !== undefined && (typeof job.worktree !== "string" || !WORKTREE.test(job.worktree))) return { ok: false, field: "worktree" };
+  if (typeof job.nonce !== "string" || !NONCE.test(job.nonce)) return { ok: false, field: "nonce" };
+  if (typeof job.timeoutMinutes !== "number" || !(job.timeoutMinutes > 0)) return { ok: false, field: "timeoutMinutes" };
+  const exe = resolveExe("claude", env);
+  if (!exe) return { ok: false, reason: "claude is not on PATH" };
   const args = childArgs(job);
-  if (exe.shell && !args.every(safeArg)) { finish({ usable: false, exit: null, reason: "unsafe argument" }); console.log("[no usable result: unsafe argument]"); return 0; }
+  if (exe.shell && !args.every(safeArg)) return { ok: false, reason: "unsafe argument" };
+  return { ok: true, file: exe.file, args, shell: exe.shell };
+}
+
+const printNow = (text) => new Promise((resolve) => { try { process.stdout.write(text, () => resolve()); } catch { resolve(); } });
+
+/**
+ * The end of every child path; never throws. a) a usable result goes to the result file first; b) the pane copy is
+ * printed (at most 16 KiB); c) `.exit` is written last, so its presence means the result file is final. Each step is
+ * tried on its own: a failing write is recorded (`writeError`) or printed, and the next step still runs.
+ * target: { outFile, out, nonce } (outFile undefined when the job named no safe place); r: { usable, reason?, text?, ...fields }.
+ */
+export async function finishChild(target, r, write = atomicWrite) {
+  try {
+    const { usable, reason, text, ...fields } = r;
+    const buf = typeof text === "string" ? Buffer.from(text, "utf8") : undefined;
+    let writeError, paneCopy = false;
+    if (usable && target.outFile) { try { write(target.outFile, text); } catch (e) { writeError = e.message; } }
+    if (usable && !target.outFile) writeError = "no result file";
+    if (usable) {
+      await printNow(writeError ? `[result file not written: ${writeError}]\n` : `[result written: ${target.out}]\n`);
+      if (buf.length <= PANE_COPY_MAX_BYTES && typeof target.nonce === "string" && NONCE.test(target.nonce)) {
+        await printNow(`[result copy for the orchestrator follows: ${buf.length} bytes, base64]\n${encodePaneCopy(text, target.nonce)}`);
+        paneCopy = true;
+      } else await printNow("[no pane copy: result larger than 16 KiB]\n");
+    } else await printNow(`[no usable result: ${reason}]\n`);
+    const exit = {
+      usable: Boolean(usable), ...fields, ...(buf ? { bytes: buf.length, sha256: sha256(buf) } : {}), paneCopy, nonce: target.nonce ?? null,
+      ...(usable ? {} : { reason }), ...(writeError ? { writeError } : {}),
+    };
+    if (!target.outFile) { await printNow("[could not write .exit: the job names no safe result file]\n"); return; }
+    try { write(`${target.outFile}.exit`, JSON.stringify(exit)); } catch (e) { await printNow(`[could not write .exit: ${e.message}]\n`); }
+  } catch (e) {
+    try { process.stdout.write(`[child: ${e.message}]\n`); } catch {}
+  }
+}
+
+async function childMain(jobFile) {
+  const job = readJson(jobFile);
+  const writable = isObj(job) && typeof job.root === "string" && isDir(job.root) && safeRel(job.out);
+  const target = { outFile: writable ? path.join(job.root, job.out) : undefined, out: writable ? job.out : undefined, nonce: isObj(job) ? job.nonce : undefined };
+  let finished = false;
+  const finish = async (r) => { if (finished) return; finished = true; await finishChild(target, r); };
+  try {
+    const cmd = childCommand(job);
+    if (!cmd.ok) { await finish({ usable: false, exit: null, reason: cmd.field ? `invalid job: ${cmd.field}` : cmd.reason }); return 0; }
+    return await runChild(job, cmd, finish);
+  } catch (e) {
+    await finish({ usable: false, exit: null, reason: `internal: ${e.message}` });
+    return 0;
+  }
+}
+
+async function runChild(job, { file, args, shell }, finish) {
   const env = { ...process.env, AI_DLC_HERDR_MODE: "off" };
   for (const k of Object.keys(env)) if (k.toUpperCase() === "HERDR_ENV") delete env[k];
-  const opts = { cwd: job.root, env, stdio: ["ignore", "pipe", "pipe"], windowsHide: false };
-  const child = exe.shell ? spawn(shellLine(exe.file, args), { ...opts, shell: true }) : spawn(exe.file, args, opts);
+  const opts = { cwd: job.root, env, stdio: ["ignore", "pipe", "pipe"], windowsHide: false, detached: process.platform !== "win32" };
+  const child = shell ? spawn(shellLine(file, args), { ...opts, shell: true }) : spawn(file, args, opts);
+  const onSignal = () => killTree(child);
+  process.on("SIGINT", onSignal);
+  process.on("SIGTERM", onSignal);
   let result, timedOut = false, spawnError;
-  const minutes = Number(job.timeoutMinutes) > 0 ? Number(job.timeoutMinutes) : 60;
+  const minutes = job.timeoutMinutes;
   const timer = setTimeout(() => { timedOut = true; killTree(child); }, minutes * 60_000);
   readline.createInterface({ input: child.stdout }).on("line", (line) => {
     let ev;
@@ -547,14 +729,14 @@ async function childCommand(jobFile) {
     child.on("close", (c) => resolve(c));
   });
   clearTimeout(timer);
+  process.off("SIGINT", onSignal);
+  process.off("SIGTERM", onSignal);
   const u = timedOut ? { usable: false, reason: `timed out after ${minutes} min` } : spawnError ? { usable: false, reason: `claude: ${spawnError}` } : usableResult(code, result);
-  if (u.usable) atomicWrite(outFile, result.result);
-  finish({
-    usable: u.usable, exit: code, subtype: result?.subtype ?? null, isError: result?.is_error ?? null, terminalReason: result?.terminal_reason ?? null,
+  await finish({
+    usable: u.usable, ...(u.usable ? {} : { reason: u.reason }), ...(typeof result?.result === "string" ? { text: result.result } : {}),
+    exit: code, subtype: result?.subtype ?? null, isError: result?.is_error ?? null, terminalReason: result?.terminal_reason ?? null,
     permissionDenials: Array.isArray(result?.permission_denials) ? result.permission_denials.length : 0, sessionId: result?.session_id ?? null, costUsd: result?.total_cost_usd ?? null,
-    ...(u.usable ? {} : { reason: u.reason }),
   });
-  console.log(u.usable ? `[result written: ${job.out}]` : `[no usable result: ${u.reason}]`);
   return 0;
 }
 
@@ -724,13 +906,15 @@ function settingsMain(command, rest, flags, root) {
       return 0;
     }
     case "validate": {
+      // The file, then the other levels (the env of both settings files and the process environment): an invalid value
+      // anywhere is an error here, while show only warns and the next level applies.
+      const levelErrors = effective(root, keys).warnings.filter((w) => !w.includes(`.ai-dlc/${FILE_NAME}`));
       const repo = readRepoFile(file);
-      if (repo.error) { out(`.ai-dlc/${FILE_NAME}: ${repo.error}`); return 1; }
-      if (!repo.doc) { out(`.ai-dlc/${FILE_NAME} does not exist: the defaults apply`); return 0; }
-      const errors = validateDoc(repo.doc, keys);
-      for (const e of errors) out(`error: ${e}`);
-      if (!errors.length) out(`.ai-dlc/${FILE_NAME} is valid`);
-      return errors.length ? 1 : 0;
+      const errors = repo.error ? [] : repo.doc ? validateDoc(repo.doc, keys) : [];
+      if (repo.error) out(`.ai-dlc/${FILE_NAME}: ${repo.error}`);
+      for (const e of [...errors, ...levelErrors]) out(`error: ${e}`);
+      if (!repo.error && !errors.length) out(repo.doc ? `.ai-dlc/${FILE_NAME} is valid` : `.ai-dlc/${FILE_NAME} does not exist: the defaults apply`);
+      return repo.error || errors.length || levelErrors.length ? 1 : 0;
     }
   }
   return 2;
@@ -746,7 +930,7 @@ export async function main(argv) {
   }
   const { command, opts, flags, positional, pairs } = parsed;
   if (["watch", "child"].includes(command)) {
-    try { return command === "watch" ? await watchCommand(positional[0] ?? "") : await childCommand(positional[0] ?? ""); }
+    try { return command === "watch" ? await watchCommand(positional[0] ?? "") : await childMain(positional[0] ?? ""); }
     catch (e) { console.log(`[${command}: ${e.message}]`); return 0; }
   }
   if (["show", "merge", "set", "validate"].includes(command)) {
@@ -758,7 +942,7 @@ export async function main(argv) {
     if (command !== "detect" && !pairs.length) throw new UsageError(`${command} needs --step <code> --agent <id>`);
     if (command === "run" && pairs.length !== 1) throw new UsageError("run takes one --step/--agent pair");
     let timeout;
-    if (opts.timeout !== undefined) { timeout = Number(opts.timeout); if (!NUMBER.test(opts.timeout) || !(timeout > 0)) throw new UsageError("--timeout must be minutes above 0"); }
+    if (opts.timeout !== undefined) { timeout = Number(opts.timeout); if (!NUMBER.test(opts.timeout) || !(timeout > 0) || timeout > 720) throw new UsageError("--timeout must be minutes above 0, at most 720"); }
     if (command === "detect") { const d = detectState({ root: ctx.root, runId: ctx.runId, explain: flags.has("--explain") }); emit(d); return 0; }
     if (command === "open") { emit(openCommand({ ...ctx, pairs })); return 0; }
     if (command === "close") { emit(closeCommand({ ...ctx, pairs })); return 0; }

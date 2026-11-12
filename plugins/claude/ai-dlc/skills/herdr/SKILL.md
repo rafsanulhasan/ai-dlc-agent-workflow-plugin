@@ -68,11 +68,13 @@ node <skill dir>/scripts/herdr.mjs run --run <run folder> --step <code> --agent 
 
 `<run-id>` is the run folder's name. `--record` and `--out` are repository-relative and may hold only letters, digits, `.`, `_`, `-` and `/`. Add `--worktree <name>` only when the brief asks for isolation. When the call exits:
 
-- `ok:true` → copy the file named in `result` verbatim into `<code>-<id>-to-orchestrator.handback.md` and check its line 1 like any hand-back. A non-zero `permissionDenials` goes into the run state with the hand-back.
+- `ok:true` means **the agent's final text was copied to the file named in `result`**, nothing more: it does not mean the hand-back is valid. Copy that file verbatim into `<code>-<id>-to-orchestrator.handback.md` and check its line 1 like any hand-back. Record `source` (`file` or `pane`, below) with the hand-back in the run state, and a non-zero `permissionDenials` too.
+  - `handoffLine:false` (line 1, shown in `line1`, is not `handoff <file>: passed|failed — <why>`; a Stop hook that rewrites the child's final text does this) → a **failed hand-back**: keep the stored text, set its verification to `failed — child's final text is not a hand-back (line 1: <line1>)`, then spawn the same step with `Agent(...)`. This is not a loop round, and the step is not run in a pane again.
+  - `source:"pane"` → the result file gave no result and the text came from the pane copy (*Result retrieval*, below), checked byte for byte by size and sha256. Use it as above and say `source: pane` in the verification note.
 - `stage:"launch"` (the agent never started) → spawn the step with `Agent(...)` and record `herdr run-in-pane unavailable: <reason>; spawned with the Agent tool`.
-- `stage:"run"` (it started, no usable result) → store a hand-back whose line 1 is `handoff <file>: failed — herdr run-in-pane gave no result (<reason>)`, then spawn the same step with `Agent(...)`; this is not a loop round. The pane stays open; name it in the run state, and `close` it once the human has seen it.
+- `stage:"run"` (it started, and neither the result file nor the pane copy gave a usable result) → store a hand-back whose line 1 is `handoff <file>: failed — herdr run-in-pane gave no result (<reason>)`, then spawn the same step with `Agent(...)`; this is not a loop round. The pane stays open; name it in the run state, and `close` it once the human has seen it.
 
-Read results with the file tools, never from the pane.
+Read results with the file tools, never from the pane; only the script reads the pane, in its fallback.
 
 **Nested spawns** (a subagent's own subagents) get no pane.
 
@@ -89,8 +91,11 @@ Only these herdr commands are used; nothing else is documented here.
 | `herdr pane rename <pane> "<agent> <step>"` | `open`, `run` | CLI reference; checked live (shows as the pane's `label`) |
 | `herdr pane run <pane> "<command>"` | `open`, `run` | CLI reference; checked live (runs in the pane's shell, PowerShell 7 on the tested Windows) |
 | `herdr pane close <pane>` | `close`, `run` | CLI reference; checked live: an unknown pane is `pane_not_found` with exit 1, which counts as closed |
+| `herdr pane read <pane> --source recent-unwrapped --lines 100000` | `run`, fallback only | CLI reference; checked live: plain text on stdout; a closed pane is `pane_not_found` with exit 1 |
 
-herdr also offers `pane read`, `pane wait-output`, tabs and workspaces; this skill does not use them.
+herdr also offers `pane wait-output` (checked live: it works, but returns only the tail of the pane), tabs and workspaces; this skill does not use them.
+
+**Result retrieval** (`run`). The main path is the **result file**: the child writes the agent's final text to `--out`, then a `.exit` file with its size and sha256, so a `.exit` means the result is final. The fallback is a **pane copy**: the child also prints the text in its pane as base64 between two markers carrying a per-run nonce, the byte count and the sha256, and `run` reads it with `pane read` only when the file channel lost a result the child produced (the file missing, empty or not matching `.exit`, a write error, or no readable `.exit`). It never overrides the child's own verdict: when `.exit` says the result is not usable, there is no fallback. Why base64 and a cap, from live checks on herdr 0.9.5 (Windows): `pane read` without `--lines` returns only a tail; plain text loses tabs, trailing blanks and colour codes; scrollback is bounded (about 500 to 1000 rows), so a copy is printed only for a result of at most 16 KiB; and an older copy stays in the scrollback, hence the nonce.
 
 ## Script commands
 
@@ -99,7 +104,7 @@ herdr also offers `pane read`, `pane wait-output`, tabs and workspaces; this ski
 | `detect [--explain] [--run <dir>]` | Activation, above. `--explain` adds the matching panes |
 | `open --run <dir> (--step <c> --agent <id> [--record <path>])...` | Opens a watch pane per pair: the first pane of the run to the right of the anchor, later ones below the newest live pane |
 | `close --run <dir> (--step <c> --agent <id>)...` | Closes the panes `open` or `run` stored; closing for any other reason never happens |
-| `run --run <dir> --step <c> --agent <id> --record <path> --out <path> [--worktree <name>] [--timeout <minutes>]` | Run-in-pane, above; blocks until the result, a timeout or the pane closing |
+| `run --run <dir> --step <c> --agent <id> --record <path> --out <path> [--worktree <name>] [--timeout <minutes>]` | Run-in-pane, above; blocks until the result, a timeout or the pane closing. Its JSON: `ok`, `result`, `source`, `exit`, `line1`, `handoffLine`, `permissionDenials`, `sessionId`, `costUsd`; or `ok:false` with `stage` and `reason`. `--timeout` is above 0 and at most 720 |
 | `watch <job>`, `child <job>` | Run inside a pane; started by `open` and `run`, never by hand |
 | `show [--json]`, `merge [--dry-run]`, `set <key>=<value>... [--dry-run]`, `validate` | Settings, below |
 
@@ -124,15 +129,17 @@ Each key is read from the first of these that sets it to a valid value:
 
 An invalid value is a `warning:` in `show`, an error in `set` and `validate`, and the next level applies. `null` in the file means not set there.
 
-- **Show:** `node <skill dir>/scripts/herdr.mjs show`.
-- **Change:** ask whether the change is the developer's own (the `env` of `.claude/settings.local.json`, edited directly) or the team's (`set <key>=<value>`, which writes `.ai-dlc/herdr.json`; `merge` first creates it and copies the schema). Run `validate` after a change.
+- **Show:** `node <skill dir>/scripts/herdr.mjs show` prints each key's value and the level it came from (`--json`: the same as one JSON document). It never writes.
+- **Change:** ask whether the change is the developer's own (the `env` of `.claude/settings.local.json`, edited directly) or the team's (`set <key>=<value>`, which writes `.ai-dlc/herdr.json` only when every assignment is valid, else exits 1 and writes nothing; `merge` first creates it with every key `null` and copies the schema, keeping values already set). `--dry-run` on either writes nothing. Run `validate` after a change: it checks the file and the other levels and exits 1, one line per invalid value, when any is invalid.
 
-No key is trust-gated: run-in-pane starts the same plugin agents under the project's own permission rules, `--permission-prompts none` only turns a prompt into a denial, and a committed value can make the plugin do nothing beyond what the `Agent` tool does.
+No key is trust-gated. What was checked: run-in-pane starts the same plugin agents, `--permission-prompts none` is accepted and turns a prompt into a denial, never an approval, and neither key widens a permission. What it does add: each subagent becomes a separate `claude` process with its own session and cold cache, so it costs more, and it may run for up to `runTimeoutMinutes` (at most 720 minutes) before the script stops it. Whether the project's `permissions.allow` rules apply to a `-p` child is not verified.
 
 ## Known limits
 
 - **Permissions.** A `claude -p` child cannot answer a permission prompt: a tool that needs approval is denied, the agent reports it, and `permissionDenials` counts it. It never runs with bypassed permissions.
-- **The hand-back is the final result text** of the child. The child runs the project's hooks like any session, so a Stop hook that blocks can make the final text about the hook instead of the work (seen live: the plugin repository's staleness check); line 1 is still checked.
+- **The hand-back is the final result text** of the child, and `ok:true` only means it was copied. The child runs the project's hooks like any session, so a Stop hook that blocks can make the final text about the hook instead of the work (seen live: the plugin repository's staleness check). `run` reports this as `handoffLine:false`, and the orchestrator treats it as a failed hand-back and spawns the step with the `Agent` tool.
+- **The pane copy is limited**: at most 16 KiB, and only while the pane is open. A larger result, or one whose pane was closed, depends on the result file alone.
+- **Stopping a child** at its timeout stops everything it started: `taskkill /t /f` on Windows; elsewhere the child runs in its own process group, which gets SIGTERM and, 5 seconds later, SIGKILL.
 - **Teams cannot run in panes**: teammates belong to Claude Code's own session, so team stages always use watch.
 - **Cost.** Each child starts its own session with a cold cache.
 - **`claude` as a `.cmd` shim** (npm install on Windows) runs through `cmd.exe`, so every argument that reaches it must pass a strict character check; the brief is a fixed text naming only the record path.
