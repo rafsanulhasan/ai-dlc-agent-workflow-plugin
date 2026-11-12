@@ -5,8 +5,8 @@ lifecycle: AAWP
 mode: subagent
 branch: feat/ai-dlc-lens
 session: session_01UvATr6zeybknGfETHs416Y
-commit: 63b662d
-last-record: 1.2-orchestrator-to-agent-manager.handoff.md
+commit: f0e7df2
+last-record: 1.3.l1-sqa-engineer-to-orchestrator.handback.md
 updated: 2026-11-12
 ---
 # Run: herdr skill, and herdr panes for spawned agents
@@ -39,12 +39,19 @@ AAWP/lld 2/1 · AAWP/test 2/1 · AAWP/code-review 2/1 · AAWP/critique 2/1 · cl
 | 1.1.5.2 | clarify: Claude Code (Q2-Q5) | research-assistant | done (passed) · subagent jsonl path; -p Manual mode, --allowedTools / --permission-prompts none; claude.exe native; unknown: -p --agent plugin load, live jsonl growth, session id in Bash → live probes at 1.1.6 | 1.1.5.2-research-assistant-to-orchestrator.handback.md |
 | 1.1.6 | low-level design (+ live probes) | system-engineer | done (passed) · LLD 1.1.6-lld.md (6ff361e); probes: herdr 0.9.5 running, no-server exit 0 (read status line), claude.cmd npm shim, `claude -p --agent ai-dlc:…` loads plugin agent; U1 HERDR_ENV absent in herdr pane → human | 1.1.6-system-engineer-to-orchestrator.handback.md |
 | 1.1.6.l1 | LLD revision: detection fallback (lld loop round 1 / 2) | system-engineer | done (passed) · 63b662d; detect: off → --version → status running → HERDR_ENV anchor, else unique working claude pane in this cwd, else inactive; AC-4/D8 change in LLD §9.4 | 1.1.6.l1-system-engineer-to-orchestrator.handback.md |
-| 1.2 | change | agent-manager | in-progress | 1.2-orchestrator-to-agent-manager.handoff.md |
-| 1.2.1 | change: plugin-management mention (owned skill; fresh agent-manager) | agent-manager (fresh) | pending | — |
-| 1.3 | test (code) | sqa-engineer | pending | — |
-| 1.4.1 / 1.4.2 | code review standards / spec | code-reviewer ×2 | pending | — |
-| 1.5.1 | docs | documentation-writer | pending | — |
-| 1.5.2 | critique (docs) | brutal-critique | pending | — |
+| 1.2 | change | agent-manager | done (passed) · 80d9d2e (22 files); checks all exit 0, catalog check 0; 7 LLD deviations reported; live probe: run-in-pane child ran the repo Stop hook, which rewrote its final text (known limit in SKILL.md) | 1.2-agent-manager-to-orchestrator.handback.md |
+| 1.2.1 | change: plugin-management mention (owned skill; fresh agent-manager) | agent-manager (fresh) | done (passed) · c48e5bf (docs + generated); checks exit 0 | 1.2.1-agent-manager-to-orchestrator.handback.md |
+| 1.3 | test (code), round 1 / 2 | sqa-engineer | done (passed) · 10 files tests/herdr (staged; commit pending GPG); 1122 tests, 1118 pass, 0 fail, 1 todo; gap 1 AC-11: run returns ok:true for a Stop-hook-rewritten result; minor: double close herdr.mjs:381-387/:447-449 | 1.3-sqa-engineer-to-orchestrator.handback.md |
+| 1.4.1 | code review, standards, round 1 / 2 | code-reviewer | done (passed) · **approve**; W: todo test asserts invented fields (drop it); W: POSIX killTree only kills direct child; S: double close, childCommand agent/worktree checks, finish() try/catch; AC-11 gap → skill rule, not script | 1.4.1-code-reviewer-to-orchestrator.handback.md |
+| 1.1.3.l1 | intent amendment: AC-10 main + fallback, AC-4 restated, AC-16+ settings | product-owner | done (passed) · 1.1.3.l1-intent-amendment.md: AC-4, AC-5, AC-10 (main + fallback, path recorded), AC-11 (line-1 check → failed hand-back + Agent re-spawn) restated; AC-16..AC-23 settings | 1.1.3.l1-product-owner-to-orchestrator.handback.md |
+| 1.1.6.l2 | LLD revision: result retrieval main + fallback (lld loop round 2 / 2) + review decisions | system-engineer | done (passed) · main = result file; fallback = base64 pane copy (nonce markers, bytes + sha256, 16 KiB cap) via pane read recent-unwrapped; wait-output unused; probes P1-P12; U11 PowerShell paths E:/; LLD uncommitted (git locked) | 1.1.6.l2-system-engineer-to-orchestrator.handback.md |
+| 1.2.l1 | fix round 1: all findings + AC-10 main/fallback + AC-16..23 | agent-manager | done (passed) · herdr.mjs (code), SKILL.md, orchestrator.md (docs), AGENTS.md + templates + Copilot (generated); checks exit 0; tests 7 fail, all deliberate LLD changes → 1.3.l1; live probes file path + pane fallback OK; uncommitted (git locked) | 1.2.l1-agent-manager-to-orchestrator.handback.md |
+| 1.3.l1 | re-test, round 2 / 2 | sqa-engineer | done (passed) · 1220 tests, 1216 pass, 0 fail, 4 skipped, 0 todo; +herdr-run-fallback (73), +herdr-settings-levels (24); no defects | 1.3.l1-sqa-engineer-to-orchestrator.handback.md |
+| 1.5.1.l2 | docs update: run-in-pane results (in progress) | documentation-writer | done (passed) · 3 docs + generated Copilot README | 1.5.1.l2-documentation-writer-to-orchestrator.handback.md |
+| 1.5.1.l1 | docs fix: teammate panes (critique Minor 1) | documentation-writer | done (passed) · 3 docs + generated Copilot README, 1 line each; uncommitted (git locked) | 1.5.1.l1-documentation-writer-to-orchestrator.handback.md |
+| 1.4.2 | code review, spec, round 1 / 2 | code-reviewer | done (passed) · **approve**; W: AC-11 recovery (known); W: SKILL.md:130 (known); S: AC-10 vs D4 → human; S: settings above AC-5 → human; S: Copilot dangling Skill("herdr") (accepted, guarded) | 1.4.2-code-reviewer-to-orchestrator.handback.md |
+| 1.5.1 | docs (README herdr entry, in progress) | documentation-writer | done (passed) · bc834ea; 3 READMEs + docs/plugins.md marked in progress | 1.5.1-documentation-writer-to-orchestrator.handback.md |
+| 1.5.2 | critique (docs of 1.2, 1.2.1, 1.5.1), round 1 / 2 | brutal-critique | done (passed) · **PASS** with 2 Major (M1 SKILL.md:71/135 no recovery branch when line 1 is not the handoff line → store failed hand-back, re-spawn with Agent; M2 SKILL.md:130 "nothing beyond Agent" overstated) + Minor 1 (READMEs: teammate pane stays until shutdown) → next fix round with test / review findings; Minors 2-5 acceptable | 1.5.2-brutal-critique-to-orchestrator.handback.md |
 
 ## Feature 2 (joined 2026-11-12): Write and Edit for every agent
 Request (human, after 1.1.3's write was refused): "give every agent the Write tool, edit tool, and multiple file edit tool so that they can write files. its a part of this run." Then: "both. skip multiedit now." Clarified: (a) agent-manager adds Write and Edit to every plugin agent that lacks them (read-only agents gain write access, the human accepted the role change); MultiEdit skipped; (b) for this run, every writing agent is spawned with worktree isolation, because the refusal ("parent bg session hasn't isolated yet, so writes to the shared checkout are blocked") is environmental, not a missing tool. Orchestrator merges each worktree branch after checking it.
@@ -56,6 +63,15 @@ Change kinds (2.2): docs — 5 plugins/claude/ai-dlc/agents/*.md; generated — 
 | 2.2 | change | agent-manager (worktree) | done (passed) · Write+Edit added to brutal-critique, code-reviewer, research-assistant (disallowedTools narrowed), requirement-analyst, system-engineer; d8e19a8 ff-merged | 2.2-agent-manager-to-orchestrator.handback.md |
 | 2.5 | critique (docs), round 1 / 2 | brutal-critique | done (passed) · **PASS**; 5 Minor: (1) brutal-critique / research-assistant prose limits Write+Edit to own memory → asked the human; (2) code-reviewer could say "own memory only" (optional); (3) orchestrator.md:130 wording, (4) workflow.json stage notes "read-only" — acceptable, fix when next touched; (5) build-copilot NotebookEdit→edit alias quirk → backlog item at close | 2.5-brutal-critique-to-orchestrator.handback.md |
 
+## Decisions after review (human, 2026-11-12)
+- AC-10: "research and implement one as a main and another one as fallback" — result file and pane read; main chosen by research / LLD 1.1.6.l2.
+- Settings above AC-5: "ok, add those ACs" → product-owner 1.1.3.l1 (AC-16+).
+
+## Change kinds (1.2)
+- code: herdr.mjs, herdr.schema.json, tools/claude-only-skills.json, tests/build-copilot-hooks-module.test.mjs
+- docs: herdr/SKILL.md, agents/orchestrator.md, agent-invocation, request-routing, CLAUDE.md, .claude/rules/plugin-development.md, AGENTS.md (root, hand-rendered)
+- generated: .github/instructions twin, init AGENTS templates, Copilot outputs, README Commands rows, .ai-dlc/catalog.json (catalog check exit 0)
+
 ## Decisions
 - 2026-11-12, human: writing agents run with worktree isolation for this run; orchestrator merges their branches.
 - 2026-11-12: worktrees are created from main, not feat/ai-dlc-lens; both agents reset their branch to a520afa first.
@@ -66,4 +82,4 @@ Change kinds (2.2): docs — 5 plugins/claude/ai-dlc/agents/*.md; generated — 
 - 2026-11-12, orchestrator: 1.1.3 hand-back accepted as the intent artifact (content complete; only the file write failed).
 
 ## Next action
-Feature 2 done (PASS); Minor 1 (memory-only wording) open with the human. Wait for 1.2 (agent-manager change); then 1.2.1 (fresh agent-manager, plugin-management text from 1.2), then reviews by kind (1.3 sqa, 1.4.x code-reviewer, critique, docs). Note: the 2.2 tool change needs /reload-plugins to take effect (research-assistant still lacked Write at 1.1.5.2).
+Feature 2 done (PASS); Minor 1 (memory-only wording) open with the human. Wait for 1.2.1 and 1.3. Then in parallel: brutal-critique on the docs of 1.2 + 1.2.1 (1.5.2), documentation-writer Docs update (1.5.1, status in progress), and code-reviewer ×2 (1.4.1, 1.4.2) after 1.3.
