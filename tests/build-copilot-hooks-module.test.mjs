@@ -232,6 +232,8 @@ test("this repository's keep-alive and lens skills are Claude-only: listed, and 
     "cache-keepalive-configure",
     "cache-keepalive-install",
     "cache-keepalive-merge",
+    // The orchestrator's herdr panes: herdr's CLI and Claude Code's own `claude -p`.
+    "herdr",
     // The ai-dlc-lens commands (/ai-dlc:lens*), answered by the Claude-only ai-dlc-lens plugin's hooks module.
     "lens",
     "lens-configure",

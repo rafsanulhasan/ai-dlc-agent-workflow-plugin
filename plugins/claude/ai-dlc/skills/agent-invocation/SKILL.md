@@ -59,6 +59,8 @@ A spawned agent's reads stay in its own context; only its final report enters yo
   SendMessage({to: "<agent-id-or-name-returned-by-Agent>", message: "<follow-up>"})
   ```
 
+  **Inside herdr (Claude Code).** The orchestrator opens a labelled pane before each spawn and closes it after the hand-back, or runs the agent in its own pane when the setting is `run-in-pane`: `Skill("ai-dlc:herdr")`. Teammates keep their pane while idle; it closes only at shutdown. Outside herdr, spawn as written here.
+
 - **Parallel independent agents** — issue multiple `Agent(...)` calls in a single message. Each runs concurrently and returns to the caller, who synthesizes the combined output. This is the canonical form for orchestration mode 2 (Parallel independent subagents) in the `request-routing` skill.
 
 - **Foreground vs background** — default to foreground (you block until the agent returns). Use background only for genuinely independent long-running work where the caller has other useful work to do meanwhile.

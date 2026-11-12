@@ -171,6 +171,7 @@ Every skill of the plugin is a command. In Claude Code, type `/ai-dlc:<name>`; i
 | `/ai-dlc:github-ci-automation` | — | Structured workflow for designing and maintaining GitHub Actions continuous integration for .NET and JavaScript/TypeScript projects. |
 | `/ai-dlc:handoff` | — | Records and verifies every hand-off in an AI-DLC run and keeps its run state. |
 | `/ai-dlc:harness-sync` | `[--check] [--prefer claude\|copilot\|newer] [--only <kinds>] [--name <n>]` | Runs the two-way Claude Code ↔ GitHub Copilot harness sync, `node .claude/scripts/sync-harness.mjs`, so every agent, skill, command ↔ prompt, rule ↔ instruction and hook made or edited on one platform exists on the other. |
+| `/ai-dlc:herdr` | — | Gives each subagent or teammate the orchestrator spawns a labelled pane in the herdr terminal workspace, herdr.dev: the pane shows its progress (watch, the default), or the subagent runs as its own claude process in it (run-in-pane). **Claude Code only.** |
 | `/ai-dlc:hook-management` | — | Create, modify, and delete Claude Code hooks and GitHub Copilot hook integrations safely using a discovery-first, non-destructive workflow. |
 | `/ai-dlc:implement-feature` | — | Structured feature implementation workflow for software projects. |
 | `/ai-dlc:init` | — | Bootstraps a repository for the AI-DLC agent team: scaffolds AGENTS.md (the orchestrator persona with all its skills, plus the project's gates and workspace folders, free of stack-specific commands), CLAUDE.md (an @AGENTS.md import, the … |
