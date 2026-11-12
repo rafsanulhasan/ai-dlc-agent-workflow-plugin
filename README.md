@@ -135,6 +135,18 @@ If a project still has its own copies of these agents in `.claude/agents` / `.gi
 - For JS / TS projects and their test gate: Node.js 18 or later, and the project's package manager (npm, pnpm, yarn or bun)
 - Optional MCP servers the agents use when present: GitHub, SonarQube, Playwright, context7. Agents that need them (`product-manager`, `software-engineer`, `sqa-engineer`, `devops-engineer`, `code-reviewer`, `research-assistant`) inherit whatever MCP tools your session has instead of hard-coding one gateway's tool names.
 
+### herdr panes (in progress)
+
+**In progress:** the `herdr` skill is built, and its reviews are still open, so its behaviour can still change before release.
+
+When a Claude Code session runs inside [herdr](https://herdr.dev), a terminal workspace for coding agents, the orchestrator gives every agent it spawns a pane of its own, labelled `<agent> <step>`:
+
+- `watch` (the default): the agent is spawned with the `Agent` tool as usual, and its pane shows the brief, the run folder's records for that agent and, when found, its transcript. The pane closes when the agent hands back.
+- `run-in-pane`: each subagent runs as its own `claude -p` process in its pane, and its final report becomes the hand-back.
+- `off`: no pane, even inside herdr.
+
+The setting is `mode` in `.ai-dlc/herdr.json` or the `AI_DLC_HERDR_MODE` variable; `/ai-dlc:herdr` shows and changes it. You install herdr yourself; the plugin never does. It is active only when herdr is installed and its server is running and either `HERDR_ENV=1` or this session's pane is found, never guessed; otherwise nothing happens. Claude Code only: the skill is not in the GitHub Copilot plugin. Known limits: a `claude -p` child cannot answer a permission prompt (a tool that needs approval is denied and reported), each child starts with a cold prompt cache, and agent-team teammates always use `watch`. Reference: [the skill](plugins/claude/ai-dlc/skills/herdr/SKILL.md).
+
 ## Commands
 
 <!-- ai-dlc:commands:begin -->

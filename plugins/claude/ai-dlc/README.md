@@ -111,6 +111,20 @@ Every skill of the plugin is a command. In Claude Code, type `/ai-dlc:<name>`; i
 
 <!-- ai-dlc:commands:end -->
 
+## herdr panes (in progress)
+
+**In progress:** the `herdr` skill is built, and its reviews are still open, so its behaviour can still change before release.
+
+When a Claude Code session runs inside [herdr](https://herdr.dev), a terminal workspace for coding agents, the orchestrator gives every agent it spawns a pane of its own, labelled `<agent> <step>`. It has three modes:
+
+- `watch` (the default): the agent is spawned with the `Agent` tool as usual, and its pane shows the brief, the run folder's records for that agent and, when found, its transcript. The pane closes when the agent hands back.
+- `run-in-pane`: each subagent runs as its own `claude -p` process in its pane, and its final report becomes the hand-back.
+- `off`: no pane, even inside herdr.
+
+Set the mode in `.ai-dlc/herdr.json` (`mode`) or with the `AI_DLC_HERDR_MODE` variable; `/ai-dlc:herdr` shows and changes the settings. The plugin never installs herdr, and it does nothing unless herdr is installed and its server is running and either `HERDR_ENV=1` or this session's pane is found, never guessed. Claude Code only: the skill is not part of the GitHub Copilot plugin.
+
+Known limits: a `claude -p` child cannot answer a permission prompt, so a tool that needs approval is denied and reported; each child starts with a cold prompt cache; and agent-team teammates always use `watch`.
+
 ## License
 
 MIT; see [LICENSE](LICENSE). Parts of the Claude Code hooks module are adapted from third-party MIT projects, each recorded in its folder's `ATTRIBUTION.md`.

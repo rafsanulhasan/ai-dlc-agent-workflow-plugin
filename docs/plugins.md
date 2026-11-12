@@ -74,6 +74,18 @@ You can also install the plugin directly, without the marketplace: `copilot plug
 
 The orchestrator has to be the **main** agent: it is the lead that talks to you and runs the whole team, and subagent nesting is limited (on Claude Code to `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH` levels, default 3 from v2.1.219, `1` to turn it off; GitHub Copilot does not document nested spawning, so the plugin assumes only the main agent spawns there; running the orchestrator as a subagent is not tested). Invoking it from inside another agent is not supported.
 
+### herdr panes (in progress)
+
+**In progress:** the `herdr` skill is built, and its reviews are still open, so its behaviour can still change before release.
+
+When a Claude Code session runs inside [herdr](https://herdr.dev), a terminal workspace for coding agents, the orchestrator gives every agent it spawns a pane of its own, labelled `<agent> <step>`:
+
+- `watch` (the default): the agent is spawned with the `Agent` tool as usual, and its pane shows the brief, the run folder's records for that agent and, when found, its transcript. The pane closes when the agent hands back (a subagent) or is shut down (a teammate).
+- `run-in-pane`: each subagent runs as its own `claude -p --agent ai-dlc:<id>` process in its pane, and its final report becomes the hand-back.
+- `off`: no pane, even inside herdr.
+
+The setting is `mode` in `.ai-dlc/herdr.json` or the `AI_DLC_HERDR_MODE` variable (`/ai-dlc:herdr` shows and changes it; a variable set in the `env` of `.claude/settings.local.json` or `.claude/settings.json` wins over the file). You install herdr yourself; the plugin never does. It is active only when herdr is installed and its server is running and either `HERDR_ENV=1` or this session's pane is found, never guessed; otherwise nothing is created and the run goes on with the `Agent` tool. Claude Code only: the skill is not in the GitHub Copilot plugin. Known limits: a `claude -p` child cannot answer a permission prompt (a tool that needs approval is denied and reported), each child starts with a cold prompt cache, and agent-team teammates always use `watch`. Reference: [the skill](../plugins/claude/ai-dlc/skills/herdr/SKILL.md).
+
 ## The team (agents)
 
 | Agent | Role | Model |
