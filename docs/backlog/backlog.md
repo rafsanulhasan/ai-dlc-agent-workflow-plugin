@@ -227,3 +227,55 @@ Source: `docs/handoffs/RES-20261020-ai-dlc-mods/12-research-assistant-to-orchest
 | 091 | R17 | Runaway loop cap: `validate` warns for a loop with no cap, a runaway guard, rounds recorded in the run state, an optional loop-breaker. Caps and defaults exist (`workflow.mjs:192`, `:204`; per-run raising recorded in run.v4.md:166) | P2 (a runaway loop burns budget; the caps already bound the known loops) | AAWP | G1; WF merge group | loop-breaker (recommended, optional) | ITEM-001 (review limits, Done) and ITEM-050 (own limits for the per-handoff BC loop): not duplicated; this item covers the missing guard and warning | Is the loop-breaker mod wanted at all (the report calls it optional)? |
 
 **Overlap check.** Searched `docs/backlog/backlog.md` and `docs/product/backlog/` for each requirement; `docs/backlog/out-of-scope/` has no records. Reused, not duplicated: ITEM-062 (R6 pane, approve / reject), ITEM-020 and 058 / 069-074 (R5), ITEM-008 and 039 (R12), ITEM-053 to 055 and 075 (R13 rendering), ITEM-057 (R15), ITEM-065 (R9). R3 and R10 are built: no item.
+
+---
+
+## AAWP-20261112-herdr-skill — herdr panes and Write / Edit for every agent
+
+Run: `docs/handoffs/AAWP-20261112-herdr-skill/` (closed, done). Items below were added at close, 2026-11-12.
+
+### ITEM-108: `herdr` skill — orchestrator opens herdr panes for spawned subagents and agent teams
+- **Type**: Feature
+- **Priority**: P2
+- **Status**: Done
+- **Lifecycle**: AAWP
+- **Milestone**: 1.0.0-preview1
+- **Added**: 2026-11-12
+- **Agent Chain**: agent-manager → sqa-engineer → code-reviewer / brutal-critique
+
+Done 2026-11-12 in commits 80d9d2e..915b66b. Claude-Code-only skill: the orchestrator opens herdr panes for spawned subagents and agent teams. Modes: watch (default), run-in-pane, off; fallback detection when herdr is absent.
+
+**Acceptance Criteria**
+- [x] AC-1 Panes open for spawned subagents and agent teams
+- [x] AC-2 Modes watch (default), run-in-pane and off are supported
+- [x] AC-3 Fallback detection when herdr is unavailable
+- [x] AC-4 Claude Code only; not projected to Copilot
+
+### ITEM-109: Write and Edit for every plugin agent
+- **Type**: Feature
+- **Priority**: P2
+- **Status**: Done
+- **Lifecycle**: AAWP
+- **Milestone**: 1.0.0-preview1
+- **Added**: 2026-11-12
+- **Agent Chain**: agent-manager → sqa-engineer → code-reviewer
+
+Done 2026-11-12 in commit d8e19a8 (AAWP-20261112 step 2.2).
+
+**Acceptance Criteria**
+- [x] AC-1 Every plugin agent has the Write and Edit tools
+
+### ITEM-110: build-copilot drops a Copilot tool alias when any mapped Claude tool is denied
+- **Type**: TechDebt
+- **Priority**: P3
+- **Status**: Backlog
+- **Lifecycle**: AAWP
+- **Milestone**: Unplanned
+- **Added**: 2026-11-12
+- **Agent Chain**: agent-manager → sqa-engineer → code-reviewer
+
+`tools/build-copilot.mjs` drops a Copilot tool alias when any Claude tool that maps to it is denied, so denying `NotebookEdit` alone silently removes `edit` from a Copilot agent. Source: critique 2.5, Minor 5, `docs/handoffs/AAWP-20261112-herdr-skill/2.5-brutal-critique-to-orchestrator.handback.md`.
+
+**Acceptance Criteria**
+- [ ] AC-1 Denying one Claude tool that maps to a Copilot alias keeps the alias while another mapped tool is still allowed
+- [ ] AC-2 A test in `tests/build-copilot-*.test.mjs` covers the `NotebookEdit`-only denial
