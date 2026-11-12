@@ -12,3 +12,5 @@
 - [Feature-root numbering](feedback_feature-root-numbering.md) — root N, phase sub-roots N.1–N.5, `l<k>` loops with round sub-numbers; run state major.minor versions
 - [Pause after reload request](feedback_pause-after-reload-request.md) — after asking for /reload-plugins, spawn nothing more until the human reports back
 - [Document everything explicitly](feedback_document-everything-explicitly.md) — no silent omissions or assumptions in docs; state sources and unverified host behaviour
+- [GPG-signed commits](feedback_gpg-signed-commits.md) — never disable signing; tell the human when pinentry waits; commit own paths only
+- [herdr decisions](project_herdr-decisions.md) — watch/run-in-pane/off, fallback detection, file-main + pane-copy fallback; bgIsolation none
