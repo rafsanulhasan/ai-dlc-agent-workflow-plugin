@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { sandbox, herdrCalls, pane, claudeOk, initEvent, assistantEvent, resultEvent, until } from "./helpers/fake-bin.mjs";
-import { usableResult, childPrompt, childArgs, renderEvent, safeArg, paneCommand, atomicWrite, resolveExe, parseStatusServer } from "../../plugins/claude/ai-dlc/skills/herdr/scripts/herdr.mjs";
+import { HANDOFF_LINE, usableResult, childPrompt, childArgs, renderEvent, safeArg, paneCommand, atomicWrite, resolveExe, parseStatusServer } from "../../plugins/claude/ai-dlc/skills/herdr/scripts/herdr.mjs";
 
 const boxes = [];
 const box = (label = "run") => { const sb = sandbox(label); boxes.push(sb); return sb; };
@@ -39,7 +39,7 @@ describe("run: the happy path [AC-10, AC-11]", () => {
     assert.equal(r.status, 0);
     assert.equal(r.stderr, "");
     assert.equal(r.lines.length, 1);
-    assert.deepEqual(r.json, { ok: true, result: OUT, exit: 0, permissionDenials: 0, sessionId: "sess-1", costUsd: 0.01 });
+    assert.deepEqual(r.json, { ok: true, result: OUT, source: "file", exit: 0, line1: HANDBACK.split("\n")[0], handoffLine: true, permissionDenials: 0, sessionId: "sess-1", costUsd: 0.01 });
     assert.equal(fs.readFileSync(path.join(sb.root, OUT), "utf8"), HANDBACK, "AC-11: the hand-back is copied verbatim");
     const ex = exitDoc(sb);
     assert.deepEqual([ex.usable, ex.exit, ex.subtype, ex.isError, ex.terminalReason, ex.permissionDenials], [true, 0, "success", false, "completed", 0]);
@@ -186,7 +186,7 @@ describe("run: a result that is not usable is a failure, never success [AC-11, A
     sb.install({ herdr: herdrCalls({ panes: [pane({ cwd: sb.root }), pane({ pane_id: "w1:p2" })], extra: [{ match: ["pane", "run"], writeFile: { path: exitFile, text: "{ torn" } }] }) });
     sb.write(RECORD, "x");
     const r = go(sb);
-    assert.deepEqual(r.json, { ok: false, stage: "run", reason: "unreadable .exit file", exit: null, pane: "w1:p2" });
+    assert.deepEqual(r.json, { ok: false, stage: "run", reason: "pane copy unusable: markers missing", exit: null, pane: "w1:p2" }, "AC-10: an unparsable .exit lets the pane copy be tried; this pane has none");
     assert.deepEqual(closes(sb), []);
   });
 
@@ -199,7 +199,7 @@ describe("run: a result that is not usable is a failure, never success [AC-11, A
       const r = go(sb);
       assert.equal(r.json.ok, false);
       assert.equal(r.json.stage, "run");
-      assert.equal(r.json.reason, "no usable result");
+      assert.equal(r.json.reason, "pane copy unusable: markers missing", "AC-10: the result file is missing or blank, so the pane copy is tried; this pane has none");
     }
   });
 });
@@ -262,8 +262,7 @@ describe("run: it could not start, so the caller falls back to the Agent tool [A
   test("[AC-12] pane run failing is a launch failure and the new pane is closed", () => {
     const sb = ready(claudeOk(), { extra: [{ match: ["pane", "run"], status: 1 }] });
     launch(go(sb), /^pane run failed/);
-    assert.ok(closes(sb).length >= 1, "the new pane is closed");
-    assert.ok(closes(sb).every((a) => a[2] === "w1:p2"), "only the new pane is closed");
+    assert.deepEqual(closes(sb), [["pane", "close", "w1:p2"]], "the new pane is closed exactly once, and only the new pane");
     assert.equal(sb.exists(".scratch/herdr/RUN-1/1.2-agent-manager.pane.json"), false);
     assert.deepEqual(sb.entries("claude"), []);
   });
@@ -290,32 +289,47 @@ describe("run: it could not start, so the caller falls back to the Agent tool [A
 describe("the AC-11 hand-back check: the child's text is copied verbatim and not judged by the script", () => {
   const stopHookText = "The Stop hook reported that the Copilot plugin is stale; I rebuilt it. Nothing else to report.";
 
-  test("[AC-11] characterisation: a final text whose line 1 is not the verification line is still returned as ok:true and copied verbatim (the orchestrator's line-1 check is the only guard)", () => {
+  // LLD 3.3 run step 6: the script copies the text and reports `handoffLine` and `line1`; the orchestrator decides (AC-11: ok:true means
+  // "text copied" only; a line 1 that is not the hand-back line is a failed hand-back and the step is re-spawned with the Agent tool).
+  test("[AC-11] a final text whose line 1 is not the verification line (a Stop-hook rewrite) is copied verbatim and reported handoffLine:false with its line 1", () => {
     const sb = ready(claudeOk({ result: stopHookText }));
     const r = go(sb);
     assert.equal(r.json.ok, true);
+    assert.equal(r.json.handoffLine, false);
+    assert.equal(r.json.line1, stopHookText);
     assert.equal(sb.read(OUT), stopHookText);
   });
 
-  // Known risk from the live probe (1.2 hand-back): in run-in-pane the child runs the repository's Stop hook, which can rewrite the
-  // child's final text. AC-11: "an unrecoverable result is a failed hand-back, never success". The script cannot see this: run reports
-  // ok:true for any non-blank success text, so only the orchestrator's verification (a missing line 1 is a failed verification) catches
-  // it. Reported as a gap in the 1.3 hand-back; this todo test states the behaviour AC-11 asks for and fails until the script flags it.
-  test("[AC-11] a result whose line 1 is not `handoff <record file>: passed|failed \u2014 <why>` is not reported as a plain success", { todo: "gap: herdr.mjs run cannot detect a rewritten final text (Stop hook); see 1.3 hand-back" }, () => {
-    const sb = ready(claudeOk({ result: stopHookText }));
-    const r = go(sb);
-    assert.equal(r.json.ok === true && r.json.handbackLine1 !== false && r.json.verified !== false && !r.json.warning, false);
+  test("[AC-11] line1 is the first line only, cut at 200 characters, with a BOM and a CRLF line end ignored", () => {
+    const long = "x".repeat(300);
+    const sb = ready(claudeOk({ result: `${long}\nsecond` }));
+    assert.equal(go(sb).json.line1, "x".repeat(200));
+    const sb2 = ready(claudeOk({ result: `\ufeffhandoff r.md: passed \u2014 ok\r\nbody` }));
+    const r2 = go(sb2);
+    assert.equal(r2.json.line1, "handoff r.md: passed \u2014 ok");
+    assert.equal(r2.json.handoffLine, true);
   });
 
-  test("[AC-11] a result whose line 1 is the verification line is returned as is", () => {
+  test("[AC-11] handoffLine needs the exact shape: `handoff <file>: passed|failed \u2014 <why>` with an em dash", () => {
+    for (const [text, expected] of [
+      ["handoff a.md: passed \u2014 x", true], ["handoff a.md: failed \u2014 x", true],
+      ["handoff a.md: passed - x", false], ["handoff a.md: maybe \u2014 x", false], ["handoff : passed \u2014 x", false],
+      [" handoff a.md: passed \u2014 x", false], ["Handoff a.md: passed \u2014 x", false], ["handoff a.md passed \u2014 x", false],
+    ]) assert.equal(HANDOFF_LINE.test(text), expected, text);
+  });
+
+  test("[AC-11] a result whose line 1 is the verification line is returned as is, handoffLine true (a failed verdict is still a well-formed hand-back)", () => {
     const sb = ready(claudeOk({ result: "handoff 1.2-orchestrator-to-agent-manager.handoff.md: failed \u2014 tests red\nrest" }));
-    assert.equal(go(sb).json.ok, true);
+    const r = go(sb);
+    assert.equal(r.json.ok, true);
+    assert.equal(r.json.handoffLine, true);
     assert.match(sb.read(OUT), /^handoff 1\.2-orchestrator-to-agent-manager\.handoff\.md: failed \u2014 tests red\n/);
   });
 });
 
+const NONCE = "0123456789ab";
 describe("child (the run-in-pane wrapper) as a process [AC-10, AC-9]", () => {
-  const job = (sb, over = {}) => sb.write(".scratch/herdr/RUN-1/1.2-agent-manager.job.json", JSON.stringify({ kind: "child", agent: "agent-manager", record: RECORD, out: OUT, timeoutMinutes: 1, root: sb.root, ...over }));
+  const job = (sb, over = {}) => sb.write(".scratch/herdr/RUN-1/1.2-agent-manager.job.json", JSON.stringify({ kind: "child", agent: "agent-manager", record: RECORD, out: OUT, timeoutMinutes: 1, root: sb.root, nonce: NONCE, ...over }));
   const child = (sb, over, env = {}) => sb.cli(["child", job(sb, over)], { env: { ...ENV, ...env } });
 
   test("[AC-10] prints the progress lines and ends with the result marker; exit 0", () => {
@@ -329,16 +343,17 @@ describe("child (the run-in-pane wrapper) as a process [AC-10, AC-9]", () => {
     assert.match(r.stdout, new RegExp(`\\[result written: ${OUT.replace(/[.\\/]/g, "\\$&")}\\]`));
   });
 
-  test("[AC-9] a bad job file prints a marker and exits 0 without running claude", () => {
+  test("[AC-9][AC-10] a bad job file (every field is validated, LLD 3.4 step 0) prints `invalid job: <field>` and exits 0 without running claude", () => {
     const sb = ready();
     const f = sb.write("bad.job.json", "{ nope");
     const r = sb.cli(["child", f]);
     assert.equal(r.status, 0);
-    assert.match(r.stdout, /\[no usable result: bad job file\]/);
+    assert.match(r.stdout, /\[no usable result: invalid job: kind\]/);
     assert.deepEqual(sb.entries("claude"), []);
-    for (const over of [{ kind: "watch" }, { record: "../x" }, { out: "a b" }, { root: 5 }]) {
+    for (const [over, field] of [[{ kind: "watch" }, "kind"], [{ record: "../x" }, "record"], [{ out: "a b" }, "out"], [{ root: 5 }, "root"], [{ nonce: "xyz" }, "nonce"], [{ nonce: undefined }, "nonce"], [{ timeoutMinutes: 0 }, "timeoutMinutes"], [{ agent: "a b" }, "agent"], [{ worktree: "a/b" }, "worktree"]]) {
       const r2 = child(sb, over);
-      assert.match(r2.stdout, /bad job file/, JSON.stringify(over));
+      assert.equal(r2.status, 0, JSON.stringify(over));
+      assert.ok(r2.stdout.includes(`[no usable result: invalid job: ${field}]`), `${JSON.stringify(over)} -> ${r2.stdout}`);
     }
     assert.deepEqual(sb.entries("claude"), []);
   });
@@ -349,7 +364,7 @@ describe("child (the run-in-pane wrapper) as a process [AC-10, AC-9]", () => {
     const r = child(sb);
     assert.equal(r.status, 0);
     assert.match(r.stdout, /\[no usable result: claude is not on PATH\]/);
-    assert.deepEqual(JSON.parse(sb.read(EXIT)), { usable: false, exit: null, reason: "claude is not on PATH" });
+    assert.deepEqual(JSON.parse(sb.read(EXIT)), { usable: false, exit: null, paneCopy: false, nonce: NONCE, reason: "claude is not on PATH" });
   });
 
   test("[AC-9] a hostile agent id in a hand-made job file is rejected before claude.cmd is spawned (win32 shell path)", { skip: process.platform !== "win32" && "the .cmd shell path exists on win32 only" }, () => {
@@ -357,8 +372,8 @@ describe("child (the run-in-pane wrapper) as a process [AC-10, AC-9]", () => {
     for (const agent of ['x"&calc', "a&b", "a|b", "$(x)", "a%PATH%"]) {
       const r = child(sb, { agent });
       assert.equal(r.status, 0, agent);
-      assert.match(r.stdout, /\[no usable result: unsafe argument\]/, agent);
-      assert.equal(JSON.parse(sb.read(EXIT)).reason, "unsafe argument");
+      assert.match(r.stdout, /\[no usable result: invalid job: agent\]/, agent);
+      assert.equal(JSON.parse(sb.read(EXIT)).reason, "invalid job: agent");
     }
     assert.deepEqual(sb.entries("claude"), [], "claude was never spawned");
   });

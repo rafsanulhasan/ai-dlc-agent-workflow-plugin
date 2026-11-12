@@ -2,8 +2,11 @@
 // (test-doubles: a boundary you do not own), so each is a real executable on a temp PATH, driven by a JSON scenario file
 // (FAKE_SCRIPT) and logging every call to FAKE_LOG. Nothing else is faked: the script under test runs as a real process.
 // herdr scenario: { calls: [{ match: [args...], stdout, stderr, status, delayMs, replies: [{...}], execRun, writeFile: { path, text, also } }], default: {...} }
+//   `paneCopyFor: { job, text, nonce?, bytes?, sha256?, prefix?, wrap? }` makes the call print a pane copy block of `text` for the nonce
+//   found in the job file `job` (or `nonce`), built here independently of herdr.mjs; bytes / sha256 override the markers' values.
 //   `replies` answer the nth matching call (the last one repeats); `execRun` makes `pane run` really execute its command string.
 // claude scenario: { stdoutLines: [object | string], status, delayMs, hang }
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
@@ -34,6 +37,16 @@ if (who === "herdr") {
     spawn(command, { shell: true, detached: true, stdio: "ignore", windowsHide: true }).unref();
   }
   for (const w of [entry.writeFile, entry.writeFile?.also]) if (w) { fs.mkdirSync(path.dirname(w.path), { recursive: true }); fs.writeFileSync(w.path, w.text); }
+  if (entry.paneCopyFor) {
+    const c = entry.paneCopyFor;
+    const nonce = c.nonce ?? JSON.parse(fs.readFileSync(c.job, "utf8")).nonce;
+    const buf = Buffer.from(c.text, "utf8");
+    const b64 = buf.toString("base64");
+    const rows = b64.match(new RegExp(`.{1,${c.wrap ?? 76}}`, "g")) ?? [];
+    const sha = c.sha256 ?? crypto.createHash("sha256").update(buf).digest("hex");
+    const eol = "\r\n";
+    process.stdout.write([`${c.prefix ?? ""}<<<HERDR-RESULT-BEGIN-${nonce} encoding=base64 bytes=${c.bytes ?? buf.length}>>>`, ...rows, `<<<HERDR-RESULT-END-${nonce} sha256=${sha}>>>`, "$ "].join(eol));
+  }
   if (entry.stdout) process.stdout.write(entry.stdout);
   if (entry.stderr) process.stderr.write(entry.stderr);
   process.exitCode = entry.status ?? 0;
