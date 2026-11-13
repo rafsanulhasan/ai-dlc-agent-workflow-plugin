@@ -964,3 +964,13 @@ root 17, step 17.2.4; spec keepalive-cache-status line 82, D2a; LLD rev 5,
   `Opts.split` names; `expectUsage` takes the reply text as `string |
   undefined` and first asserts that it is a string; three reads of a reply
   text use `?.`, so an undefined text still fails the assertion.
+
+- **P1 and P2 results recorded (step 17.2.l3.1, agent-manager,
+  2026-11-13; release checklist item 15).** `MANUAL-CHECKS.md` only: the
+  empty Result cells of P1 (AC-17.4.4 repaint) and P2 (the 034.c live check)
+  now hold the human's results of 2026-10-25, copied from the run state
+  `FEAT-20261020-ai-dlc-lens` (entries 2t, 2u, 2y, 2ad, 2af, 2ah and 2w):
+  P1 terminal passes for the first ping with 1/9 to 2/9 not observed, P1 VS
+  Code passes, P2 fails so D2a applies. What the records do not say, such
+  as the Claude Code version for P1, is written "not recorded". No code
+  changes.
