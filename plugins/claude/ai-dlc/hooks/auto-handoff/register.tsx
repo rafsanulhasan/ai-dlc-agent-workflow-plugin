@@ -1,16 +1,16 @@
 import type { EngineInterface, Register, Timer } from 'claude-code'
-import { assembleBrief, briefPrompt, extractFacts, isValidBrief, markUnverifiedFigures } from './brief.ts'
-import { chainOf, parseBrief, renderPage, viewerLink, withHeader } from './viewer.ts'
-import type { Entry } from './viewer.ts'
-import { SERVER_JS, parseAddress } from './server.ts'
-import { isSpinning, panelTree } from './panel.tsx'
-import type { Line, Panel } from './panel.tsx'
-import { BRIEF_DIR, CAPABILITIES_FILE, DEFAULTS, LAST_RESORT_INSTRUCTIONS, MODULE_DIR, REPO_CONFIG, SEED_PREFIX, SESSION_TEMPLATE, TEMPLATES, TRUST_GATED, contextLine, creationSplit, expand, k, linkify, numbering, numberingNotice, parseTitle, repoConfig, resolveConfig, seedCacheFields, seedCacheLine, sessionName, settingsEnv, short, transcriptTitle, hostFields, windowFields, windowInfo } from './config.ts'
-import type { Config, HostWindow, Level, SeedCache, TemplateKey, WindowInfo } from './config.ts'
-import { ENDED, assembleSessionHandoff, currentRunStateFile, handoffsRoot, inRepo, openRecords, parseRunState, pickRun, runStateNote, scratchRoot, sessionHandoffPath, withNextAction } from './run.ts'
-import type { RunState, RunTarget } from './run.ts'
-import { logAgentUsage, noteUsage, registerKeepalive, showSeedCache, stopForHandoff, transcriptSplit } from '../keepalive/keepalive.ts'
-import { git, homeDir, log, orLog, readRaw, readText, repoRoot, trustGate } from './io.ts'
+import { assembleBrief, briefPrompt, extractFacts, isValidBrief, markUnverifiedFigures } from './brief'
+import { chainOf, parseBrief, renderPage, viewerLink, withHeader } from './viewer'
+import type { Entry } from './viewer'
+import { SERVER_JS, parseAddress } from './server'
+import { isSpinning, panelTree } from './panel'
+import type { Line, Panel } from './panel'
+import { BRIEF_DIR, CAPABILITIES_FILE, DEFAULTS, LAST_RESORT_INSTRUCTIONS, MODULE_DIR, REPO_CONFIG, SEED_PREFIX, SESSION_TEMPLATE, TEMPLATES, TRUST_GATED, contextLine, creationSplit, expand, k, linkify, numbering, numberingNotice, parseTitle, repoConfig, resolveConfig, seedCacheFields, seedCacheLine, sessionName, settingsEnv, short, transcriptTitle, hostFields, windowFields, windowInfo } from './config'
+import type { Config, HostWindow, Level, SeedCache, TemplateKey, WindowInfo } from './config'
+import { ENDED, assembleSessionHandoff, currentRunStateFile, handoffsRoot, inRepo, openRecords, parseRunState, pickRun, runStateNote, scratchRoot, sessionHandoffPath, withNextAction } from './run'
+import type { RunState, RunTarget } from './run'
+import { applyHandoffSeed, keepaliveBand, noteUsage, registerKeepalive, showSeedCache, stopForHandoff, transcriptSplit } from '../keepalive/keepalive'
+import { git, homeDir, log, orLog, readRaw, readText, repoRoot, trustGate } from './io'
 
 // At the handoff threshold (thresholdPercent of the context window), Haiku writes a handoff brief, the mod runs /clear, then seeds the
 // fresh session with a pointer to the brief. Interactive terminal sessions only: where a
@@ -914,15 +914,15 @@ export const register: Register = (on) => {
     const r = yield* next(e)
     // The response measured everything up to its request; its own output is new, and so is
     // any tool output that landed while it streamed (core runs tools before the stream ends).
-    if (!e.agentId && r.usage) {
-      unmeasured = unmeasured - before + r.usage.output_tokens
-      // Keep-alive's cache ledger: until when each cache is warm. A failure is logged, never thrown.
+    // Auto-handoff's accounting is the main conversation's only.
+    if (!e.agentId && r.usage) unmeasured = unmeasured - before + r.usage.output_tokens
+    // Keep-alive's cache ledger (ITEM-034): every response, main and each agent's, until when each cache
+    // is warm; an agent's usage also goes to the debug log (034.c). A failure is logged, never thrown.
+    if (r.usage) {
       const usage = r.usage
-      await orLog($, 'keepalive usage', () => noteUsage($, usage))
+      const agentId = e.agentId
+      await orLog($, 'keepalive usage', () => noteUsage($, usage, agentId))
     }
-    // ITEM-034.c: a subagent response's usage goes to the debug log only, never to the cache ledger
-    // (T17.3 forwards it to noteUsage, which then logs it itself)
-    if (e.agentId && r.usage) logAgentUsage($, r.usage, e.agentId)
     // The seed turn's first request is the fresh session's true starting size. Measuring at
     // the end of that turn instead let a busy first turn (47k to 129k of reads) set
     // the floor at 129k, with the pre-request check off the whole way.
@@ -937,7 +937,7 @@ export const register: Register = (on) => {
       }
       await log($, `floor session=${seededSession} tokens=${floor} (seed turn's first request) ${seedCacheFields(cache)}`)
       showHandedOff($, floor, cache)
-      // Also on keep-alive's status line, until the next turn starts. A failure there is logged,
+      // Also on keep-alive's band, as its seed row, until the next turn starts. A failure there is logged,
       // never thrown: the floor is already set, and the tight-threshold warning below must still run.
       await orLog($, 'keepalive seed line', () => showSeedCache($, cache))
       await warnTightThreshold($, seededSession!)
@@ -971,9 +971,22 @@ export const register: Register = (on) => {
   // Markdown element linkifies http:, https: and file: (the Link element refuses the
   // Tailscale IP), and the panel draws its brief link the same way.
   // Yields the band to a survey, and passes when there is nothing to show.
+  // One hook for both, since two hooks that both draw would hide each other (keep-alive LLD rev 7,
+  // section 13): auto-handoff's panel first, then the hooks beneath (another plugin's band, such as
+  // ai-dlc-lens's, then core's), then keep-alive's band. A hook that returns its own tree without
+  // calling next skips every hook beneath it, which hid the lens band once keep-alive's rows made this
+  // band draw at every render (step 40). Step 42: the lens band and keep-alive's are two separate bands,
+  // the lens first, so keep-alive's comes after `below`; it has its own minimise and close. No `width` on
+  // any Box of this tree (keep-alive's included), since `below` can be core's engine node, which
+  // AbovePrompt refuses under a Box with a width.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    if (!shown || e.props.hasSurvey) return next(e)
-    return panelTree($.ui.resolve(e), shown, frame, () => hidePanel($))
+    if (e.props.hasSurvey) return next(e)
+    const t = $.ui.resolve(e)
+    const ka = await keepaliveBand($, t)
+    const ho = shown ? panelTree(t, shown, frame, () => hidePanel($)) : undefined
+    if (!ho && !ka) return next(e)
+    const below = await next(e)
+    return <t.Box flexDirection="column">{ho}{below as never}{ka as never}</t.Box>
   })
 
   on('ui.render', { component: 'UserMessage', props: { origin: { kind: 'plugin' } } }, async ($, e, next) => {
@@ -1038,6 +1051,8 @@ export const register: Register = (on) => {
       // so one store failure cannot give two numbers. A stored lineage always has a depth from now on.
       lineage = { from: p.oldSession, chain: p.chain, depth: p.next, baseName: p.baseName }
       await $.store.set(`lineage:${newSession}`, lineage)
+      // Keep-alive continues the chain (its LLD rev 10, 19.4): it reads the lineage just written
+      await orLog($, 'keepalive handoff seed', () => applyHandoffSeed($))
       // The run the chain hands off: the new session may carry it on before the resumed
       // orchestrator writes its own id into the run state (run.ts, pickRun).
       if (p.run) await $.store.set(`chainRun:${newSession}`, p.run.id)

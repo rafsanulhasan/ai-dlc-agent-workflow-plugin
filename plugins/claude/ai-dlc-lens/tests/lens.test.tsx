@@ -482,7 +482,12 @@ async function seed($: any, on: any, opts: SeedOpts = {}) {
     toasts.push(String(e?.text ?? e))
     return { value: undefined }
   })
-  on('agent.list', () => ({ value: [{ id: 'a1', description: desc[0], type: 'ai-dlc:software-engineer', status: listStatus }] }))
+  // Step 44.3.l2.1: `agentList.status` is what the engine's list says about a1; a test sets it to `failed` / `killed` (`throws` true makes the list throw) before it fails the agent.
+  const agentList: { status: string; throws: boolean } = { status: listStatus, throws: false }
+  on('agent.list', () => {
+    if (agentList.throws) throw new Error('agent.list failed')
+    return { value: [{ id: 'a1', description: desc[0], type: 'ai-dlc:software-engineer', status: agentList.status }] }
+  })
   // Step 36.2: the panes open now, for `$.ui.panes()` (what `/ai-dlc:lens` reads to tell "open" from "closed").
   const openNow = new Set<string>(opts.openAtStart ?? [])
   /** Step 36.2.3: every open and close in order, `open:<id>` / `close:<id>`. */
@@ -566,7 +571,7 @@ async function seed($: any, on: any, opts: SeedOpts = {}) {
       fork: false,
     })
   if (complete) await completeAgent($, 'a1')
-  return { opened, nativeInputs, writes, files, openArgs, closed, statted, toasts, events, openNow }
+  return { opened, nativeInputs, writes, files, openArgs, closed, statted, toasts, events, openNow, agentList }
 }
 
 async function completeAgent($: any, agentId: string) {
@@ -604,10 +609,15 @@ const CHART_PANE = 'ai-dlc-lens-chart'
 /**
  * Round 6 (A2): every workflow and every task is a collapsed panel. `openPanels` presses each closed
  * one open (never the thinking or context sections), so a test can reach the charts and their Buttons.
+ * Step 43 (C2): a step accordion is open only for the run's highest step (or the selected one), so a closed
+ * step (its `step-min` Button reads □) is pressed open too; the old tests reach every step's chart again.
  */
 async function openPanels(ui: any) {
   for (let round = 0; round < 6; round++) {
-    const shut = ((await ui.findAll({ type: 'Button' })) as any[]).filter((b: any) => /^(wf-(?!thinking$|context$)|tk-)/.test(String(b.key)) && /\[\+\]/.test(String(b.text ?? b.label ?? b.props?.label ?? '')))
+    const shut = ((await ui.findAll({ type: 'Button' })) as any[]).filter((b: any) => {
+      const label = String(b.text ?? b.label ?? b.props?.label ?? '')
+      return (/^(wf-(?!thinking$|context$)|tk-)/.test(String(b.key)) && /\[\+\]/.test(label)) || (/step-min$/.test(String(b.key)) && label === '□')
+    })
     if (shut.length === 0) return
     for (const b of shut) await ui.press({ key: b.key })
   }
@@ -625,6 +635,19 @@ const pressMain = async ($: any) => {
   const card = await $.ui.mount(toolRow('toolu_1', 'vscode', SE_INPUT, 'Agent', 500))
   await card.press({ key: 'card:agent-main' })
   await card.unmount()
+}
+/**
+ * Step 43: the pane beside the band asks `$.clock.after` for a redraw tick (`pingBandSoon`, B4b); a test answers it so the
+ * pane draws. The tick never fires on its own; a test that needs it fires the returned `ticks`.
+ */
+const holdBandPing = (on: any): (() => void)[] => {
+  const ticks: (() => void)[] = []
+  on('clock.after', () => new Promise(r => ticks.push(() => r({ value: undefined }))) as never)
+  return ticks
+}
+/** Step 43: the pane in its run list (it may have opened on a run): "< Runs" when it shows one run. */
+const paneToRuns = async (ui: any) => {
+  if (await ui.find({ type: 'Button', key: 'runs-back' })) await ui.press({ key: 'runs-back' })
 }
 
 describe('chat card', () => {
@@ -758,9 +781,13 @@ describe('chat card', () => {
     await full.unmount()
   })
 
-  test('C6: a SendMessage row keeps its native row under one lens line', async ($, on) => {
+  test('C6 (live findings 2, point 4): a SendMessage row is hidden from the chat; expanded (ctrl+o, --verbose) it keeps its native row under one lens line', async ($, on) => {
     await seed($, on)
-    const ui = await $.ui.mount(toolRow('toolu_s', 'vscode', { to: 'a1', message: 'again' }, 'SendMessage'))
+    const hidden = await $.ui.mount(toolRow('toolu_s', 'vscode', { to: 'a1', message: 'again' }, 'SendMessage'))
+    expect(await hidden.find({ type: 'Text', text: /lens: message to a1/ })).toBe(undefined)
+    expect(await hidden.find({ type: 'Text', text: 'NATIVE ROW' })).toBe(undefined)
+    await hidden.unmount()
+    const ui = await $.ui.mount(toolRow('toolu_s', 'vscode', { to: 'a1', message: 'again' }, 'SendMessage', undefined, true))
     expect(await ui.find({ type: 'Text', text: /lens: message to a1/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: 'NATIVE ROW' })).toBeDefined()
     await ui.unmount()
@@ -830,7 +857,7 @@ describe('panels', () => {
     await edge.unmount()
   })
 
-  test('3, 4: the avatar panel: header, then Usage with the figures, the window and the cost, with no source', async ($, on) => {
+  test('3, 4: the avatar panel: header, then Context Lab with the figures, the window and the cost, with no source', async ($, on) => {
     await seed($, on, { files: { '.ai-dlc/model-costing.json': COSTING_ARRAY } })
     const ui = await chartPane($)
     await ui.press({ key: 'agent-a1' })
@@ -840,7 +867,7 @@ describe('panels', () => {
     expect(await ag.find({ type: 'Text', text: /^\s*DF\s*$/ })).toBeDefined()
     expect(await ag.find({ type: 'Text', text: /^\s*done\s*$/ })).toBeDefined()
     expect(await ag.find({ type: 'Text', text: 'sonnet · Software Engineer' })).toBeDefined()
-    expect(await ag.find({ type: 'Text', text: /^\s*Usage \(300K \/ 200K\)$/ })).toBeDefined()
+    expect(await ag.find({ type: 'Text', text: /^\s*Context Lab \(300K \/ 200K\)$/ })).toBeDefined()
     await ag.press({ key: 'agent-usage' })
     expect(await ag.find({ type: 'Text', text: '300K / 200K' })).toBeDefined()
     expect(await ag.find({ type: 'Text', text: '████████████' })).toBeDefined()
@@ -951,11 +978,13 @@ describe('panels', () => {
     await ui.unmount()
     const ag = await $.ui.mount({ ...pane('ai-dlc-lens-agent', 'inline', 24), surface: 'vscode' })
     const all: any[] = await ag.findAll({})
-    const headings = all.filter((x: any) => x.type === 'Text' && /^\s*(Usage|Cache keep-alive|Tool calls|Background tasks|Thinking) \(/.test(String(x.text))).map((x: any) => String(x.text).trim().replace(/ \(.*$/, ''))
-    // Step 1.4: the Cache keep-alive section, on by default (keepaliveSection), comes after Usage.
-    expect(headings).toEqual(['Usage', 'Cache keep-alive', 'Tool calls', 'Background tasks', 'Thinking'])
-    expect(all.filter((x: any) => x.type === 'Text' && /^─+$/.test(String(x.text))).length).toBe(5)
-    for (const k of ['agent-usage', 'agent-keepalive', 'agent-calls', 'agent-tasks', 'agent-thinking']) expect(await ag.find({ type: 'Button', key: k })).toBeDefined()
+    const headings = all.filter((x: any) => x.type === 'Text' && /^\s*(Context Lab \(|Cache Lab$|Tool calls \(|Background tasks \(|Thinking \()/.test(String(x.text).trim())).map((x: any) => String(x.text).trim().replace(/ \(.*$/, ''))
+    // Step 42: Cache Lab takes the place of the Cache keep-alive section, after Context Lab (ITEM-073: the agent pane's Usage section renamed).
+    expect(headings).toEqual(['Context Lab', 'Cache Lab', 'Tool calls', 'Background tasks', 'Thinking'])
+    // Step 43 (C3b): the Panel Type switch gets its own divider; Anomalies (none here) draw nothing, not even a divider.
+    expect(all.filter((x: any) => x.type === 'Text' && /^─+$/.test(String(x.text))).length).toBe(6)
+    for (const k of ['agent-usage', 'cachelab-open', 'agent-calls', 'agent-tasks', 'agent-thinking']) expect(await ag.find({ type: 'Button', key: k })).toBeDefined()
+    expect(await ag.find({ type: 'Button', key: 'agent-keepalive' })).toBe(undefined)
     // No raw JSON in the panel.
     expect(all.some((x: any) => x.type === 'Text' && /^\s*[[{]"/.test(String(x.text)))).toBe(false)
     await ag.unmount()
@@ -975,10 +1004,10 @@ describe('collapsed by default (addendum 2)', () => {
     await wp.press({ key: 'agent-a1' })
     await wp.unmount()
     const edge = await $.ui.mount({ ...pane('ai-dlc-lens-edge'), surface: 'vscode' })
-    for (const k of ['edge-usage', 'edge-doc', 'edge-back']) expect((await edge.find({ type: 'Button', key: k }))?.text).toBe('[+]')
+    for (const k of ['edge-doc', 'edge-back', 'edge-messages']) expect((await edge.find({ type: 'Button', key: k }))?.text).toBe('[+]')
     await edge.unmount()
     const ag = await $.ui.mount({ ...pane('ai-dlc-lens-agent'), surface: 'vscode' })
-    for (const k of ['agent-usage', 'agent-keepalive', 'agent-calls', 'agent-tasks', 'agent-thinking']) expect((await ag.find({ type: 'Button', key: k }))?.text).toBe('[+]')
+    for (const k of ['agent-usage', 'cachelab-open', 'agent-calls', 'agent-tasks', 'agent-thinking']) expect((await ag.find({ type: 'Button', key: k }))?.text).toBe('[+]')
     await ag.unmount()
   })
 
@@ -1259,8 +1288,10 @@ describe('round 4: workflows', () => {
     await $.turn.start({ text: '<task-notification>x</task-notification>', turnId: 'm2' })
     await later($)
     const wp = await chartPane($)
-    // One workflow (round 6: one panel, A2); both avatars and both arrows in one chart.
+    // One workflow (step 43: one row in the run list); both avatars and both arrows in one chart.
+    await runListL3(wp)
     expect((await wp.findAll({ type: 'Button' })).filter((b: any) => String(b.key).startsWith('wf-toolu')).map((b: any) => b.key)).toEqual(['wf-toolu_1'])
+    await showRunL3(wp, 'toolu_1')
     for (const k of ['agent-a1', 'agent-a2', 'edge-a1', 'edge-a2']) expect(await wp.find({ type: 'Button', key: k })).toBeDefined()
     expect((await wp.find({ type: 'Button', key: 'edge-a2' }))?.text).toBe('Scott Hanselman -> Kent Beck')
     const src = await svgSource(wp)
@@ -1281,6 +1312,7 @@ describe('round 4: workflows', () => {
     await $.turn.start({ text: 'and now something else', turnId: 'm2' })
     await later($)
     const wp = await chartPane($, 'vscode', false)
+    await runListL3(wp)
     expect((await wp.findAll({ type: 'Button' })).filter((b: any) => /^wf-toolu_\d+$/.test(String(b.key))).map((b: any) => b.key)).toEqual(['wf-toolu_2', 'wf-toolu_1'])
     await wp.unmount()
   })
@@ -1290,24 +1322,21 @@ describe('round 4: workflows', () => {
     await $.turn.start({ text: 'Test the change please\nmore lines', turnId: 'm2' })
     await later($)
     const wp = await chartPane($, 'vscode', false)
-    expect((await wp.find({ type: 'Button', key: 'wf-toolu_2' }))?.text).toBe('[+]')
-    expect((await wp.find({ type: 'Button', key: 'wf-toolu_1' }))?.text).toBe('[+]')
+    await runListL3(wp)
+    // Step 43: the run list has one row per workflow (a Button keyed wf-<w>, labelled with the run's title).
+    for (const k of ['wf-toolu_2', 'wf-toolu_1']) expect(await wp.find({ type: 'Button', key: k })).toBeDefined()
     // Titles: the run's title from run.md (the brief names its record), else the request; never "Agent: <description>".
-    expect(await wp.find({ type: 'Text', text: /^\s*Test the change please$/ })).toBeDefined()
-    expect(await wp.find({ type: 'Text', text: /^\s*R — the lens spike$/ })).toBeDefined()
+    expect(await titled(wp, /^\s*Test the change please$/)).toBeDefined()
+    expect(await titled(wp, /^\s*R — the lens spike$/)).toBeDefined()
     expect(await wp.find({ type: 'Text', text: /Agent: / })).toBe(undefined)
-    // Newest first; both collapsed until pressed.
+    // Newest first.
     const keys = (await wp.findAll({ type: 'Button' })).map((b: any) => String(b.key))
     expect(keys.indexOf('wf-toolu_2')).toBeLessThan(keys.indexOf('wf-toolu_1'))
-    // Step 30.1: the selected run (the newest) draws its step charts and their Buttons beside the list; an open
-    // panel names how many step charts its run has, and "show" draws them in place of the others.
+    // A row opens that run's workflow alone.
+    await showRunL3(wp, 'toolu_2')
     expect(await wp.find({ type: 'Button', key: 'toolu_2:agent-a2' })).toBeDefined()
     expect(await wp.find({ type: 'Button', key: 'toolu_1:agent-a1' })).toBe(undefined)
-    await wp.press({ key: 'wf-toolu_1' })
-    await wp.press({ key: 'wf-toolu_2' })
-    expect(await wp.find({ type: 'Text', text: '1 step chart' })).toBeDefined()
-    expect(await wp.find({ type: 'Button', key: 'toolu_1:agent-a1' })).toBe(undefined)
-    await wp.press({ key: 'wf-show-toolu_1' })
+    await showRunL3(wp, 'toolu_1')
     expect(await wp.find({ type: 'Button', key: 'toolu_1:agent-a1' })).toBeDefined()
     expect(await wp.find({ type: 'Button', key: 'toolu_2:agent-a2' })).toBe(undefined)
     const all = (await wp.findAll({ type: 'Button' })).map((b: any) => b.key)
@@ -1444,14 +1473,16 @@ describe('round 5: the task title at the top (requirement 2)', () => {
 
   test('two agents on two runs, spawned in one message (step 8.1.5): two workflows, each titled by its run; never a description', async ($, on) => {
     await seed($, on, { parallel: true, complete: false, request: 'Ship the lens\nwith the panels', prompt2: S_BRIEF, desc: ['Wait one', 'Wait two'], files: { 'docs/handoffs/R/run.md': RUN_R('build the lens'), 'docs/handoffs/S/run.md': RUN_S } })
-    const wp = await chartPane($)
-    // AC-1.5.2: one workflow per run, whatever the message that spawned them. Step 30.1: each step of a run is a
-    // chart headed by its stage; the selected run's charts are drawn, "show" draws the other's instead.
-    expect(await wp.find({ type: 'Text', text: 'R — the lens spike' })).toBeDefined()
-    expect(await wp.find({ type: 'Text', text: 'S — the second task' })).toBeDefined()
+    const wp = await chartPane($, 'vscode', false)
+    await runListL3(wp)
+    // AC-1.5.2: one workflow per run, whatever the message that spawned them. Step 43: the run list has a row per run,
+    // titled by its run; a row opens that run's step charts, each headed by its stage.
+    expect(await titled(wp, 'R — the lens spike')).toBeDefined()
+    expect(await titled(wp, 'S — the second task')).toBeDefined()
+    await showRunL3(wp, 'toolu_2')
     expect(await wp.find({ type: 'Text', text: 'Step 18 · write the tests' })).toBeDefined()
     expect(await wp.find({ type: 'Button', key: 'toolu_2:agent-a2' })).toBeDefined()
-    await wp.press({ key: 'wf-show-toolu_1' })
+    await showRunL3(wp, 'toolu_1')
     expect(await wp.find({ type: 'Text', text: 'Step 17 · build the lens' })).toBeDefined()
     expect(await wp.find({ type: 'Button', key: 'toolu_1:agent-a1' })).toBeDefined()
     expect((await drawn(wp)).filter(t => /Wait one|Wait two|Agent: /.test(t))).toEqual([])
@@ -1484,20 +1515,20 @@ describe('round 5: the task title at the top (requirement 2)', () => {
 
 describe('round 5: several workflows (requirement 3) and the status indicator (requirement 4)', () => {
   test('two workflows: a panel each, headed by its parent task and its status, all collapsed', async ($, on) => {
-    await seed($, on, { files: { 'docs/handoffs/R/run.md': RUN_R('build the lens', 'done (passed)') } })
+    await seed($, on, { files: { 'docs/handoffs/R/run.md': RUN_R('build the lens', 'done (passed)', 'done') } })
     await $.turn.start({ text: 'Test the change please', turnId: 'm2' })
     await $.tool.call({ tool: 'Agent', subagent_type: 'ai-dlc:sqa-engineer', description: 'later', prompt: 'SQA PROMPT: test the change.', tool_use_id: 'toolu_2' })
     await $.agent.spawn({ tool_use_id: 'toolu_2', prompt: 'SQA PROMPT: test the change.', description: 'later', subagentType: 'ai-dlc:sqa-engineer', provider: { plugin: 'ai-dlc', tier: 'user' }, parentModel: 'claude-opus-5-5', background: true, fork: false })
     const wp = await chartPane($, 'vscode', false)
-    for (const k of ['wf-toolu_1', 'wf-toolu_2']) expect((await wp.find({ type: 'Button', key: k }))?.text).toBe('[+]')
-    // Step 30.1: collapsed, only the selected (newest) run's step charts are drawn, beside the list: its one
-    // spawn names no record, so its one chart is the one for spawns with no step.
-    expect((await chartSvgs(wp)).map((x: any) => x.props.alt)).toEqual(['Step chart no-step: Test the change please'])
-    // Newest first: its status is in progress (blinking), the older completed (steady).
+    await runListL3(wp)
+    for (const k of ['wf-toolu_1', 'wf-toolu_2']) expect(await wp.find({ type: 'Button', key: k })).toBeDefined()
+    // Step 43: the list is one row per run, newest first: its status dot (in progress blinking, the older completed steady) and its title.
     expect(await statusSvgs(wp)).toEqual(['status: in progress', 'status: completed'])
-    expect(await wp.find({ type: 'Text', text: /^\s*Test the change please$/ })).toBeDefined()
-    expect(await wp.find({ type: 'Text', text: /^\s*R — the lens spike$/ })).toBeDefined()
-    await wp.press({ key: 'wf-toolu_2' })
+    expect(await titled(wp, /^\s*Test the change please$/)).toBeDefined()
+    expect(await titled(wp, /^\s*R — the lens spike$/)).toBeDefined()
+    // A row opens that run: the newest run's one spawn names no record, so its one chart is the one for spawns with no step.
+    await showRunL3(wp, 'toolu_2')
+    expect((await chartSvgs(wp)).map((x: any) => x.props.alt)).toEqual(['Step chart no-step: Test the change please'])
     expect(await wp.find({ type: 'Button', key: 'toolu_2:agent-a2' })).toBeDefined()
     expect(await wp.find({ type: 'Button', key: 'toolu_1:agent-a1' })).toBe(undefined)
     await wp.unmount()
@@ -1533,12 +1564,21 @@ describe('round 5: several workflows (requirement 3) and the status indicator (r
     let src = await statusSource(wp)
     expect(src).toMatch(/fill="#2e7d32"/)
     expect(src).toMatch(/<animate [^>]*dur="0\.6s"/)
+    // Step 44 (R44.22): the step heading takes the run list's rule, so every agent ended under an active run reads waiting;
+    // completed needs the run done too.
     await completeAgent($, 'a1')
+    expect(await statusSvgs(wp)).toEqual(['status: waiting'])
+    // The Write event only tells the lens the run folder changed; the lens reads the run state from `files` (fs.read), so
+    // the event carries the same text the fixture now holds.
+    const DONE = RUN_R('build', 'done (passed)', 'done')
+    files['docs/handoffs/R/run.md'] = DONE
+    await $.tool.call({ tool: 'Write', file_path: 'docs/handoffs/R/run.md', content: DONE, tool_use_id: 'toolu_d' })
     expect(await statusSvgs(wp)).toEqual(['status: completed'])
     expect(await statusSource(wp)).not.toMatch(/<animate/)
     // The run is blocked: halted, red as lens.json says.
-    files['docs/handoffs/R/run.md'] = RUN_R('build', 'blocked', 'blocked')
-    await $.tool.call({ tool: 'Write', file_path: 'docs/handoffs/R/run.md', content: 'x', tool_use_id: 'toolu_w' })
+    const BLOCKED = RUN_R('build', 'blocked', 'blocked')
+    files['docs/handoffs/R/run.md'] = BLOCKED
+    await $.tool.call({ tool: 'Write', file_path: 'docs/handoffs/R/run.md', content: BLOCKED, tool_use_id: 'toolu_w' })
     expect(await statusSvgs(wp)).toEqual(['status: halted'])
     src = await statusSource(wp)
     expect(src).toMatch(/fill="#ff0000"/)
@@ -1668,14 +1708,20 @@ describe('round 6: pane controls (A1, A3, A4, A9)', () => {
     const wp = await chartPane($, 'vscode', false)
     const keys = (await wp.findAll({ type: 'Button' })).map((b: any) => String(b.key))
     // Step 1.5: the first row: the Panel Type switch left (Drill in, Tab); pinned/docked, full screen, minimise and close right.
-    expect(keys.slice(0, 6)).toEqual(['panel-drill-in', 'panel-tab', 'pane-place', 'pane-full', 'pane-min', 'pane-close'])
+    // Step 43 (rule 2): VS Code draws no band, so the pane opened itself on the run in progress, in workflow mode: its `↺`
+    // (back to the run list) sits between minimise and close.
+    // Step 43, D2: and no ⤢: full screen comes from a step chart's own ⤢.
+    expect(keys.slice(0, 6)).toEqual(['panel-drill-in', 'panel-tab', 'pane-place', 'pane-min', 'pane-restore', 'pane-close'])
     await wp.press({ key: 'pane-min' })
-    expect(await wp.find({ type: 'Button', key: 'wf-toolu_1' })).toBe(undefined)
+    expect(await wp.find({ type: 'Button', key: 'runs-back' })).toBe(undefined)
     expect(await chartSvg(wp)).toBe(undefined)
     expect(await statusSvgs(wp)).toEqual(['status: in progress'])
     expect(await wp.find({ type: 'Text', text: 'R — the lens spike' })).toBe(undefined)
     expect((await wp.find({ type: 'Button', key: 'pane-min' }))?.text).toBe('□')
     await wp.press({ key: 'pane-min' })
+    // Restored to the size before: still the run's workflow view; "< Runs" shows the run list.
+    expect(await wp.find({ type: 'Button', key: 'runs-back' })).toBeDefined()
+    await wp.press({ key: 'runs-back' })
     expect(await wp.find({ type: 'Button', key: 'wf-toolu_1' })).toBeDefined()
     await wp.press({ key: 'pane-close' })
     expect(closed).toContain(CHART_PANE)
@@ -1726,17 +1772,21 @@ describe('round 6: tasks as panels, same-task workflows (A2, A8)', () => {
     expect(opened).toContain(CHART_PANE)
     await card.unmount()
     const wp = await chartPane($, 'vscode', false)
-    expect((await wp.find({ type: 'Button', key: 'wf-toolu_1' }))?.text).toBe('[+]')
-    // Step 30.1: no task panels any more; the selected run's step charts are drawn beside the list, open or not.
-    expect(await wp.find({ type: 'Button', key: 'tk-toolu_1-0' })).toBe(undefined)
-    expect(await stepKeys(wp)).toEqual(['17'])
-    await wp.press({ key: 'wf-toolu_1' })
+    // Step 43 (rule 3): the card opens the pane in workflow mode on its run (no run list, no "[+]" panel), with the step
+    // of the card's call open. Step 30.1: no task panels any more.
+    expect(await wp.find({ type: 'Button', key: 'wf-toolu_1' })).toBe(undefined)
     expect(await wp.find({ type: 'Button', key: 'tk-toolu_1-0' })).toBe(undefined)
     expect(await stepKeys(wp)).toEqual(['17'])
     expect(await wp.find({ type: 'Button', key: 'agent-a1' })).toBeDefined()
     // The workflow's dot, and its step chart's own.
     expect((await statusSvgs(wp)).length).toBe(1)
     expect(((await wp.findAll({ type: 'Svg' })) as any[]).filter((x: any) => String(x?.props?.alt ?? '').startsWith('step status: ')).length).toBe(1)
+    // "< Runs": the run list, one collapsed row per workflow (its title, no chart); a press opens the workflow again.
+    await wp.press({ key: 'runs-back' })
+    expect(await wp.find({ type: 'Button', key: 'tk-toolu_1-0' })).toBe(undefined)
+    expect(await stepKeys(wp)).toEqual([])
+    await wp.press({ key: 'wf-toolu_1' })
+    expect(await stepKeys(wp)).toEqual(['17'])
     await wp.unmount()
   })
 
@@ -1747,8 +1797,14 @@ describe('round 6: tasks as panels, same-task workflows (A2, A8)', () => {
     await $.tool.call({ tool: 'Agent', subagent_type: 'ai-dlc:sqa-engineer', description: 'later', prompt: brief, tool_use_id: 'toolu_2' })
     await $.agent.spawn({ tool_use_id: 'toolu_2', prompt: brief, description: 'later', subagentType: 'ai-dlc:sqa-engineer', provider: { plugin: 'ai-dlc', tier: 'user' }, parentModel: 'claude-opus-5-5', background: true, fork: false })
     let wp = await chartPane($, 'vscode', false)
+    // Step 43 (rule 2): the pane opened itself in workflow mode on the run in progress; "< Runs" shows the run list.
+    const toList = async () => {
+      if (await wp.find({ type: 'Button', key: 'runs-back' })) await wp.press({ key: 'runs-back' })
+    }
     const panels = async () => (await wp.findAll({ type: 'Button' })).filter((b: any) => /^wf-toolu/.test(String(b.key))).map((b: any) => b.key)
+    await toList()
     expect(await panels()).toEqual(['wf-toolu_1'])
+    await wp.press({ key: 'wf-toolu_1' })
     await openPanels(wp)
     expect(await wp.find({ type: 'Text', text: /^Scott Hanselman spawned 2 agents$/ })).toBeDefined()
     await wp.unmount()
@@ -1757,6 +1813,7 @@ describe('round 6: tasks as panels, same-task workflows (A2, A8)', () => {
     await $.turn.start({ text: 'Something else', turnId: 'm3' })
     await $.tool.call({ tool: 'Agent', subagent_type: 'ai-dlc:sqa-engineer', description: 'other', prompt: 'plain brief', tool_use_id: 'toolu_3' })
     wp = await chartPane($, 'vscode', false)
+    await toList()
     expect(await panels()).toEqual(['wf-toolu_3', 'wf-toolu_1'])
     await wp.unmount()
   })
@@ -1822,6 +1879,31 @@ describe('round 6: status (A5, A6, 18.2)', () => {
     expect(await statusSvgs(wp)).toEqual(['status: waiting'])
     expect(((await wp.findAll({ type: 'Svg' })) as any[]).map((x: any) => String(x?.props?.alt ?? '')).filter(a => a.startsWith('step status: '))).toEqual(['step status: waiting'])
     expect(await statusSource(wp)).toMatch(/fill="#ef6c00"/)
+    await wp.unmount()
+  })
+
+  // Step 44 (R44.22, AC-7.13): a step chart's heading takes the run list's rule (`runListStatus`).
+  for (const [runStatus, want] of [['active', 'waiting'], ['', 'waiting'], ['paused', 'waiting'], ['done', 'completed']] as const)
+    test(`[R44.22][AC-7.13] every agent of the step ended, the run's status is ${JSON.stringify(runStatus)}: the step heading reads ${want}`, async ($, on) => {
+      await seed($, on, { complete: false, files: { 'docs/handoffs/R/run.md': RUN_R('build', runStatus === 'done' ? 'done (passed)' : 'in-progress', runStatus) } })
+      const wp = await chartPane($, 'vscode', false)
+      await completeAgent($, 'a1')
+      await showRunL3(wp, 'toolu_1') // a done run may open on the run list
+      const stepSvgs = async () => ((await wp.findAll({ type: 'Svg' })) as any[]).map((x: any) => String(x?.props?.alt ?? '')).filter(a => a.startsWith('step status: '))
+      expect(await stepSvgs()).toEqual([`step status: ${want}`])
+      await wp.unmount()
+    })
+
+  // Step 44 (R44.22 extended, the human's G4 decision 5): a chart whose run has records but no readable run state reads
+  // waiting, as the run list does (it names such a run with an empty status), never completed.
+  test('[R44.22][AC-7.13] the run has records but no run state, every agent of the step ended: the step heading and the run list both read waiting', async ($, on) => {
+    await seed($, on, { complete: false, files: { 'docs/handoffs/R/run.md': null } })
+    const wp = await chartPane($, 'vscode', false)
+    await completeAgent($, 'a1')
+    expect(await statusSvgs(wp)).toEqual(['status: waiting']) // the run list's row for the same run
+    await showRunL3(wp, 'toolu_1')
+    const stepSvgs = ((await wp.findAll({ type: 'Svg' })) as any[]).map((x: any) => String(x?.props?.alt ?? '')).filter(a => a.startsWith('step status: '))
+    expect(stepSvgs).toEqual(['step status: waiting'])
     await wp.unmount()
   })
 })
@@ -2354,6 +2436,25 @@ describe('keep-alive (spike 028, AC-9.4)', () => {
     }
   })
 
+  test('[42.1] the lens band above the prompt draws no keep-alive line: keep-alive has a band of its own after it (the pane head keeps the line)', { plugins: [kaProvider] }, async ($, on) => {
+    on('session.surfaces', () => ({ value: ['terminal'] }))
+    holdBandPing(on)
+    await seed($, on)
+    await ($.command.run as any)({ command: 'ai-dlc:lens', args: '' })
+    await $.command.run({ command: 'ka-arm' } as never)
+    const b = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 20, bodyColumns: 100, scroll: { offset: 0, bodyRows: 20 }, view: {} } } as any)
+    // Step 43 (A1): the command leaves the band minimised; its □ brings the list back.
+    await b.press({ key: 'pane-min' })
+    // the band is drawn (its workflow list), a track is running, and still no keep-alive line in it
+    expect(await b.find({ type: 'Button', key: 'wf-toolu_1' })).toBeDefined()
+    expect(await b.find({ type: 'Text', text: /^keep-alive:/ })).toBe(undefined)
+    await b.unmount()
+    // the same value in the view's pane head still draws the line
+    const wp = await chartPane($, 'terminal', false)
+    expect((await wp.find({ type: 'Text', text: /^keep-alive:/ }))?.text).toBe(KA_LINE)
+    await wp.unmount()
+  })
+
   test('without ai-dlc (no published value) no line draws and the panes draw as before', async ($, on) => {
     await seed($, on)
     for (const surface of SURFACES) {
@@ -2500,17 +2601,21 @@ describe('/ai-dlc:* commands (step 8.1.4)', () => {
   test('/ai-dlc:lens-keepalive: bare flips keepaliveSection in lens.json, on|off set it, anything else is the usage', async ($, on) => {
     const { files } = await seed($, on)
     const off: any = await ($.command.run as any)({ command: 'ai-dlc:lens-keepalive', args: '' })
-    expect(String(off?.text)).toMatch(/^\.ai-dlc\/lens\.json updated: keepaliveSection = false\. The Cache keep-alive section is hidden/)
+    expect(String(off?.text)).toMatch(/^\.ai-dlc\/lens\.json updated: keepaliveSection = false\. The Keep Alive sub-accordion and the keep-alive buttons of Cache Lab, in the agent panel, are hidden\./)
     expect(String(off?.text)).toMatch(/Kept warm: 5m 0s \(0 pings, 0 armings\) · 1h 0s \(0 pings, 0 armings\)\./)
     expect(JSON.parse(String(files['.ai-dlc/lens.json'])).keepaliveSection).toBe(false)
     const lp = await chartPane($)
     await lp.press({ key: 'agent-a1' })
     await lp.unmount()
     const ag = await $.ui.mount({ ...pane('ai-dlc-lens-agent'), surface: 'vscode' })
+    // Step 42: Cache Lab stays (its figures are not keep-alive's); its Keep Alive part is what the switch hides.
+    expect(await ag.find({ type: 'Button', key: 'cachelab-open' })).toBeDefined()
+    await ag.press({ key: 'cachelab-open' })
+    expect(await ag.find({ type: 'Button', key: 'lens:cachelab:keepalive-open' })).toBe(undefined)
     expect(await ag.find({ type: 'Button', key: 'agent-keepalive' })).toBe(undefined)
     await ag.unmount()
     const back: any = await ($.command.run as any)({ command: 'ai-dlc:lens-keepalive', args: '' })
-    expect(String(back?.text)).toMatch(/keepaliveSection = true\. The Cache keep-alive section is shown/)
+    expect(String(back?.text)).toMatch(/keepaliveSection = true\. The Keep Alive sub-accordion and the keep-alive buttons of Cache Lab, in the agent panel, are shown/)
     const onAgain: any = await ($.command.run as any)({ command: 'ai-dlc:lens-keepalive', args: 'ON' })
     expect(String(onAgain?.text)).toMatch(/keepaliveSection = true/)
     const bad: any = await ($.command.run as any)({ command: 'ai-dlc:lens-keepalive', args: 'maybe' })
@@ -2520,11 +2625,11 @@ describe('/ai-dlc:* commands (step 8.1.4)', () => {
   test('/ai-dlc:lens-keepalive under a settings env that keeps it on: lens.json changes and the reply names the winner', async ($, on) => {
     await seed($, on, { files: { '.claude/settings.json': JSON.stringify({ env: { AI_DLC_LENS_KEEPALIVE_SECTION: 'true' } }) } })
     const r: any = await ($.command.run as any)({ command: 'ai-dlc:lens-keepalive', args: 'off' })
-    expect(String(r?.text)).toMatch(/keepaliveSection = false\. The Cache keep-alive section is shown in the agent panes\. A higher level wins: \.claude\/settings\.json env\./)
+    expect(String(r?.text)).toMatch(/keepaliveSection = false\. The Keep Alive sub-accordion and the keep-alive buttons of Cache Lab, in the agent panel, are shown\. A higher level wins: \.claude\/settings\.json env\./)
   })
 })
 
-describe('/ai-dlc:lens-keepalive: the agent pane section (step 8.1.4)', () => {
+describe('/ai-dlc:lens-keepalive: the Keep Alive sub-accordion of Cache Lab in the agent panel (step 8.1.4, moved by step 42)', () => {
   test('on by default, collapsed; opened it shows kept-warm time per track over armings and the savings of the agent and the session', { plugins: [kaTimed] }, async ($, on) => {
     await seed($, on, { files: { '.ai-dlc/model-metadata.json': COSTING_BOTH } })
     await $.command.run({ command: 'ka2-first' } as never)
@@ -2536,17 +2641,23 @@ describe('/ai-dlc:lens-keepalive: the agent pane section (step 8.1.4)', () => {
       await lp.press({ key: 'agent-a1' })
       await lp.unmount()
       const ag = await $.ui.mount({ ...pane('ai-dlc-lens-agent'), surface })
-      expect((await ag.find({ type: 'Button', key: 'agent-keepalive' }))?.text).toBe('[+]')
+      // Step 42: no Cache keep-alive section any more; Cache Lab is collapsed and so is its Keep Alive part.
+      expect(await ag.find({ type: 'Button', key: 'agent-keepalive' })).toBe(undefined)
+      expect(await ag.find({ type: 'Text', text: /Cache keep-alive/ })).toBe(undefined)
+      expect((await ag.find({ type: 'Button', key: 'cachelab-open' }))?.text).toBe('[+]')
+      expect(await ag.find({ type: 'Text', text: /Kept warm, 5m track/ })).toBe(undefined)
+      await ag.press({ key: 'cachelab-open' })
+      expect((await ag.find({ type: 'Button', key: 'lens:cachelab:keepalive-open' }))?.text).toBe('[+]')
+      expect(await ag.find({ type: 'Text', text: /Kept warm, 5m track/ })).toBe(undefined)
       // 9m of the first arming, then the second arming to its expiry (2m, already past): 11m.
       // Saved: main 100K x (5 - 0.5) + a1 90K x (3 - 0.3) = 0.45 + 0.243.
-      expect(await ag.find({ type: 'Text', text: /^\s*Cache keep-alive \(5m 11m 00s · 1h 0s · saved \$0\.6930\)$/ })).toBeDefined()
-      expect(await ag.find({ type: 'Text', text: /Kept warm, 5m track/ })).toBe(undefined)
-      await ag.press({ key: 'agent-keepalive' })
+      await ag.press({ key: 'lens:cachelab:keepalive-open' })
       expect(await ag.find({ type: 'Text', text: '11m 00s (running) · 1 pings · 2 armings' })).toBeDefined()
       expect(await ag.find({ type: 'Text', text: '0s · 0 pings · 0 armings' })).toBeDefined()
       expect(await ag.find({ type: 'Text', text: '$0.2430' })).toBeDefined()
       expect(await ag.find({ type: 'Text', text: '$0.6930' })).toBeDefined()
-      await ag.press({ key: 'agent-keepalive' })
+      await ag.press({ key: 'lens:cachelab:keepalive-open' })
+      await ag.press({ key: 'cachelab-open' })
       await ag.unmount()
     }
   })
@@ -2557,21 +2668,26 @@ describe('/ai-dlc:lens-keepalive: the agent pane section (step 8.1.4)', () => {
     await lp.press({ key: 'agent-a1' })
     await lp.unmount()
     const ag = await $.ui.mount({ ...pane('ai-dlc-lens-agent'), surface: 'vscode' })
-    expect(await ag.find({ type: 'Text', text: /^\s*Cache keep-alive \(5m 0s · 1h 0s · saved —\)$/ })).toBeDefined()
+    // Step 43 (C3a): collapsedByDefault false opens Cache Lab itself (a press would close it); its Keep Alive part keeps its own collapsed default.
+    expect((await ag.find({ type: 'Button', key: 'cachelab-open' }))?.text).toBe('[-]')
+    await ag.press({ key: 'lens:cachelab:keepalive-open' })
     expect(await ag.find({ type: 'Text', text: /^No keep-alive arming seen this session/ })).toBeDefined()
+    expect(await ag.find({ type: 'Text', text: '—' })).toBeDefined()
     expect(await ag.find({ type: 'Text', text: /lens hook error/ })).toBe(undefined)
     expect(await ag.find({ type: 'Button', key: 'agent-calls' })).toBeDefined()
     await ag.unmount()
   })
 
-  test('keepaliveSection false: no section; the other four stay', async ($, on) => {
+  test('keepaliveSection false: no Keep Alive part in Cache Lab; the other sections stay', async ($, on) => {
     await seed($, on, { files: { '.ai-dlc/lens.json': JSON.stringify({ keepaliveSection: false }) } })
     const lp = await chartPane($)
     await lp.press({ key: 'agent-a1' })
     await lp.unmount()
     const ag = await $.ui.mount({ ...pane('ai-dlc-lens-agent'), surface: 'vscode' })
     expect(await ag.find({ type: 'Button', key: 'agent-keepalive' })).toBe(undefined)
-    for (const k of ['agent-usage', 'agent-calls', 'agent-tasks', 'agent-thinking']) expect(await ag.find({ type: 'Button', key: k })).toBeDefined()
+    await ag.press({ key: 'cachelab-open' })
+    expect(await ag.find({ type: 'Button', key: 'lens:cachelab:keepalive-open' })).toBe(undefined)
+    for (const k of ['agent-usage', 'cachelab-open', 'agent-calls', 'agent-tasks', 'agent-thinking']) expect(await ag.find({ type: 'Button', key: k })).toBeDefined()
     await ag.unmount()
   })
 })
@@ -2593,8 +2709,25 @@ async function spawnInto($: any, n: number, run: string, code = '1') {
 const panelKeys = async (ui: any): Promise<string[]> => ((await ui.findAll({ type: 'Button' })) as any[]).map((b: any) => String(b.key)).filter(k => /^wf-toolu_\d+$/.test(k))
 /** The run rows of the narrow view, newest first. */
 const runRows = async (ui: any): Promise<string[]> => ((await ui.findAll({ type: 'Button' })) as any[]).map((b: any) => String(b.key)).filter(k => /^run-toolu_\d+$/.test(k))
-const wide = ($: any) => $.ui.mount({ ...pane(CHART_PANE, 'dock', 100), surface: 'vscode' })
-const narrow = ($: any) => $.ui.mount({ ...pane(CHART_PANE, 'dock', 30), surface: 'vscode' })
+/**
+ * Step 43 (design 1): the wide layout (every run's panel, `wf-show-<w>`) is retired. A site draws the run list (one
+ * `wf-<w>` row per run) or one run's workflow. `showRunL3` goes to the list (`runs-back` when a workflow is drawn),
+ * presses the run's row, and opens the step accordions (`openPanels`), so the run's charts are drawn.
+ */
+async function showRunL3(ui: any, w: string) {
+  if ((await ui.find({ type: 'Button', key: 'runs-back' })) !== undefined) await ui.press({ key: 'runs-back' })
+  await ui.press({ key: `wf-${w}` })
+  await openPanels(ui)
+}
+/** The run list of a site, whatever it drew before (see `showRunL3`). */
+async function runListL3(ui: any) {
+  if ((await ui.find({ type: 'Button', key: 'runs-back' })) !== undefined) await ui.press({ key: 'runs-back' })
+}
+// Step 43: a pane opens in workflow mode (a run in progress); these tests read the run list, so go to it first.
+/** Step 43: a run's row in the list is a Button labelled with its title (the title Text of the retired panel). */
+const titled = async (ui: any, text: string | RegExp) => (await ui.find({ type: 'Button', text })) ?? (await ui.find({ type: 'Text', text }))
+const wide = async ($: any) => { const ui = await $.ui.mount({ ...pane(CHART_PANE, 'dock', 100), surface: 'vscode' }); await runListL3(ui); return ui }
+const narrow = async ($: any) => { const ui = await $.ui.mount({ ...pane(CHART_PANE, 'dock', 30), surface: 'vscode' }); await runListL3(ui); return ui }
 
 describe('step 8.1.5: one workflow per run (AC-1.5.2 and the definitions)', () => {
   test('AC-1.5.2, the order observed: run A agent running, the orchestrator spawns run B agent: two workflows', async ($, on) => {
@@ -2603,7 +2736,7 @@ describe('step 8.1.5: one workflow per run (AC-1.5.2 and the definitions)', () =
     await spawnInto($, 2, 'B')
     const ui = await wide($)
     expect(await panelKeys(ui)).toEqual(['wf-toolu_2', 'wf-toolu_1'])
-    expect(await ui.find({ type: 'Text', text: 'run B' })).toBeDefined()
+    expect(await titled(ui, 'run B')).toBeDefined()
     await ui.unmount()
   })
 
@@ -2634,9 +2767,10 @@ describe('step 8.1.5: one workflow per run (AC-1.5.2 and the definitions)', () =
     await completeAgent($, 'a2')
     await spawnInto($, 3, 'B')
     let ui = await wide($)
-    // Run A is done and its agent completed: listed, dimmed, completed dot.
+    // Run A is done and its agent completed: listed, dimmed, completed dot (the row's title Text is dimmed, step 43).
     const doneTitle: any = await ui.find({ type: 'Text', text: 'run A' })
     expect(doneTitle?.props?.dimColor ?? doneTitle?.dimColor).toBe(true)
+    expect(await statusSvgs(ui)).toContain('status: completed')
     await ui.unmount()
     await spawnInto($, 4, 'A', '2')
     ui = await wide($)
@@ -2665,54 +2799,56 @@ describe('step 8.1.5: one workflow per run (AC-1.5.2 and the definitions)', () =
 })
 
 describe('step 8.1.5: a new run never hides an earlier one (AC-1.5.1), layout by width', () => {
-  test('AC-1.5.1 wide: runs A, B, C: all three stacked on the right, A and B still openable; the selected run beside them', async ($, on) => {
+  test('AC-1.5.1 wide: runs A, B, C: the pane lists all four runs (one row each, newest first); A and B still openable, one run at a time (step 43: no side-by-side layout)', async ($, on) => {
     await seed($, on, { files: RUNS })
     await spawnInto($, 2, 'A')
     await spawnInto($, 3, 'B')
     await spawnInto($, 4, 'C')
     const ui = await wide($)
+    await paneToRuns(ui)
     expect(await panelKeys(ui)).toEqual(['wf-toolu_4', 'wf-toolu_3', 'wf-toolu_2', 'wf-toolu_1'])
-    // The stack is a column of runListColumns on the right of a row whose left part is the selected run.
-    const bs = await boxes(ui)
-    expect(bs.some((b: any) => b.width === DEFAULTS.runListColumns)).toBe(true)
-    // Step 30.1: the selected run's step charts (its spawn's step 1, and step 17 from its records on disk).
-    const runChart = ((await ui.findAll({ type: 'Svg' })) as any[]).find((x: any) => String(x?.props?.alt ?? '') === 'Step chart 1: run C')
-    expect(runChart).toBeDefined()
-    // A and B: their panels open, and "show" puts each beside the list.
+    // The list is the runs only: no chart, no column of runListColumns beside a selected run.
+    expect(await chartSvgs(ui)).toEqual([])
+    expect((await boxes(ui)).some((b: any) => b.width === DEFAULTS.runListColumns)).toBe(false)
+    // A and B: a press opens the run (workflow mode: its step charts), "< Runs" returns to the list.
     for (const [w, title] of [['toolu_2', 'run A'], ['toolu_3', 'run B']] as const) {
       await ui.press({ key: `wf-${w}` })
-      expect((await ui.find({ type: 'Button', key: `wf-${w}` }))?.text).toBe('[-]')
-      await ui.press({ key: `wf-show-${w}` })
+      await openPanels(ui)
+      expect(await panelKeys(ui)).toEqual([])
       const shown = ((await ui.findAll({ type: 'Svg' })) as any[]).find((x: any) => String(x?.props?.alt ?? '') === `Step chart 1: ${title}`)
       expect(shown).toBeDefined()
-      expect((await ui.find({ type: 'Button', key: `wf-show-${w}` }))?.text).toBe('(shown)')
+      await ui.press({ key: 'runs-back' })
+      expect((await panelKeys(ui)).length).toBe(4)
     }
     await ui.unmount()
   })
 
-  test('AC-1.5.1 narrow: every run minimised to one row (dot and title); choosing A or B opens it; "< Runs" goes back', async ($, on) => {
+  test('AC-1.5.1 narrow: the pane lists every run one row each (dot and title); choosing A or B opens it; "< Runs" goes back', async ($, on) => {
     await seed($, on, { files: RUNS })
     await spawnInto($, 2, 'A')
     await spawnInto($, 3, 'B')
     await spawnInto($, 4, 'C')
     const ui = await narrow($)
-    expect(await runRows(ui)).toEqual(['run-toolu_4', 'run-toolu_3', 'run-toolu_2', 'run-toolu_1'])
-    expect(await panelKeys(ui)).toEqual([])
+    await paneToRuns(ui)
+    expect(await panelKeys(ui)).toEqual(['wf-toolu_4', 'wf-toolu_3', 'wf-toolu_2', 'wf-toolu_1'])
+    expect(await runRows(ui)).toEqual([])
     expect((await statusSvgs(ui)).length).toBe(4)
     for (const [w, title] of [['toolu_2', 'run A'], ['toolu_3', 'run B']] as const) {
-      await ui.press({ key: `run-${w}` })
-      expect(await runRows(ui)).toEqual([])
+      await ui.press({ key: `wf-${w}` })
+      await openPanels(ui)
+      expect(await panelKeys(ui)).toEqual([])
       expect(await ui.find({ type: 'Text', text: title })).toBeDefined()
       expect(((await ui.findAll({ type: 'Svg' })) as any[]).some((x: any) => String(x?.props?.alt ?? '') === `Step chart 1: ${title}`)).toBe(true)
       await ui.press({ key: 'runs-back' })
-      expect((await runRows(ui)).length).toBe(4)
+      expect((await panelKeys(ui)).length).toBe(4)
     }
     await ui.unmount()
   })
 
-  test('the breakpoint is the wideColumns setting: 30 columns are wide at wideColumns 20, narrow at the default', async ($, on) => {
+  test('the wideColumns setting does not change the pane: 30 columns list the runs at wideColumns 20 and at the default', async ($, on) => {
     await seed($, on, { files: { ...RUNS, ...lensJson({ wideColumns: 20 }) } })
     const ui = await narrow($)
+    await paneToRuns(ui)
     expect(await panelKeys(ui)).toEqual(['wf-toolu_1'])
     expect(await runRows(ui)).toEqual([])
     await ui.unmount()
@@ -2795,8 +2931,11 @@ describe('step 8.1.5: pane view controls', () => {
   test('full screen asks the whole viewport and fills the rows; minimise from full screen, restore returns to full screen, then to normal', async ($, on) => {
     const { openArgs } = await seed($, on)
     const ui = await $.ui.mount({ ...pane(CHART_PANE), surface: 'vscode', viewport: { columns: 200, rows: 50 } })
-    expect(await ui.find({ type: 'Button', key: 'pane-restore' })).toBe(undefined)
-    await ui.press({ key: 'pane-full' })
+    // Step 43: the pane opened on the run in progress (workflow mode), whose `↺` goes back to the run list; in list mode
+    // with no size to return to there is no `↺`.
+    // Step 43, D2: no ⤢ on the title row; full screen comes from the step chart's ⤢.
+    expect(await ui.find({ type: 'Button', key: 'pane-full' })).toBe(undefined)
+    await ui.press({ key: 'nr:s17:step-full' })
     const full = openArgs.filter((x: any) => x.id === CHART_PANE).at(-1)
     expect([full?.rows, full?.columns, full?.closeOnEscape]).toEqual([50, 200, true])
     expect((await boxes(ui))[0]?.minHeight).toBe(80)
@@ -2813,22 +2952,31 @@ describe('step 8.1.5: pane view controls', () => {
     const normal = openArgs.filter((x: any) => x.id === CHART_PANE).at(-1)
     expect([normal?.rows, normal?.columns]).toEqual([undefined, undefined])
     expect((await boxes(ui)).some((b: any) => b.minHeight !== undefined)).toBe(false)
-    expect(await ui.find({ type: 'Button', key: 'pane-restore' })).toBe(undefined)
+    expect(await ui.find({ type: 'Button', key: 'pane-full' })).toBe(undefined)
     await ui.unmount()
   })
 
-  test('pinned on a surface without the band (VS Code): it stays a pane and says so; docked re-opens the pane', async ($, on) => {
+  // Step 44 (R44.15, R44.16): in VS Code the pane draws no "no band" note; the mode button switches between the pane and
+  // the band above the prompt (which VS Code raises): from the pane it closes the lens panes and pins the view to the band,
+  // from the band it docks the pane again.
+  test('[R44.15] [R44.16] VS Code: the pane has no "no band" note; the mode button pins the view to the band (the lens panes closed), and on the band docks the pane again', async ($, on) => {
     const { openArgs, closed } = await seed($, on)
     const ui = await chartPane($, 'vscode', false)
     expect((await ui.find({ type: 'Button', key: 'pane-place' }))?.text).toBe('pinned')
-    expect(await ui.find({ type: 'Text', text: /no band above the prompt/ })).toBeDefined()
-    const before = openArgs.length
+    expect(await ui.find({ type: 'Text', text: /no band above the prompt/ })).toBe(undefined) // R44.15
     await ui.press({ key: 'pane-place' })
-    expect((await ui.find({ type: 'Button', key: 'pane-place' }))?.text).toBe('docked')
-    expect(await ui.find({ type: 'Text', text: /no band above the prompt/ })).toBe(undefined)
-    expect(openArgs.slice(before).map((x: any) => x.id)).toEqual([CHART_PANE])
-    expect(closed).not.toContain(CHART_PANE)
+    expect(closed).toEqual(expect.arrayContaining([CHART_PANE, 'ai-dlc-lens-runs'])) // R44.16: both lens panes closed
     await ui.unmount()
+    const band = () => $.ui.mount({ plugin: PLUGIN, surface: 'vscode', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 20, bodyColumns: 100, scroll: { offset: 0, bodyRows: 20 }, view: {} } } as any)
+    const b = await band()
+    expect(await b.find({ type: 'Button', key: 'pane-place' })).toBeDefined() // the lens band is drawn (R44.16)
+    const before = openArgs.length
+    await b.press({ key: 'pane-place' })
+    expect(openArgs.slice(before).map((x: any) => x.id)).toContain(CHART_PANE) // the pane is opened again
+    await b.unmount()
+    const again = await band()
+    expect(await again.find({ type: 'Button', key: 'pane-place' })).toBe(undefined) // the band passes: the pane is the view
+    await again.unmount()
   })
 
   test('pinned where every surface draws the band (terminal): no pane opens on the first spawn; the band draws the view; docked opens the pane and the band passes', async ($, on) => {
@@ -2836,10 +2984,12 @@ describe('step 8.1.5: pane view controls', () => {
     const { opened, closed } = await seed($, on)
     expect(opened).not.toContain(CHART_PANE)
     expect(closed).toContain(CHART_PANE)
-    // Step 36.2, amendment 4: the band appears minimised; /ai-dlc:lens brings its list back (rule 1).
+    // Step 36.2, amendment 4: the band appears minimised; step 43 (A1): /ai-dlc:lens keeps it so, its □ brings the list back.
     await ($.command.run as any)({ command: 'ai-dlc:lens', args: '' })
     const band = () => $.ui.mount({ plugin: PLUGIN, surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 20, bodyColumns: 100, scroll: { offset: 0, bodyRows: 20 }, view: {} } } as any)
     let b = await band()
+    expect(await b.find({ type: 'Button', key: 'wf-toolu_1' })).toBe(undefined)
+    await b.press({ key: 'pane-min' })
     expect(await b.find({ type: 'Button', key: 'wf-toolu_1' })).toBeDefined()
     expect(await b.find({ type: 'Button', key: 'pane-close' })).toBe(undefined)
     // The tree beneath stays, under the view.
@@ -2861,9 +3011,10 @@ describe('step 8.1.5: pane view controls', () => {
     on('ui.render', { component: 'AbovePrompt' }, () => ({ type: 'engine', ref: 0 }) as any)
     on('session.surfaces', () => ({ value: ['terminal'] }))
     await seed($, on)
-    // Step 36.2, amendment 4: the band appears minimised; /ai-dlc:lens brings its list back (rule 1).
+    // Step 36.2, amendment 4: the band appears minimised; step 43 (A1): /ai-dlc:lens keeps it so, its □ brings the list back.
     await ($.command.run as any)({ command: 'ai-dlc:lens', args: '' })
     const b = await $.ui.mount({ plugin: PLUGIN, surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 20, bodyColumns: 100, scroll: { offset: 0, bodyRows: 20 }, view: {} } } as any)
+    await b.press({ key: 'pane-min' })
     expect(await b.find({ type: 'Button', key: 'wf-toolu_1' })).toBeDefined()
     expect(await b.find({ type: 'Text', text: 'NATIVE ROW' })).toBe(undefined)
     await b.unmount()
@@ -3087,7 +3238,8 @@ describe('step 8.1.6.1: anomaly detection (in the lens)', () => {
   })
 
   test('an agent that failed: a red marker on its avatar Button; a respawn of its type for the run clears it', async ($, on) => {
-    const { toasts } = await seed($, on, { complete: false, files: { 'docs/handoffs/R/run.md': RUN_R('build') } })
+    const { toasts, agentList } = await seed($, on, { complete: false, files: { 'docs/handoffs/R/run.md': RUN_R('build') } })
+    agentList.status = 'failed' // step 44.3.l2.1: the engine's list ends the agent too, else the error turn end leaves it running
     await $.turn.complete({ reason: 'error', answer: '', durationMs: 1, isAborted: false, turnId: 't', agentId: 'a1', usage: null } as any)
     expect(toasts).toEqual(['ai-dlc-lens: Agent failed or stopped (run R, step 17, 17-orchestrator-to-agent-manager.handoff.md): failed'])
     const wp = await chartPane($)
@@ -3103,7 +3255,8 @@ describe('step 8.1.6.1: anomaly detection (in the lens)', () => {
   })
 
   test('an agent killed (turn aborted) is red', async ($, on) => {
-    const { toasts } = await seed($, on, { complete: false })
+    const { toasts, agentList } = await seed($, on, { complete: false })
+    agentList.status = 'killed' // step 44.3.l2.1: the engine's list says killed too
     await $.turn.complete({ reason: 'aborted', answer: '', durationMs: 1, isAborted: true, turnId: 't', agentId: 'a1', usage: null } as any)
     expect(toasts.map(x => x.replace(/ \(.*$/, ''))).toEqual(['ai-dlc-lens: Agent killed'])
   })
@@ -3346,8 +3499,9 @@ describe('step 8.1.6.1.l1 addendum A5: one chart per run, whatever session, batc
     await $.agent.spawn({ tool_use_id: 'toolu_3', prompt: abs, description: 'd3', subagentType: 'ai-dlc:agent-manager', provider: { plugin: 'ai-dlc', tier: 'user' }, parentModel: 'claude-opus-5-5', background: true, fork: false })
     await spawnInto($, 4, 'B')
     const ui = await wide($)
+    await runListL3(ui)
     expect(await panelKeys(ui)).toEqual(['wf-toolu_4', 'wf-toolu_2', 'wf-toolu_1'])
-    await ui.press({ key: 'wf-toolu_2' })
+    await showRunL3(ui, 'toolu_2')
     expect(await ui.find({ type: 'Text', text: /spawned 2 agents$/ })).toBeDefined()
     await ui.unmount()
   })
@@ -3383,12 +3537,16 @@ describe('step 8.1.6.1.l1 addendum A7: full screen on every host', () => {
     const { openArgs } = await seed($, on, { complete: false, files: RUNS })
     await spawnInto($, 2, 'B')
     const ui = await $.ui.mount({ ...pane(CHART_PANE, 'dock', 100), surface: 'vscode', viewport: { columns: 200, rows: 50 } })
+    await paneToRuns(ui)
     expect(await panelKeys(ui)).toEqual(['wf-toolu_2', 'wf-toolu_1'])
+    // Step 43: the pane draws one run (workflow mode) or the list; full screen is of one run's step, so open the first run.
+    await ui.press({ key: 'wf-toolu_1' })
     const svgBy = async (re: RegExp): Promise<any> => ((await ui.findAll({ type: 'Svg' })) as any[]).find((x: any) => re.test(String(x?.props?.alt ?? x?.alt ?? '')))
     const widthOf = (x: any): number => Number(/width="(\d+(?:\.\d+)?)"/.exec(String(x?.props?.source ?? x?.source ?? ''))?.[1] ?? NaN)
     const normalChart: any = await svgBy(/^Step chart /)
     expect(Number.isNaN(widthOf(normalChart))).toBe(false)
-    await ui.press({ key: 'pane-full' })
+    // Step 43, D2: full screen from the step chart's ⤢ (the title row has none).
+    await ui.press({ key: 'nr:toolu_1:s17:step-full' })
     const full = openArgs.filter((x: any) => x.id === CHART_PANE).at(-1)
     expect([full?.focus, full?.rows, full?.columns]).toEqual([true, 50, 200])
     // The run list is gone; one run, its chart 1.5 times larger, the note naming what this host does.
@@ -3403,69 +3561,82 @@ describe('step 8.1.6.1.l1 addendum A7: full screen on every host', () => {
     expect((await ui.findAll({ type: 'Button' })).some((b: any) => /^fs-show-/.test(String(b.key)))).toBe(true)
     expect((await boxes(ui))[0]?.minHeight).toBeGreaterThan(0)
     await ui.press({ key: 'pane-full' })
-    expect(await panelKeys(ui)).toEqual(['wf-toolu_2', 'wf-toolu_1'])
+    // Restored: the pane is back in the workflow view it left; "< Runs" shows the run list.
     expect(await ui.find({ type: 'Text', text: /^Full screen:/ })).toBe(undefined)
+    await paneToRuns(ui)
+    expect(await panelKeys(ui)).toEqual(['wf-toolu_2', 'wf-toolu_1'])
     await ui.unmount()
   })
 
-  test("terminal, pinned: the band's ⤢ opens the pane and keeps the band (step 36.2.3); the pane's own full screen leaves the band for the pane; the band steps aside; restore closes the pane and the band draws again", async ($, on) => {
+  test("terminal, pinned: the band's ⤢ opens the pane beside the band and keeps the band; that pane has no ⤢ (B3b); docked, the pane's own full screen makes the band step aside and ⤡ brings it back", async ($, on) => {
     on('session.surfaces', () => ({ value: ['terminal'] }))
-    const { openArgs, closed } = await seed($, on)
-    // Step 36.2, amendment 4: the band appears minimised; /ai-dlc:lens brings its list back (rule 1).
-    await ($.command.run as any)({ command: 'ai-dlc:lens', args: '' })
+    holdBandPing(on)
+    const { openArgs } = await seed($, on, { complete: false })
     const band = () => $.ui.mount({ plugin: PLUGIN, surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 20, bodyColumns: 100, scroll: { offset: 0, bodyRows: 20 }, view: {} } } as any)
+    // Step 43 (B2a): the band starts minimised; its □ brings the list back.
     let b = await band()
+    await b.press({ key: 'pane-min' })
     expect(await b.find({ type: 'Button', key: 'wf-toolu_1' })).toBeDefined()
     await b.press({ key: 'pane-full' })
     const opened = openArgs.filter((x: any) => x.id === CHART_PANE).at(-1)
     expect([opened?.id, opened?.focus]).toEqual([CHART_PANE, true])
     expect(await b.find({ type: 'Button', key: 'wf-toolu_1' })).toBeDefined()
+    // B3b: the pane beside the band is already the right panel: no ⤢ there.
+    const side = await $.ui.mount({ ...pane(CHART_PANE, 'dock', 100), surface: 'terminal', viewport: { columns: 200, rows: 50 } })
+    expect(await side.find({ type: 'Button', key: 'pane-full' })).toBe(undefined)
+    await side.unmount()
+    // Docked: the pane's own ⤢ is full screen (the whole viewport), and the band steps aside.
+    await b.press({ key: 'pane-place' })
     await b.unmount()
-    // Addendum A7, from the pane: its own ⤢ is full screen, and the band steps aside.
     let ui = await $.ui.mount({ ...pane(CHART_PANE, 'dock', 100), surface: 'terminal', viewport: { columns: 200, rows: 50 } })
-    await ui.press({ key: 'pane-full' })
-    await ui.unmount()
+    await ui.press({ key: 'wf-toolu_1' })
+    await ui.press({ key: 'nr:s17:step-full' })
     const full = openArgs.filter((x: any) => x.id === CHART_PANE).at(-1)
-    expect([full?.id, full?.focus]).toEqual([CHART_PANE, true])
+    expect([full?.id, full?.focus, full?.rows, full?.columns]).toEqual([CHART_PANE, true, 50, 200])
     b = await band()
     expect(await b.find({ type: 'Button', key: 'pane-full' })).toBe(undefined)
     expect(await b.find({ type: 'Text', text: 'NATIVE ROW' })).toBeDefined()
     await b.unmount()
-    ui = await $.ui.mount({ ...pane(CHART_PANE, 'dock', 100), surface: 'terminal', viewport: { columns: 200, rows: 50 } })
     expect(await ui.find({ type: 'Text', text: /^Full screen: this step only, at the height the terminal gives the pane/ })).toBeDefined()
-    const closedBefore = closed.filter(x => x === CHART_PANE).length
     await ui.press({ key: 'pane-full' })
-    expect(closed.filter(x => x === CHART_PANE).length).toBe(closedBefore + 1)
     await ui.unmount()
     b = await band()
-    expect(await b.find({ type: 'Button', key: 'wf-toolu_1' })).toBeDefined()
+    expect(await b.find({ type: 'Button', key: 'pane-min' })).toBeDefined()
     await b.unmount()
   })
 })
 
 describe('step 8.1.6.1.l2 (full screen since step 8.6.1: the selected step); Panel Type radio glyphs', () => {
-  test('full screen (step 8.6.1): the selected step\'s chart only, larger; ⤢ on a step chart picks it, the Steps row switches, another run shows its highest step', async ($, on) => {
+  test('full screen (step 8.6.1): the selected step\'s chart only, larger; ⤢ on a step chart picks it, ⤡ restores (no Steps row, live 2c), another run shows its highest step', async ($, on) => {
     const runA = '---\nrun: A\nstatus: active\n---\n\n# Run: run A\n\n## Stages\n| Step | Stage | Agent | Status |\n|---|---|---|---|\n| 1 | research | agent-manager | done |\n| 2 | build | agent-manager | in-progress |\n'
     await seed($, on, { complete: false, files: { ...RUNS, 'docs/handoffs/A/run.md': runA } })
     await spawnInto($, 2, 'A', '1')
     await spawnInto($, 3, 'A', '2')
     await spawnInto($, 4, 'B')
     const ui = await $.ui.mount({ ...pane(CHART_PANE, 'dock', 100), surface: 'vscode', viewport: { columns: 200, rows: 50 } })
-    // Show run A: its step charts beside the list, by code, highest first (step 8.6.1.l1 A): 17 from its records on disk, then 2 and 1.
-    await ui.press({ key: 'wf-show-toolu_2' })
+    // Step 43: open run A from the run list; its step charts, by code, highest first (step 8.6.1.l1 A): 17 from its records on disk, then 2 and 1
+    // (every step accordion pressed open).
+    await paneToRuns(ui)
+    await ui.press({ key: 'wf-toolu_2' })
+    await openPanels(ui)
     expect(await stepKeys(ui)).toEqual(['17', '2', '1'])
     // ⤢ on step 1's chart: full screen, that step only.
-    await ui.press({ key: 'sel:toolu_2:s1:step-full' })
+    await ui.press({ key: 'nr:toolu_2:s1:step-full' })
     expect(((await ui.findAll({ type: 'Svg' })) as any[]).map((x: any) => String(x?.props?.alt ?? '')).filter(a => CHART_ALT.test(a))).toEqual(['Full screen chart 1: run A'])
     expect(await ui.find({ type: 'Text', text: 'Step 1 · research' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /^Full screen: this step only/ })).toBeDefined()
-    // The Steps row: every step of run A, the shown one in brackets; a press shows another.
+    // Live round 1 (2c, [2c]): the numbered Steps row is gone (its numbers were duplicated); the heading of the shown step has ⤡ (restore)
+    // in place of – and ⤢ (2b.ii). Another step is reached by restoring, then ⤢ on that step.
     const stepRow = async () => ((await ui.findAll({ type: 'Button' })) as any[]).filter((b: any) => /^fs-step-/.test(String(b.key))).map((b: any) => String(b.text))
-    expect(await stepRow()).toEqual(['17', '2', '(1)'])
-    await ui.press({ key: 'fs-step-2' })
+    expect(await stepRow()).toEqual([])
+    expect(((await ui.findAll({ type: 'Button' })) as any[]).filter((b: any) => /step-restore$/.test(String(b.key))).map((b: any) => String(b.text))).toEqual(['⤡'])
+    await ui.press({ key: 'fs:step-restore' })
+    await openPanels(ui)
+    expect(await stepKeys(ui)).toEqual(['17', '2', '1'])
+    await ui.press({ key: 'nr:toolu_2:s2:step-full' })
     expect(await stepKeys(ui)).toEqual(['2'])
     expect(await ui.find({ type: 'Text', text: 'Step 2 · build' })).toBeDefined()
-    expect(await stepRow()).toEqual(['17', '(2)', '1'])
+    expect(await stepRow()).toEqual([])
     // The other run chosen in full screen: its first step in order, the highest code (17, from its records on disk).
     await ui.press({ key: 'fs-show-toolu_4' })
     expect(await stepKeys(ui)).toEqual(['17'])
@@ -3537,10 +3708,11 @@ describe('step 8.1.6.1 addendum (A1-A4)', () => {
     const wp = await chartPane($)
     await wp.press({ key: 'agent-a1' })
     await wp.press({ key: 'edge-a1' })
-    for (const [id, title] of [['ai-dlc-lens-agent', /^Agent: David Fowler - completed$/], ['ai-dlc-lens-edge', /^Hand-off: Scott Hanselman -> David Fowler - completed$/]] as const) {
+    for (const [id, title] of [['ai-dlc-lens-agent', /^Agents: David Fowler - completed$/], ['ai-dlc-lens-edge', /^Connections: Scott Hanselman -> David Fowler - completed$/]] as const) {
       const ui = await $.ui.mount({ ...pane(id), surface: 'vscode' })
       const keys = ((await ui.findAll({ type: 'Button' })) as any[]).map((b: any) => String(b.key))
-      expect(keys.slice(0, 2)).toEqual(['pane-min', 'pane-close'])
+      // Step 43 (C3b): the agent tab starts with its Panel Type switch (drill in, tab), then minimise and close; the hand-off tab is as before.
+      expect(keys.slice(0, id === 'ai-dlc-lens-agent' ? 4 : 2)).toEqual(id === 'ai-dlc-lens-agent' ? ['agent-panel-drill-in', 'agent-panel-tab', 'pane-min', 'pane-close'] : ['pane-min', 'pane-close'])
       expect([(await ui.find({ type: 'Button', key: 'pane-min' }))?.text, (await ui.find({ type: 'Button', key: 'pane-close' }))?.text]).toEqual(['–', '×'])
       await ui.press({ key: 'pane-min' })
       expect(((await ui.findAll({ type: 'Button' })) as any[]).map((b: any) => String(b.key))).toEqual(['pane-min', 'pane-close'])
@@ -3813,9 +3985,10 @@ describe('step 8.1.6.1.l3: one chart per run in the real session shape (the spli
     await seed($, on, { complete: false, files: REAL_RUNS })
     const lens = await replaySession($)
     const wp = await $.ui.mount({ ...pane(CHART_PANE, 'dock', 120), surface: 'vscode' })
-    // Four workflows: the seed's run R and the three real runs; the lens run's is its first call's.
+    // Four workflows: the seed's run R and the three real runs; the lens run's is its first call's (step 43: the run list, then the run).
+    await runListL3(wp)
     expect(await panelKeys(wp)).toEqual(['wf-toolu_11', 'wf-toolu_3', 'wf-toolu_2', 'wf-toolu_1'])
-    await wp.press({ key: 'wf-show-toolu_2' })
+    await showRunL3(wp, 'toolu_2')
     // One chart per top-level step, newest spawn first; step 17 comes from the records the folder lists.
     expect(await stepKeys(wp)).toEqual(['17', '3', '2', '1'])
     expect(await wp.find({ type: 'Text', text: 'Step 3 · code review: standards' })).toBeDefined()
@@ -3829,13 +4002,13 @@ describe('step 8.1.6.1.l3: one chart per run in the real session shape (the spli
     const keys = ((await wp.findAll({ type: 'Button' })) as any[]).map((b: any) => String(b.key))
     for (const c of lens) expect(keys).toContain(`toolu_2:agent-a${c.slice('toolu_'.length)}`)
     for (const other of ['a3', 'a4', 'a5', 'a10', 'a11', 'a14', 'a15']) expect(keys.some(k => k.endsWith(`:agent-${other}`))).toBe(false)
-    await wp.press({ key: 'wf-toolu_2' })
     expect(await wp.find({ type: 'Text', text: /^Scott Hanselman spawned 7 agents$/ })).toBeDefined()
-    expect(await wp.find({ type: 'Text', text: '4 step charts' })).toBeDefined()
+    // Step 43 (design 5): the metadata line reads "n steps".
+    expect(await wp.find({ type: 'Text', text: '4 steps' })).toBeDefined()
     await wp.unmount()
     // Narrow: the chosen run shows its step charts.
     const nw = await narrow($)
-    await nw.press({ key: 'run-toolu_2' })
+    await showRunL3(nw, 'toolu_2')
     expect(await stepKeys(nw)).toEqual(['17', '3', '2', '1'])
     await nw.unmount()
   })
@@ -3866,7 +4039,7 @@ describe('step 8.1.6.1.l3 addendum B2: the orchestrator stops blinking in a run 
     await spawnReal($, 4, D_RUN, '1.2.l1', 'documentation-writer')
     await $.turn.complete({ reason: 'answer', answer: 'waiting', durationMs: 1, isAborted: false, turnId: 'm7', usage: { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, model: 'claude-opus-5-5' } })
     const lensChart = async (wp: any) => {
-      await wp.press({ key: 'wf-show-toolu_2' })
+      await showRunL3(wp, 'toolu_2')
       // Step 8.6.1.l1 (A): charts go by code, so the reviewers' step 3 is picked by its key.
       return stepSource(wp, '3')
     }
@@ -3880,7 +4053,7 @@ describe('step 8.1.6.1.l3 addendum B2: the orchestrator stops blinking in a run 
     await completeAgent($, 'a3')
     wp = await $.ui.mount({ ...pane(CHART_PANE, 'dock', 120), surface: 'vscode' })
     expect(blinks(await lensChart(wp))).toBe(0)
-    await wp.press({ key: 'wf-show-toolu_4' })
+    await showRunL3(wp, 'toolu_4')
     // The docs run still has its writer at work: there the orchestrator and the writer blink (its step 1).
     expect(blinks(await stepSource(wp, '1'))).toBe(2)
     await wp.unmount()
@@ -3943,10 +4116,10 @@ describe('a lens fault never takes the native row or blanks a pane', () => {
     expect(faults.length).toBe(2)
   })
 
-  test('the Agent card around the guard: drawn, it holds the native row last; a SendMessage row too', async ($, on) => {
+  test('the Agent card around the guard: drawn, it holds the native row last; a SendMessage row too once expanded (not expanded it is hidden, live findings 2)', async ($, on) => {
     await seed($, on, { complete: false })
     for (const [tool, input] of [['Agent', SE_INPUT], ['SendMessage', { to: 'a1', message: 'm' }]] as const) {
-      const card = await $.ui.mount(toolRow('toolu_1', 'vscode', input, tool))
+      const card = await $.ui.mount(toolRow('toolu_1', 'vscode', input, tool, undefined, tool === 'SendMessage' ? true : undefined))
       const all: any[] = await card.findAll({})
       expect(all.findIndex((x: any) => x.text === 'NATIVE ROW')).toBe(all.length - 1)
       expect(await card.find({ type: 'Text', text: /^lens hook error/ })).toBe(undefined)
@@ -3997,13 +4170,14 @@ describe('anomaly markers follow the detector in every drawing', () => {
   })
 
   test('the chat card and the /ai-dlc:lens pane, already mounted, gain the ▲ when an agent fails and lose it when the stage runs again', async ($, on) => {
-    await seed($, on, { complete: false, files: { 'docs/handoffs/R/run.md': RUN_R('build') } })
+    const { agentList } = await seed($, on, { complete: false, files: { 'docs/handoffs/R/run.md': RUN_R('build') } })
     const card = await $.ui.mount(toolRow('toolu_1', 'vscode', SE_INPUT, 'Agent', 500))
     const lens = await chartPane($)
     const label = async (ui: any, key: string) => String((await ui.find({ type: 'Button', key }))?.text)
     expect(await label(card, 'card:agent-a1')).toBe('David Fowler')
     expect(await label(lens, 'agent-a1')).toBe('David Fowler')
     // Nothing is pressed and nothing remounted: the detector's write alone redraws both.
+    agentList.status = 'failed' // step 44.3.l2.1: the engine's list ends the agent too
     await $.turn.complete({ reason: 'error', answer: '', durationMs: 1, isAborted: false, turnId: 't', agentId: 'a1', usage: null } as any)
     expect(await label(card, 'card:agent-a1')).toBe('▲David Fowler')
     expect(await label(lens, 'agent-a1')).toBe('▲David Fowler')
@@ -4164,19 +4338,27 @@ describe('step 8.5.1: the workflow view lists runs newest start first', () => {
     // A call into an old run, not started yet: known by its folder's date only.
     await $.tool.call({ tool: 'Agent', subagent_type: 'ai-dlc:agent-manager', description: 'd5', prompt: runBrief('FEAT-20200101-old'), tool_use_id: 'toolu_5' })
     const ui = await wide($)
+    await runListL3(ui)
     expect(await panelKeys(ui)).toEqual(['wf-toolu_2', 'wf-toolu_1', 'wf-toolu_5'])
-    await ui.press({ key: 'wf-show-toolu_1' })
+    await showRunL3(ui, 'toolu_1')
     // Run C starts, then run R (the seed's) is resumed: R keeps its first start, so C is on top and R stays below B.
     await spawnInto($, 3, 'C')
     await spawnInto($, 4, 'R', '2')
+    // Step 43 (design 1): the chosen run stays chosen (its workflow is still drawn, with "< Runs" to the list); the list is the same on every width.
+    expect(await ui.find({ type: 'Button', key: 'runs-back' })).toBeDefined()
+    expect((await stepKeys(ui)).length).toBeGreaterThan(0)
+    await runListL3(ui)
     expect(await panelKeys(ui)).toEqual(['wf-toolu_3', 'wf-toolu_2', 'wf-toolu_1', 'wf-toolu_5'])
-    expect((await ui.find({ type: 'Button', key: 'wf-show-toolu_1' }))?.text).toBe('(shown)')
     await ui.unmount()
     const nr = await narrow($)
-    expect(await runRows(nr)).toEqual(['run-toolu_3', 'run-toolu_2', 'run-toolu_1', 'run-toolu_5'])
+    await runListL3(nr)
+    expect(await panelKeys(nr)).toEqual(['wf-toolu_3', 'wf-toolu_2', 'wf-toolu_1', 'wf-toolu_5'])
     await nr.unmount()
     const fs = await wide($)
-    await fs.press({ key: 'pane-full' })
+    // Step 43 (D2): full screen is entered from a step chart's ⤢ (the docked pane has no ⤢ of its own) and left by ⤡.
+    await showRunL3(fs, 'toolu_1')
+    await fs.press({ key: String((((await fs.findAll({ type: 'Button' })) as any[]).find((x: any) => /step-full$/.test(String(x.key))))?.key) })
+    expect((await fs.find({ type: 'Button', key: 'pane-full' }))?.text).toBe('⤡')
     const row = ((await fs.findAll({ type: 'Button' })) as any[]).map((b: any) => String(b.key)).filter(k => /^fs-show-/.test(k))
     expect(row).toEqual(['fs-show-toolu_3', 'fs-show-toolu_2', 'fs-show-toolu_1', 'fs-show-toolu_5'])
     expect(String((await fs.find({ type: 'Button', key: 'fs-show-toolu_1' }))?.text)).toMatch(/^\(.*\)$/)
@@ -4313,9 +4495,9 @@ describe('step 8.4.1: a related run with parent: in the lens', () => {
     await spawnInto($, 2, 'P')
     await spawnInto($, 3, 'C')
     const wp = await $.ui.mount({ ...pane(CHART_PANE, 'dock', 120), surface: 'vscode' })
+    await runListL3(wp)
     expect(await panelKeys(wp)).toEqual(['wf-toolu_2', 'wf-toolu_1'])
-    await wp.press({ key: 'wf-show-toolu_2' })
-    await wp.press({ key: 'wf-toolu_2' })
+    await showRunL3(wp, 'toolu_2')
     // Step 30.1: P's steps and C's (each folder lists step 17's records), all in run P's workflow; C keeps its
     // own step numbers under its name. Live spawns first, newest first; then the steps from records.
     const charts = await runCharts(wp)
@@ -4328,7 +4510,8 @@ describe('step 8.4.1: a related run with parent: in the lens', () => {
     expect(texts).toContain('C: Step 1 · change it')
     await wp.unmount()
     const nw = await narrow($)
-    expect(await runRows(nw)).toEqual(['run-toolu_2', 'run-toolu_1'])
+    await runListL3(nw)
+    expect(await panelKeys(nw)).toEqual(['wf-toolu_2', 'wf-toolu_1'])
     await nw.unmount()
   })
 
@@ -4336,8 +4519,9 @@ describe('step 8.4.1: a related run with parent: in the lens', () => {
     await seed($, on, { complete: false, files: FAMILY })
     await spawnInto($, 3, 'C')
     const wp = await $.ui.mount({ ...pane(CHART_PANE, 'dock', 120), surface: 'vscode' })
+    await runListL3(wp)
     expect(await panelKeys(wp)).toEqual(['wf-toolu_3', 'wf-toolu_1'])
-    await wp.press({ key: 'wf-show-toolu_3' })
+    await showRunL3(wp, 'toolu_3')
     expect(await stepKeys(wp)).toEqual(['17', 'c:17', 'c:1'])
     expect((await runCharts(wp)).every(c => c.alt.endsWith(': run P'))).toBe(true)
     await wp.unmount()
@@ -4348,8 +4532,9 @@ describe('step 8.4.1: a related run with parent: in the lens', () => {
     await spawnInto($, 2, 'P')
     await spawnInto($, 3, 'C')
     const wp = await $.ui.mount({ ...pane(CHART_PANE, 'dock', 120), surface: 'vscode' })
+    await runListL3(wp)
     expect(await panelKeys(wp)).toEqual(['wf-toolu_3', 'wf-toolu_2', 'wf-toolu_1'])
-    await wp.press({ key: 'wf-show-toolu_3' })
+    await showRunL3(wp, 'toolu_3')
     expect((await runCharts(wp)).map(c => c.alt)).toEqual(['Step chart 17: run C', 'Step chart 1: run C'])
     await wp.unmount()
   })
@@ -4359,8 +4544,9 @@ describe('step 8.4.1: a related run with parent: in the lens', () => {
     await spawnInto($, 2, 'A')
     await spawnInto($, 3, 'C')
     const wp = await $.ui.mount({ ...pane(CHART_PANE, 'dock', 120), surface: 'vscode' })
+    await runListL3(wp)
     expect(await panelKeys(wp)).toEqual(['wf-toolu_2', 'wf-toolu_1'])
-    await wp.press({ key: 'wf-show-toolu_2' })
+    await showRunL3(wp, 'toolu_2')
     const charts = await runCharts(wp)
     expect(await stepKeys(wp)).toEqual(['17', '1', 'b:17', 'c:17', 'c:1'])
     expect(charts.every(c => c.alt.endsWith(': run A'))).toBe(true)
@@ -4372,6 +4558,7 @@ describe('step 8.4.1: a related run with parent: in the lens', () => {
     await spawnInto($, 2, 'X')
     await spawnInto($, 3, 'Y')
     const wp = await wide($)
+    await runListL3(wp)
     expect(await panelKeys(wp)).toEqual(['wf-toolu_3', 'wf-toolu_2', 'wf-toolu_1'])
     await wp.unmount()
   })
@@ -4382,6 +4569,7 @@ describe('step 8.4.1: a related run with parent: in the lens', () => {
     await spawnInto($, 3, 'Q')
     await spawnInto($, 4, 'C')
     const wp = await wide($)
+    await runListL3(wp)
     expect(await panelKeys(wp)).toEqual(['wf-toolu_3', 'wf-toolu_2', 'wf-toolu_1'])
     await wp.unmount()
   })
@@ -4393,6 +4581,7 @@ describe('step 8.4.1: a related run with parent: in the lens', () => {
     await $.classic.Stop({ stop_hook_active: false, background_tasks: [] })
     expect(toasts.some(x => /Run blocked \(run C\b/.test(x))).toBe(true)
     const wp = await $.ui.mount({ ...pane(CHART_PANE, 'dock', 120), surface: 'vscode' })
+    await runListL3(wp)
     expect(await panelKeys(wp)).toEqual(['wf-toolu_2', 'wf-toolu_1'])
     await wp.press({ key: 'anomalies' })
     expect(await wp.find({ type: 'Text', text: /^Run blocked \(run C\b/ })).toBeDefined()
@@ -4492,6 +4681,29 @@ describe('step 8.4.1 addendum L1: runs merged away, the wide chart, gates decide
     expect(JSON.parse(setKey(null, 'chartAvatarsPerRow', '5').text).chartAvatarsPerRow).toBe(5)
   })
 
+  test('[43 D5] bandGoneMs: default 10000, local env > project env > lens.json; out of range falls through with the warning; schema and starter file list it', () => {
+    const env = (where: string, v: string) => envLevel(where, JSON.stringify({ env: { AI_DLC_LENS_BAND_GONE_MS: v } })).level
+    const file = (v: unknown) => fileLevel('.ai-dlc/lens.json', JSON.stringify({ bandGoneMs: v })).level
+    expect(envName('bandGoneMs')).toBe('AI_DLC_LENS_BAND_GONE_MS')
+    expect([DEFAULTS.bandGoneMs, resolve([]).sources.bandGoneMs]).toEqual([10000, 'default'])
+    const r = resolve([env('.claude/settings.local.json', '20000'), env('.claude/settings.json', '3000'), file(4000)])
+    expect([r.settings.bandGoneMs, r.sources.bandGoneMs]).toEqual([20000, '.claude/settings.local.json env'])
+    expect(resolve([file(4000)]).settings.bandGoneMs).toBe(4000)
+    // Bounds: 1000 and 600000 are valid; 999 and 600001 are not.
+    expect(resolve([file(1000)]).settings.bandGoneMs).toBe(1000)
+    expect(resolve([file(600000)]).settings.bandGoneMs).toBe(600000)
+    const lo = resolve([env('.claude/settings.local.json', '999'), env('.claude/settings.json', '3000')])
+    expect([lo.settings.bandGoneMs, lo.sources.bandGoneMs]).toEqual([3000, '.claude/settings.json env'])
+    expect(lo.ignored).toEqual(['.claude/settings.local.json env: AI_DLC_LENS_BAND_GONE_MS = "999" is invalid, ignored'])
+    const hi = resolve([file(600001)])
+    expect([hi.settings.bandGoneMs, hi.ignored]).toEqual([10000, ['.ai-dlc/lens.json: bandGoneMs = 600001 is invalid, ignored']])
+    const p = (schema().properties as any).bandGoneMs
+    expect([p.type, p.minimum, p.maximum, p.default]).toEqual(['integer', 1000, 600000, 10000])
+    expect(p.description).toContain('AI_DLC_LENS_BAND_GONE_MS')
+    expect(JSON.parse(initialFile()).bandGoneMs).toBe(10000)
+    expect(JSON.parse(setKey(null, 'bandGoneMs', '5000').text).bandGoneMs).toBe(5000)
+  })
+
   test('gates: rows the human decided in words, with a date (the live run.md), are not waiting; an empty, dash, pending or undated decision still is', () => {
     const live = [
       '| Spike 027 human check (card in chat) | human | **missed**: card shows in the chat but not as expected | human | 2026-10-23 |',
@@ -4515,9 +4727,9 @@ describe('step 8.4.1 addendum L1: the live session after the merge (in the lens)
     const n = await replayMerged($)
     const wp = await $.ui.mount({ ...pane(CHART_PANE, 'dock', 120), surface: 'vscode' })
     // The seed's run R and the merged run: the three old runs are not listed alone.
+    await runListL3(wp)
     expect(await panelKeys(wp)).toEqual(['wf-toolu_2', 'wf-toolu_1'])
-    await wp.press({ key: 'wf-show-toolu_2' })
-    await wp.press({ key: 'wf-toolu_2' })
+    await showRunL3(wp, 'toolu_2')
     // Step 30.1: FEAT's run.md has no offset for the merged runs here, so each keeps its own step numbers, under
     // its name; FEAT's steps 26 and 27 with them. Newest spawn first.
     const charts = await runCharts(wp)
@@ -4543,6 +4755,7 @@ describe('step 8.4.1 addendum L1: the live session after the merge (in the lens)
     const wp = await wide($)
     // D and V stay apart; L joined FEAT (its workflow is L's first call, toolu_2) and takes FEAT's start,
     // the newest: FEAT, then V, then D.
+    await runListL3(wp)
     expect(await panelKeys(wp)).toEqual(['wf-toolu_2', 'wf-toolu_5', 'wf-toolu_3', 'wf-toolu_1'])
     await wp.unmount()
   })
@@ -4551,8 +4764,9 @@ describe('step 8.4.1 addendum L1: the live session after the merge (in the lens)
     await seed($, on, { complete: true, files: MERGED_FILES, list: MERGED_LIST })
     for (let i = 0; i < 42; i++) await spawnReal($, 2 + i, F_RUN, `30.${1 + i}`, 'agent-manager')
     const wp = await $.ui.mount({ ...pane(CHART_PANE, 'dock', 120), surface: 'vscode' })
+    await runListL3(wp)
     expect(await panelKeys(wp)).toEqual(['wf-toolu_2', 'wf-toolu_1'])
-    await wp.press({ key: 'wf-show-toolu_2' })
+    await showRunL3(wp, 'toolu_2')
     const svg: any = ((await wp.findAll({ type: 'Svg' })) as any[]).find((x: any) => /^Step chart 30:/.test(String(x?.props?.alt ?? '')))
     expect(Number(svg?.props?.width)).toBe(8 * SIZE0.col)
     expect(nodes(String(svg?.props?.source ?? ''))).toBe(43)
@@ -4567,7 +4781,7 @@ describe('step 8.4.1 addendum L1: the live session after the merge (in the lens)
       await seed($, on, { complete: true, files: { ...MERGED_FILES, ...lensJson({ chartAvatarsPerRow: value }) }, list: MERGED_LIST })
       for (let i = 0; i < 42; i++) await spawnReal($, 2 + i, F_RUN, `30.${1 + i}`, 'agent-manager')
       const wp = await $.ui.mount({ ...pane(CHART_PANE, 'dock', 120), surface: 'vscode' })
-      await wp.press({ key: 'wf-show-toolu_2' })
+      await showRunL3(wp, 'toolu_2')
       const svg: any = ((await wp.findAll({ type: 'Svg' })) as any[]).find((x: any) => /^Step chart 30:/.test(String(x?.props?.alt ?? '')))
       expect(Number(svg?.props?.width)).toBe(wide * SIZE0.col)
       expect(nodes(String(svg?.props?.source ?? ''))).toBe(43)
@@ -4620,9 +4834,12 @@ describe('step 8.4.4: chartAvatarsPerRow reaches the chat card and full screen (
     await seed($, on, { complete: true, files: { ...MERGED_FILES, ...lensJson({ chartAvatarsPerRow: 5 }) }, list: MERGED_LIST })
     for (let i = 0; i < 42; i++) await spawnReal($, 2 + i, F_RUN, `30.${1 + i}`, 'agent-manager')
     const widthOf = (x: any): number => Number(x?.props?.width ?? /width="(\d+(?:\.\d+)?)"/.exec(String(x?.props?.source ?? ''))?.[1] ?? NaN)
-    const ui = await $.ui.mount({ ...pane(CHART_PANE, 'dock', 100), surface: 'vscode', viewport: { columns: 400, rows: 80 } })
-    await ui.press({ key: 'wf-show-toolu_2' })
-    await ui.press({ key: 'pane-full' })
+    // Live 2d: a chart is fitted to the pane (columns x cellPx 8); 140 columns leave room for the 900 px the enlarged columns draw.
+    const ui = await $.ui.mount({ ...pane(CHART_PANE, 'dock', 140), surface: 'vscode', viewport: { columns: 400, rows: 80 } })
+    await showRunL3(ui, 'toolu_2')
+    // Step 43 (D2): the docked pane has no ⤢ of its own; full screen is a step chart's ⤢.
+    expect(await ui.find({ type: 'Button', key: 'pane-full' })).toBe(undefined)
+    await ui.press({ key: String((((await ui.findAll({ type: 'Button' })) as any[]).find((b: any) => /s30:step-full$/.test(String(b.key))))?.key) })
     const big: any = ((await ui.findAll({ type: 'Svg' })) as any[]).find((x: any) => /^Full screen chart 30:/.test(String(x?.props?.alt ?? '')))
     expect(big).toBeDefined()
     expect(nodes(String(big?.props?.source ?? ''))).toBe(43)
@@ -5268,7 +5485,7 @@ describe('step 8.3.l2.1: several rename sources of one folder (in the lens)', ()
     await seed($, on, { complete: false, files: { ...FEAT_FILES(), ...Object.fromEntries(Object.entries(extra).map(([k, v]) => [`${D}/${k}`, v])) }, list: { 'docs/handoffs': [`${F_RUN}/`], [D]: [...FEAT_NAMES, ...Object.keys(extra), ...records] } })
     await spawnReal($, 2, F_RUN, code, 'agent-manager')
     const ui = await $.ui.mount({ ...pane(CHART_PANE, 'dock', 120), ...wide })
-    await ui.press({ key: 'wf-show-toolu_2' })
+    await showRunL3(ui, 'toolu_2')
     const keys = ((await ui.findAll({ type: 'Button' })) as any[]).map((b: any) => String(b.key))
     await ui.unmount()
     return [L21, L22].filter(c => !keys.includes(`toolu_2:agent-step:8:${c}`))
@@ -5339,7 +5556,7 @@ describe('step 8.6.1.l1: the workflow view and the chat card on the renumbered f
     await seed($, on, { complete: false, files: FEAT_FILES(), list: LIST })
     await spawnReal($, 2, F_RUN, '8.2.l15.1', 'agent-manager')
     const ui = await $.ui.mount({ ...pane(CHART_PANE, 'dock', 120), ...wide })
-    await ui.press({ key: 'wf-show-toolu_2' })
+    await showRunL3(ui, 'toolu_2')
     expect(await stepKeys(ui)).toEqual(ROOTS_DESC)
     expect(await ui.find({ type: 'Text', text: 'Step 8 · ai-dlc-lens plugin from the spike' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: 'Step 12 · Keep-alive publishes the keep-warm time in force' })).toBeDefined()
@@ -5367,10 +5584,11 @@ describe('step 8.6.1.l1: the workflow view and the chat card on the renumbered f
     await ag.unmount()
     // No stale brief: no "no longer on disk" line.
     expect(await ui.find({ type: 'Text', text: /no longer on disk/ })).toBe(undefined)
-    // ⤢ on root 12: full screen, that root alone, with a Steps row for the 12.
-    await ui.press({ key: 'sel:toolu_2:s12:step-full' })
+    // ⤢ on root 12: full screen, that root alone. Live round 1 (2c): no Steps row of numbers (fs-step-*); the heading has ⤡ (2b.ii).
+    await ui.press({ key: 'nr:toolu_2:s12:step-full' })
     expect(await stepKeys(ui)).toEqual(['12'])
-    expect(((await ui.findAll({ type: 'Button' })) as any[]).filter((b: any) => /^fs-step-/.test(String(b.key))).length).toBe(12)
+    expect(((await ui.findAll({ type: 'Button' })) as any[]).filter((b: any) => /^fs-step-/.test(String(b.key))).length).toBe(0)
+    expect(((await ui.findAll({ type: 'Button' })) as any[]).filter((b: any) => /step-restore$/.test(String(b.key))).length).toBe(1)
     await ui.unmount()
   })
 
@@ -5381,14 +5599,14 @@ describe('step 8.6.1.l1: the workflow view and the chat card on the renumbered f
     // Step 8.2.l15.1: a brief from before the phase renaming, read through the folder's rename map.
     await spawnReal($, 4, F_RUN, '8.6.5.l1', 'agent-manager')
     const ui = await $.ui.mount({ ...pane(CHART_PANE, 'dock', 120), ...wide })
-    await ui.press({ key: 'wf-show-toolu_2' })
+    await showRunL3(ui, 'toolu_2')
     expect(await stepKeys(ui)).toEqual(ROOTS_DESC)
     // 30.1 and 8.6.5.l1 take the nodes they became (8.2.l12.1, 8.4.l2.2): chart 8 keeps its 41 nodes, none added.
     expect(nodes(await stepSource(ui, '8'))).toBe(41)
     expect(await ui.find({ type: 'Text', text: /Briefs naming records no longer on disk \(1\)/ })).toBeDefined()
     // Collapsed: the record it names shows only once opened.
     expect(await ui.find({ type: 'Text', text: /31\.1-orchestrator-to-agent-manager\.handoff\.md/ })).toBe(undefined)
-    await ui.press({ key: 'sel:toolu_2:steps-gone' })
+    await ui.press({ key: 'nr:toolu_2:steps-gone' })
     expect(await ui.find({ type: 'Text', text: new RegExp(`docs/handoffs/${F_RUN}/31\\.1-orchestrator-to-agent-manager\\.handoff\\.md`) })).toBeDefined()
     await ui.unmount()
   })
@@ -5416,7 +5634,7 @@ describe('step 8.6.1.l1: the workflow view and the chat card on the renumbered f
     await spawnReal($, 2, F_RUN, '8.2.l15.1', 'agent-manager')
     await $.classic.Stop({ stop_hook_active: false, background_tasks: [] })
     const ui = await $.ui.mount({ ...pane(CHART_PANE, 'dock', 120), surface: 'vscode' })
-    await ui.press({ key: 'wf-show-toolu_2' })
+    await showRunL3(ui, 'toolu_2')
     const all: any[] = await ui.findAll({ type: 'Text' })
     const before = (title: RegExp) => String(all[all.findIndex((x: any) => title.test(String(x.text))) - 1]?.text ?? '')
     expect(before(/^Step 12 · /)).toMatch(/^▲/)
@@ -5464,7 +5682,7 @@ describe('step 8.6.1.l1 (B): versioned run state', () => {
     // A brief written before the renumbering still maps through v2's Features table and the rename map (old 30.1 -> 8.6.1 -> 8.2.l12.1).
     await spawnReal($, 2, F_RUN, '30.1', 'agent-manager')
     const ui = await $.ui.mount({ ...pane(CHART_PANE, 'dock', 120), surface: 'vscode', viewport: { columns: 240, rows: 60 } })
-    await ui.press({ key: 'wf-show-toolu_2' })
+    await showRunL3(ui, 'toolu_2')
     expect(await stepKeys(ui)).toEqual(ROOTS_DESC)
     expect(await ui.find({ type: 'Text', text: 'Step 8 · from v2' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /from run\.md|from v1/ })).toBe(undefined)
@@ -5486,7 +5704,7 @@ describe('step 8.6.1.l1 (B): versioned run state', () => {
     await spawnReal($, 2, F_RUN, '8.2.l15.1', 'agent-manager')
     await $.classic.Stop({ stop_hook_active: false, background_tasks: [] })
     const ui = await $.ui.mount({ ...pane(CHART_PANE, 'dock', 120), surface: 'vscode' })
-    await ui.press({ key: 'wf-show-toolu_2' })
+    await showRunL3(ui, 'toolu_2')
     expect(await ui.find({ type: 'Text', text: 'Step 8 · from v1.2' })).toBeDefined()
     const all: any[] = await ui.findAll({ type: 'Text' })
     const before = (title: RegExp) => String(all[all.findIndex((x: any) => title.test(String(x.text))) - 1]?.text ?? '')
@@ -5817,7 +6035,7 @@ describe('step 8.6.5.l1: a run folder with many run-state versions (scanRuns / r
     await seed($, on, { complete: false, files, list: { 'docs/handoffs': [`${F_RUN}/`], [`docs/handoffs/${F_RUN}`]: [...FEAT_NAMES, ...[...versions, ...decoys].reverse()] } })
     await spawnReal($, 2, F_RUN, '8.6.1', 'agent-manager')
     const ui = await $.ui.mount({ ...pane(CHART_PANE, 'dock', 120), surface: 'vscode', viewport: { columns: 240, rows: 60 } })
-    await ui.press({ key: 'wf-show-toolu_2' })
+    await showRunL3(ui, 'toolu_2')
     expect(await stepKeys(ui)).toEqual(ROOTS_DESC)
     expect(await ui.find({ type: 'Text', text: 'Step 8 · from run.v3.10.md' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /from (RUN\.V9|run\.v09|run\.v3\.010|run\.v3\.2)\.md/ })).toBe(undefined)
@@ -5827,6 +6045,15 @@ describe('step 8.6.5.l1: a run folder with many run-state versions (scanRuns / r
 
 // ---------------- step 36.2: one view, /ai-dlc:lens opens it ----------------
 describe('step 36.2: /ai-dlc:lens opens the AI-DLC Lens view; the lens card is gone', () => {
+  // Step 43: the lens command leaves the band minimised (A1); these tests press the band's □ to bring its list back, and
+  // use a narrow band (40 columns) where the band itself shows a run's workflow.
+  const listBand = async ($: any) => {
+    const b = await band($)
+    if ((await b.find({ type: 'Button', key: 'pane-min' }))?.props?.label === '□') await b.press({ key: 'pane-min' })
+    await b.unmount()
+  }
+  const bandNarrow = ($: any) => $.ui.mount({ plugin: PLUGIN, surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 40, bodyColumns: 40, scroll: { offset: 0, bodyRows: 40 }, view: {} } } as any)
+  const MINIMISED_REPLY = 'AI-DLC Lens: the band above the prompt is shown minimised; the pane is not changed (open it from the band with ⤢).'
   const lensCmd = async ($: any): Promise<string> => String(((await ($.command.run as any)({ command: 'ai-dlc:lens', args: '' })) as any)?.text)
   const chartOpens = (openArgs: any[]) => openArgs.filter((x: any) => x.id === CHART_PANE)
   /** A second workflow: a new request, then a background spawn (a2) that keeps running. */
@@ -5886,7 +6113,7 @@ describe('step 36.2: /ai-dlc:lens opens the AI-DLC Lens view; the lens card is g
   test('amendment 4, point 1: a band in list view starts minimised again at the next load (session.start)', async ($, on) => {
     on('session.surfaces', () => ({ value: ['terminal'] }))
     await seed($, on, { complete: false })
-    await lensCmd($)
+    await listBand($)
     expect(await listed($)).toBe(true)
     await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
     expect(await listed($)).toBe(false)
@@ -5935,25 +6162,32 @@ describe('step 36.2: /ai-dlc:lens opens the AI-DLC Lens view; the lens card is g
     expect(closed.slice(before.closes).filter(x => x === CHART_PANE)).toEqual([])
   })
 
-  test('amendment 6, point 1: with the pane open beside the band, □ brings back the band\'s list and leaves the pane open on its workflow', async ($, on) => {
+  test("amendment 6, point 1 (step 43, B2b): with the pane open beside the band, □ on the band brings back the band's list and leaves the pane open on its workflow", async ($, on) => {
     on('session.surfaces', () => ({ value: ['terminal'] }))
+    holdBandPing(on)
     const { openArgs, closed } = await seed($, on, { complete: false })
-    await lensCmd($) // rule 1
-    await lensCmd($) // rule 2: the pane open, the band minimised
+    // B3a: the minimised band's ⤢ opens the pane in list mode; the pane's run is chosen in the pane.
+    let b = await band($)
+    await b.press({ key: 'pane-full' })
+    await b.unmount()
+    let wp = await chartPane($, 'terminal', false)
+    await wp.press({ key: 'wf-toolu_1' })
+    await wp.unmount()
     const before = { opens: openArgs.length, closes: closed.length }
-    const b = await band($)
+    b = await band($)
     await b.press({ key: 'pane-min' })
     expect(await b.find({ type: 'Button', key: 'wf-toolu_1' })).toBeDefined()
     await b.unmount()
     expect(chartOpens(openArgs.slice(before.opens))).toEqual([])
     expect(closed.slice(before.closes).filter(x => x === CHART_PANE)).toEqual([])
-    const wp = await chartPane($, 'terminal', false)
+    wp = await chartPane($, 'terminal', false)
     expect(await wp.find({ type: 'Button', key: 'agent-a1' })).toBeDefined()
     await wp.unmount()
   })
 
-  test('amendment 6, point 2: ⤢ on the minimised band opens the pane, focused, on the latest in-progress workflow; the band stays drawn and minimised', async ($, on) => {
+  test('amendment 6, point 2 (step 43, B3a-i): ⤢ on the minimised band opens the pane at once, focused, in list mode; the band stays drawn and minimised', async ($, on) => {
     on('session.surfaces', () => ({ value: ['terminal'] }))
+    holdBandPing(on)
     const { openArgs, closed } = await seed($, on, { complete: false })
     const before = { opens: openArgs.length, closes: closed.length }
     const b = await band($)
@@ -5965,20 +6199,23 @@ describe('step 36.2: /ai-dlc:lens opens the AI-DLC Lens view; the lens card is g
     expect(chartOpens(openArgs.slice(before.opens)).map((x: any) => [x.title, x.focus, x.rows ?? null])).toEqual([['AI-DLC Lens', true, null]])
     expect(closed.slice(before.closes).filter(x => x === CHART_PANE)).toEqual([])
     const wp = await chartPane($, 'terminal', false)
-    expect(await wp.find({ type: 'Button', key: 'agent-a1' })).toBeDefined()
+    expect(await wp.find({ type: 'Button', key: 'wf-toolu_1' })).toBeDefined()
+    expect(await wp.find({ type: 'Button', key: 'agent-a1' })).toBe(undefined)
     await wp.unmount()
   })
 
-  test('amendment 6, point 2: ⤢ on the band in list view opens the pane and keeps the list; with the pane on an older workflow it switches to the latest', async ($, on) => {
+  test("amendment 6, point 2 (step 43, B3a-i): ⤢ on the band in list view opens the pane in list mode and keeps the band's list; each further press raises the pane, still in list mode", async ($, on) => {
     on('session.surfaces', () => ({ value: ['terminal'] }))
+    holdBandPing(on)
     const { openArgs } = await seed($, on, { complete: false, request: 'Ship it' })
-    await lensCmd($) // rule 1: the list
+    await listBand($)
     let b = await band($)
     await b.press({ key: 'pane-full' })
     expect(await b.find({ type: 'Button', key: 'wf-toolu_1' })).toBeDefined()
     await b.unmount()
     let wp = await chartPane($, 'terminal', false)
-    expect(await wp.find({ type: 'Button', key: 'agent-a1' })).toBeDefined()
+    expect(await wp.find({ type: 'Button', key: 'wf-toolu_1' })).toBeDefined()
+    expect(await wp.find({ type: 'Button', key: 'agent-a1' })).toBe(undefined)
     await wp.unmount()
     await spawnLater($)
     const before = openArgs.length
@@ -5988,8 +6225,8 @@ describe('step 36.2: /ai-dlc:lens opens the AI-DLC Lens view; the lens card is g
     await b.unmount()
     expect(chartOpens(openArgs.slice(before)).map((x: any) => x.focus)).toEqual([true])
     wp = await chartPane($, 'terminal', false)
-    expect(await wp.find({ type: 'Button', key: 'toolu_2:agent-a2' })).toBeDefined()
-    expect(await wp.find({ type: 'Button', key: 'toolu_1:agent-a1' })).toBe(undefined)
+    expect(await wp.find({ type: 'Button', key: 'wf-toolu_2' })).toBeDefined()
+    expect(await wp.find({ type: 'Button', key: 'wf-toolu_1' })).toBeDefined()
     await wp.unmount()
     expect(await listed($)).toBe(true)
   })
@@ -6004,17 +6241,21 @@ describe('step 36.2: /ai-dlc:lens opens the AI-DLC Lens view; the lens card is g
     expect(await listed($)).toBe(false)
   })
 
-  test("amendment 6, point 2: a step chart's ⤢ on the band opens the pane on that workflow and never hides the band", async ($, on) => {
+  test("amendment 6, point 2 (step 43, B3a-ii): a step chart's ⤢ on a band in workflow mode opens the pane on that workflow and never hides the band", async ($, on) => {
     on('session.surfaces', () => ({ value: ['terminal'] }))
+    holdBandPing(on)
     const { openArgs } = await seed($, on, { complete: false })
-    await lensCmd($) // rule 1: the list
-    const b = await band($)
+    // A narrow band shows a run's workflow itself (B2a-i): □ for the list, then the run.
+    const b = await bandNarrow($)
+    await b.press({ key: 'pane-min' })
+    await b.press({ key: 'wf-toolu_1' })
+    expect(await b.find({ type: 'Button', key: 'runs-back' })).toBeDefined()
     const keys: string[] = (await b.findAll({ type: 'Button' })).map((x: any) => String(x.key ?? x.props?.key ?? ''))
     const stepFull = keys.find(k => k.endsWith('step-full'))
     expect(stepFull).toBeDefined()
     const before = openArgs.length
     await b.press({ key: stepFull! })
-    expect(await b.find({ type: 'Button', key: 'wf-toolu_1' })).toBeDefined()
+    expect(await b.find({ type: 'Button', key: 'runs-back' })).toBeDefined()
     await b.unmount()
     expect(chartOpens(openArgs.slice(before)).map((x: any) => [x.focus, x.rows ?? null])).toEqual([[true, null]])
   })
@@ -6022,11 +6263,13 @@ describe('step 36.2: /ai-dlc:lens opens the AI-DLC Lens view; the lens card is g
   test('amendment 6, point 3 (pure, bandLineOf): the newest in progress with the count; else the first waiting, then pending, then halted; all completed: the newest; none: null', () => {
     const f = (w: string, status: string) => ({ w, info: { status } }) as any
     expect(bandLineOf([])).toBe(null)
-    expect(bandLineOf([f('a', 'waiting'), f('b', 'in-progress'), f('c', 'in-progress')])).toEqual({ flow: f('b', 'in-progress'), live: 2 })
-    expect(bandLineOf([f('a', 'halted'), f('b', 'pending'), f('c', 'waiting')])).toEqual({ flow: f('c', 'waiting'), live: 0 })
-    expect(bandLineOf([f('a', 'halted'), f('b', 'pending'), f('c', 'completed')])).toEqual({ flow: f('b', 'pending'), live: 0 })
-    expect(bandLineOf([f('a', 'completed'), f('b', 'halted')])).toEqual({ flow: f('b', 'halted'), live: 0 })
-    expect(bandLineOf([f('a', 'completed'), f('b', 'completed')])).toEqual({ flow: f('a', 'completed'), live: 0 })
+    // Live round 1 (2b.i): the line names the top 3 in the order in progress, waiting, halted, pending, completed; newest first within a status.
+    expect(bandLineOf([f('a', 'waiting'), f('b', 'in-progress'), f('c', 'in-progress')])).toEqual({ flow: f('b', 'in-progress'), top: [f('b', 'in-progress'), f('c', 'in-progress'), f('a', 'waiting')], live: 2 })
+    expect(bandLineOf([f('a', 'halted'), f('b', 'pending'), f('c', 'waiting')])).toEqual({ flow: f('c', 'waiting'), top: [f('c', 'waiting'), f('a', 'halted'), f('b', 'pending')], live: 0 })
+    expect(bandLineOf([f('a', 'halted'), f('b', 'pending'), f('c', 'completed')])).toEqual({ flow: f('a', 'halted'), top: [f('a', 'halted'), f('b', 'pending'), f('c', 'completed')], live: 0 })
+    expect(bandLineOf([f('a', 'completed'), f('b', 'halted')])).toEqual({ flow: f('b', 'halted'), top: [f('b', 'halted'), f('a', 'completed')], live: 0 })
+    expect(bandLineOf([f('a', 'completed'), f('b', 'completed')])).toEqual({ flow: f('a', 'completed'), top: [f('a', 'completed'), f('b', 'completed')], live: 0 })
+    expect(bandLineOf([f('a', 'pending'), f('b', 'pending'), f('c', 'pending'), f('d', 'in-progress')])!.top.map((x: any) => x.w)).toEqual(['d', 'a', 'b'])
   })
 
   test('amendment 6, point 3: workflows in progress: the minimised band is one line, the latest in-progress workflow and "(2)"', async ($, on) => {
@@ -6036,7 +6279,9 @@ describe('step 36.2: /ai-dlc:lens opens the AI-DLC Lens view; the lens card is g
     const b = await band($)
     expect(await b.find({ type: 'Button', key: 'wf-toolu_1' })).toBe(undefined)
     expect(await b.find({ type: 'Text', text: /^and now something else/ })).toBeDefined()
-    expect(await b.find({ type: 'Text', text: /^Ship it/ })).toBe(undefined)
+    // Live round 1 (2b.i): the minimised line names the top 3 (here both runs, newest first), then the count.
+    expect(await b.find({ type: 'Text', text: /^Ship it/ })).toBeDefined()
+    expect((await b.findAll({ type: 'Box' })).map((x: any) => String(x.key)).filter((k: string) => /^band-line-\d$/.test(k))).toEqual(['band-line-0', 'band-line-1'])
     expect(await b.find({ type: 'Text', text: /^\(2\)$/ })).toBeDefined()
     await b.unmount()
   })
@@ -6091,107 +6336,118 @@ describe('step 36.2: /ai-dlc:lens opens the AI-DLC Lens view; the lens card is g
       return [box !== undefined, controls !== undefined]
     }
     expect(await wide()).toEqual([true, true])
-    await lensCmd($)
+    await listBand($)
     expect(await listed($)).toBe(true)
     expect(await wide()).toEqual([true, true])
   })
 
-  test('band, rule 1: the band minimised: the command restores its list view, and opens no pane', async ($, on) => {
+  test('band, A1 (step 43): the band minimised: the command keeps it minimised and says so, and opens no pane', async ($, on) => {
     on('session.surfaces', () => ({ value: ['terminal'] }))
     const { openArgs } = await seed($, on, { complete: false })
     expect(await listed($)).toBe(false)
     const before = openArgs.length
-    expect(await lensCmd($)).toBe("AI-DLC Lens: the band's list view is restored.")
-    expect(await listed($)).toBe(true)
+    expect(await lensCmd($)).toBe(MINIMISED_REPLY)
+    expect(await listed($)).toBe(false)
     expect(chartOpens(openArgs.slice(before))).toEqual([])
   })
 
-  test('band, rule 2 (amendment 4): the band in list view and no pane: the pane opens, focused, on the latest in-progress workflow, and the band is minimised', async ($, on) => {
+  test('band, A1 (step 43): the band in list view: the command minimises it; no pane opens, in progress or not', async ($, on) => {
     on('session.surfaces', () => ({ value: ['terminal'] }))
     const { openArgs, closed } = await seed($, on, { complete: false })
     expect(closed).toContain(CHART_PANE)
-    await lensCmd($)
+    await listBand($)
+    expect(await listed($)).toBe(true)
     const before = openArgs.length
-    expect(await lensCmd($)).toMatch(/^AI-DLC Lens: the pane opened on the latest in-progress workflow, .+; the band is minimised\.$/)
-    expect(chartOpens(openArgs.slice(before)).map((x: any) => [x.title, x.focus])).toEqual([['AI-DLC Lens', true]])
+    expect(await lensCmd($)).toBe(MINIMISED_REPLY)
+    expect(chartOpens(openArgs.slice(before))).toEqual([])
     expect(await listed($)).toBe(false)
-    const wp = await chartPane($, 'terminal', false)
-    expect(await wp.find({ type: 'Button', key: 'agent-a1' })).toBeDefined()
+  })
+
+  test('band, A1 (step 43): the pane open beside the band on an older workflow: the command leaves the pane alone', async ($, on) => {
+    on('session.surfaces', () => ({ value: ['terminal'] }))
+    holdBandPing(on)
+    const { openArgs, closed } = await seed($, on, { complete: false, request: 'Ship it' })
+    const b = await band($)
+    await b.press({ key: 'pane-full' })
+    await b.unmount()
+    let wp = await chartPane($, 'terminal', false)
+    await wp.press({ key: 'wf-toolu_1' })
+    await wp.unmount()
+    // A newer workflow starts while the pane shows the first one.
+    await spawnLater($)
+    const before = { opens: openArgs.length, closes: closed.length }
+    expect(await lensCmd($)).toBe(MINIMISED_REPLY)
+    expect(chartOpens(openArgs.slice(before.opens))).toEqual([])
+    expect(closed.slice(before.closes).filter(x => x === CHART_PANE)).toEqual([])
+    wp = await chartPane($, 'terminal', false)
+    expect(await wp.find({ type: 'Button', key: 'toolu_1:agent-a1' })).toBeDefined()
+    expect(await wp.find({ type: 'Button', key: 'toolu_2:agent-a2' })).toBe(undefined)
     await wp.unmount()
   })
 
-  test('band, rule 3: the pane open on an older workflow: it switches to the latest in-progress one', async ($, on) => {
+  test('band, A1 (step 43): every further run of the command minimises the band again, opening and closing nothing; the pane beside it stays as it is', async ($, on) => {
     on('session.surfaces', () => ({ value: ['terminal'] }))
-    const { openArgs } = await seed($, on, { complete: false, request: 'Ship it' })
-    await lensCmd($) // rule 1
-    await lensCmd($) // rule 2: the pane on the first workflow, the band minimised
-    // A newer workflow starts while the pane shows the first one.
-    await spawnLater($)
-    let wp = await chartPane($, 'terminal', false)
-    expect(await wp.find({ type: 'Button', key: 'toolu_1:agent-a1' })).toBeDefined()
+    holdBandPing(on)
+    const { openArgs, closed } = await seed($, on, { complete: false })
+    const b0 = await band($)
+    await b0.press({ key: 'pane-full' })
+    await b0.unmount()
+    const before = { opens: openArgs.length, closes: closed.length }
+    for (let i = 0; i < 3; i++) {
+      await listBand($)
+      expect(await listed($)).toBe(true)
+      expect(await lensCmd($)).toBe(MINIMISED_REPLY)
+      expect(await listed($)).toBe(false)
+    }
+    expect(chartOpens(openArgs.slice(before.opens))).toEqual([])
+    expect(closed.slice(before.closes).filter(x => x === CHART_PANE)).toEqual([])
+    const wp = await chartPane($, 'terminal', false)
+    expect(await wp.find({ type: 'Button', key: 'wf-toolu_1' })).toBeDefined()
     await wp.unmount()
-    expect(await lensCmd($)).toBe("AI-DLC Lens: the band's list view is restored.")
-    const before = openArgs.length
-    expect(await lensCmd($)).toMatch(/^AI-DLC Lens: the pane switched to the latest in-progress workflow, and now something else\.$/)
-    expect(chartOpens(openArgs.slice(before)).map((x: any) => x.focus)).toEqual([true])
-    expect(await listed($)).toBe(true)
+  })
+
+  test("amendment 3 (step 43, B1a, B2a-i): the band's own minimise (–) changes only the band; a run chosen in a narrow band opens in the band, and the band's selection never moves the pane", async ($, on) => {
+    on('session.surfaces', () => ({ value: ['terminal'] }))
+    holdBandPing(on)
+    const { openArgs, closed } = await seed($, on, { complete: false, request: 'Ship it' })
+    await spawnLater($)
+    // The pane opens in list mode from the band's ⤢; its own choice is the newer workflow.
+    let b = await band($)
+    await b.press({ key: 'pane-full' })
+    await b.unmount()
+    let wp = await chartPane($, 'terminal', false)
+    await wp.press({ key: 'wf-toolu_2' })
+    await wp.unmount()
+    const before = { opens: openArgs.length, closes: closed.length }
+    // The narrow band shows the older workflow itself, then is minimised with its own button.
+    b = await bandNarrow($)
+    await b.press({ key: 'pane-min' })
+    await b.press({ key: 'wf-toolu_1' })
+    expect(await b.find({ type: 'Button', key: 'runs-back' })).toBeDefined()
+    await b.press({ key: 'pane-min' })
+    expect(await b.find({ type: 'Button', key: 'runs-back' })).toBe(undefined)
+    await b.unmount()
+    expect(closed.slice(before.closes).filter(x => x === CHART_PANE)).toEqual([])
+    expect(chartOpens(openArgs.slice(before.opens))).toEqual([])
     wp = await chartPane($, 'terminal', false)
     expect(await wp.find({ type: 'Button', key: 'toolu_2:agent-a2' })).toBeDefined()
     expect(await wp.find({ type: 'Button', key: 'toolu_1:agent-a1' })).toBe(undefined)
     await wp.unmount()
   })
 
-  test('band, rule 4 (amendment 3): the pane already on the latest: the band is minimised, the pane stays open on the latest in-progress workflow; each further run toggles the band', async ($, on) => {
+  test('rule 2 (step 43), docked and none in progress: the command brings the pane forward on its run list', async ($, on) => {
     on('session.surfaces', () => ({ value: ['terminal'] }))
-    const { openArgs, closed } = await seed($, on, { complete: false })
-    await lensCmd($) // rule 1
-    await lensCmd($) // rule 2
-    expect(await lensCmd($)).toBe("AI-DLC Lens: the band's list view is restored.")
-    const before = { opens: openArgs.length, closes: closed.length }
-    expect(await lensCmd($)).toMatch(/^AI-DLC Lens: the band is minimised; the pane stays open on the latest in-progress workflow, .+\.$/)
-    expect(chartOpens(openArgs.slice(before.opens))).toEqual([])
-    expect(closed.slice(before.closes).filter(x => x === CHART_PANE)).toEqual([])
-    expect(await listed($)).toBe(false)
-    // The pane is not minimised: it still draws the workflow's list and its agents, and has no minimise of its own.
+    const { openArgs } = await seed($, on, { listStatus: 'completed', files: { '.ai-dlc/lens.json': JSON.stringify({ workflowPlace: 'docked', panelOpenMode: 'tab' }) } })
+    const before = openArgs.length
+    expect(await lensCmd($)).toBe('AI-DLC Lens brought forward.')
+    expect(chartOpens(openArgs.slice(before)).map((x: any) => x.focus)).toEqual([true])
     const wp = await chartPane($, 'terminal', false)
-    expect(await wp.find({ type: 'Button', key: 'wf-toolu_1' })).toBeDefined()
-    expect(await wp.find({ type: 'Button', key: 'agent-a1' })).toBeDefined()
-    expect(await wp.find({ type: 'Button', key: 'pane-min' })).toBe(undefined)
-    await wp.unmount()
-    // The next run is rule 1 again: the band restored, the pane left as it is.
-    expect(await lensCmd($)).toBe("AI-DLC Lens: the band's list view is restored.")
-    expect(closed.slice(before.closes).filter(x => x === CHART_PANE)).toEqual([])
-  })
-
-  test("amendment 3: the band's own minimise (–) leaves the pane open on the latest in-progress workflow, and the band's selection never moves the pane", async ($, on) => {
-    on('session.surfaces', () => ({ value: ['terminal'] }))
-    const { openArgs, closed } = await seed($, on, { complete: false, request: 'Ship it' })
-    await spawnLater($)
-    await lensCmd($) // rule 1
-    // Rule 2: the pane opens on the latest in-progress workflow (the second).
-    expect(await lensCmd($)).toMatch(/^AI-DLC Lens: the pane opened on the latest in-progress workflow, and now something else; the band is minimised\.$/)
-    await lensCmd($) // rule 1: the band's list again
-    const before = { opens: openArgs.length, closes: closed.length }
-    const b = await band($)
-    // The band shows the older workflow, then is minimised with its own button.
-    await b.press({ key: 'wf-show-toolu_1' })
-    await b.press({ key: 'pane-min' })
-    expect(await b.find({ type: 'Button', key: 'wf-toolu_1' })).toBe(undefined)
-    await b.unmount()
-    expect(closed.slice(before.closes).filter(x => x === CHART_PANE)).toEqual([])
-    expect(chartOpens(openArgs.slice(before.opens))).toEqual([])
-    const wp = await chartPane($, 'terminal', false)
-    expect(await wp.find({ type: 'Button', key: 'toolu_2:agent-a2' })).toBeDefined()
-    expect(await wp.find({ type: 'Button', key: 'toolu_1:agent-a1' })).toBe(undefined)
+    // Live round 1 (2b): docked, the pane is on the newest run (the workflow tab); its run list is one step back.
+    expect(await wp.find({ type: 'Button', key: 'runs-back' })).toBeDefined()
+    expect(await wp.find({ type: 'Button', key: 'wf-toolu_1' })).toBe(undefined)
     await wp.unmount()
   })
 
-  test('band, no workflow in progress: the most recent one, and the reply says none is in progress', async ($, on) => {
-    on('session.surfaces', () => ({ value: ['terminal'] }))
-    await seed($, on)
-    await lensCmd($) // rule 1
-    expect(await lensCmd($)).toMatch(/^AI-DLC Lens: the pane opened on the most recent workflow, .* \(none is in progress\); the band is minimised\.$/)
-  })
 })
 
 // ---------------- step 36.3: gaps found tracing step 36.2 ----------------
@@ -6220,7 +6476,7 @@ describe('step 36.3: old view state, docked mode, and a place switch with the pa
     expect(chartOpens(openArgs).map((x: any) => [x.title, x.rows ?? null])).toEqual([['AI-DLC Lens', null]])
     const state = async () => {
       const ui = await chartPane($, 'terminal', false)
-      const r = [(await ui.find({ type: 'Button', key: 'pane-min' }))?.props?.label, (await ui.find({ type: 'Button', key: 'pane-close' })) !== undefined, (await ui.find({ type: 'Button', key: 'wf-toolu_1' })) !== undefined]
+      const r = [(await ui.find({ type: 'Button', key: 'pane-min' }))?.props?.label, (await ui.find({ type: 'Button', key: 'pane-close' })) !== undefined, (await ui.find({ type: 'Button', key: 'runs-back' })) !== undefined]
       await ui.unmount()
       return r
     }
@@ -6345,10 +6601,14 @@ describe('step 36.3: old view state, docked mode, and a place switch with the pa
     on('session.surfaces', () => ({ value: ['terminal'] }))
     const { openArgs } = await seed($, on, { complete: false, files: DOCKED })
     const ui = await $.ui.mount({ ...pane(CHART_PANE, 'dock', 100), surface: 'terminal', viewport: { columns: 200, rows: 50 } })
-    await ui.press({ key: 'pane-full' })
+    // Step 43, D2: no ⤢ on the docked pane's title row; full screen comes from a step chart's ⤢, and ⤡ restores it.
+    expect(await ui.find({ type: 'Button', key: 'pane-full' })).toBe(undefined)
+    await ui.press({ key: 'nr:s17:step-full' })
     const full = chartOpens(openArgs).at(-1)
     expect([full?.rows, full?.columns, full?.focus]).toEqual([50, 200, true])
-    await ui.press({ key: 'pane-restore' })
+    expect((await ui.find({ type: 'Button', key: 'pane-full' }))?.text).toBe('⤡')
+    await ui.press({ key: 'pane-full' })
+    expect(await ui.find({ type: 'Button', key: 'pane-full' })).toBe(undefined)
     await ui.press({ key: 'pane-min' })
     expect(await ui.find({ type: 'Button', key: 'wf-toolu_1' })).toBe(undefined)
     expect((await ui.find({ type: 'Button', key: 'pane-min' }))?.props?.label).toBe('□')
@@ -6358,10 +6618,10 @@ describe('step 36.3: old view state, docked mode, and a place switch with the pa
   test('pinned band with the pane open beside it, then the place switched to docked: the pane is not closed and is drawn in full as the docked pane', async ($, on) => {
     on('session.surfaces', () => ({ value: ['terminal'] }))
     const { openArgs, closed } = await seed($, on, { complete: false })
-    await lensCmd($) // rule 1: the list
-    await lensCmd($) // rule 2: the pane opens, the band is minimised
+    // Step 43 (B3a): the band starts minimised; its ⤢ opens the pane beside it, in list mode.
     const b = await band($)
     expect((await b.find({ type: 'Button', key: 'pane-min' }))?.props?.label).toBe('□')
+    await b.press({ key: 'pane-full' })
     const before = { opens: openArgs.length, closes: closed.filter(x => x === CHART_PANE).length }
     await b.press({ key: 'pane-place' })
     await b.unmount()
@@ -6373,7 +6633,63 @@ describe('step 36.3: old view state, docked mode, and a place switch with the pa
     expect((await wp.find({ type: 'Button', key: 'pane-min' }))?.props?.label).toBe('–')
     expect(await wp.find({ type: 'Button', key: 'pane-restore' })).toBe(undefined)
     expect(await wp.find({ type: 'Button', key: 'wf-toolu_1' })).toBeDefined()
+    await wp.press({ key: 'wf-toolu_1' })
     expect((await wp.find({ type: 'Button', key: 'agent-a1' }))?.text).toBe('David Fowler')
     await wp.unmount()
+  })
+})
+
+// ITEM-073 (T22.e, AC-22.6.1 to 22.6.4): the agent pane's Usage section is Context Lab; the arrow (hand-off) pane keeps Usage.
+describe('[AC-22.6] Context Lab in the agent pane, Usage in the arrow pane', () => {
+  const headings = async (ui: any) => ((await ui.findAll({ type: 'Text' })) as any[]).map((x: any) => String(x.text ?? '').trim())
+
+  test('[AC-22.6.1, 22.6.4] the agent pane section reads Context Lab (<used> / <window>), capital L, and no section there reads Usage', async ($, on) => {
+    await seed($, on)
+    const lp = await chartPane($)
+    await lp.press({ key: 'agent-a1' })
+    await lp.unmount()
+    const ag = await $.ui.mount({ ...pane('ai-dlc-lens-agent'), surface: 'vscode' })
+    const h = await headings(ag)
+    expect(h.some(t => /^Context Lab \(.+ \/ .+\)$/.test(t))).toBe(true)
+    expect(h.some(t => /^Context lab/.test(t))).toBe(false)
+    expect(h.some(t => /^Usage\b/.test(t))).toBe(false)
+    await ag.unmount()
+  })
+
+  test('[AC-22.6.1] it is collapsed by default, with the same button key as before the rename (agent-usage)', async ($, on) => {
+    await seed($, on)
+    const lp = await chartPane($)
+    await lp.press({ key: 'agent-a1' })
+    await lp.unmount()
+    const ag = await $.ui.mount({ ...pane('ai-dlc-lens-agent'), surface: 'vscode' })
+    expect((await ag.find({ type: 'Button', key: 'agent-usage' }))?.text).toBe('[+]')
+    await ag.unmount()
+  })
+
+  test('[AC-22.6.3] toggling it opens and closes the section: the rows appear and go', async ($, on) => {
+    await seed($, on)
+    const lp = await chartPane($)
+    await lp.press({ key: 'agent-a1' })
+    await lp.unmount()
+    const ag = await $.ui.mount({ ...pane('ai-dlc-lens-agent'), surface: 'vscode' })
+    await ag.press({ key: 'agent-usage' })
+    expect((await ag.find({ type: 'Button', key: 'agent-usage' }))?.text).toBe('[-]')
+    await ag.press({ key: 'agent-usage' })
+    expect((await ag.find({ type: 'Button', key: 'agent-usage' }))?.text).toBe('[+]')
+    await ag.unmount()
+  })
+
+  test('[AC-22.6.2] (live findings 2, point 2) the arrow pane has no Usage any more, no Context Lab and no Cache Lab; a Send Message section instead', async ($, on) => {
+    await seed($, on)
+    const lp = await chartPane($)
+    await lp.press({ key: 'edge-a1' })
+    await lp.unmount()
+    const edge = await $.ui.mount({ ...pane('ai-dlc-lens-edge'), surface: 'vscode' })
+    const h = await headings(edge)
+    expect(h.some(t => /^Usage\b/.test(t))).toBe(false)
+    expect(h.some(t => /^Context Lab/.test(t))).toBe(false)
+    expect(h.some(t => /^Cache Lab/.test(t))).toBe(false)
+    expect(h.some(t => /^Send Message \(\d+\)$/.test(t))).toBe(true)
+    await edge.unmount()
   })
 })

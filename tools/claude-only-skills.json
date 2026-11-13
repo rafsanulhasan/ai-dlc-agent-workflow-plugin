@@ -3,6 +3,7 @@
   "cache-keepalive-configure",
   "cache-keepalive-install",
   "cache-keepalive-merge",
+  "herdr",
   "lens",
   "lens-configure",
   "lens-gate",

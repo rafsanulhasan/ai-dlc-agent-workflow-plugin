@@ -1,6 +1,6 @@
 // Settings and the constants built on them. Engine-free: the host follows $ only into functions
 // declared in register.tsx, so anything taking $ (reading the files, the environment) stays there.
-import { parseAddress } from './server.ts'
+import { parseAddress } from './server'
 
 export const BRIEF_DIR = '.claude/state/auto-handoff'
 // Where this module sits inside the ai-dlc plugin; the shipped templates are under it.

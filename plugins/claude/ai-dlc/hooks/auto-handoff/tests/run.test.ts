@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
-import { AUTO_MARK, assembleSessionHandoff, currentRunStateFile, handoffsRoot, inRepo, isOpen, openInRow, openRecords, pairOf, passOf, parseRunState, parseStages, pickRun, recordsSection, runStateNote, scratchRoot, sessionHandoffName, sessionHandoffPath, stepOf, withNextAction } from '../run.ts'
-import type { RunState, RunTarget } from '../run.ts'
+import { AUTO_MARK, assembleSessionHandoff, currentRunStateFile, handoffsRoot, inRepo, isOpen, openInRow, openRecords, pairOf, passOf, parseRunState, parseStages, pickRun, recordsSection, runStateNote, scratchRoot, sessionHandoffName, sessionHandoffPath, stepOf, withNextAction } from '../run'
+import type { RunState, RunTarget } from '../run'
 
 const RUN = `---
 run: AAW-20261021-demo

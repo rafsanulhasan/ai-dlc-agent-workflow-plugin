@@ -7,6 +7,7 @@
 // and "claude-code" (not node:fs, not the CLI, which imports node:fs). Here the module is imported as
 // TypeScript through Node's type stripping (Node 22.18 and later, which CI's Node 22 resolves to).
 // Run: node --test "tests/**/*.test.mjs". Temp folders only; nothing under plugins/ is written.
+import "../support/resolve-ts-extensionless.mjs";
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";

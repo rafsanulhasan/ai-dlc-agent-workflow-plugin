@@ -3,6 +3,7 @@
   "enabled": true,
   "scope": "session",
   "status": true,
+  "sourceNote": true,
   "pingPrompt": "Keep-alive ping. Reply with only: ok",
   "hitThreshold": 0.9,
   "overagePercent": 100,
@@ -29,5 +30,9 @@
   "outputMult": 5,
   "readPrice": "fable|mythos=0.025,opus[- ]?5[-. ]5=0.05,*=0.1",
   "compactCostGuess": 0.6,
-  "summaryRatioGuess": 0.15
+  "summaryRatioGuess": 0.15,
+  "handoff": {
+    "carryOver": true,
+    "onWhenOff": true
+  }
 }

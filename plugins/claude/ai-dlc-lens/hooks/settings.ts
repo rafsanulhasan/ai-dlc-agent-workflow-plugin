@@ -63,12 +63,16 @@ export const SPEC = {
     doc: 'The image types an avatarImage may be, comma-separated (checked on the bytes, not the name)',
   },
   avatarImageMaxBytes: { kind: 'int', min: 1, max: 2097152, def: 65536, doc: 'The largest avatarImage, bytes; the whole chart must also stay under 131,072 Svg characters' },
-  // /ai-dlc:lens-keepalive (step 1.4): the keep-alive section of every agent pane; the command toggles it.
+  // /ai-dlc:lens-keepalive (step 1.4): keep-alive in Cache Lab, in every agent panel (step 42); the command toggles it.
   keepaliveSection: {
     kind: 'bool',
     def: true,
-    doc: "Show the Cache keep-alive section in every agent pane (collapsed like every section): how long keep-alive kept the cache warm per track (5m, 1h) and what cache reads saved, priced from costingPath. /ai-dlc:lens-keepalive turns it off and on",
+    doc: "Show keep-alive in Cache Lab, in every agent panel: the on/off buttons of Master, 1h and 5m, and the Keep Alive sub-accordion (how long keep-alive kept the cache warm per track and what cache reads saved, priced from costingPath). /ai-dlc:lens-keepalive turns it off and on",
   },
+  // ITEM-070 (Q-CL19): keep the Cache Lab window across /reload-plugins.
+  cacheLabKeepWindowOnReload: { kind: 'bool', def: false, doc: 'Keep the Cache Lab window across /reload-plugins (development and testing); off resets it to 7d' },
+  // ITEM-053.c (diagramming LLD 5): sprint 1 draws Mermaid only; math and PlantUML rows come with sprint 2.
+  diagramMermaid: { kind: 'bool', def: true, doc: 'Draw closed mermaid fences as pictures (offline)' },
   // Step 1.5: how panels open, where the chart is drawn, and the workflow view's place and layout.
   panelOpenMode: {
     kind: 'enum',
@@ -91,7 +95,9 @@ export const SPEC = {
     def: 70,
     doc: "The workflow view's width (body columns) from which the runs stack as collapsible panels on the right with the selected run's chart beside them; narrower, the view shows only the list of runs, each minimised to one row",
   },
-  runListColumns: { kind: 'int', min: 16, max: 200, def: 34, doc: 'Width of the stacked run panels on the right of the wide workflow view, columns' },
+  // Step 43 (B4b, D5, the human 2026-10-26): how long the band may go undrawn before the pane beside it counts it as closed.
+  bandGoneMs: { kind: 'int', min: 1000, max: 600000, def: 10000, doc: "How long the lens band may go undrawn before the pane beside it counts it as not on screen (its restore then closes the pane and shows the band), ms; not applied in a VS Code panel too narrow for the pane" },
+  runListColumns: { kind: 'int', min: 16, max: 200, def: 34, doc: 'Unused since step 43 (the wide workflow view with stacked run panels is retired); kept so existing settings stay valid, columns' },
   // Step 1.6.1: /ai-dlc:lens-gate, the anomaly detector (hooks/anomaly.ts). One switch, one setting per check, its colour, and the waiting threshold.
   gateAlert: { kind: 'bool', def: true, doc: 'Detect anomalies in the runs and agents the lens sees: a toast when one appears, a marker on its run, agent or arrow, and the Anomalies section of the workflow view. /ai-dlc:lens-gate on|off sets it' },
   anomalyRunBlocked: { kind: 'bool', def: true, doc: 'Check: a run is blocked (run.md status: blocked); the anomaly names its blocked steps' },
@@ -124,6 +130,14 @@ export const SPEC = {
   anomalyWaitingMinutes: { kind: 'int', min: 0, max: 1440, def: 30, doc: 'How long an agent may wait before it is an anomaly, minutes; 0: as soon as it waits' },
   anomalyHandbackFailed: { kind: 'bool', def: true, doc: "Check: a hand-back failed its check (verification: failed in its front matter, or a first line 'handoff <file>: failed'), in the newest round of its step" },
   anomalyHandbackFailedColor: { kind: 'color', def: '#f9a825', doc: 'Marker colour: a hand-back that failed its check (yellow)' },
+  // Step 44.2.l2.2 (the human's decision 16, 2026-11-01): the dropped-subagent fallback of the halted state (register.tsx `refreshList`).
+  droppedSubagentMinutes: {
+    kind: 'int',
+    min: 0,
+    max: 1440,
+    def: 15,
+    doc: 'How long a subagent shown running may be missing from the engine\'s agent list, with no event of its own, before it shows halted (failed), minutes; the time counts only while it is missing, and a listed row or any event starts it again; 0: never',
+  },
   probes: { kind: 'bool', def: false, doc: "Log the spike's experiments E1, E2, E4, E5, E7, E9 and E10 to PROBE-LOG.jsonl in the plugin folder (diagnostics only)" },
 } as const satisfies Record<string, Spec>
 

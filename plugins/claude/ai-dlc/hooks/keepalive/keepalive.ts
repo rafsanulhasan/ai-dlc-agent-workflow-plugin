@@ -1,15 +1,19 @@
 import type { EngineInterface, Register, Timer } from 'claude-code'
-import { TRACK_NAMES, formatDuration, parseCommandArgs } from './duration.ts'
-import type { Scope, TrackName } from './duration.ts'
-import { defaults, gatedDiffering, readMult, resolveSettings } from './settings.ts'
-import type { Level, Settings, TrackKey, TrackSettings } from './settings.ts'
-import { creationSplit, k, repoConfig, settingsEnv, trustOf } from '../auto-handoff/config.ts'
-import type { TrustTarget } from '../auto-handoff/config.ts'
-import { homeDir, log, readRaw, repoRoot, trustGate, trustTarget } from '../auto-handoff/io.ts'
-import type { TrustCache } from '../auto-handoff/io.ts'
-import type { KeepaliveState, KeepaliveTrackState } from '../../types/index.d.ts'
-import { armUntil, cachePart, cacheView, dropPending, emptyLedger, hhmm, isEmpty, lineOf, needsMainSeed, observe, observePing, reasonText, seedMain } from './cache-state.ts'
-import type { Ledger, Lifetimes } from './cache-state.ts'
+import { TRACK_NAMES, formatDuration, parseCommandArgs, parseDuration } from './duration'
+import type { ForTarget } from './duration'
+import type { CommandArgs } from './duration'
+import type { Scope, TrackName } from './duration'
+import { SETTINGS, defaults, gatedDiffering, readMult, resolveSettings } from './settings'
+import type { Level, Settings, TrackKey, TrackSettings } from './settings'
+import { creationSplit, k, repoConfig, settingsEnv, trustOf } from '../auto-handoff/config'
+import { chainIdOf, chainSessions } from '../auto-handoff/chain'
+import type { TrustTarget } from '../auto-handoff/config'
+import { homeDir, log, readRaw, repoRoot, trustGate, trustTarget } from '../auto-handoff/io'
+import type { TrustCache } from '../auto-handoff/io'
+import type { KeepaliveState, KeepaliveTrackState } from '../../types/index.d'
+import { afterMasterPress, afterTrackPress, agentUnsettled, armUntil, bandModel, cachePart, cacheView, dropPending, emptyLedger, hhmm, isEmpty, lineOf, markAgent, masterOn, needsMainSeed, observe, observePing, onlyAgentsWarm, reasonText, rowLineOf, seedMain, settleAgent, sourceLabel, trackOn } from './cache-state'
+import type { BandModel, CompactionPhase, Ledger, Lifetimes, OffTail, Reason, SessionSwitch, StopKind } from './cache-state'
+import { keepaliveTree } from './panel'
 
 // Keep-alive, folded into the ai-dlc hooks module from the vendored cache-keepalive mod (see
 // ../ATTRIBUTION.md, "cache-keepalive"). When Claude ends a turn while background tasks still run, it
@@ -25,6 +29,11 @@ import type { Ledger, Lifetimes } from './cache-state.ts'
 // comes from the plugin skill skills/cache-keepalive, which Claude Code lists as /ai-dlc:cache-keepalive,
 // and the command.run hook below answers its runs in the skill's place.
 export const COMMAND = 'ai-dlc:cache-keepalive'
+// Live findings 3, points 5 and 7 (the human, 2026-10-26): /ai-dlc:cache-keepalive pings now with the settings in force
+// and shows the band, and ignores any arguments it is given. The grammar it took (durations, clear, on, off, --track,
+// --session, --machine) and --for are this command's, the configure skill's, answered by this module (it holds the
+// session switches and the overrides); plain words pass to the skill.
+export const CONFIGURE = 'ai-dlc:cache-keepalive-configure'
 export const REPO_FILE = '.ai-dlc/cache-keepalive.json'
 // The /ai-dlc:cache-keepalive overrides, one pair of store keys per track: this session's (a list of
 // [session id, ms]) and the machine's (ms).
@@ -58,8 +67,23 @@ export type Split = Record<TrackName, number>
 // arms the track (LLD 3.4), never by the cache part, which stays the ledger's: a landed 1h ping that
 // wrote no 1h tokens leaves the ledger's 1h entry, yet proves the cache warm. Cleared when the cache
 // is gone or unknown (expired, missed, an error), at session.end and before a handoff.
-type Track = { name: TrackName; key: TrackKey; timer?: Timer; generation: number; armedTime: number; warmUntil: number; pingWarmUntil: number; pings: number; part: string; nextPingAt: number | null; keep?: Keep; cfg?: TrackSettings }
-const newTrack = (name: TrackName, key: TrackKey): Track => ({ name, key, generation: 0, armedTime: 0, warmUntil: 0, pingWarmUntil: 0, pings: 0, part: reasonText({ noWrite: name }), nextPingAt: null })
+// status (LLD rev 11, 20.3): the state of a track that is not running, as its band line says it, written only by
+// setPart beside its part, so the two cannot disagree: why it is off, how it stopped (with the
+// warm-until its full line shows, for done, ping limit and spend limit) or the compaction's phase.
+type TrackStatus = { off: Reason } | { stop: StopKind; warm?: number } | { compaction: CompactionPhase }
+type Track = { name: TrackName; key: TrackKey; timer?: Timer; generation: number; armedTime: number; warmUntil: number; pingWarmUntil: number; pings: number; part: string; status?: TrackStatus; nextPingAt: number | null; keep?: Keep; cfg?: TrackSettings }
+const newTrack = (name: TrackName, key: TrackKey): Track => ({ name, key, generation: 0, armedTime: 0, warmUntil: 0, pingWarmUntil: 0, pings: 0, part: reasonText({ noWrite: name }), status: { off: { noWrite: name } }, nextPingAt: null })
+
+// The one writer of a track's part and status (LLD 20.3): a running part passes no status.
+function setPart(t: Track, part: string, status?: TrackStatus) {
+  t.part = part
+  t.status = status
+}
+// A track off for a reason: its part is the reason's text.
+const setOff = (t: Track, r: Reason) => setPart(t, reasonText(r), { off: r })
+// A track stopped: the stop's text and kind, with the warm-until for the three kinds whose line says it.
+const setStopped = (t: Track, text: string, stop: StopKind) =>
+  setPart(t, text, { stop, ...(stop === 'done' || stop === 'ping limit' || stop === 'spend limit') && text.includes('warm until') ? { warm: t.warmUntil } : {} })
 
 // Module variables survive /clear, which is why every timer is stopped before one (stopForHandoff)
 // and at session.end.
@@ -76,8 +100,8 @@ let context = 0
 // before a handoff; a new turn keeps it.
 let ledger: Ledger = emptyLedger()
 const life = (): Lifetimes => ({ '5m': settings.fiveMinute.ttl, '1h': settings.oneHour.ttl })
-// After an automatic handoff, what the seeded session's first request read from the cache, shown
-// under the track lines until the next turn starts (showSeedCache).
+// After an automatic handoff, what the seeded session's first request read from the cache, shown as the
+// band's seed row until the next turn starts (showSeedCache).
 let seedLine: string | undefined
 
 /** The 1h/5m split of a usage object, when it carries one with a write: `cache_creation`'s
@@ -117,9 +141,11 @@ export const splitFromTranscript = (jsonl: string): TranscriptSplit | undefined 
  * (LLD 3.7, Fallback and 034.c). */
 export const splitFromAgentTranscript = (jsonl: string): TranscriptSplit | undefined => lastSplit(jsonl, true)
 
-/** Records one main-conversation response in the cache ledger (./cache-state.ts, observe). */
-export async function noteUsage($: EngineInterface, usage: unknown): Promise<void> {
-  observe(ledger, { at: await $.clock.now(), usage }, life())
+/** Records one response in the cache ledger (./cache-state.ts, observe): the main conversation's, or,
+ * with `agentId`, a subagent's or teammate's (whose usage also goes to the debug log, 034.c). */
+export async function noteUsage($: EngineInterface, usage: unknown, agentId?: string): Promise<void> {
+  if (agentId) logAgentUsage($, usage, agentId)
+  observe(ledger, agentId ? { at: await $.clock.now(), agentId, usage } : { at: await $.clock.now(), usage }, life())
 }
 
 // ITEM-034.c, the observation check (LLD 3.7, rev 6): two debug lines that show whether a subagent's
@@ -127,8 +153,8 @@ export async function noteUsage($: EngineInterface, usage: unknown): Promise<voi
 
 /** Logs one subagent response's usage to the debug log: `keepalive: agent usage agent=<id>
  * split=present|absent writes=<n>`, `writes` being its cache_creation_input_tokens and `split`
- * whether its cache_creation carries the 1h/5m fields. register.tsx calls it for each response that
- * has an agent id (until T17.3 moves the call into noteUsage). */
+ * whether its cache_creation carries the 1h/5m fields. noteUsage calls it for each response that
+ * has an agent id. */
 export function logAgentUsage($: EngineInterface, usage: unknown, agentId: string): void {
   try {
     const raw = usage && typeof usage === 'object' ? (usage as Record<string, unknown>).cache_creation_input_tokens : undefined
@@ -140,29 +166,56 @@ export function logAgentUsage($: EngineInterface, usage: unknown, agentId: strin
 /** Logs a finished subagent's transcript to the debug log: `keepalive: subagent transcript
  * agent=<id> rows=<n> split=present|absent`, `rows` being its non-empty lines and `split` whether a
  * row wrote to the cache with the 1h/5m split (splitFromAgentTranscript). A missing path or a read
- * that fails logs `rows=0 split=absent`. Never throws. */
-export async function logSubagentTranscript($: EngineInterface, e: { agent_id?: string; agent_transcript_path?: string }): Promise<void> {
+ * that fails logs `rows=0 split=absent`. Never throws. Returns the text read, for the stop-time fallback. */
+export async function logSubagentTranscript($: EngineInterface, e: { agent_id?: string; agent_transcript_path?: string }): Promise<string | undefined> {
+  let text: string | undefined
   try {
-    const text = e.agent_transcript_path ? await readTranscript($, e.agent_transcript_path) : undefined
+    text = e.agent_transcript_path ? await readTranscript($, e.agent_transcript_path) : undefined
     const rows = text === undefined ? 0 : text.split('\n').filter(l => l.trim() !== '').length
     const split = text !== undefined && splitFromAgentTranscript(text) !== undefined
     $.ui.log(`keepalive: subagent transcript agent=${e.agent_id ?? '?'} rows=${rows} split=${split ? 'present' : 'absent'}`, { to: 'debug' })
   } catch {}
+  return text
 }
 
-// A transcript file: read whole, else its last TAIL_BYTES through `tail`; undefined when neither works.
+// LLD 3.7 rev 12 (b): the last `n` bytes of a file, through `node` (no `tail` on Windows; no shell).
+const TAIL_SCRIPT = [
+  "const fs = require('fs'); const [p, n] = process.argv.slice(1)",
+  'const fd = fs.openSync(p, "r"); const size = fs.fstatSync(fd).size; const len = Math.min(size, Number(n))',
+  'const buf = Buffer.alloc(len); fs.readSync(fd, buf, 0, len, size - len); fs.closeSync(fd)',
+  "process.stdout.write(buf.toString('utf8'))",
+].join('\n')
+// The tail failure is logged once per session (a module flag, reset at session.end).
+let tailLogged = false
+
+// A transcript file: read whole; a missing file reads nothing and starts no process; else (a file over
+// the 4 MiB read limit) its last TAIL_BYTES through `node`; undefined when none of that works.
 async function readTranscript($: EngineInterface, path: string): Promise<string | undefined> {
   const whole = await readRaw($, path)
   if (whole !== undefined) return whole
   try {
-    const { exitCode, stdout } = await $.process.run(['tail', '-c', String(TAIL_BYTES), path])
-    return exitCode === 0 ? stdout : undefined
+    if (!(await $.fs.exists(path))) return undefined
   } catch {
     return undefined
   }
+  let why = ''
+  try {
+    const { exitCode, stdout } = await $.process.run(['node', '-e', TAIL_SCRIPT, path, String(TAIL_BYTES)])
+    if (exitCode === 0) return stdout
+    why = `exit ${exitCode}`
+  } catch (err) {
+    why = String(err)
+  }
+  if (!tailLogged) {
+    tailLogged = true
+    try {
+      $.ui.log(`keepalive: transcript tail unavailable (${why})`, { to: 'debug' })
+    } catch {}
+  }
+  return undefined
 }
 
-/** The split from the transcript file: read whole, else its last TAIL_BYTES through `tail`. */
+/** The split from the transcript file: read whole, else its last TAIL_BYTES through `node`. */
 export async function transcriptSplit($: EngineInterface, path: string | undefined): Promise<TranscriptSplit | undefined> {
   if (!path) return undefined
   const text = await readTranscript($, path)
@@ -185,7 +238,7 @@ async function seedFromTranscript($: EngineInterface, path: string | undefined, 
 
 const anyRunning = () => TRACKS.some(([n]) => tracks[n].timer !== undefined)
 
-// The settings a track's state and status line speak for (see Track, cfg).
+// The settings a track's state and line speak for (see Track, cfg).
 const cfgOf = (t: Track): TrackSettings => (t.timer !== undefined && t.cfg) || settings[t.key]
 
 function stopTrack(t: Track) {
@@ -196,18 +249,18 @@ function stopTrack(t: Track) {
   t.nextPingAt = null
 }
 
-function stopAll(line?: string) {
+function stopAll(line?: string, stop?: StopKind) {
   for (const [n] of TRACKS) {
     const t = tracks[n]
     const was = t.timer !== undefined
     stopTrack(t)
-    if (line && was) t.part = line
+    if (line && stop && was) setStopped(t, line, stop)
   }
 }
 
 // The state other plugins read (ai-dlc-lens, read-only): $.state { plugin: 'ai-dlc', key: 'keepalive' },
-// its contract in ../../types/index.d.ts (plugin.json `types`). Written each time the status lines
-// change, whether or not the status line is shown, so a reader sees what the lines say.
+// its contract in ../../types/index.d.ts (plugin.json `types`). Written each time the track lines
+// change, whether or not the band is shown, so a reader sees what the lines say.
 const STATE = { plugin: 'ai-dlc', key: 'keepalive' } as const
 // Writes go out one after another, in the order the snapshots were taken.
 let publishing: Promise<unknown> = Promise.resolve()
@@ -215,7 +268,111 @@ let publishing: Promise<unknown> = Promise.resolve()
 // The line a track shows at `now`: the ledger's cache part of the track's lifetime (main, then
 // subagents), then the keep-alive part (LLD 2.2). Built at each render and publish, never stored, so
 // it never carries a cache part older than the event that shows it.
-const lineFor = (t: Track, now: number) => lineOf(t.name, cachePart(cacheView(ledger, t.name, now)), t.part)
+const lineFor = (t: Track, now: number) => lineOf(t.name, cachePart(cacheView(ledger, t.name, now)), t.part, tailOf(t))
+
+// The keep-warm time a track speaks for (its last read, else its setting) and its ping limit: one
+// source for the off-line suffix and the published keepWarmMs and cap (LLD 11.2).
+const keepOf = (t: Track): Keep => t.keep ?? { ms: cfgOf(t).keepWarmFor, from: sources[`${t.key}.keepWarmFor`] ?? 'default' }
+const capOf = (t: Track) => { const cfg = cfgOf(t); return pingCap(cfg.maxPings, cfg.pingEvery, keepOf(t)) }
+// The source note of a keep-warm clause, none when `sourceNote` is off (LLD 11.2).
+const noteOf = (keep: Keep) => settings.sourceNote ? ` (${sourceLabel(keep)})` : ''
+const tailOf = (t: Track): OffTail => ({ cap: capOf(t), keepWarm: formatDuration(keepOf(t).ms), ...(settings.sourceNote ? { source: sourceLabel(keepOf(t)) } : {}) })
+
+// A track's row in the band (step 44, R44.2): its status (the switch in force) first, then what
+// lineFor shows, built at the same moment from the same parts (rowLineOf).
+const rowFor = (t: Track, now: number, enabled: boolean) => rowLineOf(t.name, cachePart(cacheView(ledger, t.name, now)), t.part, enabled, tailOf(t))
+
+// ---- The session switches (LLD rev 8, 12.2): the master and one per track, this session only, kept in
+// $.store as [session id, SessionSwitch] pairs, so a module reload loses none. The mirror is this
+// session's entry for the synchronous readers (render, publish); every handler that renders awaits
+// loadSwitch first.
+const switchKey = 'keepalive:switch:sessions'
+let switchMirror: { id: string; sw: SessionSwitch } | undefined
+
+async function switchList($: EngineInterface): Promise<[string, SessionSwitch][]> {
+  const v = await $.store.get(switchKey)
+  return Array.isArray(v) ? v.filter((x): x is [string, SessionSwitch] => Array.isArray(x) && typeof x[0] === 'string' && !!x[1] && typeof x[1] === 'object') : []
+}
+
+// This session's switches: the mirror, re-read from the store when it is for another session or unset.
+// A store that cannot be read leaves the switches unset and says so in the debug log.
+async function loadSwitch($: EngineInterface): Promise<SessionSwitch> {
+  try {
+    const id = await stateId($)
+    if (switchMirror?.id === id) return switchMirror.sw
+    const sw = (await switchList($)).find(([s]) => s === id)?.[1] ?? {}
+    switchMirror = { id, sw }
+    return sw
+  } catch (err) {
+    $.ui.log(`keepalive: session switches not read (${err instanceof Error ? err.message : String(err)})`, { to: 'debug' })
+    return switchMirror?.sw ?? {}
+  }
+}
+
+// Writes this session's switches (the entry dropped when none is set), then the mirror. A store
+// failure goes to the debug log and the mirror still holds the value.
+async function saveSwitch($: EngineInterface, sw: SessionSwitch) {
+  let id = switchMirror?.id ?? ''
+  try {
+    id = await stateId($)
+    const rest = (await switchList($)).filter(([s]) => s !== id)
+    const set = Object.keys(sw).length > 0
+    await $.store.set(switchKey, (set ? [...rest, [id, sw]] : rest).slice(-settings.sessionOverridesMax))
+  } catch (err) {
+    $.ui.log(`keepalive: session switches not saved (${err instanceof Error ? err.message : String(err)})`, { to: 'debug' })
+  }
+  switchMirror = { id, sw }
+}
+
+const curSwitch = (): SessionSwitch => switchMirror?.sw ?? {}
+const masterNow = (): boolean => masterOn(curSwitch(), settings.enabled)
+const trackEnabled = (n: TrackName, key: TrackKey): boolean => trackOn(curSwitch(), n, settings.enabled, settings[key].enabled)
+const anyOn = (): boolean => TRACKS.some(([n, k]) => trackEnabled(n, k))
+const keyOf = (n: TrackName): TrackKey => TRACKS.find(([m]) => m === n)![1]
+
+/** Why nothing pings, as the command says it: the session's master switch, the master setting with
+ * its source, or each track that is off (its session switch, else its setting with its source). */
+function offCause(): string {
+  const sw = curSwitch()
+  if (!masterNow()) return sw.master === 'off' ? 'switched off for this session' : `enabled=false, ${sources.enabled ?? 'default'}`
+  return TRACKS.map(([n, k]) => (sw[n] === 'off'
+    ? `${n} track switched off for this session`
+    : `${k}.enabled=false, ${sources[`${k}.enabled`] ?? 'default'}`)).join('; ')
+}
+
+/** The set switches as the command reports them (AC-17.6.21): master, then 5m, then 1h; '' when none. */
+function switchText(): string {
+  const sw = curSwitch()
+  return [
+    ...(sw.master ? [`keep-alive: ${sw.master} for this session`] : []),
+    ...(sw['5m'] ? [`5m track: ${sw['5m']} for this session`] : []),
+    ...(sw['1h'] ? [`1h track: ${sw['1h']} for this session`] : []),
+  ].join('; ')
+}
+const withSwitches = (text: string) => { const sw = switchText(); return sw ? `${text}\n${sw}` : text }
+
+// The id the per-session state is kept under (LLD rev 10, 19.2): the automatic handoff chain's id, so
+// a seeded session sees the switches and the --session overrides of the session it continues; with
+// handoff.carryOver off, the session's own id.
+async function stateId($: EngineInterface): Promise<string> {
+  return settings.handoff.carryOver ? (await chainIdOf($)).id : await $.session.id()
+}
+
+// The chain as published for the lens (cache-lab LLD 7.2): its id and its sessions, newest first.
+let chainInfo: { id: string; sessions: string[] } | undefined
+async function refreshChain($: EngineInterface) {
+  try {
+    chainInfo = { id: (await chainIdOf($)).id, sessions: await chainSessions($) }
+  } catch (err) {
+    $.ui.log(`keepalive: chain not read (${err instanceof Error ? err.message : String(err)})`, { to: 'debug' })
+  }
+}
+
+// What a handler that renders reads first: this session's switches and the chain.
+async function prepare($: EngineInterface) {
+  await loadSwitch($)
+  await refreshChain($)
+}
 
 // The published cache entries of a track's lifetime, one per source that has one (D8); omitted when none.
 function cachesOf(n: TrackName, now: number): KeepaliveTrackState['caches'] {
@@ -233,8 +390,9 @@ function trackStates(now: number): KeepaliveTrackState[] {
   return TRACKS.map(([n]) => {
     const t = tracks[n]
     const cfg = cfgOf(t)
-    const keep = t.keep ?? { ms: cfg.keepWarmFor }
+    const keep = keepOf(t)
     const caches = cachesOf(n, now)
+    const sw = curSwitch()[n]
     return {
       name: n,
       running: t.timer !== undefined,
@@ -246,6 +404,9 @@ function trackStates(now: number): KeepaliveTrackState[] {
       pings: t.pings,
       cap: pingCap(cfg.maxPings, cfg.pingEvery, keep),
       line: lineFor(t, now),
+      keepWarmFrom: sourceLabel(keep),
+      enabled: trackEnabled(n, keyOf(n)),
+      ...(sw ? { sessionSwitch: sw } : {}),
       ...(caches ? { caches } : {}),
     }
   })
@@ -255,7 +416,8 @@ function trackStates(now: number): KeepaliveTrackState[] {
 // chain resolved when that log call fails too, so one failure never stops every later write.
 // `now` is the caller's clock reading, the time the snapshot's cache parts speak for.
 function publish($: EngineInterface, now: number) {
-  const snapshot = { enabled: settings.enabled, tracks: trackStates(now) }
+  const master = curSwitch().master
+  const snapshot = { enabled: masterNow(), ...(master ? { sessionMaster: master } : {}), ...(chainInfo ? { chain: { id: chainInfo.id, sessions: [...chainInfo.sessions] } } : {}), tracks: trackStates(now) }
   publishing = publishing
     .then(async () => {
       const value: KeepaliveState = { ...snapshot, updatedAt: await $.clock.now(), sessionId: await $.session.id() }
@@ -265,10 +427,282 @@ function publish($: EngineInterface, now: number) {
     .catch(() => {})
 }
 
+// Step 44 (R44.1): keep-alive writes no status line; its state shows only in the band. A module
+// from before step 44 may have left one, and a /reload-plugins fires no session.start, so the first render or
+// band draw after a load clears it, once per load (`statusCleared`).
+let statusCleared = false
+function clearOldStatus($: EngineInterface) {
+  if (statusCleared) return
+  statusCleared = true
+  $.ui.status(undefined)
+}
+
+// Publishes the state, and has the band redraw (invalidate).
 function render($: EngineInterface, now: number) {
+  clearOldStatus($)
   publish($, now)
-  if (!settings.enabled || !settings.status) return $.ui.status(undefined)
-  $.ui.status([...TRACKS.map(([n]) => lineFor(tracks[n], now)), ...(seedLine ? [seedLine] : [])].join('\n'))
+  $.ui.invalidate('ui.render')
+}
+
+/** The band model now (step 44, R44.2 and R44.3): both rows, each its status and its button, the head
+ * row's status and button from them, and the seed row. */
+async function bandModelNow($: EngineInterface): Promise<BandModel> {
+  const now = await $.clock.now()
+  const row = (n: TrackName, key: TrackKey) => { const enabled = trackEnabled(n, key); return { line: rowFor(tracks[n], now, enabled), enabled } }
+  return bandModel({ '1h': row('1h', 'oneHour'), '5m': row('5m', 'fiveMinute') }, seedLine)
+}
+
+// Step 42: the band's own size. It starts minimised at each load, as the lens band starts minimised when
+// it appears; the `–` / `□` on its title row change it. Module memory; a /reload-plugins loads the module
+// again, so the band is minimised again after one (MANUAL-CHECKS P9).
+let bandMinimised = true
+// Step 42: the band's `×` hides it for this session; any run of /ai-dlc:cache-keepalive, a new session
+// (session.start) or a load brings it back.
+let bandClosed = false
+
+// Review round 4, W3: no ping overlaps another. `pressing`: a "Ping now" press is under way, from its first read to its
+// redraw, so a second press meanwhile does nothing. `pingBusy`: a ping of the command or of a press is out (pingReply).
+// `pingsOut`: pings of any kind out, a track's scheduled one included (ping). A press, or a run of the command, while a
+// ping is out pings nothing; a track's scheduled ping is not held back by them.
+let pressing = false
+let pingBusy = false
+let pingsOut = 0
+const pingUnderWay = () => pingBusy || pingsOut > 0
+
+// Live findings 3, point 7: the ping of /ai-dlc:cache-keepalive and of the band's "Ping Now": nothing while keep-alive
+// is off (it says why), else one ping with the settings in force, and the hit or miss with the keep-warm times.
+// The band's "Ping now" (point 8): the settings are read first, as the command reads them, then the ping, then a
+// redraw. A press while another press or any ping is under way does nothing (W3). Never throws.
+async function pressPing($: EngineInterface) {
+  if (pressing || pingUnderWay()) {
+    $.ui.log('keepalive: ping press ignored: a ping is already under way', { to: 'debug' })
+    return
+  }
+  pressing = true
+  try {
+    await load($)
+    await prepare($)
+    await refreshKeep($)
+    await pingReply($)
+  } catch (err) {
+    $.ui.log(`keepalive: ping press failed (${err instanceof Error ? err.message : String(err)})`, { to: 'debug' })
+  } finally {
+    pressing = false
+  }
+  $.ui.invalidate('ui.render')
+}
+
+// The check and the claim of pingBusy come before the first await, so two callers can never both pass it.
+async function pingReply($: EngineInterface): Promise<string> {
+  if (!anyOn()) return withSwitches(`keepalive: off (${offCause()}); nothing pinged`)
+  if (pingUnderWay()) return withSwitches(`keepalive: a ping is already under way; nothing more pinged; ${await keepLines($)}`)
+  pingBusy = true
+  try {
+    const { context: ctx } = await $.session.usage()
+    if (!budget) budget = settings.budgetMultiplier > 0 ? settings.budgetMultiplier * (ctx.tokens ?? 0) : Infinity
+    const { ok, line } = await ping($, await $.clock.now())
+    return withSwitches(`${ok ? 'HIT' : 'MISS'}: ${line}; ${await keepLines($)}`)
+  } finally {
+    pingBusy = false
+  }
+}
+
+// Step 44 (R44.7): keep-alive opens no pane; its band is its only view, on every surface. The keep-alive Pane's id,
+// kept so that a Pane a module from before step 44 left open is closed (`closeOldPane`).
+export const PANE = 'keepalive'
+// Whether this load has closed that old Pane (`closeOldPane`), once per load.
+let oldPaneSwept = false
+// Closes the old keep-alive Pane once per load, outside the render it may be called from (a close is an act, and a
+// render draws only): `$.ui.close` of an id that is not open does nothing. Never throws.
+function closeOldPane($: EngineInterface) {
+  if (oldPaneSwept) return
+  oldPaneSwept = true
+  try {
+    $.clock.after(0, () => {
+      void $.ui.close({ id: PANE }).catch(err => $.ui.log(`keepalive: old pane not closed (${err instanceof Error ? err.message : String(err)})`, { to: 'debug' }))
+    })
+  } catch (err) {
+    $.ui.log(`keepalive: old pane close not scheduled (${err instanceof Error ? err.message : String(err)})`, { to: 'debug' })
+  }
+}
+
+/** The keep-alive band above the prompt (AbovePrompt), drawn by register.tsx as a band of its own, after the lens
+ * band (step 42): the tree, or undefined when `status` is off (AC-17.6.5) or the band was closed. Step 44 (R44.7):
+ * drawn on every surface that raises the site, VS Code included (the probe of 44.2.l1.3 saw it raised there, surface
+ * `vscode`, in a narrow and a wide panel), and keep-alive opens no pane. The band has its own minimise and close.
+ * Never throws. */
+export async function keepaliveBand($: EngineInterface, t: { Box: any; Text: any; Button: any }): Promise<unknown> {
+  try {
+    await loadSwitch($)
+    clearOldStatus($)
+    closeOldPane($)
+    if (!settings.status || bandClosed) return undefined
+    const press = (n: TrackName) => { void pressTrack($, n) }
+    const master = () => { void pressMaster($) }
+    // Live findings 3, point 8: "Ping Now" on the band: the command's ping, with the settings in force.
+    const onPing = () => { void pressPing($) }
+    const onToggle = () => { bandMinimised = !bandMinimised; $.ui.invalidate('ui.render') }
+    const onClose = () => { bandClosed = true; $.ui.invalidate('ui.render') }
+    return keepaliveTree(t, await bandModelNow($), press, master, { minimised: bandMinimised, onToggle, onClose, onPing })
+  } catch (err) {
+    $.ui.log(`keepalive: band not drawn (${err instanceof Error ? err.message : String(err)})`, { to: 'debug' })
+    return undefined
+  }
+}
+
+// The reason a track not running has without its disabled state: its cache, or no tasks yet (E1', E5').
+const idleReason = (n: TrackName): Reason => isEmpty(ledger, n) ? { noWrite: n } : 'noTasks'
+const isDisabledPart = (t: Track) => !!t.status && 'off' in t.status && t.status.off === 'disabled'
+
+/** A track button (LLD 12.3, Q-SL8): `[off]` on an enabled track stops it (when running) and disables it
+ * for this session; `[on]` enables it, with no ping (it arms at the next Stop with tasks). The master
+ * and the other track are untouched. No settings file is written. Never throws. */
+export async function pressTrack($: EngineInterface, n: TrackName): Promise<void> {
+  try {
+    const key = keyOf(n)
+    const before = await loadSwitch($)
+    const enabled = trackEnabled(n, key)
+    await saveSwitch($, afterTrackPress(before, n, enabled))
+    const t = tracks[n]
+    if (enabled) {
+      if (t.timer !== undefined) stopTrack(t)
+      setOff(t, 'disabled')
+    } else if (isDisabledPart(t)) setOff(t, idleReason(n))
+    await refreshKeep($)
+    render($, await $.clock.now())
+  } catch (err) {
+    $.ui.log(`keepalive ${n}: press failed (${err instanceof Error ? err.message : String(err)})`, { to: 'debug' })
+  }
+}
+
+/** The master button (LLD 12.3, Q-SL7; step 44, R44.3): it offers the opposite of what the head row reads. While
+ * either track is on in force, `[off]` stops both tracks and disables them for this session; while both are off,
+ * `[on]` turns the master and both tracks on, with no ping. No settings file is written. Never throws. */
+export async function pressMaster($: EngineInterface): Promise<void> {
+  try {
+    await loadSwitch($)
+    await switchAll($, !anyOn())
+  } catch (err) {
+    $.ui.log(`keepalive: master press failed (${err instanceof Error ? err.message : String(err)})`, { to: 'debug' })
+  }
+}
+
+// Turns the master and both tracks on (`turnOn`) or off for this session (afterMasterPress), then redraws. Off stops
+// both tracks; on leaves a running track as it is and gives a disabled one its idle reason. Throws to its caller.
+async function switchAll($: EngineInterface, turnOn: boolean): Promise<void> {
+  await saveSwitch($, afterMasterPress(!turnOn))
+  for (const [n] of TRACKS) {
+    const t = tracks[n]
+    if (!turnOn) { stopTrack(t); setOff(t, 'disabled') }
+    else if (t.timer === undefined && isDisabledPart(t)) setOff(t, idleReason(n))
+  }
+  await refreshKeep($)
+  render($, await $.clock.now())
+}
+
+// ---- /ai-dlc:cache-keepalive on|off (step 40) ----
+const LOCAL_FILE = '.claude/settings.local.json'
+const envOf = (key: string): string => SETTINGS.find(s => s.key === key)!.env
+
+// Point 6a (the human, 2026-10-26): the settings file `--for` names, by target. just-me (the default) and team are the
+// repository's; global is this machine's, under the home folder.
+const TEAM_FILE = '.claude/settings.json'
+const GLOBAL_FILE = '~/.claude/settings.json'
+const FILE_OF: Record<ForTarget, string> = { 'just-me': LOCAL_FILE, team: TEAM_FILE, global: GLOBAL_FILE }
+async function pathOf($: EngineInterface, target: ForTarget): Promise<string | undefined> {
+  if (target === 'global') {
+    const home = await homeDir($)
+    return home ? `${home}/.claude/settings.json` : undefined
+  }
+  return `${await repoRoot($)}/${FILE_OF[target]}`
+}
+
+// Sets (a string) or removes (null) variables in a JSON settings file's `env` (or, with `section`, another top-level
+// object), every other key kept. Answers the problem and writes nothing when the file cannot be read or is not plain
+// JSON (a file with comments is not rewritten, since they would be lost). `create`: false leaves a missing file alone.
+// `vars` may be worked out from the section as the file holds it (keepWarmToFile, W4). Answers the problem, or the
+// variables written.
+type Vars = Record<string, string | null>
+async function writeJsonSection($: EngineInterface, path: string, name: string, vars: Vars | ((section: Record<string, unknown>) => Vars), section = 'env', create = true): Promise<{ problem: string } | { vars: Vars }> {
+  const text = await readRaw($, path)
+  if (text === undefined && (await sigOf($, path)).startsWith('file:')) return { problem: `${name} exists but could not be read; nothing written` }
+  if (text === undefined && !create) return { problem: `${name} does not exist; nothing written` }
+  let doc: Record<string, unknown> = {}
+  if (text !== undefined && text.trim()) {
+    let parsed: unknown
+    try { parsed = JSON.parse(text.replace(/^﻿/, '')) } catch { return { problem: `${name} is not plain JSON (a file with comments is not rewritten); nothing written` } }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return { problem: `${name}: the top level is not an object; nothing written` }
+    doc = parsed as Record<string, unknown>
+  }
+  const env = doc[section]
+  if (env !== undefined && (!env || typeof env !== 'object' || Array.isArray(env))) return { problem: `${name}: ${section} is not an object; nothing written` }
+  const next: Record<string, unknown> = { ...(env as Record<string, unknown> | undefined) }
+  const resolved = typeof vars === 'function' ? vars(next) : vars
+  for (const [k, v] of Object.entries(resolved)) if (v === null) delete next[k]; else next[k] = v
+  doc[section] = next
+  const eol = text?.includes('\r\n') ? '\r\n' : '\n'
+  await $.fs.write(path, JSON.stringify(doc, null, 2).replace(/\n/g, eol) + eol)
+  return { vars: resolved }
+}
+
+// Point 6a: writes the variables to the file `target` names. A team write is also recorded in the repository file's
+// `teamRecord` (a record only, never read; personal values never go there), with the variables written to the team
+// file, and warns, without refusing, when Claude Code does not trust this folder (the committed settings then do not
+// apply for the gated keys). Answers the problem, or the variables written and the notes to add to the reply.
+async function writeEnv($: EngineInterface, target: ForTarget, vars: Vars | ((section: Record<string, unknown>) => Vars)): Promise<{ problem?: string; notes: string[]; vars: Vars }> {
+  const path = await pathOf($, target)
+  if (path === undefined) return { problem: `no home folder found for ${GLOBAL_FILE}; nothing written`, notes: [], vars: {} }
+  const res = await writeJsonSection($, path, FILE_OF[target], vars)
+  if ('problem' in res) return { problem: res.problem, notes: [], vars: {} }
+  const notes: string[] = []
+  if (target === 'team') {
+    const rec = await writeJsonSection($, `${await repoRoot($)}/${REPO_FILE}`, REPO_FILE, res.vars, 'teamRecord', false)
+    notes.push('problem' in rec ? `not recorded in ${REPO_FILE}: ${rec.problem}` : `recorded in ${REPO_FILE} (teamRecord)`)
+    const home = await homeDir($)
+    const trust = trustOf(home ? await readRaw($, `${home}/.claude.json`) : undefined, await trustTarget($))
+    if (!trust.trusted) notes.push(`warning: Claude Code does not trust this folder (${trust.why}), so ${TEAM_FILE} does not apply here for the trust-gated settings these are; ${LOCAL_FILE} (--for just-me) does`)
+  }
+  return { notes, vars: res.vars }
+}
+
+const PRECEDENCE = `${LOCAL_FILE} > ${TEAM_FILE} > ${GLOBAL_FILE} > ${REPO_FILE}`
+
+/**
+ * `on` / `off`: the master, or the tracks --track names. With --session, the band's buttons (this
+ * session's switches; no file written). Otherwise the env of .claude/settings.local.json, which wins
+ * over .claude/settings.json and .ai-dlc/cache-keepalive.json; this session's switch for what was
+ * written is dropped, since a switch outranks every settings file, so the written value applies now.
+ */
+async function switchCommand($: EngineInterface, a: Extract<CommandArgs, { kind: 'switch' }>): Promise<string> {
+  const word = a.on ? 'on' : 'off'
+  const names = a.tracks
+  const what = names ? names.map(n => `the ${n} track`).join(' and ') : 'keep-alive'
+  if (a.where === 'session') {
+    // Step 44 (R44.3; review round 44.4.l1.1, W1): as the head row's button, judged by what the head row reads (either track on).
+    if (!names) { await loadSwitch($); if (anyOn() !== a.on) await switchAll($, a.on) }
+    else for (const n of names) if (trackEnabled(n, keyOf(n)) !== a.on) await pressTrack($, n)
+    const ign = a.ignoredFor ? `; --for ${a.ignoredFor} ignored: --session wins and writes nothing` : ''
+    return withSwitches(`keepalive: ${what} ${word} for this session; no settings file written${ign}`)
+  }
+  const target: ForTarget = a.where === 'team' ? 'team' : a.where === 'global' ? 'global' : 'just-me'
+  const vars: Record<string, string> = names
+    ? Object.fromEntries(names.map(n => [envOf(`${keyOf(n)}.enabled`), String(a.on)]))
+    : { [envOf('enabled')]: String(a.on) }
+  const res = await writeEnv($, target, vars)
+  if (res.problem) return `keepalive: ${res.problem}`
+  const sw = await loadSwitch($)
+  await saveSwitch($, names ? Object.fromEntries(Object.entries(sw).filter(([k]) => !names.includes(k as TrackName))) as SessionSwitch : {})
+  await load($)
+  for (const [n, key] of TRACKS) {
+    const t = tracks[n]
+    if (!trackEnabled(n, key)) { if (t.timer !== undefined) stopTrack(t); setOff(t, 'disabled') }
+    else if (t.timer === undefined && isDisabledPart(t)) setOff(t, idleReason(n))
+  }
+  await refreshKeep($)
+  render($, await $.clock.now())
+  const written = Object.entries(vars).map(([k, v]) => `${k}=${v}`).join(', ')
+  const notes = res.notes.length ? `; ${res.notes.join('; ')}` : ''
+  return withSwitches(`keepalive: ${what} ${word}: ${written} written to the env of ${FILE_OF[target]} (order: ${PRECEDENCE})${notes}`)
 }
 
 async function warn($: EngineInterface, line: string) {
@@ -279,7 +713,7 @@ async function warn($: EngineInterface, line: string) {
 }
 
 // Where a person sets a trust-gated setting instead: the sources a cloned repository cannot write.
-const GATED_INSTEAD = `set them in the env of .claude/settings.local.json instead (a keep-warm time also with /${COMMAND})`
+const GATED_INSTEAD = `set them in the env of .claude/settings.local.json instead (a keep-warm time also with /${CONFIGURE})`
 
 // The turn cache: what the read at a new turn (load with atTurn) keeps between turns, so a turn reads
 // only what changed. A Stop and the command never use it.
@@ -418,6 +852,14 @@ async function load($: EngineInterface, { atTurn = false } = {}) {
       const values = where === '.claude/settings.json' ? await trustGate($, env, gatedDiffering(env, 'env'), `the env of ${where}`, GATED_INSTEAD, problems, trust) : env
       levels.push({ where, by: 'env', values })
     }
+    // Point 6a: the env of ~/.claude/settings.json (`--for global`), below the team's and above the repository file;
+    // this machine's own file, so never trust-gated.
+    const home = await homeDir($)
+    if (home) {
+      const { env, problem } = settingsEnv(await read(`${home}/.claude/settings.json`))
+      if (problem) fail(`${GLOBAL_FILE} ${problem}`)
+      if (env) levels.push({ where: GLOBAL_FILE, by: 'env', values: env })
+    }
     const repo = repoConfig(await read(`${root}/${REPO_FILE}`))
     if (repo.problem) fail(`${REPO_FILE} ${repo.problem}`)
     if (repo.values) levels.push({ where: REPO_FILE, by: 'json', values: await trustGate($, repo.values, gatedDiffering(repo.values, 'json'), REPO_FILE, GATED_INSTEAD, problems, trust) })
@@ -452,17 +894,17 @@ async function sessionOverrides($: EngineInterface, n: TrackName): Promise<[stri
 async function keepWarm($: EngineInterface, key: TrackKey, { session = true } = {}): Promise<Keep> {
   const n = TRACKS.find(([, k]) => k === key)![0]
   if (session) {
-    const id = await $.session.id()
+    const id = await stateId($)
     const own = (await sessionOverrides($, n)).find(([s]) => s === id)
     if (own) {
-      if (own[1] >= settings.minDuration) return { ms: own[1], from: `this session, /${COMMAND}`, override: true }
-      await warn($, `the /${COMMAND} override of the ${n} track for this session (${formatDuration(own[1])}) is shorter than minDuration (${formatDuration(settings.minDuration)}); ignored`)
+      if (own[1] >= settings.minDuration) return { ms: own[1], from: `this session, /${CONFIGURE}`, override: true }
+      await warn($, `the /${CONFIGURE} override of the ${n} track for this session (${formatDuration(own[1])}) is shorter than minDuration (${formatDuration(settings.minDuration)}); ignored`)
     }
   }
   const machine = await $.store.get(machineKey(n))
   if (typeof machine === 'number' && machine > 0) {
-    if (machine >= settings.minDuration) return { ms: machine, from: `this machine, /${COMMAND}`, override: true }
-    if (session) await warn($, `the /${COMMAND} override of the ${n} track for this machine (${formatDuration(machine)}) is shorter than minDuration (${formatDuration(settings.minDuration)}); ignored`)
+    if (machine >= settings.minDuration) return { ms: machine, from: `this machine, /${CONFIGURE}`, override: true }
+    if (session) await warn($, `the /${CONFIGURE} override of the ${n} track for this machine (${formatDuration(machine)}) is shorter than minDuration (${formatDuration(settings.minDuration)}); ignored`)
   }
   return { ms: settings[key].keepWarmFor, from: sources[`${key}.keepWarmFor`] ?? 'default' }
 }
@@ -509,7 +951,7 @@ async function setKeepWarm($: EngineInterface, scope: Scope, ms: number | undefi
       await (ms === undefined ? $.store.delete(machineKey(n)) : $.store.set(machineKey(n), ms))
       continue
     }
-    const id = await $.session.id()
+    const id = await stateId($)
     const rest = (await sessionOverrides($, n)).filter(([s]) => s !== id)
     await $.store.set(sessionKey(n), ms === undefined ? rest : [...rest, [id, ms]].slice(-settings.sessionOverridesMax))
   }
@@ -533,6 +975,16 @@ const cost = (u: Usage, r: number) => r * u.cache_read_input_tokens + u.input_to
 // the command's ping, which keeps no track, is recorded.
 // `at` is the ping's start, taken before the fork, so a warm-until recorded from it errs early.
 async function ping($: EngineInterface, at: number, ttl?: TrackName) {
+  pingsOut++
+  try {
+    return await pingOut($, at, ttl)
+  } finally {
+    pingsOut--
+  }
+}
+
+// ping's body; `pingsOut` counts it while it runs (W3).
+async function pingOut($: EngineInterface, at: number, ttl?: TrackName) {
   const r = await $.model.fork({ prompt: settings.pingPrompt })
   if (!('usage' in r)) return { ok: false, line: `no ping: ${r.reason}` }
   const u = r.usage
@@ -603,13 +1055,13 @@ const pingsOf = (t: Track, keep: Keep) => {
   return `ping ${t.pings}/${pingCap(cfg.maxPings, cfg.pingEvery, keep)}${first}`
 }
 const runningText = (t: Track, keep: Keep, lead = '') =>
-  `${lead}warm until ${hhmm(t.warmUntil)}, ${pingsOf(t, keep)}, keep warm ${formatDuration(keep.ms)}, stop by ${hhmm(t.armedTime + keep.ms)}`
+  `${lead}warm until ${hhmm(t.warmUntil)}, ${pingsOf(t, keep)}, keep warm ${formatDuration(keep.ms)}${noteOf(keep)}, stop by ${hhmm(t.armedTime + keep.ms)}`
 
 // A track stopping on its own (expired, kept warm, missed, its ping limit, an error): its keep-warm
 // time is re-read before the state is published (refreshKeep). Never throws.
-async function end($: EngineInterface, t: Track, text: string) {
+async function end($: EngineInterface, t: Track, text: string, stop: StopKind) {
   stopTrack(t)
-  t.part = text
+  setStopped(t, text, stop)
   await refreshKeep($)
   render($, await $.clock.now())
 }
@@ -632,7 +1084,7 @@ function arm($: EngineInterface, t: Track, from: number) {
       // A timer that fires late (the machine slept) finds the cache gone, and a ping would only re-write it
       const now = await $.clock.now()
       if (t.generation !== armedAt) return
-      if (now >= t.warmUntil) { t.pingWarmUntil = 0; return await end($, t, 'expired, stopped') }
+      if (now >= t.warmUntil) { t.pingWarmUntil = 0; return await end($, t, 'expired, stopped', 'expired') }
       const keep = await keepWarm($, t.key)
       if (t.generation !== armedAt) return
       t.keep = keep
@@ -640,12 +1092,12 @@ function arm($: EngineInterface, t: Track, from: number) {
       // keep-warm time, the last one included (20 on the 5m track's hour; human decision D1). Counted
       // on that schedule, not the clock, so the seconds each ping takes never cost the last one.
       // A duration spent before the first ping needed none: the cache's own lifetime covered it.
-      if ((t.pings + 1) * cfg.pingEvery > keep.ms) return await end($, t, `${t.pings ? 'kept warm' : 'no ping needed for'} ${formatDuration(keep.ms)}, stopped, warm until ${hhmm(t.warmUntil)}`)
+      if ((t.pings + 1) * cfg.pingEvery > keep.ms) return await end($, t, `${t.pings ? 'kept warm' : 'no ping needed for'} ${formatDuration(keep.ms)}, stopped, warm until ${hhmm(t.warmUntil)}`, 'done')
 
       const { ok, line } = await ping($, now, t.name)
       if (t.generation !== armedAt) return
       $.ui.log(`keepalive ${t.name}: ${line}`, { to: 'debug' })
-      if (!ok) { t.pingWarmUntil = 0; return await end($, t, 'missed, stopped') }
+      if (!ok) { t.pingWarmUntil = 0; return await end($, t, 'missed, stopped', 'missed') }
       t.warmUntil = now + cfg.ttl
       t.pingWarmUntil = t.warmUntil
       t.pings++
@@ -654,20 +1106,20 @@ function arm($: EngineInterface, t: Track, from: number) {
       // The ping limit stops the track only when the keep-warm time would allow another ping; when it
       // does not, the next tick ends the track as "kept warm", as without a limit.
       const cap = pingCap(cfg.maxPings, cfg.pingEvery, keep)
-      if (t.pings >= cap && (t.pings + 1) * cfg.pingEvery <= keep.ms) return await end($, t, `ping limit ${cap} reached, stopped, warm until ${hhmm(t.warmUntil)}`)
+      if (t.pings >= cap && (t.pings + 1) * cfg.pingEvery <= keep.ms) return await end($, t, `ping limit ${cap} reached, stopped, warm until ${hhmm(t.warmUntil)}`, 'ping limit')
       const at = await $.clock.now()
       if (t.generation !== armedAt) return
       // Armed before the line and the render, so both speak for the settings the new timer took
       // (cfgOf) and the state shows the next ping
       arm($, t, at)
-      t.part = runningText(t, keep)
+      setPart(t, runningText(t, keep))
       render($, at)
     } catch (err) {
       // Logged even when the track was stopped meanwhile (the spend limit stops it before it fails)
       $.ui.log(`keepalive ${t.name}: ${err instanceof Error ? err.message : String(err)}`, { to: 'debug' })
       if (t.generation !== armedAt) return
       t.pingWarmUntil = 0
-      await end($, t, 'error, stopped')
+      await end($, t, 'error, stopped', 'error')
     }
   })
 }
@@ -678,7 +1130,7 @@ async function spendLimit($: EngineInterface, t: Track) {
     const other = tracks[n]
     if (other !== t && other.timer === undefined) continue // off, or already stopped for its own reason
     stopTrack(other)
-    other.part = `spend limit reached, stopped, warm until ${hhmm(other.warmUntil)}`
+    setStopped(other, `spend limit reached, stopped, warm until ${hhmm(other.warmUntil)}`, 'spend limit')
   }
   await refreshKeep($)
   // The tracks are already stopped, so a store that cannot be read stops here too, and says so
@@ -689,19 +1141,20 @@ async function spendLimit($: EngineInterface, t: Track) {
     $.ui.log(`keepalive: could not tell whether compacting pays (${err instanceof Error ? err.message : String(err)}); not compacting`, { to: 'debug' })
   }
   if (!pays) return render($, await $.clock.now())
-  t.part = 'compacting'
+  setPart(t, 'compacting', { compaction: 'compacting' })
   render($, await $.clock.now())
   const result = await compact($)
   $.ui.log(`keepalive: ${result}`, { to: 'debug' })
-  t.part = result.split(' (')[0]!
+  const phase: CompactionPhase = result.startsWith('compaction skipped') ? 'skipped' : result.startsWith('compaction refused') ? 'refused' : 'compacted'
+  setPart(t, result.split(' (')[0]!, { compaction: phase })
   render($, await $.clock.now())
 }
 
 /** Stops every keep-alive timer before an automatic handoff's /clear, so no ping of the old session
- * runs into the new one, and says so on the status line. Answers whether a timer was running. */
+ * runs into the new one, and says so in the track lines. Answers whether a timer was running. */
 export function stopForHandoff($: EngineInterface): boolean {
   const was = anyRunning()
-  stopAll('handed off, stopped')
+  stopAll('handed off, stopped', 'handoff')
   ledger = emptyLedger()
   for (const [n] of TRACKS) tracks[n].pingWarmUntil = 0
   if (was) {
@@ -716,29 +1169,60 @@ export function stopForHandoff($: EngineInterface): boolean {
 /** The seed line's text for the tokens the seeded session's first request read from the cache. */
 export const seedLineOf = (read: number) => read > 0 ? `keepalive seed: cache hit, ${k(read)} read` : 'keepalive seed: cache miss'
 
-/** After an automatic handoff, shows on the status line whether the seeded session's first request
- * read from the prompt cache, `keepalive seed: cache hit, 30k read` or `keepalive seed: cache miss`,
- * under the track lines until the next turn starts. Hidden, like the tracks, when keep-alive or its
- * status is off. register.tsx calls it from the seed turn, beside its panel line and log line. */
+/** After an automatic handoff, shows as the band's seed row whether the seeded session's first
+ * request read from the prompt cache, `keepalive seed: cache hit, 30k read` or `keepalive seed: cache miss`, under the
+ * track rows until the next turn starts; never on a status line (step 44, R44.1). register.tsx calls it from the seed
+ * turn, beside its panel line and log line. */
 export async function showSeedCache($: EngineInterface, cache: { read: number }): Promise<void> {
   seedLine = seedLineOf(cache.read)
   await load($)
+  await prepare($)
   // A full read: publish the keep-warm time it leaves in force (no track runs during a turn)
   await refreshKeep($)
-  publish($, await $.clock.now())
-  if (!settings.enabled || !settings.status) return
-  // No track runs during a turn (turn.start stops them), so the line stands alone until the turn's
-  // Stop arms one; render() then shows it under the track lines.
-  $.ui.status(seedLine)
+  render($, await $.clock.now())
 }
+
+/** At the seed turn of an automatic handoff (register.tsx, once per handoff, after the lineage record is
+ * written): when handoff.onWhenOff is on and the chain's master in force is off, acts as a master [on]
+ * press (LLD rev 10, 19.4; Q-SL9): the master and both tracks on for the chain. It sends nothing, pings
+ * nothing and writes only $.store (19.5). Never throws. */
+export async function applyHandoffSeed($: EngineInterface): Promise<void> {
+  try {
+    await load($)
+    switchMirror = undefined
+    const sw = await loadSwitch($)
+    // Step 44 (R44.13): as the head row reads it, so a chain with a track still on is left as it is.
+    if (settings.handoff.onWhenOff && !anyOn()) await saveSwitch($, afterMasterPress(false))
+    // The ended session left every track `session ended`; the seeded session starts from the switches in force
+    // (carried with the chain, or none), as a press would: `disabled` for a track that is off, else its idle reason
+    for (const [n, key] of TRACKS) if (tracks[n].timer === undefined) setOff(tracks[n], trackEnabled(n, key) ? idleReason(n) : 'disabled')
+    await refreshChain($)
+    await refreshKeep($)
+    publish($, await $.clock.now())
+    $.ui.invalidate('ui.render')
+  } catch (err) {
+    $.ui.log(`keepalive: handoff seed not applied (${err instanceof Error ? err.message : String(err)})`, { to: 'debug' })
+  }
+}
+
+// A surface came or went, or the session started: the band redraws with the switches read now.
+async function rosterChanged($: EngineInterface) {
+  try {
+    await loadSwitch($)
+    render($, await $.clock.now())
+  } catch {}
+}
+
 
 export function registerKeepalive(on: Parameters<Register>[0], deps: KeepaliveDeps) {
 
   on('turn.start', async ($, e, next) => {
     stopAll()
     seedLine = undefined
-    // The turn resets the keep-alive part only: the ledger, and so the cache part, is kept (AC-17.2.3)
-    for (const [n] of TRACKS) tracks[n].part = reasonText('turnRunning')
+    // The turn resets the keep-alive part only: the ledger, and so the cache part, is kept (AC-17.2.3).
+    // A disabled track says so during the turn too (the band shows it, AC-17.6.8).
+    await prepare($)
+    for (const [n, key] of TRACKS) setOff(tracks[n], trackEnabled(n, key) ? 'turnRunning' : 'disabled')
     // The settings and the overrides are read again at every new turn, and only then: a fresh session
     // publishes its real settings from its first turn, and a machine override another session changed
     // is published at this session's next turn. Nothing is read while the session is idle. A file is
@@ -751,8 +1235,7 @@ export function registerKeepalive(on: Parameters<Register>[0], deps: KeepaliveDe
     // A session's override outlives its turns (it is kept per session in the store), so the time
     // re-read here is still that override until it is cleared or the session ends
     await refreshKeep($)
-    publish($, await $.clock.now())
-    if (!compacting) $.ui.status(undefined)
+    render($, await $.clock.now())
     return next(e)
   })
 
@@ -763,15 +1246,14 @@ export function registerKeepalive(on: Parameters<Register>[0], deps: KeepaliveDe
       if (compacting || deps.handingOff()) return next(e)
       const tasks = e.background_tasks?.length ?? 0
       const now = await $.clock.now()
+      await prepare($)
       if (!tasks) {
         await seedFromTranscript($, e.transcript_path, now)
         const running = new Set(TRACKS.filter(([n]) => tracks[n].timer !== undefined).map(([n]) => n))
-        if (running.size) stopAll('work done, stopped')
+        if (running.size) stopAll('work done, stopped', 'done')
         for (const [n, key] of TRACKS) {
           if (running.has(n)) continue
-          tracks[n].part = !settings.enabled || !settings[key].enabled ? reasonText('disabled')
-            : isEmpty(ledger, n) ? reasonText({ noWrite: n })
-            : reasonText('noTasks')
+          setOff(tracks[n], !trackEnabled(n, key) ? 'disabled' : idleReason(n))
         }
         await refreshKeep($)
         render($, now)
@@ -782,19 +1264,13 @@ export function registerKeepalive(on: Parameters<Register>[0], deps: KeepaliveDe
       // branch, so each line below has its cache part
       await seedFromTranscript($, e.transcript_path, now)
       // A full read can change the keep-warm time of a track that will not arm below: each branch
-      // re-reads it once the tracks are stopped (refreshKeep skips a running track)
-      if (!settings.enabled) {
-        stopAll()
-        for (const [n] of TRACKS) tracks[n].part = reasonText('disabled')
-        await refreshKeep($)
-        publish($, now)
-        $.ui.status(undefined)
-        return next(e)
-      }
+      // re-reads it once the tracks are stopped (refreshKeep skips a running track). The master's old
+      // branch is gone (LLD 12.3): the loop below disables each track the switches and settings leave
+      // off, so with nothing allowed it stops every track with `disabled` and the line is hidden.
       const { context: ctx, rateLimits } = await $.session.usage()
       if (inOverage(rateLimits)) {
         stopAll()
-        for (const [n] of TRACKS) tracks[n].part = reasonText('overage')
+        for (const [n, key] of TRACKS) setOff(tracks[n], trackEnabled(n, key) ? 'overage' : 'disabled')
         await refreshKeep($)
         render($, now)
         return next(e)
@@ -804,17 +1280,24 @@ export function registerKeepalive(on: Parameters<Register>[0], deps: KeepaliveDe
       for (const [n, key] of TRACKS) {
         const t = tracks[n]
         stopTrack(t)
-        if (!settings[key].enabled) { t.part = reasonText('disabled'); continue }
-        if (isEmpty(ledger)) { t.part = reasonText('noSplit'); continue }
+        if (!trackEnabled(n, key)) { setOff(t, 'disabled'); continue }
+        if (isEmpty(ledger)) { setOff(t, 'noSplit'); continue }
         // A track arms from a warm main cache of its lifetime, warm until that cache's own time
         // (spec D5), or from its own last landed ping, warm until that ping's time plus the ttl, when
         // that is later and still ahead (LLD 3.4); the cache part stays the ledger's.
         const fromPing = t.pingWarmUntil > now ? t.pingWarmUntil : undefined
-        const fromLedger = armUntil(ledger, n, now)
+        // ITEM-034: subagent caches arm a track only once subagent pings exist (034.b, pingSubagents)
+        const fromLedger = armUntil(ledger, n, now, { agents: false })
         const warm = fromLedger === undefined ? fromPing : fromPing === undefined ? fromLedger : Math.max(fromLedger, fromPing)
+        if (warm === undefined && onlyAgentsWarm(ledger, n, now)) {
+          // AC-17.3.8: only subagents hold a warm cache and nothing pings them: no arm, no main ping
+          setOff(t, 'onlySubagents')
+          t.warmUntil = 0
+          continue
+        }
         if (warm === undefined) {
           // Not armed: no write of this lifetime by any source, or every one of them has expired
-          t.part = reasonText(isEmpty(ledger, n) ? { noWrite: n } : 'expired')
+          setOff(t, isEmpty(ledger, n) ? { noWrite: n } : 'expired')
           t.warmUntil = 0
           continue
         }
@@ -823,7 +1306,7 @@ export function registerKeepalive(on: Parameters<Register>[0], deps: KeepaliveDe
         t.warmUntil = warm
         t.keep = await keepWarm($, key)
         arm($, t, now)
-        t.part = runningText(t, t.keep, `armed, ${tasks} task(s), `)
+        setPart(t, runningText(t, t.keep, `armed, ${tasks} task(s), `))
       }
       // The tracks that did not arm (off, disabled, no split): the time the full read left in force
       await refreshKeep($)
@@ -834,11 +1317,47 @@ export function registerKeepalive(on: Parameters<Register>[0], deps: KeepaliveDe
     return next(e)
   })
 
-  // ITEM-034.c (LLD 3.7, rev 6): log only, so the live check can see whether a finished subagent's
-  // transcript carries the split. No ledger change; T17.3 adds markAgent and the fallback here.
+  // ITEM-034 (LLD 3.7): agent liveness. A subagent starts running, a teammate goes idle (TeammateIdle
+  // names the agent only when the input carries its agent_id); each handler only observes.
+  on('classic.SubagentStart', async ($, e, next) => {
+    try {
+      if (e.agent_id) markAgent(ledger, e.agent_id, 'running')
+    } catch {}
+    return next(e)
+  })
+  on('classic.TeammateIdle', async ($, e, next) => {
+    try {
+      const id = (e as { agent_id?: string }).agent_id
+      if (id && ledger.agents.has(id)) markAgent(ledger, id, 'idle')
+    } catch {}
+    return next(e)
+  })
+
+  // ITEM-034.c and 034 (LLD 3.7, rev 12): a stop with no transcript file (a forked helper, or a file not
+  // written yet) is ignored. Otherwise the transcript is logged, the agent is finished (never pinged,
+  // AC-17.3.3), and while it has no entry or only its 'unknown' marker its split comes from the transcript.
+  // AC-17.3.7 (17.4.l1.2): a transcript is read at most once per agent. A later stop of an agent whose
+  // transcript was read (`transcriptRead`, whatever the read gave) reads nothing and settles nothing again.
   on('classic.SubagentStop', async ($, e, next) => {
     try {
-      await logSubagentTranscript($, e)
+      if (e.agent_id && ledger.agents.get(e.agent_id)?.transcriptRead) {
+        markAgent(ledger, e.agent_id, 'finished')
+        $.ui.log(`keepalive: subagent ${e.agent_id} transcript already read, not read again`, { to: 'debug' })
+        return next(e)
+      }
+      const path = e.agent_transcript_path
+      if (!path || !(await $.fs.exists(path))) {
+        $.ui.log(`keepalive: subagent ${e.agent_id ?? '?'} has no transcript file, ignored`, { to: 'debug' })
+        return next(e)
+      }
+      const text = await logSubagentTranscript($, e)
+      if (e.agent_id) {
+        const unsettled = agentUnsettled(ledger, e.agent_id)
+        markAgent(ledger, e.agent_id, 'finished')
+        ledger.agents.get(e.agent_id)!.transcriptRead = true
+        const r = unsettled && text !== undefined ? splitFromAgentTranscript(text) : undefined
+        if (r) settleAgent(ledger, e.agent_id, r, await $.clock.now(), life())
+      }
     } catch {}
     return next(e)
   })
@@ -846,7 +1365,8 @@ export function registerKeepalive(on: Parameters<Register>[0], deps: KeepaliveDe
   // Other sessions can push the account into overage during the wait
   on('session.measure', async ($, e, next) => {
     if (anyRunning() && e.changed.includes('rateLimits') && inOverage(e.rateLimits)) {
-      stopAll('overage, stopped')
+      await prepare($)
+      stopAll('overage, stopped', 'overage')
       await refreshKeep($)
       render($, await $.clock.now())
     }
@@ -858,6 +1378,7 @@ export function registerKeepalive(on: Parameters<Register>[0], deps: KeepaliveDe
   on('session.end', async ($, e, next) => {
     stopAll()
     ledger = emptyLedger()
+    tailLogged = false
     seedLine = undefined
     spent = 0
     budget = 0
@@ -866,49 +1387,156 @@ export function registerKeepalive(on: Parameters<Register>[0], deps: KeepaliveDe
     // A new session reads every settings file, and asks git and trust, again at its first turn
     turnCache = { files: new Map() }
     // Each session warns about a setting problem once
-    for (const [n] of TRACKS) { tracks[n].part = reasonText('sessionEnded'); tracks[n].pingWarmUntil = 0 }
+    for (const [n] of TRACKS) { setOff(tracks[n], 'sessionEnded'); tracks[n].pingWarmUntil = 0 }
+    // The session's switches end with it (AC-17.6.18): its store entry is deleted, so a session started
+    // later in this folder starts with none set. Not at an automatic handoff's /clear with carryOver on
+    // (LLD rev 10, 19.3): the chain goes on in the seeded session, which keeps the entry.
+    try {
+      const id = await stateId($)
+      const list = await switchList($)
+      const continuing = deps.handingOff() && settings.handoff.carryOver
+      if (!continuing && list.some(([s]) => s === id)) await $.store.set(switchKey, list.filter(([s]) => s !== id))
+    } catch (err) {
+      $.ui.log(`keepalive: session switches not cleared (${err instanceof Error ? err.message : String(err)})`, { to: 'debug' })
+    }
+    switchMirror = undefined
     // The ended session's own override reaches no other session: the machine's override or the
     // setting is what stays in force
     await refreshKeep($, { session: false })
     warned.clear()
-    publish($, await $.clock.now())
-    $.ui.status(undefined)
+    render($, await $.clock.now())
     return next(e)
   })
 
-  // /ai-dlc:cache-keepalive pings now (upstream). With a duration it sets the keep-warm time of both
-  // tracks, or of the one --track names, and with clear it removes that override, in the default scope
-  // or the one --session / --machine names.
+  // The session starts or a surface comes or goes: the band redraws (step 44: no status line, so no surface roster
+  // is kept). The payloads are not read.
+  on('session.start', async ($, e, next) => {
+    bandClosed = false
+    await rosterChanged($)
+    return next(e)
+  })
+  on('session.attach', async ($, e, next) => (await rosterChanged($), next(e)))
+  on('session.detach', async ($, e, next) => (await rosterChanged($), next(e)))
+
+  // /ai-dlc:cache-keepalive. Upstream it pinged now and set the keep-warm time. Since live findings 3 (points 5 and 7)
+  // it pings now with the settings in force and shows the band; it ignores its arguments, and the grammar it took,
+  // --for included, is /ai-dlc:cache-keepalive-configure's (the hook after this one).
   on('command.run', { command: COMMAND }, async ($, e) => {
+    // Step 43 (A2): every run shows the band, minimised: it brings back a band closed with its `×` (step 42)
+    // and minimises an open one. Step 44 (R44.7): on every surface, VS Code included; it opens no pane. It changes
+    // no setting, and any arguments it is given change nothing (the reply says so); with keep-alive off it pings
+    // nothing and says why.
+    if (bandClosed || !bandMinimised) { bandClosed = false; bandMinimised = true; $.ui.invalidate('ui.render') }
     await load($)
-    // A full read: publish the keep-warm time, pingEvery and limit it leaves in force
+    await prepare($)
     await refreshKeep($)
     publish($, await $.clock.now())
-    const args = parseCommandArgs(e.args ?? '', settings.scope, settings.minDuration)
-    if (args.kind === 'usage') {
-      const every = TRACKS.map(([n, key]) => `the ${n} track every ${formatDuration(settings[key].pingEvery)}`).join(' and ')
-      return { text: `keepalive: ${args.problem}. Usage: /${COMMAND} [<n>m|<n>h|<n>d|clear] [--track 1h|5m|both] [--session|--machine]. A duration sets the keep-warm time of both tracks, or of the one --track names. Pings come on ${every}, so a duration no longer than a track's interval sends no ping on it: the cache's own lifetime covers it.` }
-    }
-    if (args.kind !== 'ping') {
-      await setKeepWarm($, args.scope, args.kind === 'set' ? args.ms : undefined, args.tracks)
-      await refreshKeep($)
-      publish($, await $.clock.now())
-      const where = args.scope === 'machine' ? 'every session on this machine' : 'this session'
-      const which = args.tracks.length === TRACK_NAMES.length ? 'both tracks' : `the ${args.tracks[0]} track`
-      const what = args.kind === 'set' ? `set to ${formatDuration(args.ms)} on ${which} for ${where}` : `override cleared on ${which} for ${where}`
-      // A running track keeps the time it armed with until its next ping, which reads it again
-      const running = args.tracks.filter(n => tracks[n].timer !== undefined)
-      const later = running.length === 0 ? '' : running.length === 1
-        ? `; the running ${running[0]} track takes it at its next ping`
-        : '; the running tracks take it at their next ping'
-      return { text: `keepalive: keep-warm ${what}; now ${await keepLines($)}${later}` }
-    }
-    if (!settings.enabled) return { text: `keepalive: off (enabled=false, ${sources.enabled ?? 'default'}); nothing pinged` }
-    const { context: ctx } = await $.session.usage()
-    if (!budget) budget = settings.budgetMultiplier > 0 ? settings.budgetMultiplier * (ctx.tokens ?? 0) : Infinity
-    const { ok, line } = await ping($, await $.clock.now())
-    return { text: `${ok ? 'HIT' : 'MISS'}: ${line}; ${await keepLines($)}` }
+    const extra = (e.args ?? '').trim() === '' ? '' : `; it takes no arguments, so "${(e.args ?? '').trim()}" changed nothing: keep-warm times, on and off are /${CONFIGURE}'s`
+    // Live findings 3, point 7: it pings now, with the settings /ai-dlc:cache-keepalive-configure set (`pingReply`).
+    return { text: `${await pingReply($)}${extra}` }
   })
+
+  // Live findings 3, point 5: /ai-dlc:cache-keepalive-configure with the arguments /ai-dlc:cache-keepalive used to take.
+  // Arguments that parse as those (a duration, clear, on or off, with --track, --session, --machine or --for) are
+  // answered here. A mistake in that grammar (grammarMistake) gets its usage text here too. None, or plain words (a
+  // change in plain words), go on to the configure skill (`next(e)`), as before.
+  on('command.run', { command: CONFIGURE }, async ($, e, next) => {
+    const raw = (e.args ?? '').trim()
+    if (raw === '') return next(e)
+    await load($)
+    await prepare($)
+    await refreshKeep($)
+    publish($, await $.clock.now())
+    const args = parseCommandArgs(raw, settings.scope, settings.minDuration)
+    if (args.kind === 'usage') return grammarMistake(raw) ? { text: configureUsage(args.problem) } : next(e)
+    if (args.kind === 'ping') return next(e)
+    if (args.kind === 'switch') return { text: await switchCommand($, args) }
+    if (args.for !== undefined) return { text: await keepWarmToFile($, args, args.for) }
+    await setKeepWarm($, args.scope, args.kind === 'set' ? args.ms : undefined, args.tracks)
+    await refreshKeep($)
+    publish($, await $.clock.now())
+    const where = args.scope === 'machine' ? 'every session on this machine' : 'this session'
+    const which = args.tracks.length === TRACK_NAMES.length ? 'both tracks' : `the ${args.tracks[0]} track`
+    const what = args.kind === 'set' ? `set to ${formatDuration(args.ms)} on ${which} for ${where}` : `override cleared on ${which} for ${where}`
+    // A running track keeps the time it armed with until its next ping, which reads it again
+    const running = args.tracks.filter(n => tracks[n].timer !== undefined)
+    const later = running.length === 0 ? '' : running.length === 1
+      ? `; the running ${running[0]} track takes it at its next ping`
+      : '; the running tracks take it at their next ping'
+    const ign = args.ignoredFor ? `; --for ${args.ignoredFor} ignored: --session wins and writes nothing` : ''
+    return { text: withSwitches(`keepalive: keep-warm ${what}; now ${await keepLines($)}${later}${ign}`) }
+  })
+}
+
+// Review round 4, W2: the flags of the configure grammar, which a change in plain words never contains.
+const GRAMMAR_FLAGS = ['--for', '--track', '--session', '--machine'] as const
+const isGrammarFlag = (w: string) => GRAMMAR_FLAGS.some(f => w === f || w.startsWith(`${f}=`))
+const isGrammarWord = (w: string) => w === 'on' || w === 'off' || w === 'clear' || w === '--clear' || parseDuration(w, 0) !== undefined
+
+/** Whether arguments that did not parse are a mistake in the configure grammar, to be answered with its usage text:
+ * they hold one of its flags (`--for`, `--track`, `--session`, `--machine`), or every word is one of its bare words
+ * (`on`, `off`, `clear`, a duration). Anything else is a change in plain words, for the configure skill: a bare word
+ * among other words ("turn the 5m track off") does not make it grammar. */
+export function grammarMistake(raw: string): boolean {
+  const words = raw.trim().toLowerCase().split(/\s+/).filter(Boolean)
+  return words.some(isGrammarFlag) || (words.length > 0 && words.every(isGrammarWord))
+}
+
+// The usage text of /ai-dlc:cache-keepalive-configure's grammar, after the problem parseCommandArgs found.
+const configureUsage = (problem: string) =>
+  `keepalive: ${problem}. Usage: /${CONFIGURE} <n>m|<n>h|<n>d|clear|on|off [--track 1h|5m|both] [--session|--machine|--for just-me|team|global], `
+  + `or a change in plain words. A duration sets the keep-warm time of both tracks, or of the one --track names, and clear removes it: `
+  + `for this session (--session), every session on this machine (--machine), or, with --for, in the env of ${FILE_OF['just-me']} (just-me), `
+  + `${FILE_OF.team} (team) or ${FILE_OF.global} (global); with none of them, in the default scope (${settings.scope}). `
+  + `on or off turns keep-alive, or the tracks --track names, on or off: in the env of ${LOCAL_FILE}, of the file --for names, `
+  + `or, with --session, for this session only. --machine does not go with on, off or --for.`
+
+/**
+ * Point 6a: a keep-warm time (or `clear`) `--for just-me|team|global`: each track's `keepWarmFor` variable in that
+ * file's env. Review round 4, W4: its `maxPings` variable is written only when it has to be, and removed only when
+ * it is the one a keep-warm time leaves, so a value set by hand stays:
+ * - a time writes the track's `maxPings` as the pings that time allows at the pingEvery in force (pingsWithin, at
+ *   least 1, as the configure skill writes it) when the file's own `maxPings` is the one its old `keepWarmFor` left,
+ *   or the limit in force is below what the new time needs; otherwise it leaves it as it is;
+ * - `clear` removes `keepWarmFor`, and `maxPings` only when it is the one that `keepWarmFor` left; a `maxPings` kept is
+ *   named in the reply.
+ * The session and machine overrides are untouched, and still outrank every settings file.
+ */
+async function keepWarmToFile($: EngineInterface, a: Extract<CommandArgs, { kind: 'set' | 'clear' }>, target: ForTarget): Promise<string> {
+  const kept: string[] = []
+  const varsFor = (env: Record<string, unknown>): Record<string, string | null> => {
+    const vars: Record<string, string | null> = {}
+    kept.length = 0
+    for (const n of a.tracks) {
+      const key = keyOf(n)
+      const every = settings[key].pingEvery
+      const keepVar = envOf(`${key}.keepWarmFor`)
+      const capVar = envOf(`${key}.maxPings`)
+      const pair = (ms: number) => String(Math.max(1, pingsWithin(ms, every)))
+      const old = parseDuration(env[keepVar], 0)
+      const owned = env[capVar] !== undefined && old !== undefined && env[capVar] === pair(old)
+      if (a.kind === 'set') {
+        vars[keepVar] = formatDuration(a.ms)
+        if (owned || settings[key].maxPings < pingsWithin(a.ms, every)) vars[capVar] = pair(a.ms)
+      } else {
+        vars[keepVar] = null
+        if (owned) vars[capVar] = null
+        else if (env[capVar] !== undefined) kept.push(`${capVar}=${String(env[capVar])} kept: it is not the ping limit its keep-warm time left`)
+      }
+    }
+    return vars
+  }
+  const res = await writeEnv($, target, varsFor)
+  if (res.problem) return `keepalive: ${res.problem}`
+  await load($)
+  await refreshKeep($)
+  publish($, await $.clock.now())
+  const which = a.tracks.length === TRACK_NAMES.length ? 'both tracks' : `the ${a.tracks[0]} track`
+  const what = a.kind === 'set' ? `keep-warm ${formatDuration(a.ms)} on ${which} written` : `keep-warm of ${which} removed`
+  const caps = Object.entries(res.vars).filter(([k]) => k.endsWith('_MAX_PINGS')).map(([k, v]) => v === null ? `${k} removed` : `${k}=${v} written`)
+  const all = [...caps, ...kept, ...res.notes]
+  const notes = all.length ? `; ${all.join('; ')}` : ''
+  return withSwitches(`keepalive: ${what} in the env of ${FILE_OF[target]} (order: ${PRECEDENCE}; a /${CONFIGURE} --session or --machine override still outranks it); now ${await keepLines($)}${notes}`)
 }
 
 /** The settings in force and where each came from. */

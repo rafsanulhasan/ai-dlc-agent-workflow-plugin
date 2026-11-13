@@ -1,0 +1,1 @@
+- [Lens engine clock and updates](lens-engine-clock-and-updates.md) — $.clock.now is mockable; update() re-runs its fn on a miss

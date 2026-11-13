@@ -756,6 +756,113 @@ export function ensureIn(m: Record<string, LensAgent>, id: string, make: () => L
   return m[id] ? m : { ...m, [id]: make() }
 }
 
+// ---- the agent list (step 44.2.l2.4, decision 17): `refreshList`'s merge, pure ----
+
+/** One row of `$.agent.list()` as the merge reads it (`AgentInfo`, .tsc/claude-code.d.ts). */
+export type ListedAgent = { id: string; type: string; status: string; parentId?: string | null; description?: string; teammateId?: string }
+
+/** What the dropped-subagent timeout decided: the `missingSince` entries to start and to clear, and the agents it halts. */
+export type DropPlan = { start: string[]; clear: string[]; halt: string[] }
+
+/** The module marks the merge reads and never writes: `haltedByTurn`, `haltedByTimeout` and `missingSince` in `register.tsx`. */
+export type AgentListMarks = {
+  turn: ReadonlySet<string>
+  timeout: ReadonlySet<string>
+  missingSince: ReadonlyMap<string, number>
+}
+
+/** The merge's result: the new agents map, the agents a listed `running` resumed, and the drop plan. */
+export type ListMerge = { agents: Record<string, LensAgent>; resumed: string[]; drops: DropPlan }
+
+/**
+ * Step 44.2.l2.2 (the human's decision 16): a subagent stored `running` that the list no longer has (the engine
+ * dropped its task) and that sent no event since shows halted after `limitMs` (0: never). The time counts only while
+ * it is missing: a listed row resets it, so an agent the list still shows is never timed out; an event resets it too
+ * (`heard` in `register.tsx`). It becomes `failed`: the lens cannot tell a stop (`killed`) from an error, and `failed`
+ * is what a non-answer turn end showed before step 44. Not reached when the list throws (`refreshList` returns
+ * first): no list, no evidence.
+ *
+ * Step 44.2.l2.4 (decision 17): pure. It reads `missingSince` as a parameter, returns a new agents map with the
+ * halted rows set and the plan `refreshList` applies once `update` has written; it writes neither its inputs nor the
+ * marks.
+ */
+export function planDrops(
+  agents: Readonly<Record<string, LensAgent>>,
+  listed: ReadonlySet<string>,
+  t: number,
+  limitMs: number,
+  missingSince: ReadonlyMap<string, number>,
+): { agents: Record<string, LensAgent>; plan: DropPlan } {
+  const out: Record<string, LensAgent> = { ...agents }
+  const plan: DropPlan = { start: [], clear: [], halt: [] }
+  if (limitMs === 0) {
+    plan.clear = [...missingSince.keys()]
+    return { agents: out, plan }
+  }
+  for (const [id, cur] of Object.entries(out)) {
+    const subagent = id !== 'main' && cur.type !== 'teammate' && cur.teammate !== true
+    if (!subagent || cur.status !== 'running' || listed.has(id)) {
+      if (missingSince.has(id)) plan.clear.push(id)
+      continue
+    }
+    const since = missingSince.get(id)
+    if (since === undefined) plan.start.push(id)
+    else if (t - since >= limitMs) {
+      out[id] = { ...cur, status: 'failed', endedAt: t }
+      plan.halt.push(id)
+    }
+  }
+  return { agents: out, plan }
+}
+
+/**
+ * Step 44.2.l2.4 (decision 17): the body of `refreshList`'s `update` updater, pure, so the engine may run it again on
+ * a version miss and a test can call it twice. It stamps each agent's listed children as background tasks (step 16
+ * Q6) at `t`, applies the listed statuses (resume, stale and ended rules below), flags teammates, then runs
+ * `planDrops`. It returns the new agents map, the ids a listed `running` resumed and the drop plan, and never writes
+ * `agents`, `list` or `marks`: `refreshList` applies `resumed` and `drops` to the marks after `update` resolves.
+ */
+export function mergeAgentList(
+  agents: Readonly<Record<string, LensAgent>>,
+  list: readonly ListedAgent[],
+  t: number,
+  limitMs: number,
+  marks: AgentListMarks,
+): ListMerge {
+  const resumed: string[] = []
+  const out: Record<string, LensAgent> = { ...agents }
+  for (const key of Object.keys(out)) {
+    const kids: LensTask[] = list
+      .filter(a => (a.parentId ?? 'main') === key)
+      .map(a => ({ id: String(a.id), type: 'subagent', agentType: String(a.type), status: String(a.status), description: String(a.description ?? ''), source: 'agent.list' }))
+    const stopTasks = out[key]!.bg.filter(task => task.source !== 'agent.list')
+    out[key] = { ...out[key]!, bg: stampTasks(out[key]!.bg, uniqueTasks([...kids, ...stopTasks]), t) }
+  }
+  for (const a of list) {
+    const cur = out[a.id]
+    // A list that still says `running` never undoes a `turn.complete` (finding 6).
+    // Round 6: nor puts `running` back over an `idle` the turn's end set (the list lags, E4); a turn's
+    // own start sets `running`. It may still start a pending agent or wake a waiting one.
+    const stale = a.status === 'running' && cur !== undefined && cur.status !== 'pending' && cur.status !== 'waiting'
+    // Step 44.2.l2.1: a listed `running` clears a `failed` / `killed` that the agent's own `turn.complete` set
+    // (`marks.turn`), or since step 44.2.l2.2 the timeout set (`marks.timeout`), never one the list set;
+    // `completed` stays ended (`ENDED`).
+    const id = String(a.id)
+    const resume = a.status === 'running' && cur !== undefined && (cur.status === 'failed' || cur.status === 'killed') && (marks.turn.has(id) || marks.timeout.has(id))
+    // Step 43 (C1), the `else if` below: a listed `completed` applies too (an agent whose `turn.complete` this
+    // session never saw, a pending one included); a status already ended (`ENDED`) is still never changed by the list.
+    if (resume) {
+      // Running again: the halting turn's end time no longer applies (a spawn sets null too).
+      out[a.id] = { ...cur!, status: 'running', endedAt: null }
+      resumed.push(id)
+    } else if (cur && cur.status !== a.status && !ENDED.has(cur.status) && !stale) out[a.id] = { ...cur, status: String(a.status) }
+    if (out[a.id] && typeof a.teammateId === 'string' && out[a.id]!.teammate !== true) out[a.id] = { ...out[a.id]!, teammate: true }
+  }
+  const listed = new Set(list.map(a => String(a.id)))
+  const dropped = planDrops(out, listed, t, limitMs, marks.missingSince)
+  return { agents: dropped.agents, resumed, drops: dropped.plan }
+}
+
 /**
  * Two-way arrow on spawn (L6): the same parent spawned this type before, under another call.
  * Not "the agent already exists": its own `turn.start` adds it first (headless run, step 17.l2).
@@ -1527,10 +1634,15 @@ export type StatusMember = Pick<LensAgent, 'status' | 'type' | 'teammate'> & { i
  * waiting: an agent is waiting (`isWaiting`);
  * pending: an Agent call not started yet (or no agent yet);
  * completed: every agent has ended (`completed`, or a subagent `idle` after its answer).
+ * Step 43 (C1): a run that is `blocked` halts first; then, when every run named has `status: done` (at least one
+ * named), the workflow is completed whatever its agents say. Callers settle the members first (`settleMembers`).
  */
 export function workflowStatus(members: readonly StatusMember[], runStatuses: readonly string[] = [], spawner: string | null = null): FlowStatus {
   const ms = spawner === null ? members : members.filter(a => a.id !== spawner)
-  if (ms.some(a => a.status === 'failed' || a.status === 'killed') || runStatuses.some(x => x.trim().toLowerCase() === 'blocked')) return 'halted'
+  const runs = runStatuses.map(x => x.trim().toLowerCase()).filter(x => x !== '')
+  if (runs.some(x => x === 'blocked')) return 'halted'
+  if (runs.length > 0 && runs.every(x => x === 'done')) return 'completed'
+  if (ms.some(a => a.status === 'failed' || a.status === 'killed')) return 'halted'
   if (ms.some(a => a.status === 'running')) return 'in-progress'
   if (ms.some(isWaiting)) return 'waiting'
   if (ms.length === 0 || ms.some(a => a.status === 'pending')) return 'pending'
@@ -1538,17 +1650,139 @@ export function workflowStatus(members: readonly StatusMember[], runStatuses: re
 }
 
 /**
- * Step 36.2, amendment 6: the one workflow the minimised band names, from the workflows newest first: the newest in
- * progress, else the first waiting, then pending, then halted; with every one completed, the newest. `live`: how many
- * are in progress. Null with no workflow ("Nothing Here").
+ * Step 44 (R44.5): a workflow's status in the run list and the band, `workflowStatus` but never `completed` while a run
+ * it names is `active`: with every agent ended, such a run waits for its next stage or for the human, so it reads
+ * `waiting`. A `blocked` run already reads `halted` (`workflowStatus`). Each run's `status:` is that of its current
+ * run-state version (`pickRunState`).
+ * Step 44 (R44.22, the human's G4 decision 2): a step's chart heading uses this rule too, and any run named that is not
+ * `done` (`active`, empty, or a status the lens does not know) keeps the workflow from `completed`: it reads `waiting`.
+ * With no run named, the agents decide, as in `workflowStatus`.
  */
-export function bandLineOf<T extends { info: { status: FlowStatus } }>(flows: readonly T[]): { flow: T; live: number } | null {
+export function runListStatus(members: readonly StatusMember[], runStatuses: readonly string[] = [], spawner: string | null = null): FlowStatus {
+  const st = workflowStatus(members, runStatuses, spawner)
+  return st === 'completed' && runStatuses.some(x => x.trim().toLowerCase() !== 'done') ? 'waiting' : st
+}
+
+/**
+ * Step 43 (C1): each *Stages* row's status by its step code, lower-cased, from a run state's text: the table under
+ * a *Stages* heading or whose header has a `Stage` column, with a `Status` column (its `Step` column by header, else
+ * the first). A row with no step code is skipped; a code listed twice keeps its first row. {} for null.
+ */
+export function stageStatuses(text: string | null): Record<string, string> {
+  const out: Record<string, string> = {}
+  if (text === null) return out
+  const lines = text.split(/\r?\n/)
+  let heading = ''
+  let cols: { step: number; status: number } | null = null
+  lines.forEach((line, i) => {
+    if (/^#{1,6}\s/.test(line)) heading = line
+    if (!line.startsWith('|')) {
+      cols = null
+      return
+    }
+    if (TABLE_RULE.test(line)) return
+    const c = cellsOf(line)
+    if (TABLE_RULE.test(lines[i + 1] ?? '')) {
+      const at = (re: RegExp) => c.findIndex(x => re.test(x))
+      const status = at(/^status$/i)
+      const step = at(/^step$/i)
+      const isStages = (/^#{1,6}\s+stages?\b/i.test(heading) || at(/^stages?$/i) >= 0) && !(/^steps?$/i.test(c[0] ?? '') && /^features?$/i.test(c[1] ?? ''))
+      cols = isStages && status >= 0 ? { step: step >= 0 ? step : 0, status } : null
+      return
+    }
+    const k = cols as { step: number; status: number } | null
+    if (k === null) return
+    const code = (c[k.step] ?? '').replace(/[*_]/g, '').trim()
+    if (!STEP_CODE.test(code) || own(out, code) !== undefined) return
+    out[code] = (c[k.status] ?? '').replace(/^[*_\s]+|[*_\s]+$/g, '').toLowerCase()
+  })
+  return out
+}
+
+/** Step 43 (C1): whether a step code's *Stages* row, or the row of a step it sits under (`43` for `43.2.1`), says `done`. */
+export function stageDone(code: string, stages: Record<string, string> | undefined): boolean {
+  if (stages === undefined || code === '') return false
+  const parts = code.split('.')
+  for (let n = parts.length; n > 0; n--) if (/^done\b/.test(own(stages, parts.slice(0, n).join('.')) ?? '')) return true
+  return false
+}
+
+/** Step 43 (C1): an agent's attempt key, `<run id>|<step code>` of the record its brief names; null when it names none. */
+export function attemptKey(a: Pick<LensAgent, 'handoff' | 'prompt'>): string | null {
+  const path = a.handoff ?? matchHandoff(a.prompt)?.path ?? null
+  const rec = path === null ? null : parseRecord(path)
+  return rec === null ? null : `${runIdOf(rec.dir)}|${rec.code}`
+}
+
+/** Step 43 (C1), step 44 (decision 25): the statuses a done stage settles to `completed` (`settleMembers`, rule 2). */
+const SETTLED_BY_DONE_STAGE: ReadonlySet<string> = new Set(['pending', OPEN, 'failed', 'killed'])
+
+/** What `settleMembers` reads of a member: its status, and when it started (0: not yet, so after every started one). */
+export type SettleMember = StatusMember & { startedAt?: number }
+
+/**
+ * Step 43 (C1), the members a status is worked out from:
+ * 1. Latest attempt wins: a `failed` or `killed` member is left out when a later member of the same workflow has the
+ *    same attempt key (`keyOf`, the record's step code: a restarted step). Later: started after it, a member not
+ *    started yet (`startedAt` 0) being later than every started one; equal times go by list order.
+ * 2. A done stage settles its step: a `pending` member (a `call:` placeholder), an OPEN record (no hand-back), or a
+ *    `failed` or `killed` member left after rule 1, whose step's *Stages* row is done (`isDone`) counts as
+ *    `completed`. Step 44 (the human's decision 25): once its stage is done, a failed or killed agent no longer halts
+ *    the step. Anything else (running, waiting, completed) is kept as it is.
+ */
+export function settleMembers<T extends SettleMember>(members: readonly T[], keyOf: (a: T) => string | null, isDone: (a: T) => boolean = () => false): T[] {
+  const rank = (a: T, i: number) => [a.startedAt === undefined || a.startedAt <= 0 ? Number.POSITIVE_INFINITY : a.startedAt, i] as const
+  const keys = members.map(keyOf)
+  return members
+    .filter((a, i) => {
+      if (a.status !== 'failed' && a.status !== 'killed') return true
+      const k = keys[i]
+      if (k === null || k === undefined) return true
+      const [t, n] = rank(a, i)
+      return !members.some((b, j) => {
+        if (j === i || keys[j] !== k) return false
+        const [u, m] = rank(b, j)
+        return u > t || (u === t && m > n)
+      })
+    })
+    .map(a => (SETTLED_BY_DONE_STAGE.has(a.status) && isDone(a) ? { ...a, status: 'completed' } : a))
+}
+
+/**
+ * Step 43 (C1): a run folder's current run-state file as a change signature, from its listing alone (no read): the
+ * highest `run.v<…>.md` (`runVersions`), else `run.md`, with its size and time. '' when the folder has neither.
+ */
+export function runStateSig(entries: readonly { name: string; kind?: string; size?: number; mtimeMs?: number }[]): string {
+  const files = entries.filter(e => e.kind !== 'dir')
+  const name = runVersions(files.map(e => e.name))[0]?.name ?? (files.some(e => e.name === 'run.md') ? 'run.md' : '')
+  if (name === '') return ''
+  const e = files.find(x => x.name === name)!
+  return `${name}:${e.size ?? ''}:${e.mtimeMs ?? ''}`
+}
+
+/**
+ * Step 36.2, amendment 6: the one workflow the minimised band names, from the workflows newest first: the newest in
+ * progress, else the first waiting, then halted, then pending (step 43 live finding 2b.i: halted before pending; waiting
+ * kept second until the human confirms it); with every one completed, the newest. `live`: how many are in progress.
+ * Null with no workflow ("Nothing Here").
+ */
+export const BAND_LINE_ORDER = ['in-progress', 'waiting', 'halted', 'pending', 'completed'] as const
+export const BAND_LINE_TOP = 3
+export function bandLineOf<T extends { info: { status: FlowStatus } }>(flows: readonly T[]): { flow: T; top: T[]; live: number } | null {
+  // Live round 1 (the human, 2026-10-26): the minimised line names the top 3 runs, in progress, then waiting, halted,
+  // pending, completed; newest first within each status (`flows` comes newest first). Only the minimised line is in
+  // this order: the run list keeps its newest-first order.
   const live = flows.filter(f => f.info.status === 'in-progress').length
-  for (const st of ['in-progress', 'waiting', 'pending', 'halted'] as const) {
-    const f = flows.find(x => x.info.status === st)
-    if (f !== undefined) return { flow: f, live }
+  const rank = (f: T) => {
+    const i = (BAND_LINE_ORDER as readonly string[]).indexOf(f.info.status)
+    return i < 0 ? BAND_LINE_ORDER.length : i
   }
-  return flows[0] === undefined ? null : { flow: flows[0], live }
+  const top = flows
+    .map((f, i) => ({ f, i }))
+    .sort((a, b) => rank(a.f) - rank(b.f) || a.i - b.i)
+    .slice(0, BAND_LINE_TOP)
+    .map(x => x.f)
+  return top[0] === undefined ? null : { flow: top[0], top, live }
 }
 
 /** Round 6, requirement A5: whether some agents run while others wait (the dot then shows both colours). */
@@ -1840,7 +2074,7 @@ export function openSizeOf(size: string, viewport: { columns?: number; rows?: nu
   return { ...(ok(viewport.rows) ? { rows: viewport.rows } : {}), ...(ok(viewport.columns) ? { columns: viewport.columns } : {}) }
 }
 
-/** Wide (the runs stacked on the right, the selected run's chart beside them) or narrow (the list of runs only), by the view's body columns. */
+/** Wide or narrow, by the view's body columns. Step 43: a wide band lists only (`bandModeOf`); a narrow one also draws one run's flow. */
 export const layoutOf = (bodyColumns: number | undefined, wideColumns: number): 'wide' | 'narrow' =>
   bodyColumns === undefined || bodyColumns >= wideColumns ? 'wide' : 'narrow'
 
@@ -1869,6 +2103,168 @@ export function dockedFromBand(v: LensView, paneOpen: boolean): LensView {
  * progress): the band's own size (`band`, minimised unless its list was kept), never the docked pane's; no size to restore.
  */
 export const dockedBandViewOf = (v: LensView): LensView => ({ ...v, size: v.band === 'normal' ? 'normal' : 'minimised', prev: [] })
+
+// ---- step 43: each site's mode (the band, the pane), the controls, opening sources and drill targets ----
+
+/** What a site shows at its normal size: the run list or one run's flow. */
+export type ViewMode = 'list' | 'workflow'
+
+/** A stored mode as a mode: `workflow` only when it says so; anything else (absent, unknown) is the list. */
+export const modeOf = (m: string | undefined): ViewMode => (m === 'workflow' ? 'workflow' : 'list')
+
+/** Step 43 (B2a, design 1): the band's mode as drawn. A wide band draws its list only, whatever `bandMode` says. */
+export const bandModeOf = (v: LensView, layout: 'wide' | 'narrow'): ViewMode => (layout === 'wide' ? 'list' : modeOf(v.bandMode))
+
+/** Step 43: the pane's mode (beside the band or docked). */
+export const paneModeOf = (v: LensView): ViewMode => modeOf(v.paneMode)
+
+/** Step 43 (B1): the band minimised; the pane and both modes untouched. */
+export const bandMinimise = (v: LensView): LensView => ({ ...v, size: 'minimised', prev: [] })
+
+/**
+ * Step 43 (B2a, B2b): the band back at its normal size, in list mode, from the band's `□` or the pane's: never its
+ * workflow view. Docked (the band drawn while work is in progress) the band's own size is `band`, and `size` stays the
+ * docked pane's.
+ */
+export const bandToList = (v: LensView, docked = false): LensView =>
+  docked ? { ...v, band: 'normal', bandMode: 'list' } : { ...v, size: 'normal', prev: [], bandMode: 'list' }
+
+/** Step 43 (B1, docked): the band's own size (`band`) minimised while the view is docked. */
+export const dockedBandMinimise = (v: LensView): LensView => ({ ...v, band: 'minimised' })
+
+/** Step 43 (B4a, "< Runs" on the band): the band's workflow view back to its list. */
+export const bandRestore = (v: LensView): LensView => ({ ...v, bandMode: 'list' })
+
+/** Step 43 ("< Runs" in the pane): the pane back to its run list. */
+export const paneToList = (v: LensView): LensView => ({ ...v, paneMode: 'list' })
+
+/**
+ * Step 43: the pane in workflow mode on run `w`. Beside the band (`docked` false) it is the pane's own run (`pane`);
+ * docked, or a pane drawn where no band is, the view's `selected`.
+ */
+export const paneOnRun = (v: LensView, w: string, docked: boolean): LensView =>
+  docked ? { ...v, paneMode: 'workflow', selected: w } : { ...v, paneMode: 'workflow', pane: w }
+
+/**
+ * Step 43 (B3a): the band's `⤢`. The band is unchanged; the pane opens in list mode when the band is minimised or in
+ * list mode, else in workflow mode on the band's run (`selected`). `bandSize`: the band's own size (pinned `size`,
+ * docked `band`, as `dockedBandViewOf`).
+ */
+export function paneFromBand(v: LensView, layout: 'wide' | 'narrow', docked: boolean, bandSize: string = v.size): LensView {
+  if (bandSize === 'minimised' || bandModeOf(v, layout) === 'list') return { ...v, paneMode: 'list' }
+  return paneOnRun(v, v.selected, docked)
+}
+
+/**
+ * Step 43 (B4b): the pane's `↺` while the band is closed. The pane is closed by the caller; the band comes back at its
+ * normal size in the pane's mode, on the pane's run (`pane`, else `selected`). `bandClosed` is cleared by the caller.
+ */
+export function bandFromPane(v: LensView): LensView {
+  return { ...v, size: 'normal', prev: [], bandMode: paneModeOf(v), selected: v.pane || v.selected }
+}
+
+/**
+ * Step 43 (design 2): the docked pane's `↺`: back to the size before (`viewRestore`) while one is kept; with none kept,
+ * a pane in workflow mode goes back to its run list; otherwise no change.
+ */
+export function dockedRestore(v: LensView): LensView {
+  if (v.prev.length > 0) return viewRestore(v)
+  return paneModeOf(v) === 'workflow' ? paneToList(v) : v
+}
+
+/** Whether the docked pane has a `↺`: a size to return to, or its workflow view to leave. */
+export const dockedCanRestore = (v: LensView): boolean => v.prev.length > 0 || paneModeOf(v) === 'workflow'
+
+/**
+ * Step 43 (B2a): a run chosen in the band's list. Narrow: the band shows its flow (`bandMode: workflow`), no pane.
+ * Wide: the pane opens on it in workflow mode (`openPane` true) and the band stays on its list.
+ */
+export function bandPick(v: LensView, layout: 'wide' | 'narrow', w: string, docked: boolean): { view: LensView; openPane: boolean } {
+  if (layout === 'narrow') return { view: { ...v, bandMode: 'workflow', selected: w }, openPane: false }
+  return { view: paneOnRun(v, w, docked), openPane: true }
+}
+
+/**
+ * Step 43 (B4b): "the band is closed": dismissed with its `×` (`closedFlag`), or not on screen: no draw of the lens band
+ * within `goneMs` (the `bandGoneMs` setting, default 10000; `lastDrawn`: the time of its last draw, 0 for never). The
+ * human (2026-10-26, D5): the not-on-screen rule does not apply (`timeout` false) in a VS Code panel too narrow to
+ * show the pane; there only the `×` counts, as before.
+ */
+export const bandClosedOf = (closedFlag: boolean, lastDrawn: number, now: number, goneMs: number, timeout = true): boolean =>
+  closedFlag || (timeout && (lastDrawn <= 0 || now - lastDrawn > goneMs))
+
+/**
+ * Step 43 (A1, design 3): `/ai-dlc:lens` with the band drawn: the band minimised; the pane and both modes untouched.
+ * Docked or with no band on the surface (the human's rule 2): the pane in workflow mode on the newest run in progress
+ * (`live`), or its run list when none is in progress; the pane draws `selected` there.
+ */
+export function lensCommandView(v: LensView, band: boolean, live: string | null): LensView {
+  if (band) return bandMinimise(v)
+  return live !== null ? paneOnRun(v, live, true) : paneToList(v)
+}
+
+/**
+ * Step 43 live finding 2: `/ai-dlc:lens` where no band is drawn, before the pane's first draw: the pane at its normal
+ * size, no size kept to restore to, so a full screen (or a minimise) an earlier open left is never brought back. Where
+ * the pane sits is known only when it is drawn (`commandOpenView`).
+ */
+export const commandStartView = (v: LensView): LensView => ({ ...v, size: 'normal', prev: [] })
+
+/**
+ * Step 43 live finding 2 (2a, 2b): `/ai-dlc:lens` applied at the pane's first draw after it, by the Pane's `placement`
+ * (the surface's, never the plugin's). `inline` (a narrow panel: the pane above the prompt, the human's "band"): the run
+ * list, minimised to its one line. Anything else (`dock`: the pane beside the chat): its normal size, workflow mode on
+ * `latest` (the newest run in progress, else the newest), the run list one step back ("< Runs"); the run list when
+ * there is no run. Never full screen; no size kept to restore to.
+ */
+export function commandOpenView(v: LensView, placement: string | undefined, latest: string | null): LensView {
+  const base = commandStartView(v)
+  if (placement === 'inline') return { ...base, size: 'minimised', paneMode: 'list' }
+  return latest !== null && latest !== '' ? paneOnRun(base, latest, true) : paneToList(base)
+}
+
+/**
+ * Step 43 live finding 2b: the open-state keys (`cardOpenA`) without run `w`'s step accordions (`step:<w>:<key>`), so
+ * its default applies again: the highest step open, the rest collapsed.
+ */
+export function withoutStepKeys(open: Record<string, boolean>, w: string): Record<string, boolean> {
+  const p = `step:${w}:`
+  return Object.fromEntries(Object.entries(open).filter(([k]) => !k.startsWith(p)))
+}
+
+/**
+ * Step 43 (rule 3): the chat card's "Open flowchart": the pane in workflow mode on the card's run; the band untouched.
+ * Docked (or no band) a minimised pane is restored first, as before.
+ */
+export function cardOpenView(v: LensView, w: string, band: boolean): LensView {
+  if (band) return paneOnRun(v, w, false)
+  const base = v.size === 'minimised' ? viewRestore(v) : v
+  return paneOnRun(base, w, true)
+}
+
+/**
+ * Step 43 (rule 3): the step chart a chat card's call belongs to: the first chart (highest code first, as drawn) with
+ * the call's agent, its placeholder (`call:<id>`) or a node made by that call; null when none has it.
+ */
+export function stepKeyOfCall(charts: readonly Pick<StepChart, 'key' | 'ids' | 'agents'>[], callId: string, agentId = ''): string | null {
+  const hit = charts.find(c => c.ids.some(id => (agentId !== '' && id === agentId) || id === `call:${callId}` || (callId !== '' && c.agents[id]?.toolUseId === callId)))
+  return hit === undefined ? null : hit.key
+}
+
+/** The drill-in target of a drill pressed on a wide band: the pane, opened on the band's run `w`. */
+const BAND_WIDE = 'band-wide:'
+
+/**
+ * Step 43 (B5, B6, design 4): where a drill-in avatar or arrow opens. On the band: narrow, inside the band (`band`);
+ * wide, in the pane, opened in workflow mode on the band's run (`band-wide:<w>`). In the pane: `pane`.
+ */
+export const drillTargetOf = (where: 'band' | 'pane', layout: 'wide' | 'narrow', w: string): string =>
+  where === 'pane' ? 'pane' : layout === 'narrow' ? 'band' : `${BAND_WIDE}${w}`
+
+/** Step 43: a drill target as the drill's key (`band`, `pane`, `card:<call>`) and the run to open the pane on first (or null). */
+export function drillPlaceOf(target: string): { key: string; openPane: string | null } {
+  return target.startsWith(BAND_WIDE) ? { key: 'pane', openPane: target.slice(BAND_WIDE.length) } : { key: target, openPane: null }
+}
 
 /**
  * The start date in a run folder's name, `{LIFECYCLE}-{YYYYMMDD}-{feature-slug}` (local midnight), else null
@@ -1937,10 +2333,13 @@ export function newestFirst<T extends { start: number | null; id: string }>(runs
   return [...runs].sort((a, b) => at(b) - at(a) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
 }
 
-/** Surfaces that draw the AbovePrompt band (d.ts:10809-10819: "Raised on the terminal and desktop surfaces only"). */
+/** Surfaces where the lens draws its view as the AbovePrompt band. d.ts:10809-10819 says the site is raised on the
+ * terminal and desktop only; the probe of step 44.2.l1.3 saw VS Code raise it too, but there the lens's view is its pane
+ * (R44.4), so VS Code stays out. */
 export const BAND_SURFACES = new Set(['terminal', 'desktop'])
 
-/** Whether every attached surface draws the band, so a pinned view needs no pane; none attached (or unknown) is false. */
+/** Whether every attached surface is one where the lens draws its band (`BAND_SURFACES`), so a pinned view needs no pane;
+ * none attached (or unknown) is false. */
 export const bandEverywhere = (surfaces: readonly string[]): boolean => surfaces.length > 0 && surfaces.every(s => BAND_SURFACES.has(s))
 
 // ---- step 8.6.1 (was 30.1): one flowchart per top-level step (feature root) of a run ----
@@ -2491,3 +2890,81 @@ export async function pickRunState(names: readonly string[], read: (name: string
   }
   return null
 }
+
+// ---- step 43.2.5: the Connections panel's Hand-off line and Send Message list, the Agents panel's Stop ----
+
+/** One SendMessage call the lens saw (`tool.call`, before it runs): who sent it, to whom, what and when. */
+export type LensMessage = {
+  /** The call's `tool_use_id`. */
+  id: string
+  /** The sending loop: `main`, or the agent id `tool.call` carried. */
+  from: string
+  /** The receiver as the lens knows it: an agent's id when `to` names one (by id or name), else `to` as written. */
+  to: string
+  /** `input.to` as the model wrote it. */
+  toRaw: string
+  /** The message text: `input.message` (a structured message as JSON). */
+  text: string
+  at: number
+}
+
+/** The most SendMessage calls kept for the session (the oldest go first). */
+export const MESSAGES_KEPT = 200
+
+/** The text of a SendMessage input: `message` as written, a structured one as JSON; '' when absent. */
+export function messageText(input: Record<string, unknown>): string {
+  const m = input.message
+  if (typeof m === 'string') return m
+  if (m === undefined || m === null) return ''
+  try {
+    return JSON.stringify(m)
+  } catch {
+    return String(m)
+  }
+}
+
+/** Adds one message to the list (one per call id, the newest last), keeping the last `MESSAGES_KEPT`. */
+export function addMessage(list: readonly LensMessage[], m: LensMessage): LensMessage[] {
+  return [...list.filter(x => x.id !== m.id), m].slice(-MESSAGES_KEPT)
+}
+
+/** The messages of one connection, `parent` -> `child`, in either direction, oldest first. */
+export function messagesOfEdge(list: readonly LensMessage[], parent: string, child: string): LensMessage[] {
+  return list.filter(m => (m.from === parent && m.to === child) || (m.from === child && m.to === parent))
+}
+
+/** A count with thousands separators (`12,345`). */
+const thousands = (n: number) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+
+/** The Connections panel's Hand-off line: the brief's and the hand-back's sizes in characters, `—` while unknown. */
+export function handoffLine(briefChars: number | null, backChars: number | null): string {
+  const n = (x: number | null) => (x === null ? '—' : `${thousands(x)} chars`)
+  return `Hand-off: brief ${n(briefChars)} · hand-back ${n(backChars)}`
+}
+
+/** The dim note under the Agents panel's buttons: what Stop does, and what it cannot do. */
+/**
+ * Step 43.2.5 (the human, 2026-10-26): a SendMessage's receiver by name. `team-lead` and `main` are the orchestrator
+ * (`main`); otherwise the agent whose id, name or persona name (`nameOf`) matches, letter case aside; else null (kept raw).
+ */
+export function messageTarget<A extends { id: string; name?: string }>(to: string, agents: readonly A[], nameOf: (a: A) => string): string | null {
+  const t = to.trim().toLowerCase()
+  // An empty or blank receiver names no one (sqa-43: it matched any agent with an empty name).
+  if (t === '') return null
+  if (t === 'team-lead' || t === 'main') return 'main'
+  const hit = agents.find(a => a.id.toLowerCase() === t || (a.name ?? '').toLowerCase() === t || nameOf(a).toLowerCase() === t)
+  return hit === undefined ? null : hit.id
+}
+
+/**
+ * Live findings 3 (VS Code): where `/ai-dlc:lens` opens, judged in the command handler (a state write in a render is
+ * denied by the host). `seen`: the last lens pane drawn (its placement and body columns), null before any. A wide,
+ * docked pane is `dock` (the Run List and workflow tabs); anything else, and an unknown pane, is `inline`: exactly one
+ * pane, the minimised list, the safe choice for a narrow panel.
+ */
+export function commandSeatOf(seen: { placement?: string; columns?: number } | null, wideColumns: number): 'dock' | 'inline' {
+  if (seen === null || seen.placement === 'inline' || typeof seen.columns !== 'number') return 'inline'
+  return layoutOf(seen.columns, wideColumns) === 'wide' ? 'dock' : 'inline'
+}
+
+export const STOP_NOTE = 'Stop interrupts the current turn, as Esc does, and with it every agent that turn is running. A single agent cannot be stopped on its own.'

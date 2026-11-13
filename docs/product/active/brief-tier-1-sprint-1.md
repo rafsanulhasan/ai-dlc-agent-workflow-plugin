@@ -33,7 +33,7 @@ Five independent problems block the larger scope (agile tree, new phases, lens g
 Success measures, one observable per outcome (the numbered ACs in `stories.md` of each root carry the detail; a tester verifies each without follow-up questions):
 
 - O16: a five-session handoff chain is numbered 1 to 5 in a test, including when lineage is missing.
-- O17: with a 5m cache warm, the status line never reads a bare `off`; each `off` carries a reason.
+- O17: with a 5m cache warm, the status line never reads a bare `off`; each `off` carries a reason. *Revised by the human on 2026-10-31 (step 44, `docs/product/active/session-continuity-and-cache-visibility/sprint-1/keepalive-cache-status/stories.delta-step44.md`): keep-alive writes no status line; the same outcome is read in its own band above the prompt on every surface, where each track row's status is its switch in force and never reads `off` beside an `off` button, and each `off` of an enabled track is replaced by `on, idle (<reason>)`. The setting `statusText` is retired (R44.11); the setting `status` still shows or hides the band.*
 - O18: a run in a nested folder is found and can be filtered by module in a test.
 - O19: a harness edit and a plugin change each run their own AAW chain, and the validator accepts both.
 - O20: a Mermaid fence in a chat reply renders as an image in the lens with no network call.

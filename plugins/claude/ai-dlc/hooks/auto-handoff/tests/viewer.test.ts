@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
-import { chainOf, parseBrief, renderPage, sections, viewerLink, withHeader } from '../viewer.ts'
-import { SERVER_JS } from '../server.ts'
+import { chainOf, parseBrief, renderPage, sections, viewerLink, withHeader } from '../viewer'
+import { SERVER_JS } from '../server'
 
 describe('viewer', () => {
   test('parseBrief extracts header and body', () => {

@@ -164,7 +164,8 @@ review round 1, with the human's decisions D1 to D4):
   `keepalive seed: cache hit, <n>k read` or `keepalive seed: cache miss`,
   alone during the seed turn, under the track lines once a Stop arms them,
   cleared at the next turn and at `session.end`, hidden with the tracks when
-  `enabled` or `status` is off.
+  `enabled` or `status` is off. Replaced in step 44: the seed line is the band's
+  and the Pane's seed row only (see the step 44 bullet below).
 - **Spend limit failures are caught.** The timer awaits `spendLimit`, so a
   failure in it reaches the timer's `catch`, which now logs it even when the
   track was already stopped. A store that cannot be read when deciding
@@ -720,3 +721,256 @@ root 17, step 17.2.4; spec keepalive-cache-status line 82, D2a; LLD rev 5,
   `classic.SubagentStop`.
 - **Manual check.** `MANUAL-CHECKS.md` row P2, the live 034.c check in the
   terminal: one subagent run with `claude --debug-file`, then the two lines.
+
+### Subagent caches (ITEM-034, T17.3, 2026-10-25)
+
+- **Ledger.** `cache-state.ts` gains `markAgent`, `agentUnsettled`,
+  `settleAgent` (a stopped subagent's split from its transcript; the D2a
+  `unknown` marker is deleted once the split is known), `onlyAgentsWarm`, and
+  an `opts.agents` argument to `armUntil` (false until subagent pings exist).
+- **Keep-alive.** `noteUsage` takes an agent id and logs the agent usage line
+  itself; the Stop reads `off (only subagent caches; subagent pings off)` and
+  arms nothing when only subagents are warm (AC-17.3.8); `classic.SubagentStart`
+  and `classic.TeammateIdle` mark the agent running or idle;
+  `classic.SubagentStop` ignores a stop with no transcript file (forked
+  helpers), marks the agent finished and settles it from its transcript.
+  The transcript tail is read with `node -e` instead of `tail` (missing on
+  Windows), and only when the file exists; a failing read is logged once per
+  session.
+- **Tests.** The 034.c tests that pinned an unchanged ledger now pin the
+  ledger T17.3 builds; the engine double answers `fs.exists` and reads the
+  tail from a `node -e` run.
+
+### Both tracks, buttons and the status-line summary (ITEM-068, T17.6, 2026-10-25)
+
+- **Lines.** Every off line ends `, ping 0/<cap>, keep warm <d> (<source>)`
+  (`lineOf` with an `OffTail`, `isOffPart`), and every keep-warm clause has
+  its source note, `session`, `machine`, `settings` or `default`
+  (`sourceLabel`); the new setting `sourceNote` turns the note off. The status
+  line is hidden while no track is allowed; the band and the Pane still show.
+- **Switches.** A master switch and one per track, this session only, kept in
+  `$.store` (`keepalive:switch:sessions`, per session id) with a mirror for
+  the synchronous readers; `masterOn`, `trackOn`, `afterTrackPress`,
+  `afterMasterPress` decide them; `pressTrack` and `pressMaster` act on them.
+  The Stop's master branch is gone: each track arms only when enabled.
+  `session.end` deletes the session's entry. Published: `sessionMaster`,
+  `sessionSwitch`, `keepWarmFrom`; `enabled` is the master in force.
+- **Band and Pane.** New `panel.tsx` (`keepaliveTree`, `bandText`): the title
+  row `⚠ ai-dlc cache-keepalive:` with the master button, the 5m and 1h rows
+  with their buttons, the seed row. `../auto-handoff/register.tsx` composes it
+  under auto-handoff's panel in the one AbovePrompt hook; a `Pane` hook
+  (`keepalive`) draws it in VS Code, opened by `/ai-dlc:cache-keepalive`
+  when a VS Code surface is attached. The command reports the set switches.
+- **Summary.** `summaryOf` (D13), `surfaceMode`, `statusModeOf`,
+  `statusTextOf`; each track keeps a `status` beside its part (`setPart`, the
+  one writer), read by `factsOf`. New setting `statusText`
+  (`auto | summary | full`). The surface roster is read at `session.start`,
+  `session.attach`, `session.detach` and before each handler that renders.
+- **Tests.** Mechanical: off lines take the suffix, running lines the note;
+  `partOf` leaves the suffix out of a part; the engine double answers
+  `session.surfaces` with `['vscode']` (full mode). Auto-handoff's band helper
+  reads its own panel only, and its fixture sets `statusText: full`.
+
+### An automatic handoff chain is one session (ITEM-076, T17.7, 2026-10-25)
+
+- **Chain key.** The session switches and the `--session` keep-warm
+  overrides are kept under the chain id (`../auto-handoff/chain.ts`,
+  `chainIdOf`), or the session id with the new setting `handoff.carryOver`
+  off. `session.end` keeps the switch entry during a handoff with carry-over.
+- **Seed.** `applyHandoffSeed`, called once per handoff by the seed step:
+  with the new trust-gated setting `handoff.onWhenOff` on and the chain's
+  master off, it acts as a master `[on]` press. It writes only `$.store`.
+- **Published.** `KeepaliveState.chain` (`id`, `sessions` newest first), for
+  the lens's Cache Lab window.
+- **Tests.** The gated-key table leaves `handoff.onWhenOff` out (it acts only
+  at a seed); every-default fixture gains the `handoff` object.
+- **Master off hides the status line (step 40, 2026-10-25).** `statusHidden`
+  (`status` off, the master off, or no track allowed) decides the status line in
+  `render` and `showSeedCache`; before, a track switched on under a master that
+  was off kept it shown. The band and the Pane still draw the rows and buttons.
+  The first band draw after a module load clears a stale status line once, since
+  `/reload-plugins` fires no `session.start`.
+- **`/ai-dlc:cache-keepalive on|off` (step 40, 2026-10-25).** New words
+  `on` and `off` (the master, or the tracks `--track` names) write
+  `AI_DLC_KEEPALIVE_ENABLED`, `_1H_ENABLED` or `_5M_ENABLED` to the `env` of
+  `.claude/settings.local.json` (other keys kept; a file that is not plain JSON
+  is not rewritten), drop this session's matching switch so the value applies
+  now, and re-read the settings. With `--session` they press the band's
+  buttons instead and write no file; `--machine` is refused. Durations are
+  unchanged. Tests: the parse test gains the new forms; the usage text names
+  `on|off`.
+- **The off reply names its cause (step 41, 2026-10-25).** With nothing on,
+  `/ai-dlc:cache-keepalive` no longer always says `enabled=false`: `offCause`
+  says `switched off for this session` for the session's master switch,
+  `enabled=false, <source>` for the master setting, and otherwise, per track,
+  `<n> track switched off for this session` or
+  `<track>.enabled=false, <source>`. Code review finding, cr-std-41.
+- **The seeded session's lines follow the carried switches (step 41,
+  2026-10-25).** `applyHandoffSeed` now sets every idle track from the
+  switches in force after the handoff: `disabled` when it is off, else its
+  idle reason, instead of keeping the `session ended` the ended session
+  left. A track switched off in S1 so reads `off (disabled)` in S2, in step
+  with its `[on]` button (AC-17.7.1). Test finding, sqa-41; spec blocker,
+  cr-spec-41.
+- **The band minimises; the tracks publish whether they are on (step 42,
+  2026-10-25).** `keepaliveBand` takes where it draws (`band`, or
+  the Pane, the default). On the band, `keepaliveTree` ends the title row in
+  the lens band's minimise control (`–`, `□`) and a close (`×`), and draws
+  the band minimised as one row: the title, `on` or `off`, the master button
+  and the two controls. No Box of the band has a width. The band starts
+  minimised at each load, as the lens band does; `×` hides it until a run of
+  `/ai-dlc:cache-keepalive`, a new session or a load. The Pane has neither.
+  `bandText` gains the minimised row. Each published track gains `enabled`,
+  its state in force, for the lens's Cache Lab buttons.
+- **The command shows the band minimised; the band opens the Pane (step 43,
+  2026-10-26).** Every run of `/ai-dlc:cache-keepalive` sets the band
+  minimised and brings it back when its `×` closed it; in the terminal and
+  desktop it opens no Pane (VS Code, which has no band, still opens it).
+  The band's title row gains `⤢` before `–` / `□` and `×`, minimised or
+  not, which opens the Pane on any surface, focused (`openPane`'s
+  `anySurface`; `BandControls.onMaximise`).
+- **One command shows, the other configures (live findings 3, 2026-10-26).**
+  `/ai-dlc:cache-keepalive` takes no arguments: it shows the band minimised
+  (VS Code: opens the Pane, without `focus`, so a narrow panel gets one pane)
+  and pings nothing. The arguments it took (a duration, `clear`, `on`, `off`,
+  `--track`, `--session`, `--machine`) are answered by the module on
+  `/ai-dlc:cache-keepalive-configure`; no arguments or other words pass to the
+  configure skill (`next(e)`). The minimised row's status says whether
+  keep-alive is on in force (`BandModel.on`, any track enabled), not the master
+  switch alone. The Pane is minimised again at session.start.
+- **The command pings again; a Ping now button (live findings 3, points 7
+  and 8, 2026-10-26).** `/ai-dlc:cache-keepalive` pings now with the settings
+  in force (`pingReply`), still with no arguments. The band and the Pane gain a
+  Ping now control; minimised, every control is a glyph (`⏻`, `⟳`, `⤢`, `□`,
+  `×`), drawn as the Button's Text child with the label naming it; full, the
+  controls are words. No surface has a Button icon, so glyphs are the icons.
+- **`--for just-me|team|global` and the global level (live findings 3,
+  point 6a, 2026-10-26).** On `/ai-dlc:cache-keepalive-configure`, `--for`
+  picks the settings file `on`, `off`, a keep-warm time or `clear` is written
+  to: the env of `.claude/settings.local.json` (the default), `.claude/settings.json`
+  or `~/.claude/settings.json`. A keep-warm time writes `maxPings` with it.
+  `--session` wins over `--for` (nothing written, the reply says so);
+  `--machine` with `--for` is refused. A team write is recorded in the
+  repository file's `teamRecord` (never read) and warns in an untrusted
+  folder. The module reads a new level, the env of `~/.claude/settings.json`,
+  below the team's and above the repository file, never trust-gated.
+- **Step 43 review round 4 fixes (2026-10-31).** The comments that said
+  `/ai-dlc:cache-keepalive` only shows the band and pings nothing now say what
+  it does: it pings with the settings in force, ignores its arguments, and the
+  grammar, `--for` included, is the configure command's (`keepalive.ts`,
+  `duration.ts`). On `/ai-dlc:cache-keepalive-configure`, a mistake in that
+  grammar (arguments with `--for`, `--track`, `--session` or `--machine`, or
+  made only of `on`, `off`, `clear` and durations; `grammarMistake`) gets the
+  usage text (`configureUsage`); only plain words go on to the skill. No ping
+  overlaps another: a Ping now press while a press or any ping is under way
+  does nothing, and the command, while a ping is out, pings nothing and says
+  so (`pressing`, `pingBusy`, `pingsOut`). A keep-warm time `--for` a file
+  writes `…_MAX_PINGS` only when the file's value is the one its old keep-warm
+  time left or the limit in force is too low, and `clear` removes it only when
+  it is that one; a value set by hand stays, and the reply names each one
+  written, removed or kept. The `masterState` comment in `panel.tsx` is one
+  JSDoc; the `validateEnv` JSDoc in the configure CLI template is rewrapped.
+- **No status line; each button offers the opposite (step 44, R44.1 to R44.3
+  and R44.6, 2026-10-31).** Keep-alive writes no status line: `render` only publishes and
+  redraws the band and the Pane, the seed line is the band's seed row only, and
+  the first render or band draw after a load clears a line an older module left
+  (`clearOldStatus`). The status-line summary (D13: `summaryOf`, `statusTextOf`,
+  `statusModeOf`, `surfaceMode`, `SUMMARY_MAX`, `TrackFacts`, `SeedFact`,
+  `StatusMode`, `StatusTextSetting`; in `keepalive.ts` `factsOf`, `seedFact` and
+  `statusHidden`) and the surface roster it needed (`refreshSurfaces`) are removed; the
+  `AI_DLC_KEEPALIVE_STATUS_TEXT` setting is still read and checked but has no
+  effect. A track row starts with its status, the track's switch in force
+  (`rowLineOf`): `on, idle (…)`, `on, <running text>` or `off (disabled)`, the
+  cache part last; its button is the opposite. The head row reads `on` while
+  either track is on in force, else `off`, full and minimised alike, and its
+  button, the opposite, turns the master and both tracks off or on
+  (`bandModel`, `afterMasterPress(on)`, `switchAll`). The published `$.state`
+  lines are unchanged. Label rule D10 is replaced. Review fix (44.4.l1.1, W1):
+  `/ai-dlc:cache-keepalive-configure on|off --session` with no `--track` acts
+  as the head row's button, judged by what the head row reads (`anyOn`), not
+  by the master switch alone. R44.6 (44.4.l1.1): while both tracks are off the
+  band and the Pane show no seed row (`bandModel`); it shows again once a track
+  is on.
+- **No band below the pane in VS Code (step 44, R44.4 widened, 2026-10-31).**
+  Keep-alive draws its band only when every attached surface draws one
+  (`bandEverywhere` in `cache-state.ts`, the lens's rule; `bandSessionNow`), so
+  a VS Code session (or one whose surfaces are unknown) gets the Pane alone,
+  with no minimised row below it. The command opens the Pane wherever the band
+  is not drawn (`openPane`), so a session always has one of them.
+- **Keep-alive is a band only (step 44, R44.7, 44.2.l1.3, 2026-10-31).** A
+  probe in VS Code showed the `AbovePrompt` site raised there (surface
+  `vscode`, narrow and wide), so keep-alive draws its band on every surface and
+  opens no Pane: the Pane, its render hook, `openPane`, the band's `⤢`
+  (`BandControls.onMaximise`), the Pane's own size and `bandEverywhere` /
+  `bandSessionNow` (44.2.l1.1) are removed. A keep-alive Pane left open from
+  before is closed once per load (`closeOldPane`). The probe that found it
+  (`probe44`) is removed too.
+- **`statusText` retired; the handoff seed reads the tracks (step 44, R44.11
+  and R44.13, 44.2.l1.4, 2026-10-31).** `statusText`
+  (`AI_DLC_KEEPALIVE_STATUS_TEXT`) is gone from the settings, both schemas and
+  the configure CLI. The CLI's `validate` calls a file key or `env` variable
+  that still sets it "no longer used" (`RETIRED`), and merge removes the key.
+  `applyHandoffSeed` turns keep-alive on only when no track is on in force
+  (`anyOn`), as the head row reads it.
+- **G4 fix round (step 44, 44.2.l1.10, 2026-10-31).** Comments only, plus
+  one log: the track `status` comment and a `cache-state.ts` section title
+  no longer name the retired summary or status line; `panel.tsx`'s head
+  comment is one sentence again; `closeOldPane` logs a failed or unscheduled
+  close to debug instead of swallowing it. The types' `TrackView` and
+  `KeepaliveState` comments name the band only (no Pane).
+- **Manual checks marked not run (step 44, 44.2.l1.15, 2026-11-01).**
+  `MANUAL-CHECKS.md` only: each blank Result of P17 to P26 (P20 retired,
+  left as it is) now reads "not run" for every surface it names, so the
+  pending checks are written explicitly (decision 3, ITEM-098). No code
+  changes.
+- **README markers removed after G4 (step 44, 44.5.l3.19, commit babe63a,
+  2026-11-02).** `README.md` only, written by documentation-writer: the
+  *In progress* markers on the band, head row, on/off and no-status-line
+  sections are removed now that step 44 is done. Docs only; no code changes.
+
+- **ITEM-034 test proof (step 17.3.l1.1, sqa-engineer, 2026-11-13).** Test
+  code only; no production file changes. `tests/cache-state.test.ts` gains
+  eight pure tests of `markAgent`, `agentUnsettled`, `settleAgent`,
+  `armUntil` with agents on and `onlyAgentsWarm` (AC-17.3.1, 17.3.3, 17.3.7,
+  17.3.8). `tests/keepalive.test.ts` gains nine tests through the events
+  (AC-17.3.3, 17.3.7, 17.3.8: the literal only-subagent line with background
+  tasks and no ping, the 10:04 and 10:08 readings after a stop, an unreadable
+  or split-less transcript staying `split unknown` and read once, a stop whose
+  file does not exist ignored, `SubagentStart`, `TeammateIdle` and
+  `SubagentStop` liveness). `auto-handoff/tests/auto-handoff.test.tsx` gains
+  one test that a subagent response adds nothing to the handoff accounting
+  (`register.tsx` forwarding). Each test was seen failing under a hand
+  mutation of the code it covers; the mutation list and results are in the
+  step's hand-back. AC-17.3.2, 17.3.5 and 17.3.6 wait on ITEM-034.b, which is
+  not built.
+
+- **A transcript is read at most once per agent (step 17.4.l1.2,
+  agent-manager, 2026-11-13; AC-17.3.7).** `cache-state.ts`: `AgentCaches`
+  gets an optional `transcriptRead` flag. `keepalive.ts`, the
+  `classic.SubagentStop` hook: the flag is set when a stop reads the agent's
+  transcript, whatever the read gave. A later stop of that agent only marks
+  it finished, logs one debug line, and reads nothing, so its settled time
+  does not move. The flag lives in the ledger, so it is cleared with it at
+  `session.end` and before an automatic handoff. Tests unchanged; the three
+  AC-17.3.7 tests of step 17.3.l1.1 that failed now pass.
+
+- **Import paths without an extension, and strict test types (step 63.2,
+  agent-manager, 2026-11-13).** From Claude Code 2.1.323, `claude plugin
+  validate` type-checks the module with the engine's own options and
+  `--strict` fails on what it finds. Every relative import here drops its
+  `.ts` / `.tsx` extension (TS5097), as in `../auto-handoff/`. In
+  `tests/keepalive.test.ts`, 12 strict errors are fixed with no assertion
+  weakened: the default split is typed as the `[number, number]` tuple
+  `Opts.split` names; `expectUsage` takes the reply text as `string |
+  undefined` and first asserts that it is a string; three reads of a reply
+  text use `?.`, so an undefined text still fails the assertion.
+
+- **P1 and P2 results recorded (step 17.2.l3.1, agent-manager,
+  2026-11-13; release checklist item 15).** `MANUAL-CHECKS.md` only: the
+  empty Result cells of P1 (AC-17.4.4 repaint) and P2 (the 034.c live check)
+  now hold the human's results of 2026-10-25, copied from the run state
+  `FEAT-20261020-ai-dlc-lens` (entries 2t, 2u, 2y, 2ad, 2af, 2ah and 2w):
+  P1 terminal passes for the first ping with 1/9 to 2/9 not observed, P1 VS
+  Code passes, P2 fails so D2a applies. What the records do not say, such
+  as the Claude Code version for P1, is written "not recorded". No code
+  changes.

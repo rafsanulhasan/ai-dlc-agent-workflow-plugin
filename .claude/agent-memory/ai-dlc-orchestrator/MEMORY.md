@@ -11,3 +11,10 @@
 - [Lens: one chart per step](feedback_lens-chart-per-step.md) — one flowchart per top-level step, sub-steps under their parent; confirm layout requests in the human's terms
 - [Feature-root numbering](feedback_feature-root-numbering.md) — root N, phase sub-roots N.1–N.5, `l<k>` loops with round sub-numbers; run state major.minor versions
 - [Pause after reload request](feedback_pause-after-reload-request.md) — after asking for /reload-plugins, spawn nothing more until the human reports back
+- [Document everything explicitly](feedback_document-everything-explicitly.md) — no silent omissions or assumptions in docs; state sources and unverified host behaviour
+- [GPG-signed commits](feedback_gpg-signed-commits.md) — never disable signing; tell the human when pinentry waits; commit own paths only
+- [Commits by devops-engineer](feedback_commits-by-devops.md) — never git commit myself; Gene Kim (devops-engineer) makes every commit, I check it
+- [Team limits](project_team-limits.md) — RA teammates have no web tools; teammates' nested spawns report to the lead; web research as subagent
+- [AAWP as agent team](feedback_aawp-as-agent-team.md) — every AAWP round runs as a peer-to-peer team, never a lone agent-manager subagent
+- [herdr decisions](project_herdr-decisions.md) — watch/run-in-pane/off, fallback detection, file-main + pane-copy fallback; bgIsolation none
+- [Preview2 specsmd decisions](project_preview2-specsmd-decisions.md) — specsmd natively; memory-bank; execution-plans + events; plugin renamed ai-dlc-engine; G1 done

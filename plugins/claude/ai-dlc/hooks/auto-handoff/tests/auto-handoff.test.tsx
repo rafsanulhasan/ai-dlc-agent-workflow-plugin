@@ -1,11 +1,11 @@
 import { describe, expect, mock, test } from 'claude-code/testing'
 import type { TestBody } from 'claude-code/testing'
 import type { FsEntry, On, SessionMessage } from 'claude-code'
-import { briefPrompt, extractFacts, factsBlock, hasUnansweredLastRequest, isValidBrief, markUnverifiedFigures } from '../brief.ts'
-import { renderTemplate } from '../templates.ts'
-import { parseBrief } from '../viewer.ts'
-import { orLog } from '../io.ts'
-import { DEFAULT_WINDOW, contextLine, creationSplit, hostFields, seedCacheFields, seedCacheLine, windowFields, windowInfo, windowOf } from '../config.ts'
+import { briefPrompt, extractFacts, factsBlock, hasUnansweredLastRequest, isValidBrief, markUnverifiedFigures } from '../brief'
+import { renderTemplate } from '../templates'
+import { parseBrief } from '../viewer'
+import { orLog } from '../io'
+import { DEFAULT_WINDOW, contextLine, creationSplit, hostFields, seedCacheFields, seedCacheLine, windowFields, windowInfo, windowOf } from '../config'
 
 // renamed: the names /rename was run with, in order; commandOrder: every slash command run, in order.
 // store: the module's store as the fake engine holds it, so a test can read what the mod stored.
@@ -84,7 +84,7 @@ const files = (written: Record<string, string>) => Object.keys(written).filter(p
 // commands: the slash commands the engine lists (default: clear and rename); failRename: /rename rejects.
 // failList: listing a folder whose path matches it fails, as an unreadable folder does.
 // failStore: $.store.get of a key that matches it rejects, as an unreadable store does.
-function engine(on: On, opts: { tokens: number; files?: Record<string, string>; env?: Record<string, string>; brief?: string | null; messages?: SessionMessage[]; toolChars?: number; streamToolChars?: number; store?: Record<string, unknown>; stepUsage?: boolean; surfaces?: ('terminal' | 'desktop' | 'mobile' | 'vscode')[]; noSh?: boolean; git?: Git; failWrite?: RegExp; failList?: RegExp; failStore?: RegExp; window?: number | null; percent?: number; breakdown?: Record<string, unknown> | 'throw'; commands?: string[]; failRename?: boolean; hold?: Promise<unknown>; stepRead?: number; stepSplit?: { h: number; m: number } }): Calls {
+function engine(on: On, opts: { endOnClear?: boolean; beneath?: string; tokens: number; files?: Record<string, string>; env?: Record<string, string>; brief?: string | null; messages?: SessionMessage[]; toolChars?: number; streamToolChars?: number; store?: Record<string, unknown>; stepUsage?: boolean; surfaces?: ('terminal' | 'desktop' | 'mobile' | 'vscode')[]; noSh?: boolean; git?: Git; failWrite?: RegExp; failList?: RegExp; failStore?: RegExp; window?: number | null; percent?: number; breakdown?: Record<string, unknown> | 'throw'; commands?: string[]; failRename?: boolean; hold?: Promise<unknown>; stepRead?: number; stepSplit?: { h: number; m: number } }): Calls {
   const calls: Calls = { compacts: 0, steps: 0, cleared: 0, seeded: [], written: {}, completes: 0, tokens: opts.tokens, prompts: [], toasts: [], ran: 0, clearedAtWrite: {}, renamed: [], commandOrder: [], branchQueries: 0, usageArgs: [], store: new Map(Object.entries(opts.store ?? {})) }
   let sessionId = 'old-session'
   let clears = 0
@@ -92,8 +92,9 @@ function engine(on: On, opts: { tokens: number; files?: Record<string, string>; 
   clock = mock.clock(on) // the panel's spinner and collapse timers
   on('session.surfaces', async () => ({ value: opts.surfaces ?? ['terminal'] }))
   on('ui.render', { component: 'AbovePrompt' }, async ($, e) => { // the engine draws nothing in the band
-    const { Box } = $.ui.resolve(e)
-    return <Box />
+    const { Box, Text } = $.ui.resolve(e)
+    // `beneath`: a band another plugin draws beneath ours (the lens's), to see that ours lets it through
+    return opts.beneath ? <Text>{opts.beneath}</Text> : <Box />
   })
   // The test's $ has no store noun: what the mod finds in its store is seeded here. The four handlers
   // answer as mock.store does (claude-code/testing), over calls.store, so a test can read what was
@@ -215,6 +216,8 @@ function engine(on: On, opts: { tokens: number; files?: Record<string, string>; 
     return { text: e.text }
   })
   on('classic.SessionStart', async () => ({}))
+  // endOnClear: a test ends the old session itself while the handoff is under way, as /clear does
+  if (opts.endOnClear) on('session.end', async (_$, e) => ({ sessionId: e.sessionId }) as never)
   on('session.compact', async (_$, e) => {
     calls.compacts++
     return { messages: e.messages }
@@ -246,8 +249,46 @@ async function step($: TestBody extends (...a: infer A) => unknown ? A[0] : neve
 
 let clock: ReturnType<typeof mock.clock>
 
-const mountBand = ($: Parameters<TestBody>[0]) =>
-  $.ui.mount({ plugin: 'ai-dlc', surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 20, bodyColumns: 120 } as never })
+// Claude Code 2.1.323 changed what `ui.drawn()` returns for a hook that calls `next(e)`: where our tree holds the
+// answer of `next(e)`, it now draws `{ type: 'engine', ref }`, and the tree of the test's own `ui.render` hook
+// beneath (the stand-in for the lens band) comes after our part, as a separate child of an unmarked root Box,
+// each part marked `part: { plugin }`. Up to 2.1.322 that tree was drawn in place of `next(e)`. `inlineBeneath`
+// puts each part beneath back where an engine node sits in ours, in order, so a test reads the band in the order
+// it is drawn. A tree in the old shape, or one whose engine nodes and parts beneath do not pair up, is returned
+// unchanged, so a test still sees what the host drew. Regression: '[42.2.l1.1] inlineBeneath'.
+type Drawn = { type?: unknown; part?: { plugin?: unknown }; children?: unknown[] }
+function inlineBeneath(root: unknown, plugin = 'ai-dlc'): unknown {
+  const r = root as Drawn
+  if (!r || typeof r !== 'object' || r.part || !Array.isArray(r.children)) return root
+  const parts = r.children as Drawn[]
+  const ours = parts.find(p => p?.part?.plugin === plugin)
+  if (!ours) return root
+  const beneath = parts.filter(p => p !== ours)
+  let used = 0
+  const fill = (n: unknown): unknown => {
+    if (!n || typeof n !== 'object') return n
+    const d = n as Drawn
+    if (d.type === 'engine') return used < beneath.length ? beneath[used++] : n
+    return Array.isArray(d.children) ? { ...d, children: d.children.map(fill) } : n
+  }
+  const filled = fill(ours)
+  return used > 0 && used === beneath.length ? filled : root
+}
+
+const mountBand = async ($: Parameters<TestBody>[0]) => {
+  const ui = await $.ui.mount({ plugin: 'ai-dlc', surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 20, bodyColumns: 120 } as never })
+  // the mounted drawing is frozen: a copy carries the wrapped drawn()
+  const drawn: typeof ui.drawn = async (...a) => inlineBeneath(await ui.drawn(...a)) as Awaited<ReturnType<typeof ui.drawn>>
+  return { ...ui, drawn }
+}
+
+// Step 42: keep-alive's band starts minimised (one row: whether it is on, and the master button). Opens it, whatever its state.
+const mountOpenBand = async ($: Parameters<TestBody>[0]) => {
+  const ui = await mountBand($)
+  const min = await ui.find({ type: 'Button', key: 'ka-min' })
+  if (min && String((min as { text?: unknown }).text ?? '').includes('□')) await ui.press({ key: 'ka-min' })
+  return ui
+}
 
 // Every string in a drawn tree, in order: Text children, a Markdown's text, a Button's label.
 const textOf = (n: unknown): string => typeof n === 'string' ? n
@@ -259,10 +300,34 @@ const textOf = (n: unknown): string => typeof n === 'string' ? n
 async function band($: Parameters<TestBody>[0]): Promise<string> {
   const ui = await mountBand($)
   try {
-    return textOf(await ui.drawn())
+    // Auto-handoff's panel only: keep-alive's rows, drawn below it in the same band since ITEM-068, are
+    // tested in hooks/keepalive/
+    const text = textOf(await ui.drawn())
+    const ka = text.indexOf('⚠ ai-dlc cache-keepalive:')
+    return ka < 0 ? text : text.slice(0, ka)
   } finally {
     await ui.unmount()
   }
+}
+
+// Step 44 (R44.1): keep-alive writes no status line. A test reads the track lines from the state keep-alive publishes (they are
+// the text the old line carried; nothing while the master is off), and the seed line from its band (kaText). The write goes out
+// after the hook returns, so a terminal Stop handler waits a moment (`flush`) before it answers.
+const flush = () => new Promise<void>(r => setTimeout(r, 30))
+function kaFeed(on: On, calls?: { cleared: number }): (string | undefined)[] & { cleared: number[] } {
+  const feed = Object.assign([] as (string | undefined)[], { cleared: [] as number[] })
+  on('state.set', async (_$, e) => {
+    const w = e as unknown as { plugin: string; key: string; value: { enabled: boolean; tracks: { line: string }[] } }
+    if (w.plugin === 'ai-dlc' && w.key === 'keepalive') { feed.push(w.value.enabled ? w.value.tracks.map(t => t.line).join('\n') : undefined); feed.cleared.push(calls?.cleared ?? 0) }
+    return { value: { isSet: true, version: feed.length } } as never
+  })
+  return feed
+}
+// Keep-alive's band opened, as text: its head row, the track rows and the seed row while it shows.
+async function kaText($: Parameters<TestBody>[0]): Promise<string> {
+  await flush()
+  const ui = await mountOpenBand($)
+  try { return textOf(await ui.drawn()) } finally { await ui.unmount() }
 }
 
 async function settle(check: () => boolean) {
@@ -1128,7 +1193,8 @@ describe('auto-handoff', () => {
     const ui = await mountBand($)
     expect(textOf(await ui.drawn())).toContain('⚠ brief is facts only')
     await ui.press({ key: 'dismiss' })
-    expect(textOf(await ui.drawn())).toBe('')
+    // Only keep-alive's rows are left in the band (ITEM-068)
+    expect(textOf(await ui.drawn())).toMatch(/^⚠ ai-dlc cache-keepalive:/)
     await ui.unmount()
   })
 
@@ -2327,16 +2393,16 @@ describe('the handoff and the prompt cache', () => {
   test('keep-alive timers stop before the /clear, so no ping of the old session reaches the new one', async ($, on) => {
     const calls = engine(on, { tokens: 165_000, files: { '/home/test/old.jsonl': cacheRow(0, 2_000) } })
     let forks = 0
-    const statuses: { text: string | undefined; cleared: number }[] = []
+    const statuses = kaFeed(on, calls)
     on('model.fork', async () => (forks++, { value: { isAnswered: true, text: 'ok', usage: USAGE } }) as never)
-    on('ui.status', async (_$, e) => (statuses.push({ text: e.text, cleared: calls.cleared }), { value: undefined }) as never)
-    on('classic.Stop', async () => ({}) as never)
+    on('classic.Stop', async () => (await flush(), {}) as never)
     await $.classic.Stop({ background_tasks: [KA_TASK], transcript_path: '/home/test/old.jsonl' } as never)
-    expect(statuses.at(-1)?.text).toMatch(/^keepalive 5m: main warm until \d+:\d\d; armed/m)
+    expect(statuses.at(-1)).toMatch(/^keepalive 5m: main warm until \d+:\d\d; armed/m)
     await $.turn.complete(TURN)
     await settle(() => calls.cleared > 0)
-    const stopped = statuses.find(s => s.text?.includes('keepalive 5m: handed off, stopped'))
-    expect(stopped?.cleared).toBe(0) // shown before the /clear ran
+    const stoppedAt = statuses.findIndex(s => s?.includes('keepalive 5m: handed off, stopped'))
+    expect(stoppedAt).toBeGreaterThanOrEqual(0)
+    expect(statuses.cleared[stoppedAt]).toBe(0) // published before the /clear ran
     expect(calls.written['/home/test/.claude/state/auto-handoff/auto-handoff.log']).toContain('keepalive timers stopped for the handoff session=old-session')
     await $.classic.SessionStart({ source: 'clear' })
     await settle(() => calls.seeded.length > 0)
@@ -2350,9 +2416,8 @@ describe('the handoff and the prompt cache', () => {
   // from the old transcript; after the /clear a Stop whose transcript shows no write must find none.
   test('the handoff clears the keep-alive cache ledger: the new session\'s Stop finds no cache write', async ($, on) => {
     const calls = engine(on, { tokens: 165_000, files: { '/home/test/old.jsonl': cacheRow(0, 2_000) } })
-    const statuses: (string | undefined)[] = []
-    on('ui.status', async (_$, e) => (statuses.push(e.text), { value: undefined }) as never)
-    on('classic.Stop', async () => ({}) as never)
+    const statuses = kaFeed(on)
+    on('classic.Stop', async () => (await flush(), {}) as never)
     await $.classic.Stop({ background_tasks: [KA_TASK], transcript_path: '/home/test/old.jsonl' } as never)
     expect(statuses.at(-1)).toMatch(/^keepalive 5m: main warm until \d+:\d\d; armed/m)
     await $.turn.complete(TURN)
@@ -2360,14 +2425,13 @@ describe('the handoff and the prompt cache', () => {
     await $.classic.SessionStart({ source: 'clear' })
     await settle(() => calls.seeded.length > 0)
     await $.classic.Stop({ background_tasks: [KA_TASK], transcript_path: '/home/test/none.jsonl' } as never)
-    expect(statuses.at(-1)?.split('\n')).toContain('keepalive 5m: off (no cache write seen yet, so the cache lifetime is unknown)')
+    expect(statuses.at(-1)?.split('\n')).toContain('keepalive 5m: off (no cache write seen yet, so the cache lifetime is unknown), ping 0/20, keep warm 1h (default)')
   })
 
   test('no ping is armed while a handoff is under way', async ($, on) => {
     const calls = engine(on, { tokens: 165_000, files: { '/home/test/old.jsonl': cacheRow(1_000, 0) } })
-    const statuses: (string | undefined)[] = []
-    on('ui.status', async (_$, e) => (statuses.push(e.text), { value: undefined }) as never)
-    on('classic.Stop', async () => ({}) as never)
+    const statuses = kaFeed(on)
+    on('classic.Stop', async () => (await flush(), {}) as never)
     await $.turn.complete(TURN)
     await settle(() => calls.cleared > 0 || calls.completes > 0)
     await $.classic.Stop({ background_tasks: [KA_TASK], transcript_path: '/home/test/old.jsonl' } as never)
@@ -2378,9 +2442,8 @@ describe('the handoff and the prompt cache', () => {
     let release!: () => void
     const hold = new Promise<void>(r => { release = r })
     const calls = engine(on, { tokens: 165_000, hold, files: { '/home/test/old.jsonl': cacheRow(0, 2_000), '/home/test/new.jsonl': cacheRow(0, 2_000) } })
-    const statuses: (string | undefined)[] = []
-    on('ui.status', async (_$, e) => (statuses.push(e.text), { value: undefined }) as never)
-    on('classic.Stop', async () => ({}) as never)
+    const statuses = kaFeed(on)
+    on('classic.Stop', async () => (await flush(), {}) as never)
     const stopWith = (path: string) => $.classic.Stop({ background_tasks: [KA_TASK], transcript_path: path } as never)
     await $.turn.complete(TURN)
     await settle(() => calls.completes > 0)
@@ -2403,9 +2466,8 @@ describe('the handoff and the prompt cache', () => {
 
   test('the seed turn logs what its first request read from and wrote to the cache, and the panel says hit', async ($, on) => {
     const calls = engine(on, { tokens: 165_000, stepUsage: true, files: { '/home/test/new.jsonl': cacheRow(300, 0) } })
-    const statuses: (string | undefined)[] = []
-    on('ui.status', async (_$, e) => (statuses.push(e.text), { value: undefined }) as never)
-    on('classic.Stop', async () => ({}) as never)
+    const statuses = kaFeed(on)
+    on('classic.Stop', async () => (await flush(), {}) as never)
     on('turn.start', async (_$, e) => e as never)
     await $.turn.complete(TURN)
     await settle(() => calls.cleared > 0)
@@ -2416,12 +2478,16 @@ describe('the handoff and the prompt cache', () => {
     const log = calls.written['/home/test/.claude/state/auto-handoff/auto-handoff.log']!
     expect(log).toContain("floor session=new-session-1 tokens=47000 (seed turn's first request) input_tokens=10 cache_read_input_tokens=46990 cache_creation_input_tokens=0 cache_creation_1h=300 cache_creation_5m=0 cache=hit")
     expect(await band($)).toContain('cache hit: 47k read, 0k written (1h 0k, 5m 0k)')
-    // D4: keep-alive's status line says it too, under the track lines once a Stop arms one, until the next turn.
-    expect(statuses.at(-1)).toBe('keepalive seed: cache hit, 47k read')
+    // D4 (step 44: the band's seed row, not a status line): keep-alive's band says it too, under the track rows, until the next turn.
+    expect(await kaText($)).toContain('keepalive seed: cache hit, 47k read')
     await $.classic.Stop({ background_tasks: [KA_TASK], transcript_path: '/home/test/new.jsonl' } as never)
-    expect(statuses.at(-1)?.split('\n')).toEqual([expect.stringMatching(/^keepalive 1h: main warm until \d+:\d\d; armed/m), 'keepalive 5m: off (no 5m cache write seen)', 'keepalive seed: cache hit, 47k read'])
+    const armedText = await kaText($)
+    expect(armedText).toContain('keepalive seed: cache hit, 47k read')
+    expect(armedText.indexOf('keepalive 1h: on, armed')).toBeLessThan(armedText.indexOf('keepalive seed:'))
+    expect(statuses.at(-1)?.split('\n')).toEqual([expect.stringMatching(/^keepalive 1h: main warm until \d+:\d\d; armed/m), 'keepalive 5m: off (no 5m cache write seen), ping 0/20, keep warm 1h (default)'])
     await $.turn.start({ turnId: 't-2' } as never)
     await $.classic.Stop({ background_tasks: [KA_TASK], transcript_path: '/home/test/new.jsonl' } as never)
+    expect(await kaText($)).not.toContain('keepalive seed')
     expect(statuses.at(-1)?.split('\n')).toHaveLength(2)
   })
 
@@ -2449,10 +2515,10 @@ describe('the handoff and the prompt cache', () => {
   // (ui.status, ui.log), userConfig values are validated before register sees them, and the test
   // harness loads its own copy of the module, so a fault a test sets on an imported module never
   // reaches it (tried 2026-10-23). Removing the wrapper therefore fails no test; that gap is accepted.
-  test('[B1] a failing seed-line status does not stop the seed turn: the floor is set and the tight-threshold warning still shows', { options: {} }, async ($, on) => {
+  test('[B1] [R44.1] the seed turn writes no status line at all: the floor is set and the tight-threshold warning still shows', { options: {} }, async ($, on) => {
     const calls = engine(on, { tokens: 85_000, stepUsage: true, env: { AI_DLC_AUTO_HANDOFF_THRESHOLD_TOKENS: '80000' } })
-    let attempts = 0
-    on('ui.status', async (_$, e) => { if (e.text?.includes('keepalive seed')) { attempts++; throw new Error('status line unavailable') } return { value: undefined } as never })
+    const texts: (string | undefined)[] = []
+    on('ui.status', async (_$, e) => (texts.push(e.text), { value: undefined }) as never)
     await $.turn.complete(TURN)
     await settle(() => calls.cleared > 0)
     await $.classic.SessionStart({ source: 'clear' })
@@ -2460,29 +2526,26 @@ describe('the handoff and the prompt cache', () => {
     calls.tokens = 45_000
     await step($, 0) // the seed turn's first request: sets the floor, then shows the seed line, then warns
     const log = calls.written['/home/test/.claude/state/auto-handoff/auto-handoff.log']!
-    expect(attempts).toBe(1)
+    expect(texts.filter(t => t !== undefined)).toEqual([]) // R44.1: keep-alive writes no status line, the seed line included
     expect(log).toContain("floor session=new-session-1 tokens=45000 (seed turn's first request)")
     expect(log).toContain('tight threshold session=new-session-1')
     expect(await band($)).toContain("leaves 35k this session's 45k start")
   })
 
-  test('a seed turn that read nothing from the cache says miss on the status line', async ($, on) => {
+  test('a seed turn that read nothing from the cache says miss in the seed row of the band', async ($, on) => {
     const calls = engine(on, { tokens: 165_000, stepUsage: true, stepRead: 0 })
-    const statuses: (string | undefined)[] = []
-    on('ui.status', async (_$, e) => (statuses.push(e.text), { value: undefined }) as never)
     await $.turn.complete(TURN)
     await settle(() => calls.cleared > 0)
     await $.classic.SessionStart({ source: 'clear' })
     await settle(() => calls.seeded.length > 0)
     calls.tokens = 47_000
     await step($, 0)
-    expect(statuses.at(-1)).toBe('keepalive seed: cache miss')
+    expect(await kaText($)).toContain('keepalive seed: cache miss')
   })
 
   test('with keep-alive status lines off, the seed line is not shown', async ($, on) => {
     const calls = engine(on, { tokens: 165_000, stepUsage: true, files: { '/home/test/proj/.claude/settings.local.json': JSON.stringify({ env: { AI_DLC_KEEPALIVE_STATUS: 'false' } }) } })
-    const statuses: (string | undefined)[] = []
-    on('ui.status', async (_$, e) => (statuses.push(e.text), { value: undefined }) as never)
+    const statuses = kaFeed(on)
     await $.turn.complete(TURN)
     await settle(() => calls.cleared > 0)
     await $.classic.SessionStart({ source: 'clear' })
@@ -2490,13 +2553,13 @@ describe('the handoff and the prompt cache', () => {
     calls.tokens = 47_000
     await step($, 0)
     expect(calls.written['/home/test/.claude/state/auto-handoff/auto-handoff.log']).toContain('cache=hit')
-    expect(statuses.some(s => s?.includes('seed'))).toBe(false)
+    expect(await kaText($)).not.toContain('keepalive seed')
   })
 
-  test('[R4] with keep-alive off (enabled=false), the seed line is not shown', async ($, on) => {
-    const calls = engine(on, { tokens: 165_000, stepUsage: true, files: { '/home/test/proj/.claude/settings.local.json': JSON.stringify({ env: { AI_DLC_KEEPALIVE_ENABLED: 'false' } }) } })
-    const statuses: (string | undefined)[] = []
-    on('ui.status', async (_$, e) => (statuses.push(e.text), { value: undefined }) as never)
+  // ITEM-076: with handoff.onWhenOff (default true) the seeded session turns keep-alive on, so it is off here
+  test('[R4] with keep-alive off (enabled=false) and no onWhenOff, the seeded session stays off: the head row reads off', async ($, on) => {
+    const calls = engine(on, { tokens: 165_000, stepUsage: true, files: { '/home/test/proj/.claude/settings.local.json': JSON.stringify({ env: { AI_DLC_KEEPALIVE_ENABLED: 'false', AI_DLC_KEEPALIVE_HANDOFF_ON_WHEN_OFF: 'false' } }) } })
+    const statuses = kaFeed(on)
     await $.turn.complete(TURN)
     await settle(() => calls.cleared > 0)
     await $.classic.SessionStart({ source: 'clear' })
@@ -2504,14 +2567,15 @@ describe('the handoff and the prompt cache', () => {
     calls.tokens = 47_000
     await step($, 0)
     expect(calls.written['/home/test/.claude/state/auto-handoff/auto-handoff.log']).toContain('cache=hit')
-    expect(statuses.some(s => s?.includes('seed'))).toBe(false)
+    const offText = await kaText($)
+    expect(offText).toMatch(/cache-keepalive: off on/)
+    expect(offText).not.toContain('keepalive seed') // R44.6
   })
 
   test('[R4] the session ending clears the seed line, and the next Stop shows the track lines alone', async ($, on) => {
     const calls = engine(on, { tokens: 165_000, stepUsage: true, files: { '/home/test/new.jsonl': cacheRow(300, 0) } })
-    const statuses: (string | undefined)[] = []
-    on('ui.status', async (_$, e) => (statuses.push(e.text), { value: undefined }) as never)
-    on('classic.Stop', async () => ({}) as never)
+    const statuses = kaFeed(on)
+    on('classic.Stop', async () => (await flush(), {}) as never)
     on('session.end', async (_$, e) => ({ sessionId: e.sessionId }) as never)
     await $.turn.complete(TURN)
     await settle(() => calls.cleared > 0)
@@ -2519,12 +2583,12 @@ describe('the handoff and the prompt cache', () => {
     await settle(() => calls.seeded.length > 0)
     calls.tokens = 47_000
     await step($, 0)
-    expect(statuses.at(-1)).toBe('keepalive seed: cache hit, 47k read')
+    expect(await kaText($)).toContain('keepalive seed: cache hit, 47k read')
     await $.session.end({ reason: 'clear', sessionId: 'new-session-1' } as never)
-    expect(statuses.at(-1)).toBeUndefined()
+    expect(await kaText($)).not.toContain('keepalive seed')
     await $.classic.Stop({ background_tasks: [KA_TASK], transcript_path: '/home/test/new.jsonl' } as never)
     expect(statuses.at(-1)?.split('\n')).toHaveLength(2)
-    expect(statuses.at(-1)).not.toContain('seed')
+    expect(await kaText($)).not.toContain('seed')
   })
 
   // ITEM-034.c (17.2.4): a subagent response's usage goes to the debug log only, never to the cache
@@ -2533,32 +2597,44 @@ describe('the handoff and the prompt cache', () => {
     for await (const _ of $.turn.step({ ...STEP, ...(agentId ? { agentId } : {}) } as never)) void _
   }
 
-  test('[ITEM-034.c] a subagent response logs its agent usage line and does not reach the cache ledger', async ($, on) => {
+  test('[ITEM-034] a subagent response logs its agent usage line and reaches the cache ledger as a subagent cache, which arms nothing (AC-17.3.8)', async ($, on) => {
     engine(on, { tokens: 50_000, stepUsage: true, stepRead: 0, stepSplit: { h: 0, m: 49_990 } })
     const logs: string[] = []
-    const statuses: (string | undefined)[] = []
+    const statuses = kaFeed(on)
     on('ui.log', async (_$, e) => (logs.push(e.text), { value: undefined }) as never)
-    on('ui.status', async (_$, e) => (statuses.push(e.text), { value: undefined }) as never)
-    on('classic.Stop', async () => ({}) as never)
+    on('classic.Stop', async () => (await flush(), {}) as never)
     await agentStep($, 'sub-1')
     expect(logs).toContain('keepalive: agent usage agent=sub-1 split=present writes=49990')
-    // the ledger holds no write: a Stop with background work finds no main cache
+    // T17.3: the agent's write is in the ledger as a subagent cache; with subagent pings off it arms nothing
     await $.classic.Stop({ background_tasks: [KA_TASK] } as never)
-    expect(statuses.at(-1)).not.toContain('warm until')
-    expect(statuses.at(-1)).toContain('keepalive 5m: off (no cache write seen yet')
+    expect(statuses.at(-1)).not.toContain('main warm until')
+    expect(statuses.at(-1)).toMatch(/^keepalive 5m: subagents warm until \d+:\d\d; off \(only subagent caches; subagent pings off\), ping 0\/20, keep warm 1h \(default\)$/m)
   })
 
   test('[ITEM-034.c] a main-loop response reaches the cache ledger and logs no agent usage line', async ($, on) => {
     engine(on, { tokens: 50_000, stepUsage: true, stepRead: 0, stepSplit: { h: 0, m: 49_990 } })
     const logs: string[] = []
-    const statuses: (string | undefined)[] = []
+    const statuses = kaFeed(on)
     on('ui.log', async (_$, e) => (logs.push(e.text), { value: undefined }) as never)
-    on('ui.status', async (_$, e) => (statuses.push(e.text), { value: undefined }) as never)
-    on('classic.Stop', async () => ({}) as never)
+    on('classic.Stop', async () => (await flush(), {}) as never)
     await agentStep($)
     expect(logs.filter(l => l.includes('agent usage'))).toEqual([])
     await $.classic.Stop({ background_tasks: [KA_TASK] } as never)
     expect(statuses.at(-1)).toMatch(/5m: main warm until \d+:\d\d/)
+  })
+
+  // SQA 17.3.l1.1 (ITEM-034, T17.3 forwarding): register.tsx forwards every response's usage to keep-alive, but the
+  // handoff accounting stays the main conversation's: a subagent's output tokens never count toward the next request's size.
+  test('[ITEM-034] a subagent response adds nothing to the unmeasured tokens: the next main request is sent, and the output of a main response still counts', async ($, on) => {
+    const calls = engine(on, { tokens: 79_950, env: { AI_DLC_AUTO_HANDOFF_THRESHOLD_TOKENS: '80000' }, streamToolChars: 1 }) // each response reports 100 output tokens
+    await agentStep($, 'sub-1')
+    expect(calls.steps).toBe(1)
+    const sent = await step($, 2)
+    expect(calls.steps).toBe(2)
+    expect(sent.some(c => c.kind === 'text' && c.text?.includes('auto-handoff'))).toBe(false)
+    const handedOff = await step($, 3) // the main response's 100 output tokens now count: 79,950 + 100 is past 80,000
+    expect(calls.steps).toBe(2)
+    expect(handedOff.some(c => c.kind === 'text' && c.text?.includes('auto-handoff'))).toBe(true)
   })
 
   test('the seed cache fields and panel line, for a hit, a miss and a split not reported', () => {
@@ -2569,5 +2645,886 @@ describe('the handoff and the prompt cache', () => {
     expect(seedCacheLine({ input: 5, read: 30_000, written: 2_000 })).toBe('cache hit: 30k read, 2k written (1h/5m split not reported)')
     expect(creationSplit({ cache_creation: { ephemeral_1h_input_tokens: 0, ephemeral_5m_input_tokens: 0 } })).toEqual({ '1h': 0, '5m': 0 })
     expect(creationSplit({ input_tokens: 1 })).toBeUndefined()
+  })
+})
+
+// T17.7 (ITEM-076): at the seed of an automatic handoff, handoff.onWhenOff (default true) turns keep-alive on
+// for the chain when its master is off. It is trust-gated: from a file a cloned repository controls it applies
+// only in a folder Claude Code trusts. The seed line (keepalive seed: cache hit, ...) shows only while keep-alive is on.
+describe('handoff.onWhenOff at the seed of an automatic handoff', () => {
+  const PROJ = '/home/test/proj'
+  const LOCAL = `${PROJ}/.claude/settings.local.json`
+  const SETTINGS_JSON = `${PROJ}/.claude/settings.json`
+  const REPO = `${PROJ}/.ai-dlc/cache-keepalive.json`
+  const TRUSTED = { '/home/test/.claude.json': JSON.stringify({ projects: { [PROJ]: { hasTrustDialogAccepted: true } } }) }
+  const env = (vars: Record<string, string>) => JSON.stringify({ env: vars })
+  const OFF = { AI_DLC_KEEPALIVE_ENABLED: 'false' }
+
+  // One handoff with keep-alive's master off in the settings; whether the seeded session's band shows the seed row.
+  async function seedShown($: Parameters<TestBody>[0], on: On, files: Record<string, string>): Promise<{ shown: boolean; on: boolean; log: string }> {
+    const calls = engine(on, { tokens: 165_000, stepUsage: true, files })
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    await $.classic.SessionStart({ source: 'clear' })
+    await settle(() => calls.seeded.length > 0)
+    calls.tokens = 47_000
+    await step($, 0)
+    const text = await kaText($)
+    // `on`: the head row reads on (keep-alive is on in the seeded session); the seed row is the band's, shown whatever the master says
+    return { shown: text.includes('keepalive seed:'), on: /cache-keepalive: on /.test(text), log: calls.written['/home/test/.claude/state/auto-handoff/auto-handoff.log'] ?? '' }
+  }
+
+  test('master off in the settings, onWhenOff on (the default): the seeded session has keep-alive on, so the seed line shows', async ($, on) => {
+    expect((await seedShown($, on, { [LOCAL]: env(OFF) })).shown).toBe(true)
+  })
+
+  test('onWhenOff false in the env of settings.local.json: the seeded session stays off, the head row reads off', async ($, on) => {
+    expect((await seedShown($, on, { [LOCAL]: env({ ...OFF, AI_DLC_KEEPALIVE_HANDOFF_ON_WHEN_OFF: 'false' }) })).shown).toBe(false) // R44.6: no seed row while keep-alive is off
+  })
+
+  test('master on: the seed line shows as before, whatever onWhenOff says', async ($, on) => {
+    expect((await seedShown($, on, { [LOCAL]: env({ AI_DLC_KEEPALIVE_HANDOFF_ON_WHEN_OFF: 'false' }) })).shown).toBe(true)
+  })
+
+  test('the trust gate, untrusted: false in the env of settings.json is skipped, the default applies, so keep-alive is turned on', async ($, on) => {
+    expect((await seedShown($, on, { [LOCAL]: env(OFF), [SETTINGS_JSON]: env({ AI_DLC_KEEPALIVE_HANDOFF_ON_WHEN_OFF: 'false' }) })).shown).toBe(true)
+  })
+
+  test('the trust gate, untrusted: false in the repository file is skipped, so keep-alive is turned on', async ($, on) => {
+    expect((await seedShown($, on, { [LOCAL]: env(OFF), [REPO]: JSON.stringify({ handoff: { onWhenOff: false } }) })).shown).toBe(true)
+  })
+
+  test('the trust gate, trusted: false in the env of settings.json applies, so keep-alive stays off', async ($, on) => {
+    expect((await seedShown($, on, { ...TRUSTED, [LOCAL]: env(OFF), [SETTINGS_JSON]: env({ AI_DLC_KEEPALIVE_HANDOFF_ON_WHEN_OFF: 'false' }) })).shown).toBe(false)
+  })
+
+  test('the trust gate, trusted: false in the repository file applies, so keep-alive stays off', async ($, on) => {
+    expect((await seedShown($, on, { ...TRUSTED, [LOCAL]: env(OFF), [REPO]: JSON.stringify({ handoff: { onWhenOff: false } }) })).shown).toBe(false)
+  })
+})
+
+// Step 40, fix 3 (human: "the lens band is gone"): the band above the prompt draws auto-handoff's panel and
+// keep-alive's rows and then the hooks beneath it (another plugin's band, such as ai-dlc-lens's, then the
+// engine's). A hook that returns its own tree without calling next hides everything beneath it.
+describe('the band above the prompt draws the hooks beneath it', () => {
+  const KA = '⚠ ai-dlc cache-keepalive:'
+
+  test('keep-alive\'s rows are drawn and so is the band of a hook beneath (the lens band)', async ($, on) => {
+    engine(on, { tokens: 10_000, beneath: 'LENS BAND BENEATH' })
+    const ui = await mountBand($)
+    const text = textOf(await ui.drawn())
+    expect(text).toContain(KA)
+    expect(text).toContain('LENS BAND BENEATH')
+    // Step 42: the lens band first, keep-alive's band after it
+    expect(text.indexOf('LENS BAND BENEATH')).toBeLessThan(text.indexOf(KA))
+    await ui.unmount()
+  })
+
+  test('with a handoff panel showing too: panel, then the hook beneath (the lens band), then keep-alive\'s band, in that order', async ($, on) => {
+    const calls = engine(on, { tokens: 165_000, stepUsage: true, beneath: 'LENS BAND BENEATH' })
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    const ui = await mountBand($)
+    const text = textOf(await ui.drawn())
+    const lens = text.indexOf('LENS BAND BENEATH')
+    expect(lens).toBeGreaterThan(0)
+    expect(text.slice(0, lens).trim()).not.toBe('') // the handoff panel
+    expect(text.slice(0, lens)).not.toContain(KA)
+    expect(text.indexOf(KA)).toBeGreaterThan(lens)
+    await ui.unmount()
+  })
+
+  test('a survey in progress yields the whole band to the hooks beneath: nothing of ours is drawn', async ($, on) => {
+    engine(on, { tokens: 10_000, beneath: 'BENEATH' })
+    const ui = await $.ui.mount({ plugin: 'ai-dlc', surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey: true, isWorking: false, maxRows: 20, bodyColumns: 120 } as never })
+    const text = textOf(await ui.drawn())
+    expect(text).toContain('BENEATH')
+    expect(text).not.toContain(KA)
+    await ui.unmount()
+  })
+
+})
+
+// 42.2.l1.1: Claude Code 2.1.323 draws the answer of `next(e)` as an engine node and the test's hook beneath as a
+// separate part after ours (see inlineBeneath). These pin both shapes, so the band tests above read the band in
+// drawing order on either host, and a host that changes the shape again fails here first.
+describe('[42.2.l1.1] inlineBeneath: the part beneath goes back where next(e) sits', () => {
+  const LENS = { type: 'Text', children: ['LENS BAND BENEATH'], part: { plugin: 'test' } }
+  const KA = { type: 'Box', children: [{ type: 'Text', children: ['⚠ ai-dlc cache-keepalive: on'] }] }
+  const PANEL = { type: 'Text', children: ['auto-handoff panel'] }
+
+  test('2.1.323 shape: an unmarked root of [our part with an engine node, the part beneath] becomes our part with the part beneath in the engine node\'s place', () => {
+    const ours = { type: 'Box', props: { flexDirection: 'column' }, children: [PANEL, { type: 'engine', ref: 1 }, KA], part: { plugin: 'ai-dlc' } }
+    const drawn = { type: 'Box', props: { flexDirection: 'column' }, children: [ours, LENS] }
+    expect(inlineBeneath(drawn)).toEqual({ ...ours, children: [PANEL, LENS, KA] })
+    expect(textOf(inlineBeneath(drawn))).toBe('auto-handoff panelLENS BAND BENEATH⚠ ai-dlc cache-keepalive: on')
+  })
+
+  test('an engine node nested deeper in our part is filled too', () => {
+    const ours = { type: 'Box', children: [{ type: 'Box', children: [{ type: 'engine', ref: 1 }] }, KA], part: { plugin: 'ai-dlc' } }
+    expect(textOf(inlineBeneath({ type: 'Box', children: [ours, LENS] }))).toBe('LENS BAND BENEATH⚠ ai-dlc cache-keepalive: on')
+  })
+
+  test('the old shape (up to 2.1.322: the part beneath already in place, the root marked as ours) is returned unchanged', () => {
+    const old = { type: 'Box', children: [LENS, KA], part: { plugin: 'ai-dlc' } }
+    expect(inlineBeneath(old)).toBe(old)
+  })
+
+  test('a tree it cannot pair up is returned unchanged: no part of ours, no engine node, or more parts beneath than engine nodes', () => {
+    const noOurs = { type: 'Box', children: [LENS] }
+    const noEngine = { type: 'Box', children: [{ type: 'Box', children: [KA], part: { plugin: 'ai-dlc' } }, LENS] }
+    const extra = { type: 'Box', children: [{ type: 'Box', children: [{ type: 'engine', ref: 1 }], part: { plugin: 'ai-dlc' } }, LENS, LENS] }
+    for (const t of [noOurs, noEngine, extra, 'text', null]) expect(inlineBeneath(t)).toBe(t)
+  })
+
+  test('on the host the band runs on, a mounted band with no panel reads the hook beneath first, then keep-alive\'s band, and nothing is drawn twice', async ($, on) => {
+    engine(on, { tokens: 10_000, beneath: 'LENS BAND BENEATH' })
+    const ui = await mountBand($)
+    const text = textOf(await ui.drawn())
+    expect(text.split('LENS BAND BENEATH').length).toBe(2)
+    expect(text.split('⚠ ai-dlc cache-keepalive:').length).toBe(2)
+    expect(text.indexOf('LENS BAND BENEATH')).toBe(0)
+    await ui.unmount()
+  })
+})
+
+// Step 44 (R44.7, which reverses R44.4 for keep-alive): keep-alive is a band only, drawn on every surface that raises
+// AbovePrompt, VS Code and mixed or unknown surfaces included.
+describe('[R44.7] keep-alive\'s band is drawn on every surface', () => {
+  const KA = '⚠ ai-dlc cache-keepalive:'
+  const drawn = async ($: Parameters<TestBody>[0], on: On, surfaces: ('terminal' | 'desktop' | 'mobile' | 'vscode')[]) => {
+    engine(on, { tokens: 10_000, surfaces })
+    const ui = await mountBand($)
+    const text = textOf(await ui.drawn())
+    await ui.unmount()
+    return text.includes(KA)
+  }
+  for (const surfaces of [['terminal'], ['desktop'], ['vscode'], ['terminal', 'vscode'], []] as ('terminal' | 'desktop' | 'vscode')[][])
+    test(`surfaces ${JSON.stringify(surfaces)}: the band is drawn`, async ($, on) => {
+      expect(await drawn($, on, surfaces)).toBe(true)
+    })
+  test('the band has no maximise control, minimised or full (R44.7)', async ($, on) => {
+    engine(on, { tokens: 10_000, surfaces: ['vscode'] })
+    const ui = await mountBand($)
+    expect(await ui.find({ type: 'Button', key: 'ka-max' })).toBe(undefined)
+    expect(textOf(await ui.drawn())).not.toContain('⤢')
+    await ui.unmount()
+  })
+})
+
+// Step 42, points 1 and 2: the lens band and keep-alive's are two separate bands, in that order, and keep-alive's
+// minimises like the lens band: `–` minimises, `□` restores. Minimised it is one row: whether keep-alive is on
+// or off, and the master button only. It starts minimised at each load.
+describe('[42.1, 42.2] keep-alive\'s band: separate from the lens band, minimised like it', () => {
+  const TITLE = '⚠ ai-dlc cache-keepalive:'
+  const kids = (n: any): any[] => {
+    const c = n?.props?.children ?? n?.children
+    return c === undefined || c === null ? [] : Array.isArray(c) ? c.flat(Infinity) : [c]
+  }
+  const press = async (ui: Awaited<ReturnType<typeof mountBand>>, key: string) => {
+    await ui.press({ key })
+    await settle(() => false)
+  }
+
+  test('[42.1] two blocks side by side, never nested in each other: the lens band is one child of the band, keep-alive\'s another, after it', async ($, on) => {
+    engine(on, { tokens: 10_000, beneath: 'LENS BAND BENEATH' })
+    const ui = await mountBand($)
+    const root: any = await ui.drawn()
+    const blocks = kids(root)
+    const at = (needle: string) => blocks.findIndex(b => textOf(b).includes(needle))
+    expect(at('LENS BAND BENEATH')).toBeGreaterThanOrEqual(0)
+    expect(at(TITLE)).toBeGreaterThanOrEqual(0)
+    expect(at('LENS BAND BENEATH')).toBeLessThan(at(TITLE))
+    // neither block holds the other's text
+    expect(textOf(blocks[at('LENS BAND BENEATH')])).not.toContain(TITLE)
+    expect(textOf(blocks[at(TITLE)])).not.toContain('LENS BAND BENEATH')
+    await ui.unmount()
+  })
+
+  // every `width` prop in a drawn tree (the engine refuses a Box with a width around core's engine node, step 34)
+  const widths = (n: any): unknown[] => {
+    if (n === null || typeof n !== 'object') return []
+    const own = n.props && 'width' in n.props ? [n.props.width] : []
+    return [...own, ...kids(n).flatMap(widths)]
+  }
+
+  test('[42.1] step 34\'s rule holds on the whole band: no Box anywhere in the tree has a width, keep-alive\'s included; keep-alive\'s band is the last child after the hook beneath', async ($, on) => {
+    engine(on, { tokens: 10_000, beneath: 'LENS BAND BENEATH' })
+    const ui = await mountBand($)
+    const root: any = await ui.drawn()
+    expect(widths(root)).toEqual([])
+    const blocks = kids(root)
+    expect(textOf(blocks[blocks.length - 1]).startsWith(TITLE)).toBe(true)
+    expect(textOf(blocks[blocks.length - 2])).toContain('LENS BAND BENEATH')
+    await ui.press({ key: 'ka-min' })
+    await settle(() => false)
+    expect(widths(await ui.drawn())).toEqual([]) // opened too
+    await ui.unmount()
+  })
+
+  test('[42.1] with a handoff panel showing: panel, lens band, keep-alive band; the panel is not inside keep-alive\'s block', async ($, on) => {
+    const calls = engine(on, { tokens: 165_000, stepUsage: true, beneath: 'LENS BAND BENEATH' })
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    const ui = await mountBand($)
+    const blocks = kids(await ui.drawn())
+    const lens = blocks.findIndex(b => textOf(b).includes('LENS BAND BENEATH'))
+    const keep = blocks.findIndex(b => textOf(b).includes(TITLE))
+    expect(lens).toBeGreaterThan(0)
+    expect(keep).toBeGreaterThan(lens)
+    expect(textOf(blocks[keep]).startsWith(TITLE)).toBe(true)
+    await ui.unmount()
+  })
+
+  test('[42.2] the band starts minimised: one row with the title, whether keep-alive is on, the master button and the restore control', async ($, on) => {
+    engine(on, { tokens: 10_000 })
+    const ui = await mountBand($)
+    expect(textOf(await ui.drawn())).toBe(`${TITLE} on off⏻Ping now⟳Restore□Close×`)
+    // live findings 3, point 8: minimised, a control is its glyph (the Button's Text child) and the label names it
+    const min: any = await ui.find({ type: 'Button', key: 'ka-min' })
+    expect(min?.text).toBe('□')
+    expect(min?.props?.label).toBe('Restore')
+    expect(await ui.find({ type: 'Button', key: 'ka-master' })).toBeDefined()
+    // no track row and no track button while minimised
+    expect(await ui.find({ type: 'Button', key: 'ka-5m' })).toBe(undefined)
+    expect(await ui.find({ type: 'Button', key: 'ka-1h' })).toBe(undefined)
+    expect(textOf(await ui.drawn())).not.toContain('keepalive 5m:')
+    await ui.unmount()
+  })
+
+  test('[42.2] the control restores (`□` becomes `–`, the rows appear) and minimises again; it is the lens band\'s plain button', async ($, on) => {
+    engine(on, { tokens: 10_000 })
+    const ui = await mountBand($)
+    await press(ui, 'ka-min')
+    expect(((await ui.find({ type: 'Button', key: 'ka-min' })) as any)?.props?.label).toBe('Minimise') // full: the word
+    const open = textOf(await ui.drawn())
+    expect(open).toContain('keepalive 5m:')
+    expect(open).toContain('keepalive 1h:')
+    for (const key of ['ka-master', 'ka-5m', 'ka-1h']) expect(await ui.find({ type: 'Button', key })).toBeDefined()
+    await press(ui, 'ka-min')
+    expect(textOf(await ui.drawn())).toBe(`${TITLE} on off⏻Ping now⟳Restore□Close×`)
+    const min: any = await ui.find({ type: 'Button', key: 'ka-min' })
+    expect(min?.props?.plain ?? min?.plain).toBe(true)
+    await ui.unmount()
+  })
+
+  test('[42.2] the size is the band\'s own and survives a redraw: opened, a new mount draws it opened', async ($, on) => {
+    engine(on, { tokens: 10_000 })
+    const first = await mountBand($)
+    await press(first, 'ka-min')
+    await first.unmount()
+    const second = await mountBand($)
+    expect(textOf(await second.drawn())).toContain('keepalive 5m:')
+    expect(((await second.find({ type: 'Button', key: 'ka-min' })) as any)?.props?.label).toBe('Minimise')
+    await second.unmount()
+  })
+
+  test('[42.2] minimised, the master button works: it switches keep-alive off for this session, the row reads off and the button reads on', async ($, on) => {
+    const calls = engine(on, { tokens: 10_000 })
+    const ui = await mountBand($)
+    await press(ui, 'ka-master')
+    expect(textOf(await ui.drawn())).toBe(`${TITLE} off on⏻Ping now⟳Restore□Close×`)
+    expect(Object.keys(calls.written).filter(p => p.endsWith('settings.json') || p.endsWith('settings.local.json') || p.endsWith('cache-keepalive.json'))).toEqual([])
+    await press(ui, 'ka-master')
+    expect(textOf(await ui.drawn())).toBe(`${TITLE} on off⏻Ping now⟳Restore□Close×`)
+    await ui.unmount()
+  })
+
+  test('[42.2] the master state read minimised is the state the full band shows: master off in the settings reads off in both', async ($, on) => {
+    engine(on, { tokens: 10_000, files: { '/home/test/proj/.claude/settings.local.json': JSON.stringify({ env: { AI_DLC_KEEPALIVE_ENABLED: 'false' } }) } })
+    on('classic.Stop', async () => (await flush(), {}) as never)
+    on('ui.status', async () => ({ value: undefined }) as never)
+    await $.classic.Stop({ background_tasks: [{ id: 'b1', type: 'shell', status: 'running', description: 'build' }] } as never) // settings are read at the turn and at its Stop
+    const ui = await mountBand($)
+    expect(textOf(await ui.drawn())).toBe(`${TITLE} off on⏻Ping now⟳Restore□Close×`)
+    await press(ui, 'ka-min')
+    expect(textOf(await ui.drawn())).toMatch(/^⚠ ai-dlc cache-keepalive: off onPing nowMinimiseClosekeepalive 5m:/)
+    await ui.unmount()
+  })
+
+  test('[42.2] the seed row and the track rows are hidden while minimised and back when restored', async ($, on) => {
+    const calls = engine(on, { tokens: 165_000, stepUsage: true })
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    await $.classic.SessionStart({ source: 'clear' })
+    await settle(() => calls.seeded.length > 0)
+    calls.tokens = 47_000
+    await step($, 0)
+    const ui = await mountBand($)
+    expect(textOf(await ui.drawn())).not.toContain('keepalive seed:')
+    await press(ui, 'ka-min')
+    expect(textOf(await ui.drawn())).toContain('keepalive seed:')
+    await ui.unmount()
+  })
+
+  test('[42.2] a close `×` is on the band, full and minimised, after the minimise control: plain, a dismiss', async ($, on) => {
+    engine(on, { tokens: 10_000 })
+    const ui = await mountBand($)
+    for (const opened of [false, true]) {
+      if (opened) await press(ui, 'ka-min')
+      const close: any = await ui.find({ type: 'Button', key: 'ka-close' })
+      expect(close?.props?.label).toBe('Close') // the label names the control in both sizes
+      if (!opened) expect(close?.text).toBe('×') // minimised: the glyph is the Button's Text child
+      expect(close?.props?.plain ?? close?.plain).toBe(true)
+      expect(close?.props?.role ?? close?.role).toBe('dismiss') // role=dismiss stays on close
+      expect(textOf(await ui.drawn())).toMatch(opened ? /MinimiseClose/ : /Restore□Close×/)
+    }
+    await ui.unmount()
+  })
+
+  test('[42.2] the close hides keep-alive\'s band for the session; the lens band beneath stays', async ($, on) => {
+    engine(on, { tokens: 10_000, beneath: 'LENS BAND BENEATH' })
+    const ui = await mountBand($)
+    await press(ui, 'ka-close')
+    const text = textOf(await ui.drawn())
+    expect(text).toContain('LENS BAND BENEATH')
+    expect(text).not.toContain(TITLE)
+    expect(await ui.find({ type: 'Button', key: 'ka-master' })).toBe(undefined)
+    // a new mount (a redraw) still has it hidden
+    await ui.unmount()
+    const again = await mountBand($)
+    expect(textOf(await again.drawn())).not.toContain(TITLE)
+    await again.unmount()
+  })
+
+  test('[42.2] a run of /ai-dlc:cache-keepalive brings the closed band back', async ($, on) => {
+    engine(on, { tokens: 10_000 })
+    const ui = await mountBand($)
+    await press(ui, 'ka-close')
+    expect(textOf(await ui.drawn())).not.toContain(TITLE)
+    await $.command.run({ command: 'ai-dlc:cache-keepalive', args: '' } as never) // no arguments (live findings 3, point 5)
+    await settle(() => false)
+    expect(textOf(await ui.drawn())).toContain(TITLE)
+    await ui.unmount()
+  })
+
+  test('[42.2] a new session (session.start) brings the closed band back', async ($, on) => {
+    engine(on, { tokens: 10_000 })
+    on('session.start', async (_$, e) => ({ cwd: e.cwd }) as never)
+    const ui = await mountBand($)
+    await press(ui, 'ka-close')
+    expect(textOf(await ui.drawn())).not.toContain(TITLE)
+    await $.session.start({ cwd: '/home/test/proj', surface: 'terminal', isInteractive: true })
+    await settle(() => false)
+    expect(textOf(await ui.drawn())).toContain(TITLE)
+    await ui.unmount()
+  })
+
+  test('[42.2] closed or not, a later load starts with the band shown: a fresh module draws it', async ($, on) => {
+    // each test loads the hooks module afresh, as a /reload-plugins does: nothing of an earlier close remains
+    engine(on, { tokens: 10_000 })
+    const ui = await mountBand($)
+    expect(textOf(await ui.drawn())).toContain(TITLE)
+    await ui.unmount()
+  })
+
+  test('[42.1] status off: no keep-alive band at all, and the lens band beneath still draws', async ($, on) => {
+    engine(on, { tokens: 10_000, beneath: 'LENS BAND BENEATH', files: { '/home/test/proj/.claude/settings.local.json': JSON.stringify({ env: { AI_DLC_KEEPALIVE_STATUS: 'false' } }) } })
+    on('classic.Stop', async () => (await flush(), {}) as never)
+    on('ui.status', async () => ({ value: undefined }) as never)
+    await $.classic.Stop({ background_tasks: [{ id: 'b1', type: 'shell', status: 'running', description: 'build' }] } as never) // settings are read at the turn and at its Stop
+    const ui = await mountBand($)
+    const text = textOf(await ui.drawn())
+    expect(text).toContain('LENS BAND BENEATH')
+    expect(text).not.toContain(TITLE)
+    await ui.unmount()
+  })
+})
+
+// Live findings 3, point 8: the band's new "Ping now" control (ka-ping), and its buttons: icons minimised, words full.
+describe('[43 live3 p8] the keep-alive band: ka-ping, glyph buttons minimised, word buttons full', () => {
+  const kids = (n: any): any[] => {
+    const c = n?.props?.children ?? n?.children
+    return c === undefined || c === null ? [] : Array.isArray(c) ? c.flat(Infinity) : [c]
+  }
+  const walk = (n: any): any[] => (n !== null && typeof n === 'object' ? [n, ...kids(n).flatMap(walk)] : [])
+  const buttons = (tree: any): any[] => walk(tree).filter(n => n.type === 'Button')
+  const press = async (ui: Awaited<ReturnType<typeof mountBand>>, key: string) => {
+    await ui.press({ key })
+    await settle(() => false)
+  }
+  const withFork = (on: On, files?: Record<string, string>) => {
+    engine(on, { tokens: 10_000, ...(files ? { files } : {}) })
+    const seen = { forks: 0, prompts: [] as string[], invalidated: 0 }
+    on('model.fork', (_$, e) => (seen.forks++, seen.prompts.push((e as { prompt: string }).prompt), { value: { isAnswered: true, text: 'ok', usage: USAGE } }) as never)
+    on('ui.invalidate' as never, ((_$: unknown, e: unknown, next: (e: unknown) => unknown) => (seen.invalidated++, next(e))) as never) // counts, and lets the redraw through
+    on('classic.Stop', async () => (await flush(), {}) as never)
+    on('ui.status', async () => ({ value: undefined }) as never)
+    on('session.model', async () => ({ value: 'claude-opus-5-5' }) as never) // the ping prices its read with the model
+    return seen
+  }
+
+  test('[p8] minimised, the four controls are master, ping, min, close, in that order; each is a plain Button with a glyph Text child and a label naming it', async ($, on) => {
+    withFork(on)
+    const ui = await mountBand($)
+    const bs = buttons(await ui.drawn())
+    expect(bs.map(b => b.props.key)).toEqual(['ka-master', 'ka-ping', 'ka-min', 'ka-close'])
+    expect(bs.map(b => b.props.label)).toEqual(['off', 'Ping now', 'Restore', 'Close']) // master reads the press: off|on
+    expect(bs.map(b => kids(b).map(c => [c.type, textOf(c)]))).toEqual([[['Text', '⏻']], [['Text', '⟳']], [['Text', '□']], [['Text', '×']]])
+    for (const b of bs) expect(b.props.plain).toBe(true)
+    await ui.unmount()
+  })
+
+  test('[p8] restored, the labels are the words Ping now, Minimise, Close; the master still reads off|on; no glyph child; role=dismiss stays on close', async ($, on) => {
+    withFork(on)
+    const ui = await mountOpenBand($)
+    const bs = buttons(await ui.drawn())
+    expect(bs.map(b => b.props.key)).toEqual(['ka-master', 'ka-ping', 'ka-min', 'ka-close', 'ka-5m', 'ka-1h'])
+    expect(bs.slice(0, 4).map(b => b.props.label)).toEqual(['off', 'Ping now', 'Minimise', 'Close'])
+    for (const b of bs) expect(kids(b)).toEqual([])
+    expect(bs.map(b => b.props.role)).toEqual([undefined, undefined, undefined, 'dismiss', undefined, undefined])
+    await press(ui, 'ka-master')
+    expect(buttons(await ui.drawn())[0].props.label).toBe('on')
+    await ui.unmount()
+  })
+
+  test('[p8] minimised, the close keeps role=dismiss', async ($, on) => {
+    withFork(on)
+    const ui = await mountBand($)
+    expect(((await ui.find({ type: 'Button', key: 'ka-close' })) as any)?.props?.role).toBe('dismiss')
+    await ui.unmount()
+  })
+
+  test('[p8] ka-ping on the band pings once with the settings in force and redraws, minimised and restored', async ($, on) => {
+    const seen = withFork(on, { '/home/test/proj/.claude/settings.local.json': JSON.stringify({ env: { AI_DLC_KEEPALIVE_PING_PROMPT: 'warm it' } }) })
+    const ui = await mountBand($)
+    await $.classic.Stop({ background_tasks: [{ id: 'b1', type: 'shell', status: 'running', description: 'build' }] } as never) // settings are read at the turn and at its Stop
+    expect(seen.forks).toBe(0) // drawing and stopping ping nothing
+    const base = seen.invalidated
+    await ui.press({ key: 'ka-ping' })
+    await settle(() => seen.invalidated > base) // the ping is async: the redraw comes when it is done
+    expect(seen.forks).toBe(1)
+    expect(seen.prompts).toEqual(['warm it'])
+    expect(seen.invalidated - base).toBe(1) // the band is redrawn once the ping is done
+    expect(textOf(await ui.drawn())).toContain('Ping now⟳Restore□Close×') // still minimised
+    await press(ui, 'ka-min')
+    const again = seen.invalidated
+    await ui.press({ key: 'ka-ping' })
+    await settle(() => seen.invalidated > again)
+    expect(seen.forks).toBe(2)
+    expect(textOf(await ui.drawn())).toContain('keepalive 5m:') // restored stays restored
+    await ui.unmount()
+  })
+
+  test('[p8] ka-ping pings nothing while keep-alive is off', async ($, on) => {
+    const seen = withFork(on)
+    const ui = await mountBand($)
+    await $.command.run({ command: 'ai-dlc:cache-keepalive-configure', args: 'off --session' } as never)
+    await settle(() => false)
+    await press(ui, 'ka-ping')
+    expect(seen.forks).toBe(0)
+    await ui.unmount()
+  })
+})
+
+// ITEM-068 (T17.6, AC-17.6.x): the band above the prompt (Terminal and Desktop) draws keep-alive's rows with a
+// master button and one button per track; a press affects the current session only (no settings file written).
+describe('keep-alive in the band: master and track buttons (T17.6)', () => {
+  // Step 42: the band starts minimised; the track rows and their buttons are there once it is opened.
+  const mountBand = mountOpenBand
+  const press = async (ui: Awaited<ReturnType<typeof mountBand>>, key: string) => {
+    await ui.press({ key })
+    await settle(() => false) // the presses write the store and redraw after the handler returns
+  }
+  // Step 44 (R44.2, R44.3): each row reads its status first and ends in its button, the opposite; the head row the same.
+  // `status` and `master` are the head row's status and button; `fiveStatus` and `five` the 5m row's; `oneStatus` and `one` the 1h row's.
+  const rows = (text: string) => ({
+    status: /⚠ ai-dlc cache-keepalive: (on|off) (?:on|off)Ping nowMinimiseClosekeepalive/.exec(text)?.[1],
+    master: /⚠ ai-dlc cache-keepalive: (?:on|off) (on|off)Ping nowMinimiseClosekeepalive/.exec(text)?.[1],
+    fiveStatus: /[k]eepalive 5m: (on|off)/.exec(text)?.[1],
+    five: /[k]eepalive 5m:[^]*?(on|off)keepalive 1h/.exec(text)?.[1],
+    oneStatus: /[k]eepalive 1h: (on|off)/.exec(text)?.[1],
+    one: /[k]eepalive 1h:[^]*?(on|off)$/.exec(text)?.[1],
+  })
+
+  test('the title row with the master button, then the 5m row, then the 1h row, each with its button', async ($, on) => {
+    engine(on, { tokens: 10_000 })
+    const ui = await mountBand($)
+    const text = textOf(await ui.drawn())
+    expect(text.indexOf('⚠ ai-dlc cache-keepalive:')).toBe(0)
+    expect(text.indexOf('keepalive 5m:')).toBeGreaterThan(text.indexOf('⚠ ai-dlc cache-keepalive:'))
+    expect(text.indexOf('keepalive 1h:')).toBeGreaterThan(text.indexOf('keepalive 5m:'))
+    expect(await ui.find({ type: 'Button', key: 'ka-master' })).toBeDefined()
+    expect(await ui.find({ type: 'Button', key: 'ka-5m' })).toBeDefined()
+    expect(await ui.find({ type: 'Button', key: 'ka-1h' })).toBeDefined()
+    await ui.unmount()
+  })
+
+  test('both track lines are drawn even when nothing runs: off, with the ping limit and keep-warm time (AC-17.6.1)', async ($, on) => {
+    engine(on, { tokens: 10_000 })
+    const ui = await mountBand($)
+    const text = textOf(await ui.drawn())
+    // R44.2: a track switched on and idle reads on, with the reason; its button offers off
+    expect(text).toContain('keepalive 5m: on, idle (no 5m cache write seen), ping 0/20, keep warm 1h (default)')
+    expect(text).toContain('keepalive 1h: on, idle (no 1h cache write seen), ping 0/9, keep warm 8h (default)')
+    expect(rows(text)).toMatchObject({ status: 'on', master: 'off', fiveStatus: 'on', five: 'off', oneStatus: 'on', one: 'off' })
+    await ui.unmount()
+  })
+
+  test('the master button [off] disables both tracks for this session, and then reads [on]', async ($, on) => {
+    const calls = engine(on, { tokens: 10_000 })
+    const ui = await mountBand($)
+    expect(rows(textOf(await ui.drawn()))).toMatchObject({ status: 'on', master: 'off' })
+    await press(ui, 'ka-master')
+    const text = textOf(await ui.drawn())
+    // R44.3: both tracks off, so the head row reads off and its button offers on; each track reads off with an on button
+    expect(rows(text)).toMatchObject({ status: 'off', master: 'on', fiveStatus: 'off', five: 'on', oneStatus: 'off', one: 'on' })
+    expect(text).toContain('keepalive 5m: off (disabled)')
+    expect(text).toContain('keepalive 1h: off (disabled)')
+    expect(Object.keys(calls.written).filter(p => p.endsWith('settings.json') || p.endsWith('settings.local.json') || p.endsWith('cache-keepalive.json'))).toEqual([])
+    await ui.unmount()
+  })
+
+  test('the master button [on] turns the master and both tracks back on, with no ping', async ($, on) => {
+    engine(on, { tokens: 10_000 })
+    let forks = 0
+    on('model.fork', async () => (forks++, { value: { isAnswered: true, text: 'ok', usage: USAGE } }) as never)
+    const ui = await mountBand($)
+    await press(ui, 'ka-master')
+    await press(ui, 'ka-master')
+    const text = textOf(await ui.drawn())
+    expect(rows(text)).toMatchObject({ status: 'on', master: 'off', fiveStatus: 'on', five: 'off', oneStatus: 'on', one: 'off' })
+    expect(text).not.toContain('(disabled)')
+    expect(forks).toBe(0)
+    await ui.unmount()
+  })
+
+  test('a track button switches that track alone: the master and the other track are untouched', async ($, on) => {
+    engine(on, { tokens: 10_000 })
+    const ui = await mountBand($)
+    await press(ui, 'ka-5m')
+    const text = textOf(await ui.drawn())
+    // R44.2: the 5m row reads off with an on button; the 1h row reads on with an off button; the head row still reads on (1h is on)
+    expect(rows(text)).toMatchObject({ status: 'on', master: 'off', fiveStatus: 'off', five: 'on', oneStatus: 'on', one: 'off' })
+    expect(text).toContain('keepalive 5m: off (disabled)')
+    expect(text).not.toContain('keepalive 1h: off (disabled)')
+    await press(ui, 'ka-5m')
+    expect(rows(textOf(await ui.drawn()))).toMatchObject({ status: 'on', master: 'off', fiveStatus: 'on', five: 'off', oneStatus: 'on', one: 'off' })
+    await ui.unmount()
+  })
+
+  test('a track [on] overrides a master that is off: the button follows "allowed", not "running"', async ($, on) => {
+    engine(on, { tokens: 10_000 })
+    const ui = await mountBand($)
+    await press(ui, 'ka-master') // master off, both tracks disabled
+    await press(ui, 'ka-1h') // 1h [on]
+    const text = textOf(await ui.drawn())
+    // R44.3: one track on is enough for the head row to read on, with an off button
+    expect(rows(text)).toMatchObject({ status: 'on', master: 'off', fiveStatus: 'off', five: 'on', oneStatus: 'on', one: 'off' })
+    expect(text).not.toContain('keepalive 1h: off (disabled)')
+    await ui.unmount()
+  })
+
+  test('[R44.3] both tracks switched off by their own buttons: the head row reads off with an on button, and that button turns both tracks on', async ($, on) => {
+    engine(on, { tokens: 10_000 })
+    const ui = await mountBand($)
+    await press(ui, 'ka-5m')
+    expect(rows(textOf(await ui.drawn()))).toMatchObject({ status: 'on', master: 'off' }) // 1h is still on
+    await press(ui, 'ka-1h')
+    expect(rows(textOf(await ui.drawn()))).toMatchObject({ status: 'off', master: 'on', fiveStatus: 'off', five: 'on', oneStatus: 'off', one: 'on' })
+    await press(ui, 'ka-master')
+    expect(rows(textOf(await ui.drawn()))).toMatchObject({ status: 'on', master: 'off', fiveStatus: 'on', five: 'off', oneStatus: 'on', one: 'off' })
+    await ui.unmount()
+  })
+
+  // Step 44 (R44.6): the seed row shows only while a track is on; with both tracks off the band is the head row `off [on]` and the track rows.
+  const seeded = async ($: Parameters<TestBody>[0], on: On) => {
+    const calls = engine(on, { tokens: 165_000, stepUsage: true })
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > 0)
+    await $.classic.SessionStart({ source: 'clear' })
+    await settle(() => calls.seeded.length > 0)
+    calls.tokens = 47_000
+    await step($, 0)
+  }
+  const SEED = 'keepalive seed: cache hit, 47k read'
+
+  test('[R44.6] the master [off] hides the seed row, the head row reads off with an on button, and a track [on] brings the row back', async ($, on) => {
+    await seeded($, on)
+    const ui = await mountBand($)
+    expect(textOf(await ui.drawn())).toContain(SEED)
+    await press(ui, 'ka-master')
+    let text = textOf(await ui.drawn())
+    expect(text).not.toContain(SEED)
+    expect(rows(text)).toMatchObject({ status: 'off', master: 'on', fiveStatus: 'off', oneStatus: 'off' })
+    await press(ui, 'ka-5m')
+    text = textOf(await ui.drawn())
+    expect(text).toContain(SEED)
+    expect(rows(text)).toMatchObject({ status: 'on', master: 'off', fiveStatus: 'on', oneStatus: 'off' })
+    await ui.unmount()
+  })
+
+  test('[R44.6] both tracks switched off by their own buttons hide the seed row; the first one switched back on shows it again', async ($, on) => {
+    await seeded($, on)
+    const ui = await mountBand($)
+    await press(ui, 'ka-5m')
+    expect(textOf(await ui.drawn())).toContain(SEED) // 1h is still on
+    await press(ui, 'ka-1h')
+    expect(textOf(await ui.drawn())).not.toContain(SEED)
+    await press(ui, 'ka-1h')
+    expect(textOf(await ui.drawn())).toContain(SEED)
+    await ui.unmount()
+  })
+
+  test('[R44.3] the head row reads on while the 5m track alone is on, and its off button turns both tracks off', async ($, on) => {
+    engine(on, { tokens: 10_000 })
+    const ui = await mountBand($)
+    await press(ui, 'ka-1h')
+    expect(rows(textOf(await ui.drawn()))).toMatchObject({ status: 'on', master: 'off', fiveStatus: 'on', oneStatus: 'off' })
+    await press(ui, 'ka-master')
+    expect(rows(textOf(await ui.drawn()))).toMatchObject({ status: 'off', master: 'on', fiveStatus: 'off', five: 'on', oneStatus: 'off', one: 'on' })
+    await ui.unmount()
+  })
+
+})
+
+// T17.7 (ITEM-076, AC-17.7.1 to 17.7.9): an automatically handed-off chain is one keep-alive session. The
+// switches and the --session overrides are kept under the chain id, so they survive the /clear (session.end
+// during a handoff) and are read by the seeded session; a session started by hand is its own chain.
+describe('keep-alive across an automatic handoff (T17.7)', () => {
+  const KA_TASK = { id: 'b1', type: 'shell', status: 'running', description: 'build' }
+  const LOCAL = '/home/test/proj/.claude/settings.local.json'
+  const env = (vars: Record<string, string>) => JSON.stringify({ env: vars })
+  // a low threshold, so each seeded session can hand off again after its seed turn (chainRounds, above)
+  const MANY = { ...LOW, AI_DLC_AUTO_HANDOFF_MAX_CONSECUTIVE_HANDOFFS: '5' }
+  const cacheRow = JSON.stringify({ type: 'assistant', message: { usage: { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 2000, cache_creation: { ephemeral_1h_input_tokens: 0, ephemeral_5m_input_tokens: 2000 } } } })
+  const bandOf = async ($: Parameters<TestBody>[0]) => { const ui = await mountOpenBand($); try { return textOf(await ui.drawn()) } finally { await ui.unmount() } }
+  const pressKey = async ($: Parameters<TestBody>[0], key: string) => { const ui = await mountOpenBand($); await ui.press({ key }); await settle(() => false); await ui.unmount() }
+  // One automatic handoff: the old session ends during it (as /clear does), the fresh session starts.
+  async function handOff($: Parameters<TestBody>[0], calls: Calls) {
+    const before = calls.cleared
+    const ended = before === 0 ? 'old-session' : `new-session-${before}`
+    if (before > 0) { await $.turn.complete(TURN); calls.tokens += 60_000 } // the seed turn sets the floor, then the context grows
+    await $.turn.complete(TURN)
+    await settle(() => calls.cleared > before)
+    expect(calls.cleared).toBe(before + 1)
+    // /clear ends the old session while the handoff is under way: keep-alive must keep the chain's switches
+    await $.session.end({ reason: 'clear', sessionId: ended } as never)
+    await $.classic.SessionStart({ source: 'clear' })
+    await settle(() => calls.seeded.length >= calls.cleared)
+  }
+
+  test('[AC-17.7.1] a track switched off in S1 stays off in the seeded session S2, and S3 after it', async ($, on) => {
+    const calls = engine(on, { tokens: 31_000, stepUsage: true, endOnClear: true, env: MANY })
+    await pressKey($, 'ka-5m')
+    expect(await bandOf($)).toContain('keepalive 5m: off (disabled)')
+    await handOff($, calls)
+    const s2 = await bandOf($)
+    expect(s2).toContain('keepalive 5m: off (disabled)')
+    expect(s2).not.toContain('keepalive 1h: off (disabled)')
+    await handOff($, calls)
+    expect(await bandOf($)).toContain('keepalive 5m: off (disabled)')
+  })
+
+  test('[AC-17.7.1] the --session keep-warm override carries too: keep warm 2h (session) in S2', async ($, on) => {
+    const calls = engine(on, { tokens: 31_000, stepUsage: true, endOnClear: true, env: MANY })
+    await $.command.run({ command: 'ai-dlc:cache-keepalive-configure', args: '2h --session' } as never)
+    expect(await bandOf($)).toContain('keep warm 2h (session)')
+    await handOff($, calls)
+    expect(await bandOf($)).toContain('keep warm 2h (session)')
+  })
+
+  test('[AC-17.7.2] no track runs in S2 and nothing of the ledger is carried: the old session\'s arming is gone', async ($, on) => {
+    const calls = engine(on, { tokens: 31_000, stepUsage: true, endOnClear: true, env: MANY, files: { '/home/test/old.jsonl': cacheRow } })
+    on('classic.Stop', async () => (await flush(), {}) as never)
+    on('model.fork', async () => ({ value: { isAnswered: true, text: 'ok', usage: USAGE } }) as never)
+    await $.classic.Stop({ background_tasks: [KA_TASK], transcript_path: '/home/test/old.jsonl' } as never)
+    expect(await bandOf($)).toContain('armed')
+    await handOff($, calls)
+    const text = await bandOf($)
+    expect(text).not.toContain('armed')
+    expect(text).toMatch(/ping 0\/20/)
+  })
+
+  test('[AC-17.7.5] handoff.carryOver false: S2 starts clean, from the settings alone', async ($, on) => {
+    const calls = engine(on, { tokens: 31_000, stepUsage: true, endOnClear: true, env: MANY, files: { [LOCAL]: env({ AI_DLC_KEEPALIVE_HANDOFF_CARRY_OVER: 'false' }) } })
+    await pressKey($, 'ka-5m')
+    expect(await bandOf($)).toContain('keepalive 5m: off (disabled)')
+    await handOff($, calls)
+    expect(await bandOf($)).not.toContain('(disabled)')
+  })
+
+  test('[AC-17.7.6] carryOver false and the master off in the settings: the exception applies (onWhenOff on), keep-alive is on in S2', async ($, on) => {
+    const calls = engine(on, { tokens: 31_000, stepUsage: true, endOnClear: true, env: MANY, files: { [LOCAL]: env({ AI_DLC_KEEPALIVE_HANDOFF_CARRY_OVER: 'false', AI_DLC_KEEPALIVE_ENABLED: 'false' }) } })
+    await handOff($, calls)
+    expect(await bandOf($)).toMatch(/cache-keepalive: on off/) // R44.3: it reads on, and offers to turn it off
+  })
+
+  test('[AC-17.7.4] master [off] pressed in S2 stays off for S2, and the exception turns keep-alive on again at S3', async ($, on) => {
+    const calls = engine(on, { tokens: 31_000, stepUsage: true, endOnClear: true, env: MANY, files: { [LOCAL]: env({ AI_DLC_KEEPALIVE_ENABLED: 'false' }) } })
+    await handOff($, calls) // S2: the exception turned it on
+    expect(await bandOf($)).toMatch(/cache-keepalive: on off/)
+    await pressKey($, 'ka-master') // S2: off
+    const s2 = await bandOf($)
+    expect(s2).toMatch(/cache-keepalive: off on/)
+    expect(s2).toContain('(disabled)')
+    await handOff($, calls) // S3: the settings still say master off, so the exception applies again
+    expect(await bandOf($)).toMatch(/cache-keepalive: on off/)
+  })
+
+  // R44.13: at the seed, keep-alive is turned on only when nothing is on (`!anyOn()`), not when the master setting is off
+  test('[R44.13] master off in the settings but the 5m track switched on: the seed changes nothing, the 1h track stays off', async ($, on) => {
+    const calls = engine(on, { tokens: 31_000, stepUsage: true, endOnClear: true, env: MANY, files: { [LOCAL]: env({ AI_DLC_KEEPALIVE_ENABLED: 'false' }) } })
+    on('classic.Stop', async () => (await flush(), {}) as never)
+    await $.classic.Stop({ background_tasks: [KA_TASK], transcript_path: '/home/test/none.jsonl' } as never) // the settings are read at a Stop: the master is off
+    await pressKey($, 'ka-5m') // 5m [on] overrides the master that is off
+    const before = await bandOf($)
+    expect(before).toMatch(/cache-keepalive: on off/)
+    expect(before).toContain('keepalive 1h: off (disabled)')
+    await handOff($, calls)
+    const after = await bandOf($)
+    expect(after).toMatch(/cache-keepalive: on off/)
+    expect(after).toContain('keepalive 1h: off (disabled)') // the exception did not turn the 1h track on
+    expect(after).toContain('keepalive 5m: on')
+  })
+
+  test('[AC-17.7.9] a session started by hand is its own chain: the earlier session switches are not there', async ($, on) => {
+    engine(on, { tokens: 10_000, endOnClear: true })
+    on('classic.Stop', async () => (await flush(), {}) as never)
+    await pressKey($, 'ka-5m')
+    expect(await bandOf($)).toContain('keepalive 5m: off (disabled)')
+    await $.session.end({ reason: 'clear', sessionId: 'old-session' } as never) // not a handoff: the entry goes with the session
+    await $.classic.Stop({ background_tasks: [KA_TASK], transcript_path: '/home/test/none.jsonl' } as never)
+    expect(await bandOf($)).not.toContain('keepalive 5m: off (disabled)')
+  })
+
+  test('[AC-17.7.9] a session started by hand gets no onWhenOff exception: with the master off in the settings it stays off', async ($, on) => {
+    engine(on, { tokens: 10_000, endOnClear: true, files: { [LOCAL]: env({ AI_DLC_KEEPALIVE_ENABLED: 'false' }) } })
+    on('classic.Stop', async () => (await flush(), {}) as never)
+    await $.session.end({ reason: 'clear', sessionId: 'old-session' } as never)
+    await $.classic.Stop({ background_tasks: [KA_TASK], transcript_path: '/home/test/none.jsonl' } as never)
+    expect(await bandOf($)).toMatch(/cache-keepalive: off on/) // R44.3: it reads off, and the button offers to turn it on
+  })
+
+  test('[AC-17.7.9] a lineage that cannot be read counts as a session started by hand, with a debug line', async ($, on) => {
+    const calls = engine(on, { tokens: 31_000, stepUsage: true, endOnClear: true, env: MANY, failStore: /^lineage:/ })
+    const logs: string[] = []
+    on('ui.log', async (_$, e) => (logs.push(e.text), { value: undefined }) as never)
+    await pressKey($, 'ka-5m')
+    await handOff($, calls)
+    expect(await bandOf($)).not.toContain('keepalive 5m: off (disabled)')
+    expect(logs.some(l => l.startsWith('chain: lineage of '))).toBe(true)
+  })
+
+  for (const [carry, whenOff] of [['true', 'true'], ['true', 'false'], ['false', 'true'], ['false', 'false']] as const) {
+    test(`[AC-17.7.8] carryOver ${carry}, onWhenOff ${whenOff}: no settings file is written and no ping goes out at the handoff`, async ($, on) => {
+      const calls = engine(on, { tokens: 31_000, stepUsage: true, endOnClear: true, env: MANY, files: { [LOCAL]: env({ AI_DLC_KEEPALIVE_ENABLED: 'false', AI_DLC_KEEPALIVE_HANDOFF_CARRY_OVER: carry, AI_DLC_KEEPALIVE_HANDOFF_ON_WHEN_OFF: whenOff }) } })
+      let forks = 0
+      on('model.fork', async () => (forks++, { value: { isAnswered: true, text: 'ok', usage: USAGE } }) as never)
+      await handOff($, calls)
+      expect(forks).toBe(0)
+      expect(Object.keys(calls.written).filter(p => /settings|cache-keepalive\.json|CLAUDE\.md|AGENTS\.md/.test(p))).toEqual([])
+    })
+  }
+})
+
+// Step 43, A2, as step 44 (R44.7) leaves it: /ai-dlc:cache-keepalive shows only keep-alive's band, minimised, and opens
+// no Pane on any surface; the band has no maximise button.
+describe('[43 A2] keep-alive band: minimised by the command, no Pane', () => {
+  const TITLE = '⚠ ai-dlc cache-keepalive:'
+  type Opened = { id: string; title?: string; focus?: boolean; closeOnEscape?: boolean }
+  const setup = (on: On, surfaces: ('terminal' | 'desktop' | 'vscode')[]) => {
+    const opened: Opened[] = []
+    engine(on, { tokens: 10_000, surfaces })
+    on('ui.open', (_$, ev) => (opened.push(ev as never), { value: { isPlaced: true } }) as never)
+    // The command pings now (live findings 3, point 7): the fork answers a hit
+    on('model.fork', () => ({ value: { isAnswered: true, text: 'ok', usage: USAGE } }) as never)
+    return opened
+  }
+  const mountOn = ($: Parameters<TestBody>[0], surface: 'terminal' | 'desktop') =>
+    $.ui.mount({ plugin: 'ai-dlc', surface, component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 20, bodyColumns: 120 } as never })
+  const press = async (ui: Awaited<ReturnType<typeof mountBand>>, key: string) => {
+    await ui.press({ key })
+    await settle(() => false)
+  }
+  const run = async ($: Parameters<TestBody>[0], args = '') => {
+    await $.command.run({ command: 'ai-dlc:cache-keepalive', args } as never)
+    await settle(() => false)
+  }
+  // The old arguments (on, off, a keep-warm time) are /ai-dlc:cache-keepalive-configure's (live findings 3, point 5)
+  const runCfg = async ($: Parameters<TestBody>[0], args: string) => {
+    await $.command.run({ command: 'ai-dlc:cache-keepalive-configure', args } as never)
+    await settle(() => false)
+  }
+
+  test('[A2] [R44.7] the title row has minimise and close and no maximise control, minimised and opened', async ($, on) => {
+    setup(on, ['terminal'])
+    const ui = await mountBand($)
+    expect(textOf(await ui.drawn())).toBe(`${TITLE} on off⏻Ping now⟳Restore□Close×`)
+    expect(await ui.find({ type: 'Button', key: 'ka-max' })).toBe(undefined)
+    await press(ui, 'ka-min')
+    const open = textOf(await ui.drawn())
+    expect(open.startsWith(`${TITLE} on offPing nowMinimiseClose`)).toBe(true) // full: the words
+    expect(open).toContain('keepalive 5m:')
+    expect(await ui.find({ type: 'Button', key: 'ka-max' })).toBe(undefined)
+    await ui.unmount()
+  })
+
+  for (const surface of ['terminal', 'desktop'] as const) {
+    test(`[A2] the command on ${surface} opens no Pane, bare, with arguments, and configure with a switch`, async ($, on) => {
+      const opened = setup(on, [surface])
+      await run($)
+      await runCfg($, 'off --session')
+      await run($, 'bogus')
+      await runCfg($, 'bogus')
+      expect(opened).toEqual([])
+    })
+
+  }
+
+  test('[A2] the command minimises an opened band and shows only the band', async ($, on) => {
+    const opened = setup(on, ['terminal'])
+    const ui = await mountOpenBand($)
+    expect(textOf(await ui.drawn())).toContain('keepalive 5m:')
+    await run($)
+    expect(textOf(await ui.drawn())).toBe(`${TITLE} on off⏻Ping now⟳Restore□Close×`)
+    expect(opened).toEqual([])
+    await ui.unmount()
+  })
+
+  test('[A2] the command brings back a band closed with `×`, minimised', async ($, on) => {
+    setup(on, ['terminal'])
+    const ui = await mountOpenBand($)
+    await press(ui, 'ka-close')
+    expect(textOf(await ui.drawn())).not.toContain(TITLE)
+    await run($)
+    expect(textOf(await ui.drawn())).toBe(`${TITLE} on off⏻Ping now⟳Restore□Close×`)
+    await ui.unmount()
+  })
+
+  // Step 44 (R44.7): no surface gets a Pane from the command; the band is the view everywhere.
+  for (const surfaces of [['vscode'], ['terminal', 'vscode'], []] as ('terminal' | 'desktop' | 'vscode')[][]) {
+    test(`[R44.7] the command on surfaces ${JSON.stringify(surfaces)} opens no Pane, and shows the band`, async ($, on) => {
+      const opened = setup(on, surfaces)
+      await run($)
+      expect(opened).toEqual([])
+      const ui = await mountBand($)
+      expect(textOf(await ui.drawn())).toBe(`${TITLE} on off⏻Ping now⟳Restore□Close×`)
+      await ui.unmount()
+    })
+  }
+
+  test('[A2] the minimised master button still works: off for this session, the row reads off, the button reads on', async ($, on) => {
+    setup(on, ['terminal'])
+    const ui = await mountBand($)
+    await press(ui, 'ka-master')
+    expect(textOf(await ui.drawn())).toBe(`${TITLE} off on⏻Ping now⟳Restore□Close×`)
+    await press(ui, 'ka-master')
+    expect(textOf(await ui.drawn())).toBe(`${TITLE} on off⏻Ping now⟳Restore□Close×`)
+    await ui.unmount()
+  })
+
+  // Live findings 3, point 4: the minimised row's `on` / `off` is whether keep-alive runs (any track on), not the master alone.
+  test('[live3 p4] [R44.3] the master off with a track switched on: the minimised row reads on (a track is on in force) and its button offers off, which turns both tracks off', async ($, on) => {
+    setup(on, ['terminal'])
+    const ui = await mountBand($)
+    await runCfg($, 'off --session')
+    // the row's word, then the master button's (the button names the press); the icons and labels after them are point 8's
+    expect(textOf(await ui.drawn()).startsWith(`${TITLE} off on`)).toBe(true)
+    await runCfg($, 'on --session --track 1h')
+    expect(textOf(await ui.drawn()).startsWith(`${TITLE} on off`)).toBe(true)
+    await runCfg($, 'off --session --track 1h')
+    expect(textOf(await ui.drawn()).startsWith(`${TITLE} off on`)).toBe(true)
+    await ui.unmount()
   })
 })

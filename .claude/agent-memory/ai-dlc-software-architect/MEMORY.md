@@ -1,2 +1,6 @@
 - [Wave 2 tier 1 design](project_wave2-tier1-design.md) — ADR-0001..0005 (AAW variants, guards, taxonomy file, tag tree scan, offline lens renderer); bc lessons
-- [Wave 3 Cache Lab design](project_wave3-cache-lab-design.md) — ADR-0006 transcript reader, 4 MiB caps; ADR-0007 handoff chain = one session; next ADR 0008
+- [Wave 3 Cache Lab design](project_wave3-cache-lab-design.md) — ADR-0006 transcript reader, 4 MiB caps; ADR-0007 handoff chain = one session
+- [Step 44 band and pane seats](project_step44-band-and-pane-seats.md) — ADR-0008 keep-alive band everywhere, lens follows placement; host seat facts; next ADR was 0009
+- [ITEM-104 halted state, ADR-0009](project_item104-halted-state-adr0009.md) — marks in agentsA row, staged via ITEM-106; journey narrative; next ADR 0010
+- [herdr design, ADR-0010](project_herdr-design-adr0010.md) — orchestrator drives herdr panes via skill script; result-file hand-back
+- [preview2 unit design](project_preview2-unit-design.md) — 2 units, records-as-events, bolt types as skippable stage subsets, spike first, ADR drafts 0011-0016

@@ -2,9 +2,9 @@
 // nothing else repeats a default. Engine-free: keepalive.ts reads the files and hands the levels in, and
 // tests/ in the repository checks the table against the README and the cache-keepalive-configure skill's schema.
 // Keep-alive has no /config rows (human decision, 2026-10-22, run AAW-20261022-cache-keepalive-init).
-import { ABSOLUTE_MIN, formatDuration, parseDuration } from './duration.ts'
-import type { Scope } from './duration.ts'
-import { parseBool } from '../auto-handoff/config.ts'
+import { ABSOLUTE_MIN, formatDuration, parseDuration } from './duration'
+import type { Scope } from './duration'
+import { parseBool } from '../auto-handoff/config'
 
 export type TrackKey = 'oneHour' | 'fiveMinute'
 export type TrackSettings = { enabled: boolean; ttl: number; pingEvery: number; keepWarmFor: number; maxPings: number }
@@ -13,6 +13,7 @@ export type Settings = {
   enabled: boolean
   scope: Scope
   status: boolean
+  sourceNote: boolean
   pingPrompt: string
   hitThreshold: number
   overagePercent: number
@@ -28,6 +29,7 @@ export type Settings = {
   readPrice: PricePattern[]
   compactCostGuess: number
   summaryRatioGuess: number
+  handoff: { carryOver: boolean; onWhenOff: boolean }
 }
 
 /** What a value must be. */
@@ -47,6 +49,10 @@ export const SETTINGS: readonly Setting[] = [
   { key: 'enabled', env: 'AI_DLC_KEEPALIVE_ENABLED', kind: 'boolean', default: true },
   { key: 'scope', env: 'AI_DLC_KEEPALIVE_SCOPE', kind: 'scope', default: 'session' },
   { key: 'status', env: 'AI_DLC_KEEPALIVE_STATUS', kind: 'boolean', default: true },
+  // ITEM-068 (LLD rev 11, 20.7; rev 10, 11.2): display only, so not trust-gated. Step 44 (R44.11): `statusText`
+  // (AI_DLC_KEEPALIVE_STATUS_TEXT) is retired, since keep-alive writes no status line (R44.1); a level that still
+  // sets it is not read, and /ai-dlc:cache-keepalive-configure says it is no longer used.
+  { key: 'sourceNote', env: 'AI_DLC_KEEPALIVE_SOURCE_NOTE', kind: 'boolean', default: true },
   { key: 'pingPrompt', env: 'AI_DLC_KEEPALIVE_PING_PROMPT', kind: 'text', default: PING_PROMPT },
   { key: 'hitThreshold', env: 'AI_DLC_KEEPALIVE_HIT_THRESHOLD', kind: 'threshold', default: 0.9 },
   { key: 'overagePercent', env: 'AI_DLC_KEEPALIVE_OVERAGE_PERCENT', kind: 'percent', default: 100 },
@@ -73,6 +79,11 @@ export const SETTINGS: readonly Setting[] = [
   { key: 'readPrice', env: 'AI_DLC_KEEPALIVE_READ_PRICE', kind: 'prices', default: 'fable|mythos=0.025,opus[- ]?5[-. ]5=0.05,*=0.1' },
   { key: 'compactCostGuess', env: 'AI_DLC_KEEPALIVE_COMPACT_COST_GUESS', kind: 'positive', default: 0.6 },
   { key: 'summaryRatioGuess', env: 'AI_DLC_KEEPALIVE_SUMMARY_RATIO_GUESS', kind: 'ratio', default: 0.15 },
+  // ITEM-076 (LLD rev 10, 19.1): an automatic handoff chain is one session. carryOver keys the switches
+  // and the --session overrides by the chain id; onWhenOff turns keep-alive on in the seeded session
+  // when it was off at the handoff (it can spend tokens, so it is trust-gated).
+  { key: 'handoff.carryOver', env: 'AI_DLC_KEEPALIVE_HANDOFF_CARRY_OVER', kind: 'boolean', default: true },
+  { key: 'handoff.onWhenOff', env: 'AI_DLC_KEEPALIVE_HANDOFF_ON_WHEN_OFF', kind: 'boolean', default: true },
 ]
 
 // The settings a cloned repository may set only in a folder Claude Code trusts, from either source it
@@ -88,6 +99,7 @@ export const TRUST_GATED: readonly string[] = [
   'fiveMinute.enabled', 'fiveMinute.pingEvery', 'fiveMinute.keepWarmFor', 'fiveMinute.maxPings',
   'budgetMultiplier', 'compactOnCap', 'compactInstructions',
   'writeMult', 'outputMult', 'readPrice',
+  'handoff.onWhenOff',
 ]
 
 /** The names the trust-gated settings go by in a level: their variables in an `env`, their keys in the repository file. */
@@ -223,7 +235,7 @@ function rule(key: string, v: unknown, soFar: Record<string, unknown>): string |
   return (v as number) < ttl ? undefined : `not shorter than ${m[1]}.ttl (${formatDuration(ttl)})`
 }
 
-const blank = (): Record<string, unknown> => ({ oneHour: {}, fiveMinute: {} })
+const blank = (): Record<string, unknown> => ({ oneHour: {}, fiveMinute: {}, handoff: {} })
 
 /** The built-in defaults, from SETTINGS: the one defaults table. */
 export function defaults(): Settings {

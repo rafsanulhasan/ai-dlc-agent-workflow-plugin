@@ -9,7 +9,7 @@ integrations: [integration-1]
 items: [ITEM-032, ITEM-033, ITEM-034, ITEM-034.a, ITEM-034.b, ITEM-035, ITEM-036, ITEM-068, ITEM-076]
 author: system-engineer
 date: 2026-10-25
-status: draft revision 14 (17.1.46 follow-up, fix round 5: KA M1 the AC-17.3.7 test row separates the helper with no file from the unsettled marker, m3 E2'/E3' firm since 034.c; review status: awaiting critique round 5 / 5); revision 13 (17.1.46, gate critique round 3: KA B1 AC-17.3.7 test row in two steps, M3 an unflushed real agent keeps `split unknown`, m1 the ITEM-034.c row, m3 citations; review status: awaiting critique round 4 / 4); revision 12 (17.1.41: gate critique round 2 fixes KA M4, round-1 6, m6; 034.c follow-ups a, b, c in 3.7 and 3.4; `chainOf($)` renamed `chainIdOf($)`; see 3.7, 11.2, 13, 19.1, 19.4); revision 11 (17.1.37: D13 status-line summary, pure `summaryOf`, `Track.status` set by `setPart`, surface roster and `statusText` setting, band / Pane title row and seed row; see Revision 11 at the end, which amends sections 2.2, 3.1, 3.3, 3.5, 11, 11.1, 11.2, 13, 14, 15, 16, 17, 19.1); revision 10 (17.1.32 and follow-up 17.1.32.l1.1: section 11.2 source note and its `sourceNote` setting, the hide stays, section 12.2 and 12.3 chain key and switchText, section 19 auto-handoff chain as one session, Q-SL9 the exception acts like a master [on] press, Q-SL10); revision 9 (2026-10-25: Q-SL8 track button label follows enabled, sections 11, 12, 13, 14); revision 8 (17.1.24: master button, a track switch overrides the master, switches in $.store per session id, ITEM-068 resized to 4); revision 7 (17.1.17: sections 11 to 18, ITEM-068 both lines, band, Pane, session switch; sections 1 to 10 are rev 6, unchanged except where section 11 says so); revision 5 (17.1.7: main write without a split resolved from the transcript at the next Stop; spec line 82 correction owed by sa); revision 4 (bc round 1 fixed; spec revisions 2 and 3: 034.c, D2a, read attribution, D5 main-only arming, AC-17.3.8), awaiting sa answers on section 9 and brutal-critique
+status: draft revision 15 (step 44, 2026-10-31: no status line, rows and head row by the switch in force, no seed row while both tracks are off, the band is the only view and opens no pane; the setting statusText is retired (R44.11); the handoff exception reads anyOn() (R44.13); see Revision 15 at the end, which replaces the sections its table 23 names; step 44 in progress: built, tests and reviews pending; open question 1 only remains open); revision 14 (17.1.46 follow-up, fix round 5: KA M1 the AC-17.3.7 test row separates the helper with no file from the unsettled marker, m3 E2'/E3' firm since 034.c; review status: awaiting critique round 5 / 5); revision 13 (17.1.46, gate critique round 3: KA B1 AC-17.3.7 test row in two steps, M3 an unflushed real agent keeps `split unknown`, m1 the ITEM-034.c row, m3 citations; review status: awaiting critique round 4 / 4); revision 12 (17.1.41: gate critique round 2 fixes KA M4, round-1 6, m6; 034.c follow-ups a, b, c in 3.7 and 3.4; `chainOf($)` renamed `chainIdOf($)`; see 3.7, 11.2, 13, 19.1, 19.4); revision 11 (17.1.37: D13 status-line summary, pure `summaryOf`, `Track.status` set by `setPart`, surface roster and `statusText` setting, band / Pane title row and seed row; see Revision 11 at the end, which amends sections 2.2, 3.1, 3.3, 3.5, 11, 11.1, 11.2, 13, 14, 15, 16, 17, 19.1); revision 10 (17.1.32 and follow-up 17.1.32.l1.1: section 11.2 source note and its `sourceNote` setting, the hide stays, section 12.2 and 12.3 chain key and switchText, section 19 auto-handoff chain as one session, Q-SL9 the exception acts like a master [on] press, Q-SL10); revision 9 (2026-10-25: Q-SL8 track button label follows enabled, sections 11, 12, 13, 14); revision 8 (17.1.24: master button, a track switch overrides the master, switches in $.store per session id, ITEM-068 resized to 4); revision 7 (17.1.17: sections 11 to 18, ITEM-068 both lines, band, Pane, session switch; sections 1 to 10 are rev 6, unchanged except where section 11 says so); revision 5 (17.1.7: main write without a split resolved from the transcript at the next Stop; spec line 82 correction owed by sa); revision 4 (bc round 1 fixed; spec revisions 2 and 3: 034.c, D2a, read attribution, D5 main-only arming, AC-17.3.8), awaiting sa answers on section 9 and brutal-critique
 spec: docs/specs/keepalive-cache-status.spec.md
 stories: docs/product/active/session-continuity-and-cache-visibility/sprint-1/keepalive-cache-status/stories.md
 handoff: 17.1.3-software-architect-to-system-engineer.handoff.md
@@ -18,6 +18,8 @@ handoff: 17.1.3-software-architect-to-system-engineer.handoff.md
 # LLD: keep-alive status line shows the real cache state (root 17)
 
 Code lines are as read on 2026-10-24 (branch feat/ai-dlc-lens); the build re-checks them. Paths are under `plugins/claude/ai-dlc/`. No code is written here. Parts that depend on a spike are marked **CONDITIONAL**.
+
+**Rev 15 (step 44):** the status line, its summary and the Pane are gone, and the rows, head row, seed row and master press are redefined. Revision 15 at the end replaces the parts that table 23 lists; each replaced section below carries a *Replaced by step 44* marker, and its text is kept as the history of what rev 7 to 14 decided.
 
 **Rev 11 (D13):** the status line gets a one-line summary on a terminal; the strings, band title and sections named in the header are amended by *Revision 11* at the end, which wins where it differs from sections 2.2, 3.x, 11 to 17.
 
@@ -352,6 +354,8 @@ Why a predicate and not a flag on `Track`: about 20 assignment sites write `t.pa
 
 ### 11.2 `keepalive.ts`
 
+> **Replaced by step 44 in part (23):** the hide rule `!settings.status || !anyOn()` (the early return of the status line) and the status-line wording. The suffix, `tailOf` and the source label stand.
+
 - `lineFor(t, now)` becomes `lineOf(t.name, cachePart(...), t.part, tailOf(t))`. `tailOf(t)` = `{ cap: capOf(t), keepWarm: formatDuration(keepOf(t).ms) }`, with `keepOf(t) = t.keep ?? { ms: cfgOf(t).keepWarmFor }` and `capOf(t) = pingCap(cfg.maxPings, cfg.pingEvery, keepOf(t))`. `trackStates` uses the same two helpers for `keepWarmMs` and `cap` (it computes them inline today). One source: the published `cap`/`keepWarmMs` and the suffix cannot differ (AC-17.6.2, 17.6.3).
 - **The keep-warm text carries its source (rev 10, the human's decision 2; closes 17.1.l2.1 Major 3).** Every line with a keep-warm clause, off suffix and running line alike, writes ` keep warm <d> (<label>)`, `label` one of `session | machine | settings | default` (sa, 17.1.31). One pure function in `cache-state.ts`: `sourceLabel(keep: Keep)` over `keepWarm()`'s `from` (`keepalive.ts:467`, overrides at 455 to 463): `keep.override` with `from` starting `this session` -> `session`; `keep.override` with `from` starting `this machine` -> `machine`; `from === 'default'` -> `default`; any other `from` (the `<name> in <where>` form of `resolveSettings`, `settings.ts:261`: a settings file or env) -> `settings`. `Keep` gains no field. `OffTail` gains `source` beside `keepWarm`; `offTail` writes `, ping 0/${cap}, keep warm ${keepWarm} (${source})`; `runningText` (`keepalive.ts:606`) writes `keep warm ${formatDuration(keep.ms)} (${sourceLabel(keep)})`. Published: additive `KeepaliveTrackState.keepWarmFrom: 'session' | 'machine' | 'settings' | 'default'` in `types/index.d.ts`, from the same `keepOf(t)` as the line (one source). The command's report keeps its long form (`this session, /ai-dlc:cache-keepalive`, `keepalive.ts:521`). **Setting `sourceNote` (follow-up 17.1.32.l1.1, sa):** `SETTINGS` row `{ key: 'sourceNote', env: 'AI_DLC_KEEPALIVE_SOURCE_NOTE', kind: 'boolean', default: true }`, **not** trust-gated (display only, so it is not added to `TRUST_GATED`). With `false`, `offTail` and `runningText` write no ` (<label>)` on any line (the tail takes `source: undefined`, and `lineOf`/`runningText` print the label only when it is defined); `keepWarmFrom` is still published and the command report is unchanged. It is a key of `.ai-dlc/cache-keepalive.json`, listed by `/ai-dlc:cache-keepalive-configure` with `handoff.carryOver` and `handoff.onWhenOff` (the skill's schema and its listing gain the three rows) and pinned in the README settings table by the settings test (Docs update request for the table). The running line therefore changes, so AC-17.6.4 ("byte for byte as before") needs the label (ra restates it with AC-17.6.3). Tests: `sourceLabel` table over the four cases; `sourceNote: false` gives every line with no label (running, off, every label) and the published `keepWarmFrom` unchanged; `lineOf` with each label; a `runningText` snapshot; `trackStates().keepWarmFrom`; every existing assertion on `keep warm <d>` takes the label (mechanical, ITEM-068). README *Status lines* line 39 and line 27's example then match the code: a Docs update request for `documentation-writer` (ITEM-036), not an edit here.
 - Both lines always (AC-17.6.1): `render` maps every `TRACKS` entry and rev 3 never drops a track. Rev 8: the early return is `!settings.status || !anyOn()` (12.2), so a session where nothing is on by settings or switch hides the status line as `enabled: false` did. **This is the human's decision 1 (2026-10-25; closes 17.1.l2.1 Major 2): the hide stays, the band and the Pane still draw both rows (`off (disabled)`, `[on]`), and the seed line hides with the status line. It is covered by the new AC of ra (17.1.30, "status line when nothing is allowed") and spec D3 (sa); this LLD cites it as AC-17.6.33.** AC-17.6.5: `status:false` hides status line, band and Pane. Band and Pane draw whatever `enabled` says (AC-17.6.19 superseded, 12.4).
@@ -359,6 +363,8 @@ Why a predicate and not a flag on `Track`: about 20 assignment sites write `t.pa
 ## 12. Session switches (D10, D11, rev 8), in `$.store`, and their relation to `--session`
 
 ### 12.1 Precedence and the presses
+
+> **Replaced by step 44 in part (24.3):** the master button's label and press (it reads the tracks, not `masterNow()`). The precedence table and the track press stand.
 
 | Level | Decides | Set by |
 |---|---|---|
@@ -379,8 +385,10 @@ async function saveSwitch($, sw: SessionSwitch): Promise<void>       // writes t
 const curSwitch = (): SessionSwitch => switchMirror?.sw ?? {}
 const masterNow = (): boolean => masterOn(curSwitch(), settings.enabled)
 const trackEnabled = (n: TrackName, key: TrackKey): boolean => trackOn(curSwitch(), n, settings.enabled, settings[key].enabled)
-const anyOn = (): boolean => masterNow() || TRACKS.some(([n, k]) => trackEnabled(n, k))
+const anyOn = (): boolean => TRACKS.some(([n, k]) => trackEnabled(n, k))
 ```
+
+Step 44 (R44.3, R44.13): `anyOn()` is true when either track is on in force; the master switch is not part of it (`keepalive.ts:330`).
 
 - **Why a mirror over the store.** `render`, `publish`, `trackStates` and `lineFor` are synchronous and have about fifteen call sites (3.3); `$.store` is async. Each handler that renders awaits `loadSwitch($)` once at its top (`turn.start`, Stop, `session.measure`, `command.run`, both presses, `keepaliveBand`, the Pane hook), after which every synchronous read sees the session's value. The store is written on every press, so a `/reload-plugins` or module restart loses nothing: the first handler after it reloads the entry (the reason for D10). Single writer, one session id, so the mirror cannot go stale.
 - Reads replaced: every `settings.enabled` read in `keepalive.ts` (lines 258, 270, 729, 772, 786, 906 as read) becomes `masterNow()`, `anyOn()` or `trackEnabled`, and `settings[key].enabled` at 772 and 807 becomes `trackEnabled(n, key)`: the published `enabled` is `masterNow()`; the status line and the early return use `anyOn()`; the command's `enabled=false` reply (906) fires when `!anyOn()`.
@@ -423,6 +431,8 @@ AC-17.6.19 ("a press is ignored when `enabled: false`, Q-SL4") is superseded by 
 
 ## 13. The band and the Pane (D9)
 
+> **Replaced by step 44 (26):** the Pane (`PANE`, the `ui.open` of the command, the Pane hook) and the claim that AbovePrompt is not raised on VS Code are gone; the band is the only view. The one-component tree and `bandText` stand, amended by 24.
+
 *The title row, the title of `ui.open` and the roster shown in this section are amended by 20.6 (rev 11), which wins.*
 
 One component, two hosts, so the rows cannot differ (AC-17.6.9).
@@ -464,6 +474,7 @@ on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
 | Keep-alive, mock clock, in-memory `$.store` stub | `pressTrack`: running 1h `[off]` then zero pings after `clock.fire`; E9 after a press; `[on]` sends no ping and E9 becomes E1'; arms only at the next Stop with tasks. **Rev 8:** master `[off]` stops both running tracks, both lines `off (disabled)`, switches cleared; master off then 5m `[on]` arms at the next Stop while 1h does not; a track `[off]` leaves the master and the other track; master `[on]` after `[off]`; settings `enabled:false` plus a press works (supersedes 6.19); `session.end` deletes the store entry; a forgotten mirror (test-only `forgetSwitchMirror()`) reloads the switch from the store; published `sessionSwitch` and `sessionMaster`; no settings-file write (spy on the file writer, fixture bytes and mtimes). **Rev 9 (Q-SL8; AC-17.6.12 revised, AC-17.6.15, 6.16, 6.26, 6.28 and 6.31 also assert the pressed button turns `[off]`; new AC-17.6.32: `[off]` on an enabled, not-running track disables it, shows the E9 line and `[on]`, and does not arm it):** the button follows enabled, not running: `[off]` on a track that is enabled but has not started pinging (E1' no tasks, `off (turn running)`), `[on]` only when disabled; pressing `[off]` on an enabled idle track sets its switch off and its part to `off (disabled)` with no timer to stop; `bandModel` over `enabled` x `running` (four cases) | 17.6.13 to 6.20, AC-17.6.23 to 6.32 |
 | Command | the report names the master and track switches; `surfaces` stub `['vscode']` calls `ui.open({ id: 'keepalive' })`, `['terminal']` does not; `isPlaced:false` appends the note | 17.6.9, 6.21 |
 | Auto-handoff harness | the composed AbovePrompt hook: both up, keep-alive only, handoff only, neither (`next`), `hasSurvey` | 17.6.7 (non-manual part) |
+| Configure CLI, `tests/auto-handoff/cache-keepalive-cli.test.mjs` | a file key `statusText` and the variable `AI_DLC_KEEPALIVE_STATUS_TEXT` are reported "no longer used" by `validate` and do not fail it; `merge` removes the key; the listing has no `statusText` row; `keepalive-settings.test.mjs` finds no `STATUS_TEXT` row in the README | R44.11 |
 | Manual | pinned band, no gap; the Pane opens and clicks work (title-row master button included); the press script | 17.6.7, 6.11, 6.22 |
 
 ## 15. Pinned tests that change (adds to section 7)
@@ -516,7 +527,7 @@ Inputs: the human's decisions 3 and 2o (2026-10-25, `run.v4.md`), sa's design (1
 
 ### 19.4 The exception: keep-alive was off at the handoff (`handoff.onWhenOff`; Q-SL9, Q-SL10)
 
-`applyHandoffSeed($)` is exported from `keepalive.ts` and called from the seed branch of `classic.SessionStart` in `register.tsx` (`source === 'clear'` with `pending`, lines ~1006-1030), right after the lineage record is written (1040) and before `$.prompt.submit`; a hand-typed `/clear` never reaches it, so it runs **once per handoff**. It runs `await loadSwitch($)` and, when `handoff.onWhenOff` is true and `!masterNow()` (the chain's effective master: its switch, else the settings' `enabled`), saves `afterMasterPress(sw, settings.enabled)`: **the exception acts like a master `[on]` press (the human, Q-SL9): the master `on` AND both track switches `on`**, so even a track with `<track>.enabled: false` in a settings file comes on for this chain (D11), and a track `[off]` the human pressed earlier is overwritten (the master was off, which had cleared both track switches anyway). It is the same pure function as the button (`afterMasterPress`), so the two cannot differ. No ping and no arming at the seed (Q-SL1: arming stays at a Stop with tasks). **A master `[off]` pressed in S1 is invisible to this test when `handoff.carryOver` is false** (the key is the seeded session's own id, so only the settings' `enabled` speaks: AC-17.7.6 says the master is off by settings, `enabled: false`; a master `[off]` pressed in S1 does not trigger the exception with `carryOver: false`, and S2 starts with the master the settings say). It applies with `handoff.carryOver` false too (Q-SL10): the key is then the seeded session's own id, `loadSwitch` finds nothing, `masterNow()` reads the settings' `enabled`, and when that is off the press runs on the fresh entry. A store failure goes to the debug log and the mirror holds the value (as `saveSwitch`). If keep-alive was on, the carry-over is just the shared key: no copy, and `applyHandoffSeed` changes nothing.
+`applyHandoffSeed($)` is exported from `keepalive.ts` and called from the seed branch of `classic.SessionStart` in `register.tsx` (`source === 'clear'` with `pending`, lines ~1006-1030), right after the lineage record is written (1040) and before `$.prompt.submit`; a hand-typed `/clear` never reaches it, so it runs **once per handoff**. It runs `await loadSwitch($)` and, when `handoff.onWhenOff` is true and `!anyOn()` (no track is on in force for the chain, which is the rule the head row reads; step 44, R44.13; `keepalive.ts` `applyHandoffSeed`, the line `if (settings.handoff.onWhenOff && !anyOn()) await saveSwitch($, afterMasterPress(false))`), saves `afterMasterPress(false)`: **the exception acts like a master `[on]` press (the human, Q-SL9): the master `on` AND both track switches `on`**, so even a track with `<track>.enabled: false` in a settings file comes on for this chain (D11), and a track `[off]` the human pressed earlier is overwritten (the master was off, which had cleared both track switches anyway). It is the same pure function as the button (`afterMasterPress`), so the two cannot differ. No ping and no arming at the seed (Q-SL1: arming stays at a Stop with tasks). **A master `[off]` pressed in S1 is invisible to this test when `handoff.carryOver` is false** (the key is the seeded session's own id, so only the settings' `enabled` speaks: AC-17.7.6 says the master is off by settings, `enabled: false`; a master `[off]` pressed in S1 does not trigger the exception with `carryOver: false`, and S2 starts with the master the settings say). It applies with `handoff.carryOver` false too (Q-SL10): the key is then the seeded session's own id, `loadSwitch` finds nothing, `anyOn()` reads the tracks' settings, and when none of them is on the press runs on the fresh entry. A store failure goes to the debug log and the mirror holds the value (as `saveSwitch`). If keep-alive was on, the carry-over is just the shared key: no copy, and `applyHandoffSeed` changes nothing. Step 44 (R44.13): the test is the head row's rule, not the master switch, so a chain whose master reads on but whose both tracks are off is treated as off and gets the press, and a chain with a track on in force is left as it is.
 
 ### 19.5 The prefix never changes (human 2n, c)
 
@@ -539,6 +550,8 @@ Pure/store-stub: `chainIdOf` (found, absent, failed with the log line, a 51-step
 Inputs: spec delta rev 4.4 (`keepalive-cache-status.spec.r4-delta.md`, D13 and Q-SL11 closed by the human 2026-10-25, run.v4.md 2v) and the architect's hand-back 17.1.35. The status line cannot draw a newline, so it gets a one-line **summary** on a terminal; the **full text** (today's track lines and seed line, `\n`-joined) stays what `line` publishes and what the band and Pane draw. Code lines are the architect's citations and rev 10's; the build re-reads them. Nothing in sections 1 to 19 changes except as marked.
 
 ## 20. Amendments, by section
+
+> **Replaced by step 44 (25), except 20.6 (amended by 24.2) and the `StopKind` type of 20.2:** the status-line summary (`summaryOf`, `SUMMARY_MAX`, `StatusMode`, `surfaceMode`, `statusModeOf`, `statusTextOf`, `TrackFacts`, `SeedFact`), `factsOf`, the surface roster and its `session.attach` and `session.detach` handlers, and the setting `statusText` (20.7; retired by step 44, R44.11, and removed from `SETTINGS`, both schemas, the configure CLI and its merge) are removed. Keep-alive writes no status line.
 
 ### 20.1 Sections 2.2 and 11.1: strings
 
@@ -599,9 +612,13 @@ Why facts and not a line parser: the summary drops the cache part, the cap and k
 
 ### 20.7 Setting `statusText` (Q-SL11: the human said yes; names by sa-fix2, spec rev 4.4)
 
+> **Retired by step 44 (R44.11, 25):** the setting `statusText` and its variable `AI_DLC_KEEPALIVE_STATUS_TEXT` no longer exist. The text below is history.
+
 `SETTINGS` row `{ key: 'statusText', env: 'AI_DLC_KEEPALIVE_STATUS_TEXT', kind: <enum>, default: 'auto' }`, after `status`; values `auto | summary | full`, trimmed and case-insensitive (like `scope`); **not** trust-gated (display only; not added to `TRUST_GATED`). An invalid value behaves like every keep-alive setting (`settings.ts` `check`): it is warned about and the next level applies, ending at the default `auto`. The build checks which kinds `settings.ts` has; with no enum kind it adds one validator beside the boolean one. `full` and `summary` force that text on every surface and skip the roster (20.4); the band and Pane are unaffected. `/ai-dlc:cache-keepalive-configure` lists it with the other keep-alive settings: the skill's schema and listing gain the row, so with 11.2 and 19.1 they gain four in all (`statusText`, `sourceNote`, `handoff.carryOver`, `handoff.onWhenOff`); the README table gains the row (Docs update request for `documentation-writer`, ITEM-036), and `tests/auto-handoff/keepalive-settings.test.mjs` (README versus `SETTINGS`) changes with it.
 
 ## 21. Tests, pinned tests, size (amends sections 14, 15, 16)
+
+> **Replaced by step 44 (27):** every test of the summary, the roster, the status line text and the Pane. The rest of this section stands.
 
 - **Pure** (`cache-state.test.ts`): one `summaryOf` row per token state; the 68-character example kept whole (`keepalive 1h warm 6:38, ping 1/9 | 5m idle (no write) | seed hit 31k`); each length step (seed dropped; then the `warm` clauses: the 83-character spend-limit example becomes the 59-character one, both-before-first-ping 75 becomes 51); the one-track-off example; exhaustive `Reason` and `StopKind` tables; `surfaceMode` over `['vscode']`, `['terminal']`, `['desktop']`, `['terminal','vscode']`, `[]` and an unknown name; `statusModeOf` with the three settings (`summary` and `full` ignore the roster); `bandModel` with and without `seed`; `bandText` title row and seed row.
 - **Keep-alive** (mock clock, `surfaces` stub): `['vscode']` gets the full text, `['terminal']` the summary; an attach or detach re-renders; `statusText: summary` and `full` override both ways and never call `surfaces`; an invalid value warns and reads as `auto`; `end()` records each `StopKind` and a later re-arm clears it (`setPart`); `factsOf` for running, first ping, stopped with and without `warm`; the hide rule and `status: false` still hide the summary and the seed token; the published `line` is the full text in every mode.
@@ -616,3 +633,105 @@ Why facts and not a line parser: the summary drops the cache part, the cap and k
 - Unverified (spec): that a VS Code session lists exactly `vscode`; if not, `auto` gives the summary there and `statusText: full` covers it.
 - **Closed (sa, spec rev 4.5):** `overage, stopped` is `<ttl> stopped: overage` (StopKind `overage`, no warm clause); the compaction texts get the four tokens of 20.1. Summary tests gain one row each.
 - The summary reads `nextPingAt` and `warmUntil` at render; `arm` and the landed-ping path write both before `render`, as the full text already assumes.
+
+---
+
+# Revision 15 (step 44, 2026-10-31): no status line, rows by the switch in force, the band without a pane
+
+Inputs: `44-live-findings.human.md` (R44.1 to R44.6 and the human's three clarifications, binding), `44-live-findings-2.human.md` (R44.7 to R44.10 and the human's answers after the research, binding), `44.2.l1.2-agent-manager-to-orchestrator.handback.md` (host facts F1 to F6, d.ts 2.1.310), `run.v4.3.md` entries 2eo to 2ff (the decisions and the probe findings), and the code as agent-manager has it in the working tree on 2026-10-31 (the build of phase B is not finished; the code references below are for orientation and the build re-checks them). Paths are under `plugins/claude/ai-dlc/hooks/keepalive/` unless stated. No code is written here. Steps 42 and 43 changed the band (minimise, close, Ping now, a command that opens no pane) without an LLD revision; this revision records the band as step 44 decided it, from the run state and the code, and does not reopen those steps.
+
+## 23. What this revision replaces
+
+| Section (rev) | Fate | By |
+|---|---|---|
+| 11 `afterMasterPress(sw, settingEnabled)`, `BandModel`, `bandModel(master, lines, seed?)` | replaced (signatures) | 24.2, 24.3 |
+| 11 `lineOf` for the band rows | the published line stays `lineOf`; the rows use `rowLineOf` | 24.1 |
+| 11.2 hide rule `!settings.status \|\| !anyOn()` and the seed line hiding with the status line | replaced | 25, 24.2 |
+| 12.1 master button label "`[off]` when the effective master is on" | replaced: the label follows the tracks | 24.3 |
+| 12.3 `pressMaster` ("turning off: was = masterNow()") | replaced | 24.3 |
+| 13 the Pane, `ui.open` in the command, `hasVscode`, "AbovePrompt is not raised on VS Code" | replaced | 26 |
+| 20.1 to 20.5, 20.7 (summary, roster, `statusText`) | removed | 25 |
+| 20.6 title row and seed row | amended | 24.2 |
+| 21 tests of the summary, the roster and the Pane | replaced | 27 |
+
+Unchanged and still binding: the pure ledger and `cacheView` (2), arming (3.4, 3.8), the published `$.state` lines and `caches` (3.6; the human: "the published `$.state` lines are unchanged"), the session switches and their `$.store` keys (12.2), the chain key (19; `applyHandoffSeed` is included, and its test is `anyOn()` since R44.13, 19.4), the source label and `sourceNote` (11.2).
+
+## 24. The rows, the head row and the seed row (R44.2, R44.3, R44.6)
+
+### 24.1 `rowLineOf` (new, pure, `cache-state.ts`)
+
+```ts
+/** A track's row in the band. `enabled` is trackOn: the track's switch in force (it already folds in the master and the settings). */
+export function rowLineOf(ttl: Ttl, cache: string | undefined, part: string, enabled: boolean, tail?: OffTail): string
+```
+
+The row is `keepalive ${ttl}: ${state}`, followed by `; ${cache}` when there is a cache part (the cache part comes last). `state`, by the switch and the track's keep-alive part:
+
+| Switch in force | `part` | `state` | Example |
+|---|---|---|---|
+| on | an off part (`isOffPart`: a `reasonText` result, the track is idle) | `on, idle` + the part's text after `off` + `offTail(tail)` | `keepalive 5m: on, idle (no 5m cache write seen), ping 0/20, keep warm 1h` |
+| on | any other part (running, stopped, compaction) | `on, ${part}` | a running track reads `on, <running text>` (the human's R44.2) |
+| off | an off part | `off` + the part's text after `off` + `offTail(tail)` | `keepalive 5m: off (disabled), ping 0/20, keep warm 1h` |
+| off | any other part | `off, ${part}` | a defensive case: a press sets the `disabled` part at once (12.3), so a switched-off track normally has an off part |
+
+The status is the switch in force, not the track's cache state. The old text read `off (no 5m cache write seen)` for an enabled but idle track while its button followed the switch: that was the cause am-44 found (`cache-state.ts` before step 44). Why a new function and not a flag on `lineOf`: the published line must not change (3.6), and the rows are the only readers of the switch; `lineOf` keeps its signature and is still what `trackStates` publishes. `isOffPart` stays the one predicate over `reasonText` results (11.1).
+
+### 24.2 `bandModel` and `BandModel`
+
+```ts
+export type BandModel = { title: '⚠ ai-dlc cache-keepalive:'; master: Button; rows: TrackRow[]; seed?: string; on: boolean }
+export const bandModel = (lines: Record<Ttl, { line: string; enabled: boolean }>, seed?: string): BandModel
+```
+
+- `on` = `lines['5m'].enabled || lines['1h'].enabled`: either track on in force. The tracks decide, because a track's switch already folds in the master. So "master on, both tracks off" reads `off`, and "master off, a track on in force" reads `on` (the human's R44.3 reading). The master is no longer an input: `bandModel` lost its first parameter.
+- `master` (the head row's button) = `on ? 'off' : 'on'`: it always offers the opposite of the head row and names the press.
+- `rows`: the 5m row, then the 1h row (Q-SL5), each `{ track, line, button }` with `line` from `rowLineOf` and `button = enabled ? 'off' : 'on'`.
+- `seed` is set only while the seed line shows **and** `on` (R44.6). With both tracks off, the band shows the head row `ai-dlc cache-keepalive: off` with its `on` button and the two track rows, no seed row; the seed row shows again once a track is on. The rule lives in `bandModel`, the one place the model is built, so the band and its minimised form cannot differ.
+- `keepalive.ts`: `bandModelNow($)` builds `lines` from `rowLineOf(n, cachePart(...), t.part, trackEnabled(n, key), tailOf(t))` and passes the seed line's text. The published lines still come from `lineOf`.
+
+`panel.tsx`: the head row reads `${title} ${masterState(m)}` (`on` or `off`, from `m.on`), then the master `Button` (label `m.master`), then the controls of 26.2. This holds in the full band and in the minimised one (R44.3, "the same rule wherever the head row is drawn"). `bandText` writes `⚠ ai-dlc cache-keepalive: on [off]` for the head row, `${line} [${button}]` per row, and the seed row as plain text.
+
+### 24.3 The master press
+
+`afterMasterPress(on: boolean): SessionSwitch` replaces the `(sw, settingEnabled)` form. `on` is what the head row **reads**. `on` true (the button is `[off]`): `{ master: 'off' }`, which clears both track switches, so both tracks are off. `on` false (the button is `[on]`): `{ master: 'on', '5m': 'on', '1h': 'on' }`, so both tracks are on, over any `<track>.enabled: false` (Q-SL7, unchanged). `pressMaster` calls `switchAll($, !anyOn())`, with `anyOn()` the head row's reading. Wherever the code asks "is keep-alive on" (the Stop path, the early checks, the command's reply) it uses `anyOn()`, never `masterNow()` alone (code-review W1, 44.4.l1.1). The effects of 12.3 (stop running tracks and set the `disabled` part when turning off; the idle reason when turning on; no ping; arming at the next Stop) are unchanged.
+
+The track press and `afterTrackPress` stand (12.3, Q-SL8): the button is the opposite of the row's status, which is Q-SL8's "label follows enabled" restated by R44.2.
+
+## 25. The status line is removed (R44.1)
+
+- Keep-alive writes no status line. `render($, now)` only publishes and calls `$.ui.invalidate('ui.render')`. The seed line is shown only as the seed row (24.2).
+- Removed from `cache-state.ts` and `keepalive.ts`: `summaryOf`, `SUMMARY_MAX`, `StatusMode`, `StatusTextSetting`, `surfaceMode`, `statusModeOf`, `statusTextOf`, `TrackFacts`, `SeedFact`, `factsOf`, the module variable `surfaces`, `refreshSurfaces` and the `statusMode()` reads. `StopKind` stays (`Track.status`, set by `setPart`, still names how a track stopped, and `isDisabledPart` reads it). `session.attach` and `session.detach` stay as handlers that only redraw the band; no payload is read.
+- One call to `$.ui.status` remains: `clearOldStatus($)`, once per load, clears a status line an older module left (`$.ui.status(undefined)`). It is never used to write one.
+- `settings.status` (default `true`) now means "draw the band" (AC-17.6.5: `status: false` hides the band). `statusText` is retired (R44.11, the human, 2026-10-31): it is removed from `SETTINGS` (`settings.ts`), from both schemas (the `cache-keepalive-configure` template and its `.ai-dlc` copy, still identical), from the configure CLI's rows and from its merge. A level that still sets it (a settings file key, or the variable `AI_DLC_KEEPALIVE_STATUS_TEXT`) does not fail validation and is not read: `cache-keepalive.mjs validate` reports it as no longer used, from the `RETIRED` list (`cache-keepalive.mjs:369`, reason "keep-alive writes no status line"), and `merge` drops the key from the file. The description of `status` in the schema says there is no status line; it means "draw the band".
+- Decision D13 (spec rev 4.4) and entry 2s of `run.v4.md` (the summary and Pane) are superseded by the human's R44.1 (recorded *Deprecated* in `run.v4.2.md`).
+
+## 26. The band is the only view, and it opens no pane (R44.7 revised, R44.8 to R44.10)
+
+### 26.1 Placement
+
+- One band, `AbovePrompt`, composed by the one hook in `auto-handoff/register.tsx`: `{auto-handoff panel}{below}{keep-alive band}`. The lens's band, when drawn, is in `below`, so the order is auto-handoff, lens, keep-alive; no `width` on any Box. `keepaliveBand($, t)` is not gated by the surface: it draws on every surface that raises the site, VS Code included. The probe of 44.2.l1.3 (entry 2ff) saw `AbovePrompt` render in VS Code (surface `vscode`, 76 renders in each plugin's log, in a narrow and a wide panel), so research fact F3 and d.ts 10818 ("terminal and desktop only") do not hold for 2.1.310. The `bandEverywhere` gate that am-44 put on keep-alive's band at 44.2.l1.1 (R44.4, "no band below the pane") is reversed for keep-alive by the human's R44.7 revision; the lens keeps its gate (`lens-view.lld.md`).
+- Keep-alive opens no pane on any surface. Removed: the Pane hook, the Pane's frame title, `ui.open` in `/ai-dlc:cache-keepalive`, `hasVscode`, and the "pane not shown" note. `PANE = 'keepalive'` stays as an exported constant for one use: `closeOldPane($)` closes a keep-alive Pane that a module from before step 44 left open, once per load, deferred with `$.clock.after(0)` because a render draws only and a close is an act (F5). `$.ui.close` of an id that is not open does nothing; the function never throws.
+- A resize does not touch the band (R44.9 and R44.10 revised: "not on the keepalive band"). R44.8's cause was the pane region, not keep-alive's code (entry 2ff): VS Code moves the whole region, with every pane in it as a tab, between inline and the dock at about 70 columns, and the inline area is left empty. With keep-alive out of that region a resize moves only the lens (`lens-view.lld.md`, 3). Nothing in `keepalive/` reads `placement` or the panel width.
+
+### 26.2 The band's controls (steps 42 and 43, recorded here)
+
+The band has the head row (24.2) with its master button, **Ping now** (the command's ping with the settings in force, `pressPing`), the minimise and restore control, and the close `×`; it has no maximise control. `bandMinimised` (starts `true`) and `bandClosed` are module state, changed by the controls and by `/ai-dlc:cache-keepalive`, which brings the band back (`bandClosed = false`, `bandMinimised = true`), pings, and opens no pane. Minimised, the band is the head row with its status and its buttons. `session.start` sets `bandClosed = false`. Every Button is `plain`, so the heights are equal (step 43 live finding 1c).
+
+## 27. Tests and seams (replaces 21 for step 44; sqa-44 owns the tests)
+
+| Seam | Observes | Rule |
+|---|---|---|
+| Pure, `cache-state.test.ts` | `rowLineOf`: the four rows of 24.1 over every `Reason` and the stopped and running parts, the cache part last, the tail; `bandModel`: `on` over the four switch combinations, `master` always the opposite, the buttons, 5m before 1h, no `seed` while both tracks are off and `seed` once one is on; `afterMasterPress(true)` and `(false)` | R44.2, R44.3, R44.6 |
+| Pure, `tests/panel.test.tsx` | `bandText` and the tree: head row text `on` and `off`, the master button label, full and minimised forms, the seed row with no Button and only while `seed` is set | R44.3, R44.6 |
+| Keep-alive, mock clock | no `$.ui.status` write other than `clearOldStatus`'s, once per load; the published lines unchanged; "master on, both tracks off" reads `off` and "master off, a track on in force" reads `on`; `pressMaster` from either reading; the band is returned for a stub surface `vscode` and the command calls no `ui.open`; `closeOldPane` runs once per load, never inside the render; `applyHandoffSeed` with `handoff.onWhenOff` true saves `afterMasterPress(false)` only when no track is on in force (`anyOn()` false) and leaves a chain with a track on as it is | R44.1, R44.3, R44.7, R44.13 |
+| Auto-handoff harness | the composed AbovePrompt hook draws keep-alive's band for surface `vscode` | R44.7 |
+| Manual (`MANUAL-CHECKS.md`, the implementer's) | the band above the prompt in a narrow and a wide VS Code panel, and after a resize each way | R44.7 to R44.10 |
+
+Pinned tests that change: every test that reads `seen.statuses`, the summary tests (`band.test.ts` no longer finds `SUMMARY_MAX`), the master and track button label tests (old labels), and the Pane tests. Mechanical, in the sqa-44 pass. The `statusText` row test in `cache-keepalive-cli.test.mjs` (line 1226) is removed or turned into the "no longer used" test.
+
+## 28. Open questions (step 44)
+
+1. **The overage row.** `rowLineOf` turns the off part `off in overage` of an enabled track into `on, idle in overage, ping 0/20, ...`, which reads oddly. The records give no wording. Needs the human's or the analyst's wording (for example `on, idle (overage)`); not guessed here.
+2. **The handoff exception and the head row (answered, R44.13).** The human decided on 2026-10-31 that the exception uses the head row's rule, either track on in force (`anyOn()`), not the master switch. Built: `applyHandoffSeed` tests `!anyOn()` (19.4; `keepalive.ts`, `applyHandoffSeed`).
+3. **`statusText` (answered, R44.11).** The human decided on 2026-10-31 to retire it now: removed from the schema, the settings, the merge and the CLI; a file that still sets it is reported as no longer used and dropped on merge, and does not fail validation (25).
+4. **Stale comments in the code (done).** The comments that said AbovePrompt is terminal and desktop only were corrected in round 44.2.l1.4 to cite the probe.

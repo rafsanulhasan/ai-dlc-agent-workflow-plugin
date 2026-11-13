@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
-import { armUntil, cachePart, cacheView, dropPending, emptyLedger, hasMain, hhmm, isEmpty, lineOf, needsMainSeed, observe, observePing, reasonText, seedMain } from '../cache-state.ts'
-import type { Ledger, Lifetimes } from '../cache-state.ts'
+import { agentUnsettled, armUntil, cachePart, cacheView, dropPending, emptyLedger, hasMain, hhmm, isEmpty, lineOf, markAgent, needsMainSeed, observe, observePing, onlyAgentsWarm, reasonText, seedMain, settleAgent } from '../cache-state'
+import type { Ledger, Lifetimes } from '../cache-state'
 
 // The pure seam of the cache ledger (spec keepalive-cache-status, D1 and D3; LLD section 2, T17.1).
 // Times are local clock times, so the literals compare as the stories write them (10:00, 10:05).
@@ -308,5 +308,117 @@ describe('[T17.1] the cache ledger, pure', () => {
     expect(armUntil(l, '1h', T(10, 1))).toBeUndefined()
     expect(armUntil(l, '5m', T(10, 5))).toBeUndefined()
     expect(armUntil(l, '5m', T(10, 6))).toBeUndefined()
+  })
+})
+
+// SQA 17.3.l1.1 (ITEM-034, T17.3): the agent half of the ledger, each function on its own. The register-level
+// tests in keepalive.test.ts drive them through the events; these pin the cases an event cannot reach cheaply.
+describe('[17.3.l1.1] ITEM-034 agent liveness, settling and arming, pure', () => {
+  const noSplit = (written: number) => ({ input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: written })
+
+  test('AC-17.3.3 markAgent creates an unknown agent with the status, moves a known one, and keeps its entries', () => {
+    const l = emptyLedger()
+    markAgent(l, 'a1', 'running')
+    expect(l.agents.get('a1')).toEqual({ caches: {}, status: 'running' })
+    observe(l, { at: T(10, 0), agentId: 'a1', usage: usageOf(0, 500) }, LIFE)
+    markAgent(l, 'a1', 'finished')
+    expect(l.agents.get('a1')).toEqual({ caches: { '5m': { warmUntil: T(10, 5) } }, status: 'finished' })
+    markAgent(l, 'a1', 'idle')
+    expect(l.agents.get('a1')!.status).toBe('idle')
+    markAgent(l, 'a2', 'idle')
+    expect(l.agents.get('a2')).toEqual({ caches: {}, status: 'idle' })
+  })
+
+  test('AC-17.3.7 agentUnsettled: no agent, no entry and the unknown marker alone are unsettled; any 5m or 1h entry settles it', () => {
+    const l = emptyLedger()
+    expect(agentUnsettled(l, 'ghost')).toBe(true)
+    markAgent(l, 'a0', 'running')
+    expect(agentUnsettled(l, 'a0')).toBe(true)
+    observe(l, { at: T(10, 0), agentId: 'a1', usage: noSplit(900) }, LIFE)
+    expect(l.agents.get('a1')!.caches.unknown).toBeDefined()
+    expect(agentUnsettled(l, 'a1')).toBe(true)
+    observe(l, { at: T(10, 0), agentId: 'a2', usage: usageOf(0, 500) }, LIFE)
+    expect(agentUnsettled(l, 'a2')).toBe(false)
+    observe(l, { at: T(10, 0), agentId: 'a3', usage: usageOf(500, 0) }, LIFE)
+    expect(agentUnsettled(l, 'a3')).toBe(false)
+    observe(l, { at: T(10, 1), agentId: 'a3', usage: noSplit(900) }, LIFE)
+    expect(l.agents.get('a3')!.caches.unknown).toBeDefined()
+    expect(agentUnsettled(l, 'a3')).toBe(false)
+  })
+
+  test('AC-17.3.7 settleAgent: the transcript row at 10:02 warms its TTL to 10:07, deletes the unknown marker and leaves the other TTL empty', () => {
+    const l = emptyLedger()
+    observe(l, { at: T(10, 2), agentId: 'a1', usage: noSplit(900) }, LIFE)
+    markAgent(l, 'a1', 'finished')
+    expect(cacheView(l, '5m', T(10, 3))).toEqual({ subagentsUnknown: true })
+    settleAgent(l, 'a1', { split: { '1h': 0, '5m': 500 }, at: T(10, 2) }, T(10, 3), LIFE)
+    expect(l.agents.get('a1')).toEqual({ caches: { '5m': { warmUntil: T(10, 7) } }, status: 'finished' })
+    expect(cachePart(cacheView(l, '5m', T(10, 4)))).toBe('subagents warm until 10:07')
+    expect(cachePart(cacheView(l, '5m', T(10, 8)))).toBe('subagents expired 10:07')
+    expect(cacheView(l, '1h', T(10, 4))).toEqual({})
+  })
+
+  test('AC-17.3.7 settleAgent: both TTLs with tokens are warm; a row with no time counts from now; an agent never seen is created finished', () => {
+    const l = emptyLedger()
+    settleAgent(l, 'a1', { split: { '1h': 700, '5m': 500 } }, T(10, 3), LIFE)
+    expect(l.agents.get('a1')).toEqual({ caches: { '5m': { warmUntil: T(10, 8) }, '1h': { warmUntil: T(11, 3) } }, status: 'finished' })
+  })
+
+  test('AC-17.3.7 settleAgent: an entry already expired at the stop is not kept, and the unknown marker goes all the same', () => {
+    const l = emptyLedger()
+    observe(l, { at: T(10, 0), agentId: 'a1', usage: noSplit(900) }, LIFE)
+    settleAgent(l, 'a1', { split: { '1h': 0, '5m': 500 }, at: T(10, 0) }, T(10, 5), LIFE)
+    expect(l.agents.get('a1')!.caches).toEqual({})
+    const edge = emptyLedger()
+    settleAgent(edge, 'a1', { split: { '1h': 0, '5m': 500 }, at: T(10, 0) }, T(10, 5) - 1, LIFE)
+    expect(edge.agents.get('a1')!.caches).toEqual({ '5m': { warmUntil: T(10, 5) } })
+  })
+
+  test('AC-17.3.7 settleAgent never lowers a later entry, and a TTL with no tokens is left alone', () => {
+    const l = emptyLedger()
+    observe(l, { at: T(10, 4), agentId: 'a1', usage: usageOf(0, 500) }, LIFE)
+    settleAgent(l, 'a1', { split: { '1h': 0, '5m': 500 }, at: T(10, 2) }, T(10, 5), LIFE)
+    expect(l.agents.get('a1')!.caches['5m']).toEqual({ warmUntil: T(10, 9) })
+    expect(l.agents.get('a1')!.caches['1h']).toBeUndefined()
+  })
+
+  test('AC-17.3.1 armUntil with agents on: main first; else the latest warm entry of an agent that has not finished; never finished, expired or unknown', () => {
+    const l = emptyLedger()
+    observe(l, { at: T(10, 2), agentId: 'a1', usage: usageOf(0, 500) }, LIFE)
+    observe(l, { at: T(10, 3), agentId: 'a2', usage: usageOf(0, 500) }, LIFE)
+    observe(l, { at: T(10, 4), agentId: 'a3', usage: usageOf(0, 500) }, LIFE)
+    observe(l, { at: T(10, 4), agentId: 'a4', usage: noSplit(900) }, LIFE)
+    expect(armUntil(l, '5m', T(10, 5), { agents: true })).toBe(T(10, 9))
+    expect(armUntil(l, '5m', T(10, 5))).toBeUndefined()
+    expect(armUntil(l, '5m', T(10, 5), { agents: false })).toBeUndefined()
+    markAgent(l, 'a3', 'finished')
+    expect(armUntil(l, '5m', T(10, 5), { agents: true })).toBe(T(10, 8))
+    markAgent(l, 'a2', 'idle')
+    expect(armUntil(l, '5m', T(10, 5), { agents: true })).toBe(T(10, 8))
+    expect(armUntil(l, '5m', T(10, 8), { agents: true })).toBeUndefined()
+    expect(armUntil(l, '1h', T(10, 5), { agents: true })).toBeUndefined()
+    observe(l, { at: T(10, 0), usage: usageOf(0, 2_000) }, LIFE)
+    expect(armUntil(l, '5m', T(10, 1), { agents: true })).toBe(T(10, 5))
+  })
+
+  test('AC-17.3.8 onlyAgentsWarm: true when no main entry of the TTL is warm and a running or idle agent has one; false for main warm, finished, expired, unknown or another TTL', () => {
+    const l = emptyLedger()
+    expect(onlyAgentsWarm(l, '5m', T(10, 1))).toBe(false)
+    observe(l, { at: T(10, 0), agentId: 'a1', usage: usageOf(0, 500) }, LIFE)
+    expect(onlyAgentsWarm(l, '5m', T(10, 1))).toBe(true)
+    expect(onlyAgentsWarm(l, '1h', T(10, 1))).toBe(false)
+    expect(onlyAgentsWarm(l, '5m', T(10, 5))).toBe(false)
+    markAgent(l, 'a1', 'idle')
+    expect(onlyAgentsWarm(l, '5m', T(10, 1))).toBe(true)
+    markAgent(l, 'a1', 'finished')
+    expect(onlyAgentsWarm(l, '5m', T(10, 1))).toBe(false)
+    markAgent(l, 'a1', 'running')
+    observe(l, { at: T(10, 0), usage: usageOf(0, 2_000) }, LIFE)
+    expect(onlyAgentsWarm(l, '5m', T(10, 1))).toBe(false)
+    expect(onlyAgentsWarm(l, '5m', T(10, 5))).toBe(false)
+    const u = emptyLedger()
+    observe(u, { at: T(10, 0), agentId: 'a1', usage: noSplit(900) }, LIFE)
+    expect(onlyAgentsWarm(u, '5m', T(10, 1))).toBe(false)
+    expect(onlyAgentsWarm(u, '1h', T(10, 1))).toBe(false)
   })
 })

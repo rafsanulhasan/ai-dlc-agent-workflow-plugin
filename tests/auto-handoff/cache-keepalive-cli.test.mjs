@@ -4,6 +4,7 @@
 // Node's type stripping (Node 22.18 and later); the agreement suites are skipped on older Node.
 // Run from the repository root: node --test "tests/**/*.test.mjs". Each CLI test works in a temp
 // folder; nothing under plugins/ is written.
+import "../support/resolve-ts-extensionless.mjs";
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -71,7 +72,9 @@ describe("the schema against keep-alive's settings table", { skip: skipReason },
   });
 
   test("requires every key, top-level and in each track, so the file always holds a value", () => {
-    assert.deepEqual([...schema.required].sort(), Object.keys(schema.properties).filter((k) => k !== "$schema").sort());
+    // [6a] teamRecord is the one optional key: a record of the team values, never a setting, so the file need not hold it.
+    assert.deepEqual([...schema.required].sort(), Object.keys(schema.properties).filter((k) => k !== "$schema" && k !== "teamRecord").sort());
+    assert.ok(!schema.required.includes("teamRecord"));
     for (const track of ["oneHour", "fiveMinute"]) {
       assert.equal(schema.properties[track].type, "object");
       assert.deepEqual([...schema.properties[track].required].sort(), Object.keys(schema.properties[track].properties).sort());
@@ -225,9 +228,9 @@ test("show: untrusted, the gated keys of the file and of the env of .claude/sett
   assert.equal(row(u.rows, "status").value, false);
   assert.equal(row(u.rows, "pingPrompt").source, "AI_DLC_KEEPALIVE_PING_PROMPT in .claude/settings.local.json");
   assert.ok(u.warnings.some((w) => w.startsWith("oneHour.keepWarmFor in .ai-dlc/cache-keepalive.json ignored: Claude Code does not trust this folder")), u.warnings.join("\n"));
-  // The same advice as the module's warning (hooks/keepalive/keepalive.ts, GATED_INSTEAD): settings.local.json, or the command.
-  for (const w of u.warnings.filter((x) => x.includes("does not trust"))) assert.ok(w.endsWith("set them in the env of .claude/settings.local.json instead (a keep-warm time also with /ai-dlc:cache-keepalive)"), w);
-  assert.match(fs.readFileSync(path.join(PLUGIN, "hooks", "keepalive", "keepalive.ts"), "utf8"), /const GATED_INSTEAD = `set them in the env of \.claude\/settings\.local\.json instead \(a keep-warm time also with \/\$\{COMMAND\}\)`/);
+  // The same advice as the module's warning (hooks/keepalive/keepalive.ts, GATED_INSTEAD): settings.local.json, or the configure command.
+  for (const w of u.warnings.filter((x) => x.includes("does not trust"))) assert.ok(w.endsWith("set them in the env of .claude/settings.local.json instead (a keep-warm time also with /ai-dlc:cache-keepalive-configure)"), w);
+  assert.match(fs.readFileSync(path.join(PLUGIN, "hooks", "keepalive", "keepalive.ts"), "utf8"), /const GATED_INSTEAD = `set them in the env of \.claude\/settings\.local\.json instead \(a keep-warm time also with \/\$\{CONFIGURE\}\)`/);
   assert.ok(u.warnings.some((w) => w.startsWith("AI_DLC_KEEPALIVE_BUDGET_MULTIPLIER in the env of .claude/settings.json ignored")), u.warnings.join("\n"));
   assert.ok(!u.warnings.some((w) => w.includes("10h")), "the warning names keys, not values");
   const t = effective(root, keys, TRUSTED);
@@ -529,7 +532,7 @@ test("validate: a gated variable in .claude/settings.json of an untrusted folder
   });
   const u = validateEnv(root, keys, UNTRUSTED);
   assert.deepEqual(u.warnings, [
-    ".claude/settings.json: AI_DLC_KEEPALIVE_BUDGET_MULTIPLIER: skipped, Claude Code does not trust this folder (the folder has no entry); set them in the env of .claude/settings.local.json instead (a keep-warm time also with /ai-dlc:cache-keepalive); in force: 2 (budgetMultiplier in .ai-dlc/cache-keepalive.json)",
+    ".claude/settings.json: AI_DLC_KEEPALIVE_BUDGET_MULTIPLIER: skipped, Claude Code does not trust this folder (the folder has no entry); set them in the env of .claude/settings.local.json instead (a keep-warm time also with /ai-dlc:cache-keepalive-configure); in force: 2 (budgetMultiplier in .ai-dlc/cache-keepalive.json)",
     '.claude/settings.json: AI_DLC_KEEPALIVE_STATUS="maybe": not true or false; in force: true (status in .ai-dlc/cache-keepalive.json)',
   ]);
   const t = validateEnv(root, keys, TRUSTED);
@@ -1198,4 +1201,175 @@ test("rewriting the same keepWarmFor recomputes maxPings over a lower hand-set v
   assert.equal(fileOf(kept).oneHour.maxPings, 5);
   const skill = fs.readFileSync(path.join(SKILL, "SKILL.md"), "utf8");
   assert.match(skill, /recomputes that track's `maxPings` even when the keep-warm time is the one already in the file/);
+});
+
+// ---- point 6a: the global level and teamRecord ----------------------------------------------------
+const GLOBAL = "~/.claude/settings.json";
+/** A home folder holding the given files (relative to it). */
+function home(files = {}) {
+  const h = path.join(tmp, `home-${++n}`);
+  fs.mkdirSync(h, { recursive: true });
+  for (const [rel, text] of Object.entries(files)) {
+    fs.mkdirSync(path.dirname(path.join(h, rel)), { recursive: true });
+    fs.writeFileSync(path.join(h, rel), typeof text === "string" ? text : JSON.stringify(text, null, 2));
+  }
+  return h;
+}
+/** The CLI run with this home folder (os.homedir reads HOME on POSIX, USERPROFILE on Windows). */
+const cliAt = (root, h, args) => {
+  const r = spawnSync(process.execPath, [CLI, "--root", root, ...args], { encoding: "utf8", cwd: tmp, env: { ...process.env, HOME: h, USERPROFILE: h } });
+  return { code: r.status, out: r.stdout, err: r.stderr };
+};
+const rowOf = (rows, key) => rows.find((r) => r.key === key);
+
+describe("[6a] the global level: the env of ~/.claude/settings.json", () => {
+  test("it sits between the team env and the repository file: team over global, global over the file, local over both", () => {
+    const h = home({ ".claude/settings.json": { env: { AI_DLC_KEEPALIVE_SCOPE: "machine", AI_DLC_KEEPALIVE_PING_PROMPT: "global", AI_DLC_KEEPALIVE_STATUS: "true" } } });
+    const root = repo({
+      ".ai-dlc/cache-keepalive.json": { scope: "session", pingPrompt: "file", status: true, sourceNote: false },
+      ".claude/settings.json": { env: { AI_DLC_KEEPALIVE_PING_PROMPT: "team", AI_DLC_KEEPALIVE_STATUS: "true" } },
+      ".claude/settings.local.json": { env: { AI_DLC_KEEPALIVE_STATUS: "false" } },
+    });
+    const r = effective(root, keys, TRUSTED, h);
+    assert.equal(rowOf(r.rows, "scope").value, "machine");
+    assert.equal(rowOf(r.rows, "scope").source, `AI_DLC_KEEPALIVE_SCOPE in ${GLOBAL}`);
+    assert.equal(rowOf(r.rows, "pingPrompt").value, "team");
+    assert.equal(rowOf(r.rows, "pingPrompt").source, "AI_DLC_KEEPALIVE_PING_PROMPT in .claude/settings.json");
+    assert.equal(rowOf(r.rows, "status").value, false); // local over team, global and the file
+    assert.equal(rowOf(r.rows, "sourceNote").value, false);
+    assert.equal(rowOf(r.rows, "sourceNote").source, "sourceNote in .ai-dlc/cache-keepalive.json");
+  });
+
+  test("it is not trust-gated: an untrusted folder skips a gated team value but applies a gated global one, with no warning", () => {
+    const h = home({ ".claude/settings.json": { env: { AI_DLC_KEEPALIVE_BUDGET_MULTIPLIER: "0", AI_DLC_KEEPALIVE_1H_KEEP_WARM_FOR: "10h" } } });
+    const u = effective(repo(), keys, UNTRUSTED, h);
+    assert.equal(rowOf(u.rows, "budgetMultiplier").value, 0);
+    assert.equal(rowOf(u.rows, "budgetMultiplier").source, `AI_DLC_KEEPALIVE_BUDGET_MULTIPLIER in ${GLOBAL}`);
+    assert.equal(rowOf(u.rows, "oneHour.keepWarmFor").value, "10h");
+    assert.ok(!u.warnings.some((w) => w.includes("does not trust")), u.warnings.join("\n"));
+    const team = effective(repo({ ".claude/settings.json": { env: { AI_DLC_KEEPALIVE_BUDGET_MULTIPLIER: "1" } } }), keys, UNTRUSTED, home());
+    assert.equal(rowOf(team.rows, "budgetMultiplier").value, 2, "the team value alone is skipped");
+    assert.ok(team.warnings.some((w) => w.startsWith("AI_DLC_KEEPALIVE_BUDGET_MULTIPLIER in the env of .claude/settings.json ignored")));
+  });
+
+  test("a broken global file is skipped with a warning naming ~/.claude/settings.json", () => {
+    const r = effective(repo(), keys, TRUSTED, home({ ".claude/settings.json": "{ nope" }));
+    assert.ok(r.warnings.some((w) => w.includes(GLOBAL)), r.warnings.join("\n"));
+    assert.equal(rowOf(r.rows, "scope").source, "default");
+  });
+
+  test("show (the CLI) reads it from the home folder and names it as the source", () => {
+    const h = home({ ".claude/settings.json": { env: { AI_DLC_KEEPALIVE_SCOPE: "machine" } } });
+    const r = cliAt(repo(), h, ["show", "--json"]);
+    assert.equal(r.code, 0, r.out + r.err);
+    assert.deepEqual(rowOf(JSON.parse(r.out).settings, "scope"), { key: "scope", value: "machine", source: `AI_DLC_KEEPALIVE_SCOPE in ${GLOBAL}` });
+  });
+
+  test("validate checks its variables as the other two files', each finding a warning naming ~/.claude/settings.json; exit 0", () => {
+    const h = home({ ".claude/settings.json": { env: { AI_DLC_KEEPALIVE_HIT_THRESHOLD: "2", AI_DLC_KEEPALIVE_NOPE: "1" } } });
+    const root = repo({ ".ai-dlc/cache-keepalive.json": full() });
+    const { warnings } = validateEnv(root, keys, TRUSTED, undefined, undefined, h);
+    assert.deepEqual(warnings.sort(), [
+      `${GLOBAL}: AI_DLC_KEEPALIVE_HIT_THRESHOLD="2": not a number from 0 up to, not including, 1; in force: 0.9 (hitThreshold in .ai-dlc/cache-keepalive.json)`,
+      `${GLOBAL}: AI_DLC_KEEPALIVE_NOPE: not a keep-alive setting; ignored`,
+    ].sort());
+    const r = cliAt(root, h, ["validate"]);
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /^warning: ~\/\.claude\/settings\.json: AI_DLC_KEEPALIVE_NOPE: not a keep-alive setting; ignored$/m);
+  });
+
+  test("a gated global variable that differs from the default is not reported as skipped, even in an untrusted folder", () => {
+    const h = home({ ".claude/settings.json": { env: { AI_DLC_KEEPALIVE_BUDGET_MULTIPLIER: "0" } } });
+    const { warnings } = validateEnv(repo({ ".ai-dlc/cache-keepalive.json": full() }), keys, UNTRUSTED, undefined, undefined, h);
+    assert.deepEqual(warnings, []);
+  });
+});
+
+describe("[6a] teamRecord: optional, a record only", () => {
+  const TEAM = { AI_DLC_KEEPALIVE_ENABLED: "false", AI_DLC_KEEPALIVE_1H_KEEP_WARM_FOR: "4h" };
+
+  test("the schema has it as an optional object of AI_DLC_KEEPALIVE_* names to text, and it is not a setting", () => {
+    const t = schema.properties.teamRecord;
+    assert.equal(t.type, "object");
+    assert.deepEqual(t.additionalProperties, { type: "string" });
+    assert.ok(!schema.required.includes("teamRecord"));
+    assert.ok(!keys.some((p) => p.key === "teamRecord"), "loadSchema does not list it as a setting");
+  });
+
+  test("validate accepts a file without it and a file with a valid one, and warns for a bad name, a non-text value and a non-object", () => {
+    const run = (doc) => cli(repo({ ".ai-dlc/cache-keepalive.json": doc }), ["validate"]);
+    assert.match(run(full()).out, /cache-keepalive\.json is valid/);
+    assert.match(run({ ...full(), teamRecord: TEAM }).out, /cache-keepalive\.json is valid/);
+    const bad = run({ ...full(), teamRecord: { NOT_MINE: "x", AI_DLC_KEEPALIVE_ENABLED: false } });
+    assert.equal(bad.code, 0, bad.out);
+    assert.match(bad.out, /^warning: \.ai-dlc\/cache-keepalive\.json: teamRecord\.NOT_MINE: not a keep-alive variable/m);
+    assert.match(bad.out, /^warning: \.ai-dlc\/cache-keepalive\.json: teamRecord\.AI_DLC_KEEPALIVE_ENABLED: not text/m);
+    const notObj = run({ ...full(), teamRecord: [] });
+    assert.equal(notObj.code, 0, notObj.out);
+    assert.match(notObj.out, /^warning: \.ai-dlc\/cache-keepalive\.json: teamRecord: not an object/m);
+    assert.deepEqual(validateDoc({ ...full(), teamRecord: TEAM }, keys), []);
+  });
+
+  test("it is never read for a value: a teamRecord entry changes no row of show", () => {
+    const plain = effective(repo({ ".ai-dlc/cache-keepalive.json": full() }), keys, TRUSTED, home());
+    const withRec = effective(repo({ ".ai-dlc/cache-keepalive.json": { ...full(), teamRecord: TEAM } }), keys, TRUSTED, home());
+    assert.deepEqual(withRec.rows, plain.rows);
+    assert.equal(rowOf(withRec.rows, "enabled").value, true);
+  });
+
+  test("merge keeps it as it is, other keys filled; install does not write it", () => {
+    const root = repo({ ".ai-dlc/cache-keepalive.json": { scope: "machine", teamRecord: TEAM } });
+    assert.doesNotMatch(cli(root, ["merge", "--dry-run"]).out, /teamRecord/);
+    assert.equal(cli(root, ["merge"]).code, 0);
+    const doc = fileOf(root);
+    assert.deepEqual(doc.teamRecord, TEAM);
+    assert.equal(doc.scope, "machine");
+    assert.match(cli(root, ["merge", "--dry-run"]).out, /^up to date$/m);
+    const fresh = repo();
+    assert.equal(cli(fresh, ["install"]).code, 0);
+    assert.ok(!Object.hasOwn(fileOf(fresh), "teamRecord"));
+    assert.match(cli(fresh, ["validate"]).out, /cache-keepalive\.json is valid/);
+  });
+
+  test("set keeps it too", () => {
+    const root = repo({ ".ai-dlc/cache-keepalive.json": { ...full(), teamRecord: TEAM } });
+    assert.equal(cli(root, ["set", "oneHour.keepWarmFor=2h"]).code, 0);
+    const doc = fileOf(root);
+    assert.deepEqual(doc.teamRecord, TEAM);
+    assert.equal(doc.oneHour.keepWarmFor, "2h");
+  });
+});
+
+// ---- Step 44, R44.11: statusText is retired (keep-alive writes no status line, R44.1) ------------------
+describe("[R44.11] statusText is retired", { skip: skipReason }, () => {
+  const withIt = () => repo({
+    ".ai-dlc/cache-keepalive.json": full({ statusText: "auto" }),
+    ".claude/settings.local.json": { env: { AI_DLC_KEEPALIVE_STATUS_TEXT: "full" } },
+  });
+
+  test("validate warns that the file key and the env variable are no longer used, not that they are not a setting", () => {
+    const r = cli(withIt(), ["validate"]);
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /statusText: no longer used \(keep-alive writes no status line\); run \/ai-dlc:cache-keepalive-merge to remove it/);
+    assert.match(r.out, /AI_DLC_KEEPALIVE_STATUS_TEXT: no longer used \(keep-alive writes no status line\); ignored, remove it/);
+    assert.doesNotMatch(r.out, /statusText: not a setting|STATUS_TEXT: not a setting/);
+  });
+
+  test("merge removes the key and keeps every other value", () => {
+    const root = repo({ ".ai-dlc/cache-keepalive.json": full({ statusText: "full", scope: "machine" }) });
+    assert.match(cli(root, ["merge", "--dry-run"]).out, /^- statusText: "full"$/m);
+    assert.equal(cli(root, ["merge"]).code, 0);
+    const doc = fileOf(root);
+    assert.ok(!("statusText" in doc));
+    assert.equal(doc.scope, "machine");
+    assert.match(cli(root, ["validate"]).out, /cache-keepalive\.json is valid/);
+  });
+
+  test("the module's settings and the schema have no statusText, and a level that sets it changes nothing", () => {
+    assert.ok(!mod.SETTINGS.some((s) => s.key === "statusText" || s.env === "AI_DLC_KEEPALIVE_STATUS_TEXT"));
+    assert.ok(!("statusText" in schema.properties) && !schema.required.includes("statusText"));
+    const r = effective(withIt(), keys, TRUSTED, home());
+    assert.ok(!r.rows.some((row) => row.key === "statusText"));
+    assert.equal(rowOf(r.rows, "status").value, true);
+  });
 });

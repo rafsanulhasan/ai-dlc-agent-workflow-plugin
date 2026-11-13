@@ -4,14 +4,14 @@ root: 22
 kind: spec
 feature: cache-lab
 module: ai-dlc-lens
-revision: 4.1 (17.1.40: gate critique 17.1.l3.2 Minor 3, L5 lists the window row first, as AC-22.2.1 does). Rev 4 (17.1.31: gate-critique fix round for 17.1.l3.1, and the human's "one combined session" principle for an automatic-handoff chain). Rev 3 (17.1.23: the human's answers of 2026-10-25, run.v4.md 2i and 2j; 17.1.26: Context Lab casing and Q-CL19)
+revision: 4.2 (44.1, step 44: L9's keep-alive presses live in keep-alive's band only, which is drawn on every surface; no keep-alive Pane, ADR-0008). 4.1 (17.1.40: gate critique 17.1.l3.2 Minor 3, L5 lists the window row first, as AC-22.2.1 does). Rev 4 (17.1.31: gate-critique fix round for 17.1.l3.1, and the human's "one combined session" principle for an automatic-handoff chain). Rev 3 (17.1.23: the human's answers of 2026-10-25, run.v4.md 2i and 2j; 17.1.26: Context Lab casing and Q-CL19)
 author: software-architect (Part B of keepalive-cache-status.spec.r4-delta.md, moved here and amended at 17.1.16)
 date: 2026-10-25
 status: draft revision 4.1 (gate critique round 2 PASS, 17.1.l3.2; its findings fixed in round 17.1.39-43, no re-critique), awaiting product-owner acceptance and the combined G1+G2+G3 stop (stories rev 4 and LLD done)
 items: [ITEM-069 (22.a), ITEM-070 (22.b), ITEM-071 (22.c), ITEM-072 (22.d), ITEM-073 (22.e), ITEM-074 (22.f), ITEM-077 (22.g); umbrella ITEM-058]
 stories: docs/product/backlog/ai-dlc-lens/cache-and-context-lab/stories.md (US-22.1 to US-22.8; fixtures F1 to F6, with F4b and F6h)
 lld: docs/specs/cache-lab.lld.md
-adrs: [ADR-0006, ADR-0007 (the chain, L7)]
+adrs: [ADR-0006, ADR-0007 (the chain, L7), ADR-0008 (where keep-alive and the lens are drawn)]
 sources: run.v4.md Next action 2b-2e, 2i, 2j; 17.1.10 (po); 17.1.12, 17.1.19 (research); 17.1.18 (po decisions); 17.1.6.3 (claude-lens formulas, MIT)
 ---
 
@@ -130,7 +130,7 @@ The architecture is decided in ADR-0006. The system-engineer's LLD (17.1.17) fix
 - **L8, the Usage section becomes Context Lab (ITEM-073, human: agent pane only; casing "Context Lab", human 2026-10-25).** Only the label changes: the heading of the agent-pane section, and the test that pins the section order (`tests/lens.test.tsx`:932-934). Setting keys and section ids do not change, so a user's open or closed state survives. The edge pane's `Usage (in …, out …)` heading, which shows hand-off token flow, keeps its name.
 - **L9, Keep Alive as a sub-accordion of Cache Lab (ITEM-074; Q-CL12, human layout 2026-10-25).** Inside the Cache Lab accordion, after the Invalidation Gallery, a **Keep Alive** sub-accordion, collapsed by default, shows the live session's keep-alive figures per track (5m, 1h).
   - **Data.** It reuses `keepaliveFigures` and the published `$.state` keepalive (rev 4 D8, `sessionSwitch` and `sessionMaster` included, shown as text). It needs no reader and no window, so it renders even when the Cache Lab shows a reader reason line (no `node`, no folder, truncated).
-  - **No switch.** The lens draws no Button for keep-alive (rev 4 Part A, *Out of scope*); the band and the Pane own the presses.
+  - **No switch.** The lens draws no Button for keep-alive (rev 4 Part A, *Out of scope*); the band and the Pane own the presses. *(Rev 4.2, step 44, R44.7 revised, ADR-0008: keep-alive's own band owns them, on every surface; keep-alive has no Pane.)*
   - **The rest stays.** The per-agent `Cache keep-alive` section stays, behind `keepaliveSection` as today (Q-CL16, po 17.1.28). The pane-head keep-alive line `keepaliveRow` stays in the header, unchanged (Q-CL17, po 17.1.28; AC-22.7.7).
 
 ## Data shapes
@@ -202,5 +202,7 @@ The software-architect has reviewed this spec (17.1.16) and revised it to the hu
 - ITEM-077 (the chain) is added to L7.
 
 At 17.1.40 (rev 4.1), after gate critique round 2 (17.1.l3.2, PASS): Minor 3, L5 now lists the window row first, as AC-22.2.1 does. The other findings are in the stories, the LLD and `item.md` (requirement-analyst, system-engineer, product-manager).
+
+At 44.1 (rev 4.2), step 44: L9's *No switch* points to keep-alive's band only (R44.7 revised, ADR-0008). The lens's placement in VS Code (R44.4, R44.9, R44.10) and its run status (R44.5) are not Cache Lab rules and are not specified here (ADR-0008 records the placement).
 
 The requirement-analyst's stories (rev 4) and the system-engineer's LLD are done. Product-owner acceptance and the combined G1+G2+G3 stop are pending.

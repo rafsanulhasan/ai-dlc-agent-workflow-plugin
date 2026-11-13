@@ -41,8 +41,8 @@ Every skill of the plugin is a command: type `/<name>`. The commands marked Clau
 | `/architecture-narrative` | — | Turn an architecture solution into a story stakeholders can follow — business problem first, then constraints and trade-offs, then the proposed design, ADRs and risks. |
 | `/architecture-review` | — | Structured architectural review skill for the project. |
 | `/bunit-blazor-testing` | — | Comprehensive guidance for writing Blazor component tests using bUnit with TUnit as the test runner. |
-| `/cache-keepalive` | `[<n>m\|<n>h\|<n>d\|clear] [--track 1h\|5m\|both] [--session\|--machine]` | Pings the prompt cache now, or sets how long keep-alive keeps it warm while background tasks run, on the 1h track, the 5m track or both. **Not available in GitHub Copilot** (Claude Code only). |
-| `/cache-keepalive-configure` | `[<change in plain words>]` | Shows or changes keep-alive's settings in .ai-dlc/cache-keepalive.json. **Not available in GitHub Copilot** (Claude Code only). |
+| `/cache-keepalive` | — | Pings the prompt cache now with the settings in force and shows keep-alive's band above the prompt, minimised, on every surface; takes no arguments and changes no setting. **Not available in GitHub Copilot** (Claude Code only). |
+| `/cache-keepalive-configure` | `[<n>m\|<n>h\|<n>d\|clear\|on\|off [--track 1h\|5m\|both] [--session\|--machine\|--for just-me\|team\|global] \| <change in plain words>]` | Shows or changes keep-alive's settings: with no arguments it lists each value, its source and any problem; a keep-warm time or on/off with --track, --session or --machine is applied at once; plain words preview a change to … **Not available in GitHub Copilot** (Claude Code only). |
 | `/cache-keepalive-install` | — | Creates .ai-dlc/cache-keepalive.json with every key at its default, and its schema, on first use; an existing file is left alone (use /cache-keepalive-merge). **Not available in GitHub Copilot** (Claude Code only). |
 | `/cache-keepalive-merge` | — | Brings .ai-dlc/cache-keepalive.json up to date after a plugin upgrade, or repairs it. **Not available in GitHub Copilot** (Claude Code only). |
 | `/command-management` | — | Create, modify, and delete GitHub Copilot prompt files (.github/prompts/*.prompt.md) and Claude command files (.claude/commands/*.md) safely using a discovery-first, non-destructive workflow. |
@@ -60,6 +60,7 @@ Every skill of the plugin is a command: type `/<name>`. The commands marked Clau
 | `/github-ci-automation` | — | Structured workflow for designing and maintaining GitHub Actions continuous integration for .NET and JavaScript/TypeScript projects. |
 | `/handoff` | — | Records and verifies every hand-off in an AI-DLC run and keeps its run state. |
 | `/harness-sync` | `[--check] [--prefer claude\|copilot\|newer] [--only <kinds>] [--name <n>]` | Runs the two-way Claude Code ↔ GitHub Copilot harness sync, `node .claude/scripts/sync-harness.mjs`, so every agent, skill, command ↔ prompt, rule ↔ instruction and hook made or edited on one platform exists on the other. |
+| `/herdr` | — | Gives each subagent or teammate the orchestrator spawns a labelled pane in the herdr terminal workspace, herdr.dev: the pane shows its progress (watch, the default), or the subagent runs as its own claude process in it (run-in-pane). **Not available in GitHub Copilot** (Claude Code only). |
 | `/hook-management` | — | Create, modify, and delete Claude Code hooks and GitHub Copilot hook integrations safely using a discovery-first, non-destructive workflow. |
 | `/implement-feature` | — | Structured feature implementation workflow for software projects. |
 | `/init` | — | Bootstraps a repository for the AI-DLC agent team: scaffolds AGENTS.md (the orchestrator persona with all its skills, plus the project's gates and workspace folders, free of stack-specific commands), CLAUDE.md (an @AGENTS.md import, the … |
@@ -71,7 +72,7 @@ Every skill of the plugin is a command: type `/<name>`. The commands marked Clau
 | `/lens-configure` | `[<key> [<value>\|--unset]]` | Shows the lens settings, each with its value, where it comes from and its env name, or sets or unsets one in .ai-dlc/lens.json (needs the ai-dlc-lens plugin). **Not available in GitHub Copilot** (Claude Code only). |
 | `/lens-gate` | `[on\|off]` | Lens anomaly detection (blocked runs and steps, gates waiting or rejected, loops out of rounds, failed or stuck agents, failed hand-backs): on\|off turns it on or off; bare, it lists them (needs the ai-dlc-lens plugin). **Not available in GitHub Copilot** (Claude Code only). |
 | `/lens-init` | `[--force]` | Writes the lens settings file .ai-dlc/lens.json with every default, and its schema .ai-dlc/lens.schema.json (needs the ai-dlc-lens plugin). **Not available in GitHub Copilot** (Claude Code only). |
-| `/lens-keepalive` | `[on\|off]` | Shows or hides the lens's Cache keep-alive section (how long keep-alive kept the cache warm per track, what cache reads saved), then reports those figures (needs the ai-dlc-lens plugin; on by default). **Not available in GitHub Copilot** (Claude Code only). |
+| `/lens-keepalive` | `[on\|off]` | Shows or hides keep-alive in the lens's Cache Lab (Master, 1h, 5m buttons; Keep Alive: time kept warm per track, cache-read savings), then reports those figures (needs the ai-dlc-lens plugin; on by default). **Not available in GitHub Copilot** (Claude Code only). |
 | `/lens-kit` | — | Opens the lens kit pane: the manual checks K1 to K5 of the lens (resize across the dock boundary, Svg animation, pane buttons, transcript cards; K5 superseded: see /lens-gate) (needs the ai-dlc-lens plugin). **Not available in GitHub Copilot** (Claude Code only). |
 | `/manage-memory` | — | Manages persistent file-based memory for all agents in .claude/agent-memory/&lt;folder>/ (ai-dlc-&lt;agent> for plugin agents), committed with the repository. |
 | `/model-metadata` | — | Installs the AI-DLC model metadata hook into the current repository: .ai-dlc/model-metadata.json with its schema, holding every Anthropic model's prices (input, output, 5-minute and 1-hour cache writes, cache reads, batch, fast mode, … |
@@ -110,6 +111,18 @@ Every skill of the plugin is a command: type `/<name>`. The commands marked Clau
 | `/write-tests` | — | Stack-neutral test implementation skill. |
 
 <!-- ai-dlc:commands:end -->
+
+## herdr panes
+
+When a Claude Code session runs inside [herdr](https://herdr.dev), a terminal workspace for coding agents, the orchestrator gives every agent it spawns a pane of its own, labelled `<agent> <step>`. It has three modes:
+
+- `watch` (the default): the agent is spawned with the `Agent` tool as usual, and its pane shows the brief, the run folder's records for that agent and, when found, its transcript. A subagent's pane closes when it hands back; a teammate's pane stays open until the teammate is shut down (idle or waiting never closes it).
+- `run-in-pane`: each subagent runs as its own `claude -p` process in its pane, and its final report becomes the hand-back. The report is taken from a result file, falling back to a checked copy in the pane (up to 16 KiB). A report whose first line is not the hand-back line counts as failed, and the step is re-run with the `Agent` tool. Closing the pane mid-run, or stopping the agent, stops it and everything it started.
+- `off`: no pane, even inside herdr.
+
+Set the mode in `.ai-dlc/herdr.json` (`mode`) or with the `AI_DLC_HERDR_MODE` variable; `/herdr` shows and changes the settings. The plugin never installs herdr, and it does nothing unless herdr is installed and its server is running and either `HERDR_ENV=1` or this session's pane is found, never guessed. Claude Code only: the skill is not part of the GitHub Copilot plugin.
+
+Known limits: a `claude -p` child cannot answer a permission prompt, so a tool that needs approval is denied and reported; each child starts with a cold prompt cache; and agent-team teammates always use `watch`.
 
 ## License
 

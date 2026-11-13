@@ -1,9 +1,9 @@
 // The state ai-dlc publishes for other plugins to read with `$.state.get`. Only ai-dlc writes it.
-// Keep-alive (hooks/keepalive/keepalive.ts) writes `keepalive` each time a track's status line
+// Keep-alive (hooks/keepalive/keepalive.ts) writes `keepalive` each time a track's line
 // changes; ai-dlc-lens reads it read-only and keeps its own copy of the fields it uses
 // (plugins/claude/ai-dlc-lens/types/index.d.ts), since it does not list ai-dlc under `dependencies`.
 
-/** One keep-alive track, as its status line describes it. Times are epoch milliseconds. */
+/** One keep-alive track, as its line describes it. Times are epoch milliseconds. */
 export type KeepaliveTrackState = {
   name: '1h' | '5m'
   /** A ping is scheduled on this track. */
@@ -22,17 +22,29 @@ export type KeepaliveTrackState = {
   pings: number
   /** The track's ping limit. */
   cap: number
-  /** The track's status line, as keep-alive shows it: its cache part, then its keep-alive part. */
+  /** The track's line (`lineOf`): its cache part, then its keep-alive part. The band draws it with its status first (step 44). */
   line: string
   /** The caches of the track's lifetime keep-alive has seen this session, one per source (`main`, and
    * `subagents` for the latest of the subagents' caches), with when each is warm until and whether it
    * has expired at `updatedAt`. Omitted when there is none. */
   caches?: { source: 'main' | 'subagents'; warmUntil: number; expired: boolean }[]
+  /** Where the keep-warm time in force came from, the label the line's source note shows. */
+  keepWarmFrom: 'session' | 'machine' | 'settings' | 'default'
+  /** Whether the track is on in force: this session's switches, else the settings (step 42: the lens's
+   * Cache Lab buttons show it). */
+  enabled: boolean
+  /** This session's switch of the track (its band button), when one is set. */
+  sessionSwitch?: 'on' | 'off'
 }
 
 export type KeepaliveState = {
-  /** Keep-alive's `enabled` setting as last read. */
+  /** Keep-alive's master in force: this session's master switch, else the `enabled` setting as last read. */
   enabled: boolean
+  /** This session's master switch (the band's title-row button), when one is set. */
+  sessionMaster?: 'on' | 'off'
+  /** The automatic handoff chain this session belongs to: the id of its first session, and its session
+   * ids, newest first (a session started by hand is a chain of one). */
+  chain?: { id: string; sessions: string[] }
   updatedAt: number
   sessionId: string
   tracks: KeepaliveTrackState[]

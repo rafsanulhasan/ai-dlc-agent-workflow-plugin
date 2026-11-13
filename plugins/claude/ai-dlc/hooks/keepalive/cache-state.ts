@@ -1,4 +1,4 @@
-import { creationSplit } from '../auto-handoff/config.ts'
+import { creationSplit } from '../auto-handoff/config'
 
 // The cache ledger (spec keepalive-cache-status, D1 and D3; LLD section 2). Pure and engine-free:
 // no clock, no I/O, so tests/cache-state.test.ts drives it on its own. keepalive.ts owns the timers,
@@ -13,7 +13,8 @@ export type Ttl = '5m' | '1h'
 /** 'unknown' only under D2a: an agent's write whose usage carries no 1h/5m split. */
 export type EntryTtl = Ttl | 'unknown'
 export type LedgerEntry = { warmUntil: number }
-export type AgentCaches = { caches: Partial<Record<EntryTtl, LedgerEntry>>; status: 'running' | 'idle' | 'finished' }
+/** `transcriptRead`: a SubagentStop already read this agent's transcript (AC-17.3.7), so no later stop reads it again. */
+export type AgentCaches = { caches: Partial<Record<EntryTtl, LedgerEntry>>; status: 'running' | 'idle' | 'finished'; transcriptRead?: true }
 /** `main` never holds 'unknown'. A main write without a split sets `pendingMain` (the time of the
  * response); the next Stop resolves it from the transcript (LLD 2.1 step 3, rev 5). */
 export type Ledger = { main: Partial<Record<Ttl, LedgerEntry>>; agents: Map<string, AgentCaches>; pendingMain?: { at: number } }
@@ -142,12 +143,54 @@ export function cacheView(l: Ledger, ttl: Ttl, now: number): CacheView {
   return v
 }
 
-/** D5, main only (T17.1): the time a track may arm from, `main`'s warm entry of the TTL; undefined
- * when there is none. Arming from agents comes with ITEM-034. */
-export function armUntil(l: Ledger, ttl: Ttl, now: number): number | undefined {
-  const m = l.main[ttl]
-  return m && m.warmUntil > now ? m.warmUntil : undefined
+/** Agent liveness (034). Creates the agent when unknown; a finished agent keeps its entries. */
+export function markAgent(l: Ledger, agentId: string, status: AgentCaches['status']): void {
+  const a = l.agents.get(agentId) ?? { caches: {}, status }
+  a.status = status
+  l.agents.set(agentId, a)
 }
+
+/** True when the agent has no entry, or only its 'unknown' marker (D2a): the stop-time transcript may settle it. */
+export function agentUnsettled(l: Ledger, agentId: string): boolean {
+  const a = l.agents.get(agentId)
+  return a === undefined || TTLS.every(t => a.caches[t] === undefined)
+}
+
+/** LLD 3.7 rev 12 (a): a stopped subagent's split from its transcript. Each TTL with tokens > 0 is warm
+ * until at + its lifetime, kept only when that is after `now` (as seedMain); the 'unknown' marker is
+ * deleted whether or not an entry survives, since the split is now known. */
+export function settleAgent(l: Ledger, agentId: string, r: { split: Record<Ttl, number>; at?: number }, now: number, life: Lifetimes): void {
+  const a = l.agents.get(agentId) ?? { caches: {}, status: 'finished' as const }
+  const at = r.at ?? now
+  for (const t of TTLS) {
+    const until = at + life[t]
+    if (r.split[t] > 0 && until > now) a.caches[t] = { warmUntil: Math.max(a.caches[t]?.warmUntil ?? until, until) }
+  }
+  delete a.caches.unknown
+  l.agents.set(agentId, a)
+}
+
+// The latest warm entry of the TTL among the agents that are not finished, or undefined.
+function agentsUntil(l: Ledger, ttl: Ttl, now: number): number | undefined {
+  let latest: number | undefined
+  for (const a of l.agents.values()) {
+    const e = a.caches[ttl]
+    if (a.status !== 'finished' && e && e.warmUntil > now && (latest === undefined || e.warmUntil > latest)) latest = e.warmUntil
+  }
+  return latest
+}
+
+/** D5 (spec rev 2): the time a track may arm from, `main`'s warm entry of the TTL; with `opts.agents`
+ * (034.b built and `pingSubagents` on) the latest warm entry of an unfinished agent when `main` has
+ * none. Undefined when none. */
+export function armUntil(l: Ledger, ttl: Ttl, now: number, opts: { agents: boolean } = { agents: false }): number | undefined {
+  const m = l.main[ttl]
+  if (m && m.warmUntil > now) return m.warmUntil
+  return opts.agents ? agentsUntil(l, ttl, now) : undefined
+}
+
+/** AC-17.3.8: no warm main entry of the TTL, and some unfinished agent has one. */
+export const onlyAgentsWarm = (l: Ledger, ttl: Ttl, now: number): boolean => !(l.main[ttl] && l.main[ttl]!.warmUntil > now) && agentsUntil(l, ttl, now) !== undefined
 
 /** The names of the spec's Data shapes: why a track that is not armed is off. */
 export type Reason = 'noTasks' | { noWrite: Ttl } | 'expired' | 'turnRunning' | 'sessionEnded' | 'onlySubagents' | 'disabled' | 'noSplit' | 'overage'
@@ -167,7 +210,7 @@ export function reasonText(r: Reason): string {
   }
 }
 
-/** A clock time as the status line writes it: local time, H:MM. A line left on screen past it reads as stale. */
+/** A clock time as a track line writes it: local time, H:MM. A line left on screen past it reads as stale. */
 export function hhmm(ms: number): string {
   const d = new Date(ms)
   return `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`
@@ -187,6 +230,90 @@ export function cachePart(v: CacheView): string | undefined {
   return parts.length ? parts.join(', ') : undefined
 }
 
-/** A track's status line: `keepalive <ttl>: <cache part>; <keep-alive part>`, or the keep-alive part alone. */
-export const lineOf = (ttl: Ttl, cache: string | undefined, part: string): string =>
-  `keepalive ${ttl}: ${cache ? `${cache}; ${part}` : part}`
+// ---- ITEM-068 (LLD rev 7 to 11): the off-line suffix, the source note, the session switches and the
+// band model. Pure, like the ledger above.
+
+/** True for a keep-alive part that says the track is off: every reasonText() result. Stopped texts
+ * ('expired, stopped', 'missed, stopped', ...) are not off (LLD 11). */
+export const isOffPart = (part: string): boolean => part === 'off' || part.startsWith('off ')
+
+/** Where a keep-warm time came from, as the source note writes it (LLD 11.2). */
+export type SourceLabel = 'session' | 'machine' | 'settings' | 'default'
+
+/** The source note of a keep-warm time, from keepalive.ts's Keep: an override of this session or of
+ * this machine, the default, or any settings level. */
+export function sourceLabel(keep: { from: string; override?: boolean }): SourceLabel {
+  if (keep.override && keep.from.startsWith('this session')) return 'session'
+  if (keep.override && keep.from.startsWith('this machine')) return 'machine'
+  return keep.from === 'default' ? 'default' : 'settings'
+}
+
+/** The off-line suffix's values: the ping limit, the keep-warm time (formatDuration) and its source
+ * note, undefined when `sourceNote` is off. */
+export type OffTail = { cap: number; keepWarm: string; source?: SourceLabel }
+export const offTail = (t: OffTail): string => `, ping 0/${t.cap}, keep warm ${t.keepWarm}${t.source ? ` (${t.source})` : ''}`
+
+/** A track's line, as published (step 44: the rows use `rowLineOf`): `keepalive <ttl>: <cache part>; <keep-alive part>`, or the keep-alive part
+ * alone. With `tail`, an off part also gets the off-line suffix (rev 7, E1' to E9). */
+export const lineOf = (ttl: Ttl, cache: string | undefined, part: string, tail?: OffTail): string => {
+  const p = tail && isOffPart(part) ? `${part}${offTail(tail)}` : part
+  return `keepalive ${ttl}: ${cache ? `${cache}; ${p}` : p}`
+}
+
+export type Button = 'on' | 'off'
+/** The session switches (D10, D11): the master (keep-alive as a whole) and one per track. Absent = unset. */
+export type SessionSwitch = { master?: Button; '5m'?: Button; '1h'?: Button }
+/** Effective master: the session master, else the settings' `enabled`. */
+export const masterOn = (sw: SessionSwitch, settingEnabled: boolean): boolean => sw.master ? sw.master === 'on' : settingEnabled
+/** Effective track: its switch (over the master and the settings), else the master AND the track's own setting. */
+export const trackOn = (sw: SessionSwitch, n: Ttl, settingEnabled: boolean, trackSetting: boolean): boolean =>
+  sw[n] ? sw[n] === 'on' : masterOn(sw, settingEnabled) && trackSetting
+/** A track press (Q-SL8): `[off]` on an enabled track sets its switch off, `[on]` on a disabled one on.
+ * The master and the other track are untouched. */
+export const afterTrackPress = (sw: SessionSwitch, n: Ttl, enabled: boolean): SessionSwitch => ({ ...sw, [n]: enabled ? 'off' : 'on' })
+/** A master press (Q-SL7; step 44, R44.3): the switches after the head row's button, which offers the opposite of
+ * what the head row reads. `on` is what it reads (either track on in force, `bandModel`): its `[off]` sets the master
+ * off and clears both track switches, so both tracks are off; its `[on]` sets the master and both track switches on. */
+export const afterMasterPress = (on: boolean): SessionSwitch => on ? { master: 'off' } : { master: 'on', '5m': 'on', '1h': 'on' }
+
+/**
+ * A track's row in the band (step 44, R44.2): `keepalive <ttl>: <status>…`, its status the track's switch
+ * in force, so the row's button (the opposite, `bandModel`) never repeats it. Switched on: `on, ` and the keep-alive part,
+ * an off part read as idle (`on, idle (no 5m cache write seen), ping 0/20, keep warm 1h`); switched off: `off` and the
+ * reason (`off (disabled), ping 0/20, keep warm 1h`). The cache part, when there is one, comes last (`; main warm until
+ * 10:05`). `tail` is the off-line suffix, as in `lineOf`. Only the rows read so: the published lines stay `lineOf`'s.
+ */
+export function rowLineOf(ttl: Ttl, cache: string | undefined, part: string, enabled: boolean, tail?: OffTail): string {
+  const off = isOffPart(part)
+  // An off part's text after its `off`: ` (disabled)`, ` in overage`, '' for a bare `off`.
+  const rest = off ? part.slice(3) : ''
+  const state = off ? `${enabled ? 'on, idle' : 'off'}${rest}${tail ? offTail(tail) : ''}` : `${enabled ? 'on' : 'off'}, ${part}`
+  return `keepalive ${ttl}: ${state}${cache ? `; ${cache}` : ''}`
+}
+
+/** The band title (rev 11, Q-SL2). */
+export const BAND_TITLE = '⚠ ai-dlc cache-keepalive:'
+export type TrackRow = { track: Ttl; line: string; button: Button }
+/** `on`: what the head row reads (step 44, R44.3), either track on in force; `master`: the head row's button, always
+ * its opposite (it names the press). */
+export type BandModel = { title: typeof BAND_TITLE; master: Button; rows: TrackRow[]; seed?: string; on: boolean }
+/** The band model (step 44, R44.2 and R44.3): the head row's status, `on` while either track is on in force,
+ * and its button, the opposite; the 5m row then the 1h row (Q-SL5), each with its line (`rowLineOf`) and its button,
+ * `[off]` while the track is on in force, else `[on]`; and the seed line while it shows, only while a track is on
+ * (R44.6: with both tracks off, the head row `off`, its `[on]` and the track rows, no seed row). */
+export const bandModel = (lines: Record<Ttl, { line: string; enabled: boolean }>, seed?: string): BandModel => {
+  const on = lines['5m'].enabled || lines['1h'].enabled
+  return {
+    title: BAND_TITLE,
+    master: on ? 'off' : 'on',
+    rows: (['5m', '1h'] as const).map(track => ({ track, line: lines[track].line, button: lines[track].enabled ? 'off' : 'on' })),
+    ...(seed !== undefined && on ? { seed } : {}),
+    on,
+  }
+}
+
+// ---- The track states (LLD rev 11, 20.3). Step 44 (R44.1): the status-line summary (D13) is gone; keep-alive
+// writes no status line, so these only name how a track stopped or where a compaction is.
+
+export type StopKind = 'done' | 'ping limit' | 'spend limit' | 'missed' | 'error' | 'expired' | 'handoff' | 'overage'
+export type CompactionPhase = 'compacting' | 'compacted' | 'skipped' | 'refused'

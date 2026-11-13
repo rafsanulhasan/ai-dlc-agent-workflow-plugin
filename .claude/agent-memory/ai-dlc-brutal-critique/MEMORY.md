@@ -1,0 +1,1 @@
+- [Docs-wave recurring gaps](feedback_doc-wave-recurring-gaps.md) — five sweeps: partial markers, stale front matter, superseded text, AC file attribution, false headings

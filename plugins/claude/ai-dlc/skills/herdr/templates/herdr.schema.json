@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/rafsanulhasan/ai-dlc-agent-workflow-plugin/herdr.schema.json",
+  "title": "AI-DLC herdr pane settings",
+  "description": "Settings of the ai-dlc plugin's herdr panes (Claude Code only), committed in .ai-dlc/herdr.json. They apply only when the session runs inside herdr (herdr.dev); outside it nothing is opened, whatever they say. Each key is read, highest first, from the env of .claude/settings.local.json (its x-env variable), the env of .claude/settings.json, the process environment, this file, then the default. null means not set here: the next source applies. An invalid value is reported and the next source applies. No key is trust-gated: no value can make the plugin do more than the Agent tool does.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Points editors at this schema: ./herdr.schema.json."
+    },
+    "mode": {
+      "type": ["string", "null"],
+      "enum": ["watch", "run-in-pane", "off", null],
+      "default": "watch",
+      "x-env": "AI_DLC_HERDR_MODE",
+      "description": "watch: a labelled pane per spawned subagent or teammate shows its progress; the agent itself is spawned with the Agent tool. run-in-pane: each subagent runs as its own claude process in a pane. off: no pane, even inside herdr. Agent-team stages always use watch. Applies only inside herdr."
+    },
+    "runTimeoutMinutes": {
+      "type": ["number", "null"],
+      "exclusiveMinimum": 0,
+      "maximum": 720,
+      "default": 60,
+      "x-env": "AI_DLC_HERDR_RUN_TIMEOUT_MINUTES",
+      "description": "Minutes a run-in-pane agent may take before the script stops it and the run falls back to the Agent tool. Above 0, at most 720."
+    }
+  }
+}

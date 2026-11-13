@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
-import { DEFAULTS, DEFAULT_SESSION_PREFIX, SETTINGS, TRUST_GATED, baseName, numbering, numberingNotice, parseTitle, check, normPath, repoConfig, resolveConfig, sessionName, settingsEnv, transcriptTitle, trustOf, trustRoot, withoutGated, withoutKeys, parseBool, PREVIEW_CHARS, previewValue, keysWithValues } from '../config.ts'
-import { parseAddress } from '../server.ts'
-import type { Level } from '../config.ts'
+import { DEFAULTS, DEFAULT_SESSION_PREFIX, SETTINGS, TRUST_GATED, baseName, numbering, numberingNotice, parseTitle, check, normPath, repoConfig, resolveConfig, sessionName, settingsEnv, transcriptTitle, trustOf, trustRoot, withoutGated, withoutKeys, parseBool, PREVIEW_CHARS, previewValue, keysWithValues } from '../config'
+import { parseAddress } from '../server'
+import type { Level } from '../config'
 
 const env = (where: string, values: Record<string, unknown>): Level => ({ where, byEnv: true, values })
 const file = (values: Record<string, unknown>): Level => ({ where: '.ai-dlc/auto-handoff.json', byEnv: false, values })
