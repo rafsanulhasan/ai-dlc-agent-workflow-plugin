@@ -1,6 +1,6 @@
 # Human decisions — preview2 planning (2026-11-13)
 
-> Numbering: item `N.` below is decision **DN** (for example `23.` is D23). Cited as D1–D25 in the memory bank.
+> Numbering: item `N.` below is decision **DN** (for example `23.` is D23). Cited as D1–D41 in the memory bank.
 
 Asked by the orchestrator after comparing the Copilot conversation, specsmd research and repo evidence.
 
@@ -46,3 +46,19 @@ Planned (orchestrator): a spike bolt first in construction live-tests the market
 27. Unit model: **stable unit names** (`memory-bank/product/units.md` registry; folders `intents/{NNN}-{slug}/units/{unit-slug}/`) — ADR-0016.
 28. Keep-alive lens toggle: **`/ai-dlc-engine:cache-keepalive-lens [on|off]`** (engine skill, answered by the lens module).
 29. **`probe` stage** (ASDLC, software-engineer, writes only to `.scratch/`) **and spike bolt 001 first**, before any rename or migration bolt.
+30. **Marketplace renamed to `forgeline`** (human, 2026-11-13: "rename the marketplace to forgeline") — supersedes D21's `ai-dlc-suite`. Install ids become `ai-dlc-engine@forgeline` and `ai-dlc-lens@forgeline`. Note: 1.1.8 found a private-beta AI-agent product called "Forgeline" (single source; some risk); the brand research (FR-13, P3) now covers `forgeline`. Plugin names unchanged (`ai-dlc-engine`, `ai-dlc-lens`); repository name unchanged.
+31. **Lens plugin renamed to `lens`** (human, 2026-11-13: "not ai-dlc-lens@forgeline, lens@forgeline") — install id `lens@forgeline`; reverses D16's "ai-dlc-lens name unchanged". Consequences: lens commands become `/lens:show`, `/lens:configure`, `/lens:init`, `/lens:kit`, `/lens:gate`; folder `plugins/claude/lens/` (to confirm). Whether the engine follows the same pattern (`engine@forgeline`) — asked of the human.
+32. **Engine plugin renamed to `engine`** (human, 2026-11-13: "engine@forgeline") — supersedes D15's `ai-dlc-engine`. Prefixes `engine:<id>`, `/engine:<skill>` (`claude --agent engine:orchestrator`, `/engine:init`, `/engine:migrate`, `/engine:cache-keepalive-lens`); memory folders `.claude/agent-memory/engine-<agent>/`; install `engine@forgeline`. With D31: lens commands `/lens:show|configure|init|kit|gate`; install `lens@forgeline`. Plugin folders `plugins/claude/engine/`, `plugins/copilot/engine/`, `plugins/claude/lens/` (D19 applied to the new names). Unit slugs (D27) follow the plugin names: `engine`, `lens` (orchestrator's reading). Family names `.ai-dlc/`, `AI_DLC_*`, managed-block markers stay (D16, R1).
+
+## G2 critique answers (2026-11-14)
+33. Lens pane ids follow the plugin name (human: "lens:*") — O-17 closed. Note: research 1.1.16 (a) / `ai-dlc-lens/hooks/register.tsx:24-29` say pane ids cannot contain `:`, so the literal form `lens:*` is likely invalid; proposed `lens-*` (to confirm with the human; spike checks the pane-id character rule). Saved layouts with the old `ai-dlc-lens-*` ids need migrating.
+34. Unit names **`engine` and `lens`** confirmed — O-20 closed.
+35. Engine manifest keywords (human): **`specmd`, `ai-dlc`, `forgeline`, `agentic-sdlc`** — O-22 closed (the human wrote `specmd`; the upstream project is `specsmd` — to confirm the spelling).
+36. Keyword spelling **`specsmd`** (human, 2026-11-14) — D35's keywords are `specsmd`, `ai-dlc`, `forgeline`, `agentic-sdlc`.
+37. Lens pane ids **`lens-*`** confirmed (human, 2026-11-14): `lens-kit`, `lens-edge`, `lens-agent`, `lens-chart`, `lens-runs`; the lens closes panes open under old `ai-dlc-lens-*` ids (D33 made concrete).
+
+## G2 (2026-11-14)
+38. **G2 approved** by the human — frozen spec 001, unit design, ADR-0011..0016, narrative, draft bolt plan, and the amended FR/AC text with the final names (O-15).
+39. O-1, O-2, O-3 accepted: migration skill **`/engine:migrate`**; identical legacy duplicates are **dropped** (printed as `drop`); user-level and managed settings get **advice only**.
+40. O-6, O-7 accepted: the **human accepts the spike (bolt 001) hand-back**; bolt 001 runs as **ASDLC with a one-off override research → probe → architecture**, recorded in its routing plan (confirmed at G3).
+41. O-5 confirmed: lens commands **`/lens:show`, `/lens:configure`, `/lens:init`, `/lens:kit`, `/lens:gate`**.

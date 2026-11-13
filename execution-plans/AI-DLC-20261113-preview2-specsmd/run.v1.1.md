@@ -6,7 +6,7 @@ branch: plan/preview2
 worktree: .worktrees/preview2-planning
 session: 4091c818-fe58-4fbe-abec-ffd8f9ea53af
 version: v1.1 (direction change after G1: plugin rename D15–D17, two product units D14/D18)
-commit: 41c769a
+commit: 8fb7f7e
 last-record: 1.5.l1.3-documentation-writer-to-orchestrator.handback.md
 mode: sequential subagent chain (Mode 3); critique stages DW ↔ BC
 ---
