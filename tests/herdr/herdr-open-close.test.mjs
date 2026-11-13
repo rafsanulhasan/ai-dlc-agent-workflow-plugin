@@ -331,7 +331,7 @@ describe("a pane is closed only by a close call [AC-8]", () => {
     open(sb, [["1.3", "sqa-engineer"]]);
     sb.cli(["detect", "--run", RUN], { env: ENV });
     assert.deepEqual(calls(sb, "pane close"), []);
-    assert.deepEqual(sb.herdrArgs().map((a) => a.slice(0, 2).join(" ")).filter((c) => !/^(--version|status server|pane (list|split|rename|run))$/.test(c)), [], "only the opening commands ran");
+    assert.deepEqual(sb.herdrArgs().map((a) => a.slice(0, 2).join(" ")).filter((c) => !/^(--version|status server|pane (list|layout|split|rename|run))$/.test(c)), [], "only the opening commands ran");
   });
 
   test("[AC-8] the cached state of an open pane survives repeated open calls (the pane file is not removed)", () => {
@@ -348,7 +348,7 @@ describe("every herdr command used is a documented one [AC-2]", () => {
     sb.install({ herdr: herdrCalls({ panes: [pane({ cwd: sb.root })] }) });
     open(sb, [["1.2", "agent-manager"]], {});
     close(sb, [["1.2", "agent-manager"]], {});
-    const allowed = [["--version"], ["status", "server"], ["pane", "list"], ["pane", "split"], ["pane", "rename"], ["pane", "run"], ["pane", "close"]];
+    const allowed = [["--version"], ["status", "server"], ["pane", "list"], ["pane", "layout"], ["pane", "split"], ["pane", "rename"], ["pane", "run"], ["pane", "close"]];
     for (const argv of sb.herdrArgs()) assert.ok(allowed.some((a) => a.every((x, i) => argv[i] === x)), `undocumented herdr call: ${argv.join(" ")}`);
     assert.ok(sb.herdr().length >= 6);
   });

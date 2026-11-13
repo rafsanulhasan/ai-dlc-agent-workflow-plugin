@@ -87,13 +87,23 @@ Only these herdr commands are used; nothing else is documented here.
 | `herdr --version` | `detect` | CLI reference; checked live (herdr 0.9.5, Windows) |
 | `herdr status server` | `detect` | CLI reference; checked live: exit 0 and `status: not running` when the server is down |
 | `herdr pane list` | `detect` (the pane match), `open` (live panes), `run` (pane liveness) | CLI reference; checked live (JSON `result.panes[]` with `pane_id`, `agent`, `agent_status`, `cwd`) |
-| `herdr pane split <pane>\|--current --direction right\|down --no-focus --cwd <root>` | `open`, `run` | CLI reference; checked live (`--no-focus`, `--cwd`) |
+| `herdr pane layout --pane <pane>` | `open`, `run` (where the next pane goes) | `herdr pane layout --help`; checked live: JSON `result.layout.panes[]` with `pane_id` and `rect` (`x`, `y`, `width`, `height`, in cells) for every pane of that pane's tab; an unknown pane is `pane_not_found` with exit 1 |
+| `herdr pane split <pane>\|--current --direction right\|down --no-focus --cwd <root>` | `open`, `run` | CLI reference; checked live (`--no-focus`, `--cwd`; a split halves its pane) |
 | `herdr pane rename <pane> "<agent> <step>"` | `open`, `run` | CLI reference; checked live (shows as the pane's `label`) |
 | `herdr pane run <pane> "<command>"` | `open`, `run` | CLI reference; checked live (runs in the pane's shell, PowerShell 7 on the tested Windows) |
 | `herdr pane close <pane>` | `close`, `run` | CLI reference; checked live: an unknown pane is `pane_not_found` with exit 1, which counts as closed |
 | `herdr pane read <pane> --source recent-unwrapped --lines 100000` | `run`, fallback only | CLI reference; checked live: plain text on stdout; a closed pane is `pane_not_found` with exit 1 |
 
-herdr also offers `pane wait-output` (checked live: it works, but returns only the tail of the pane), tabs and workspaces; this skill does not use them.
+herdr also offers `pane wait-output` (checked live: it works, but returns only the tail of the pane), `pane move` (checked live: only across tabs; within a tab it answers `changed:false`, `reason:same_tab`), tabs and workspaces; this skill does not use them.
+
+**Pane placement** (`open`, `run`). A run's panes stay together and, as far as the tab allows, readable. Readable means at least 50 columns × 10 rows.
+
+- **First pane of a run:** to the right of the anchor, taking half the anchor's width. So the anchor's width caps the run's column: with a narrow anchor (65 columns, say) the run gets about 32 columns, and every later pane is below 50 columns and gets a warning. The split is never down, because that would take rows from the session's own pane, where the human talks to the orchestrator.
+- **Every later pane** splits one of the run's own live panes, never the session's pane or another run's. The script reads `pane layout` for the tab of the run's newest live pane; only the run's panes in that tab count, so a run spread over several tabs grows in that one. For each of those panes and each direction, it works out the smaller half a split would leave: the full width × half the height (down), or half the width × the full height (right). Each split is scored as the lower of that half's columns ÷ 50 and rows ÷ 10, and the highest score wins. Ties go to the top-left pane, then down before right, so panes are not in the order they were opened. In effect, panes stack down while each keeps at least 10 rows, and a new column starts when one more row would make a pane too small. When no split leaves 50 × 10, the best one is still made and `warnings` gives the size.
+- **Fallbacks:** without a usable layout (the call fails, or none of the run's panes is in it), the pane splits down from the run's newest live pane, as before. When the pane to split has gone (`pane_not_found`), it goes to the right of the anchor instead.
+- **Parallel calls** each read the layout themselves and share no file, so they never race; at worst two of them split the same pane.
+
+Panes opened before this rule keep their place: `pane move` cannot rearrange a tab.
 
 **Result retrieval** (`run`). The main path is the **result file**: the child writes the agent's final text to `--out`, then a `.exit` file with its size and sha256, so a `.exit` means the result is final. The fallback is a **pane copy**: the child also prints the text in its pane as base64 between two markers carrying a per-run nonce, the byte count and the sha256, and `run` reads it with `pane read` only when the file channel lost a result the child produced (the file missing, empty or not matching `.exit`, a write error, or no readable `.exit`). It never overrides the child's own verdict: when `.exit` says the result is not usable, there is no fallback. Why base64 and a cap, from live checks on herdr 0.9.5 (Windows): `pane read` without `--lines` returns only a tail; plain text loses tabs, trailing blanks and colour codes; scrollback is bounded (about 500 to 1000 rows), so a copy is printed only for a result of at most 16 KiB; and an older copy stays in the scrollback, hence the nonce.
 
@@ -102,7 +112,7 @@ herdr also offers `pane wait-output` (checked live: it works, but returns only t
 | Command | Does |
 |---|---|
 | `detect [--explain] [--run <dir>]` | Activation, above. `--explain` adds the matching panes |
-| `open --run <dir> (--step <c> --agent <id> [--record <path>])...` | Opens a watch pane per pair: the first pane of the run to the right of the anchor, later ones below the newest live pane |
+| `open --run <dir> (--step <c> --agent <id> [--record <path>])...` | Opens a watch pane per pair: placed as *Pane placement* (above) says: the run's first pane right of the anchor, later ones by the tab's layout |
 | `close --run <dir> (--step <c> --agent <id>)...` | Closes the panes `open` or `run` stored; closing for any other reason never happens |
 | `run --run <dir> --step <c> --agent <id> --record <path> --out <path> [--worktree <name>] [--timeout <minutes>]` | Run-in-pane, above; blocks until the result, a timeout or the pane closing. Its JSON: `ok`, `result`, `source`, `exit`, `line1`, `handoffLine`, `permissionDenials`, `sessionId`, `costUsd`; or `ok:false` with `stage` and `reason`. `--timeout` is above 0 and at most 720 |
 | `watch <job>`, `child <job>` | Run inside a pane; started by `open` and `run`, never by hand |
