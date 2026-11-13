@@ -6,12 +6,12 @@ previous: run.v4.3.md
 status: active
 lifecycle: AI-DLC (AAW plugin/mod chain override; build by agent-manager)
 mode: team for AAWP stages (human 2026-11-13: peer-to-peer agent teams; herdr watch panes); planning and research steps as subagents
-current-stage: after G4 (tier 1): 66.1 gate commit (devops-engineer) and 67 docs marker pass (documentation-writer ↔ brutal-critique team); then the release stage
+current-stage: 68 commit of the docs pass; then the release stage (product-owner go / no-go) when the human asks
 owner: orchestrator
 session: f1e3e3dc-bbb2-420f-aa4c-439c258c0179 (took over from c6cc60b4 / 4e6863ff with the human's OK, 2026-11-13)
 branch: feat/ai-dlc-lens (feat/wf-1 merged at 734b33d)
-commit: 13bc93c
-last-record: 67-orchestrator-to-documentation-writer.handoff.md
+commit: 0139e0b
+last-record: 68-orchestrator-to-devops-engineer.handoff.md
 updated: 2026-11-13
 wave: 3 (Build)
 ---
@@ -184,8 +184,9 @@ Mode choice for the build: subagents. Each chain is a fixed sequence (agent-mana
 | 64 | backlog after the pre-G4 work (ITEM-034, ITEM-056 Done; 2.1.323 regressions filed; follow-ups) | product-manager | subagent | done (passed: ITEM-034 :110 and ITEM-056 :137 → Done 2026-11-13 with conditions; new ITEM-112 (2.1.323 band tests, Bug P0 Done), ITEM-113 (2.1.323 validate, Bug P0 Done, Node 22 CI AC open), ITEM-114-119 follow-ups (P3 Backlog); herdr follow-up referenced, not duplicated) | f1e3e3dc | product-manager | `64-orchestrator-to-product-manager.handoff.md` | `64-product-manager-to-orchestrator.handback.md` | 2026-11-13 |
 | 65 | commit the pre-G4 work (5 signed commits), push feat/ai-dlc-lens, report CI (Node 22) | devops-engineer | subagent | blocked on CI (65 failed: pinentry timeout; 65.l1.1 passed after the human answered pinentry: 5 signed commits cec4254, b37204b, 300d292, 1e2d546, 13bc93c (git log %G? = G each); build --check and sync --check rc=0 quoted; pushed 4175837..13bc93c, origin = 13bc93c; left out as briefed: model-metadata.json, the other session's MEMORY.md and project_preview2-specsmd-decisions.md. CI run 43467848658 never started: "account is locked due to a billing issue" — Node 22 check not run. Taken to the human) | f1e3e3dc | devops-engineer | `65-orchestrator-to-devops-engineer.handoff.md` | `65-devops-engineer-to-orchestrator.handback.md`, `65.l1.1-devops-engineer-to-orchestrator.handback.md` | 2026-11-13 |
 | 66 | G4 (tier 1) gate record (to: human) | orchestrator | subagent | done (approved by the human with open conditions, 2026-11-13) | f1e3e3dc | orchestrator | `66-orchestrator-to-human.handoff.md` | — | 2026-11-13 |
-| 66.1 | G4 gate commit (records, run state, the two memory files) and push | devops-engineer | subagent | in-progress | f1e3e3dc | devops-engineer | `66.1-orchestrator-to-devops-engineer.handoff.md` | — | 2026-11-13 |
-| 67 | docs marker pass after G4 (tier 1) | documentation-writer, brutal-critique | team | in-progress | f1e3e3dc | dw-67, bc-67 | `67-orchestrator-to-documentation-writer.handoff.md` | — | 2026-11-13 |
+| 66.1 | G4 gate commit (records, run state, the two memory files) and push | devops-engineer | subagent | done (passed: 0139e0b signed G, 6 files +188/-6 incl. MEMORY.md and project_preview2-specsmd-decisions.md after a secret check (0 hits); sync --check exit 0; pushed 13bc93c..0139e0b) | f1e3e3dc | devops-engineer | `66.1-orchestrator-to-devops-engineer.handoff.md` | `66.1-devops-engineer-to-orchestrator.handback.md` | 2026-11-13 |
+| 67 | docs marker pass after G4 (tier 1) | documentation-writer, brutal-critique | team | done (dw-67 passed: README.md, docs/plugins.md, lens README, keepalive README; markers removed for done work (roots 8, 11, ITEM-092/093/107, 053.c); kept in progress for ITEM-104 (M35) and the lens as a whole; ITEM-048 planned; git diff of the 4 docs agrees; bc-67 PASS round 1 of 2, 0B/3M/3m, stored verbatim by dw-67 (bc-67 has no Write); Majors 1-2 were run-state gaps, closed by the orchestrator: Features table rewritten with roots 8, 11, 12 carried from run.v1.md and rows 17, 20 updated; Major 3 (ITEM-048 planned wording) accepted) | f1e3e3dc | dw-67, bc-67 | `67-orchestrator-to-documentation-writer.handoff.md`, `67-documentation-writer-to-brutal-critique.handoff.md` | `67-documentation-writer-to-orchestrator.handback.md`, `67-brutal-critique-to-documentation-writer.handback.md` | 2026-11-13 |
+| 68 | commit the docs marker pass, run records and agent memory; push | devops-engineer | subagent | in-progress | f1e3e3dc | devops-engineer | `68-orchestrator-to-devops-engineer.handoff.md` | — | 2026-11-13 |
 | 41.6 | lens / keep-alive: docs critique (41.6, 41.6.l1.1-2, PASS round 3) | brutal-critique, documentation-writer | team | done (recovered hand-back accepted after verification, step 60; human 2026-11-13) | 7ac45d8b | bc-41 | `41.6.l1.2-documentation-writer-to-brutal-critique.handoff.md` | `41.6.l1.2-brutal-critique-to-documentation-writer.handback.md` | 2026-11-13 |
 | 42.2 | icons / Cache Lab: build (two bands, Cache Lab in the agent panel; commit 1302cd4) | agent-manager | team | done (recovered hand-back accepted after verification, step 60; human 2026-11-13) | 7ac45d8b | am-42 | `42.2-agent-manager-to-sqa-engineer.handoff.md` | `42.2-agent-manager-to-orchestrator.handback.md` | 2026-11-13 |
 | 42.5 | icons / Cache Lab: README edits and critique (42.5, 42.5.l1.1, PASS round 2) | documentation-writer, brutal-critique | team | done (recovered hand-backs accepted after verification, step 60; human 2026-11-13) | 7ac45d8b | dw-42, bc-42 | `42.5-documentation-writer-to-brutal-critique.handoff.md`, `42.5.l1.1-documentation-writer-to-brutal-critique.handoff.md` | `42.5-documentation-writer-to-orchestrator.handback.md`, `42.5-brutal-critique-to-documentation-writer.handback.md`, `42.5.l1.1-brutal-critique-to-documentation-writer.handback.md` | 2026-11-13 |
@@ -198,14 +199,38 @@ Mode choice for the build: subagents. Each chain is a fixed sequence (agent-mana
 Note: the first spawn of 16.2 was stopped before it changed anything, because its handoff record had not been written (a failed shell write). It was re-spawned after the record was on disk. The first WF-1 spawn failed: the stale isolation worktree `.worktrees/agent-a62622e4974e96bd0` has a git redirect. Its replacement is `.worktrees/wf-1`.
 
 ## Features
+Rewritten 2026-11-13 (session f1e3e3dc) from the step-61 checklist's corrected table (`docs/plans/tier-1-g4-checklist.md`, section d), the run.v1.md rows for roots 1-12 (carried forward, so this current version gives their status; brutal-critique 67, Major 1), and this session's records.
+
 | Step | Feature | Status |
 |---|---|---|
-| 16 | Bug: auto-handoff session N | done (T16.1 9cc7f84, T16.2 committed with this update; tests, code review and docs critique all passed) |
-| 17 | Keep-alive 5m line, 1h counter, cache explanation | in progress (T17.1 building) |
-| 18 | Taxonomy | planned (carry) |
-| 19 | AAW variants | WF-1 done (merged 734b33d, green); 048, 051 carry |
-| 20 | Diagramming | planned (stretch 053.a; rest carry) |
-| 21-28, 33 | Tiers 2-4 | planned (backlog) |
+| 1-7 | Spike 027 and earlier rounds | done (run.v1.md) |
+| 8 | ai-dlc-lens plugin from the spike | built and reviewed through 2026-10-24 (tests, docs critique PASS, code review both axes approved); the lens as a whole: tier 1 G4 approved 2026-11-13 with open conditions (record 66), release pending |
+| 9 | Orchestrator checks only, never runs checks | done (critique PASS; run.v1.md) |
+| 10 | Docs-status rule | done (critique PASS; run.v1.md) |
+| 11 | Related work joins its parent run; numbering | done: phase sub-roots, loops and rounds, major.minor run-state versions, auto-handoff reading them (critique PASS, code review both axes approved; run.v1.md) |
+| 12 | Keep-alive publishes the keep-warm time in force | done (code review approved; run.v1.md) |
+| 16 | Bug: auto-handoff session N (ITEM-030, 031) | done (9cc7f84, f265f7d; both reviews APPROVE; docs critique PASS) |
+| 17 | Keep-alive cache status (ITEM-032, 033, 034, 034.c, 035, 036, 068, 076) | done; ITEM-034 proven 2026-11-13 (17.3.l1.1 tests, review loop 17.4.l1 approved, AC-17.3.7 guard); AC-17.3.1/.2/.5/.6 wait for ITEM-034.b; 034.a and 034.b carried to sprint 2 |
+| 18 | Taxonomy (ITEM-037 to 044, 065, 066) | carried; nothing built |
+| 19 | AAW variants | WF-1 (045, 046, 047, 050) done (734b33d); 048, 049, 051 carried (048 planned) |
+| 20 | Diagramming (ITEM-052, 053.a-c, 056; 054, 055, 075) | 052, 053.a-c done; 056 done 2026-11-13 (critique loop 20.5.l1 PASS, spec / LLD licence fix 20.1.l4.3); 054, 055, 075 carried to sprint 2 |
+| 21 | Agile skill and product tree | planned (backlog) |
+| 22 | Cache Lab and Context Lab (ITEM-069 to 074, 077; umbrella 058) | done (steps 37-38) |
+| 23-28 | Tiers 2-4 (059-064) | planned (backlog) |
+| 29-33 | Other roots; 33 (ITEM-067, 067.a) tier 3 | planned (backlog) |
+| 34 | Lens AbovePrompt fix | done (ef28dce) |
+| 35 | S1 gate record (G1+G2+G3 for 068-074, 076, 077) | approved 2026-10-25 |
+| 36 | Lens one view | done (765ded7) |
+| 37-41 | Wave E1 build, docs, fixes, AAWP team reviews | done (80f7642 to 544527b; ITEM-056 review completed in 20.5.l1) |
+| 42 | Two bands, Cache Lab in the agent panel | done (1302cd4); 2.1.323 test-host follow-up 42.2.l1.1-42.4.l2.1 done (ITEM-112) |
+| 43 | Lens and keep-alive rules, live fixes | done (e5c7f38) |
+| 44 | Live findings R44.1-R44.23 (ITEM-092 to 098, 104-107) | G4 step 44 approved 2026-11-02; 092-097, 107 done (107 round 3 2026-11-13); 098 and 104 (M35) open |
+| 60 | Verify recovered hand-backs 41.6, 42.2, 42.5 | done |
+| 61, 62, 64 | Tier-1 G4 checklist; backlog reconciliation; backlog after the pre-G4 work | done |
+| 63 | Hooks module validate on Claude Code 2.1.323 (ITEM-113) | done; Node 22 CI run open (GitHub billing lock) |
+| 65 | Commits of the pre-G4 work | done (cec4254 to 13bc93c, pushed) |
+| 66 | G4 (tier 1) | approved with open conditions 2026-11-13; gate commit 0139e0b |
+| 67 | Docs marker pass after G4 | done (critique PASS) |
 
 ## Gates and loops
 | Gate or loop | Approver / round | Decision | By | Date |
