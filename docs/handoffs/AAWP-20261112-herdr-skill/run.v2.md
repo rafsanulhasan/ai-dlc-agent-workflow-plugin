@@ -6,10 +6,10 @@ status: active
 lifecycle: AAWP
 mode: team   # follow-up 1.2.l3 onwards runs as an AAWP agent team (human 2026-11-13); earlier stages subagent
 branch: feat/ai-dlc-lens
-session: f1e3e3dc-bbb2-420f-aa4c-439c258c0179
-commit: 47a3480
-last-record: 1.5.1.l3-documentation-writer-to-orchestrator.handback.md
-updated: 2026-11-13 23:50
+session: f1e3e3dc-bbb2-420f-aa4c-439c258c0179, then its automatic-handoff session (2026-11-14)
+commit: 930848d
+last-record: 3-orchestrator-to-devops-engineer.handoff.md
+updated: 2026-11-14
 ---
 # Run: herdr skill, and herdr panes for spawned agents
 
@@ -29,19 +29,26 @@ The human (2026-11-12): "create a skill for herdr in the plugin so that agents c
 |---|---|---|---|---|
 | 2026-11-13 | "yes add it as a followup for agent manager and the AAWP team in the run where we added the herdr skill" (after the orchestrator reported that `herdr.mjs open` stacks every new pane below the newest one in a single column, so with five panes opened at once the last ones got one row each and were not visible, and that the human had to ask for a third column, which the orchestrator built by hand with `herdr pane move` across tabs, since herdr does not move a pane within its own tab) | Follow-up to feature 1 (the herdr skill): `open` should lay out watch panes so every pane stays readable — e.g. start a new column when the current one would make a pane too small, and keep a team's panes together — instead of always splitting the newest pane down. Facts found 2026-11-13 (herdr 0.9.5, Windows): `herdr pane move <id> --tab <tab> --split right|down --target-pane <id>` works only across tabs (same tab: `changed:false`, `reason:same_tab`); `herdr pane layout` returns every pane's rect and the split tree; pane ids survive a move. Queued by the human until after the lens run's tier-1 G4 (FEAT-20261020-ai-dlc-lens). | AAWP follow-up, agent team: agent-manager → sqa-engineer → code-reviewer ×2, docs → brutal-critique (and documentation-writer for the README herdr entry if its wording changes) | 1.2.l3.1 (pending) |
 
-## Follow-up stages (feature 1, pane layout; all pending)
+## Follow-up stages (feature 1, pane layout; started 2026-11-14 after the human's "yes")
+Codes corrected to the phase sub-roots (handoff, Naming): each sub-root takes its next loop.
 | Step | Stage | Owner | Mode | Status |
 |---|---|---|---|---|
-| 1.2.l3.1 | change: `herdr.mjs open` pane layout (columns), SKILL.md | agent-manager (am) | team | pending |
-| 1.3.l3.1 | tests for the layout logic (tests/herdr) | sqa-engineer | team | pending |
-| 1.4.l1.1.1 / 1.4.l1.1.2 | code review, standards / spec | code-reviewer ×2 | team | pending |
-| 1.5.l1.1 | critique of the docs it changes | brutal-critique | team | pending |
+| 1.2.l3.1 | change: `herdr.mjs open`/`run` pane layout (columns), SKILL.md | agent-manager (am-h3) | team | done (passed, lead check: herdr.mjs (code, +52) and SKILL.md (docs, +9) changed per git diff; no generated; build/--check/sync --check/validate exit 0; tests 1270/1262/1 fail (deliberate, herdr-open-close.test.mjs:334 allow-list lacks `pane layout`)/7 skipped; rule: split the run pane whose smaller half scores best on min(cols/50, rows/10) from `pane layout`; fallback old rule; live: 4 panes 32x10 one column) · `1.2.l3.1-agent-manager-to-orchestrator.handback.md`; handoffs to sqa-engineer and brutal-critique |
+| 1.3.l3.1 | tests for the layout logic (tests/herdr) | sqa-engineer (sqa-h3) | team | done (passed, lead check: new tests/herdr/herdr-layout.test.mjs (40), edits herdr-open-close.test.mjs (allow-lists) and helpers/fake-bin.mjs; herdr.mjs still +52 (mutants reverted); node --test 1310 / 1303 pass / 0 fail / 7 skipped; 17/17 placement mutants killed; no defects) · `1.3.l3.1-sqa-engineer-to-agent-manager.handback.md`; one handoff for both reviewers `1.3.l3.1-sqa-engineer-to-code-reviewer.handoff.md` |
+| 1.4.1.l3.1 | code review, standards | code-reviewer (cr-std-h3) | team | done · **APPROVE** round 1 of 2, 0B/0W/4S (S1 warning pushed before the split, herdr.mjs:411; S2 freeze READABLE :370; S3 loose hang-test bound herdr-layout.test.mjs:237; S4 HERDR_MJS_UNDER_TEST seam) · `1.4.1.l3.1-code-reviewer-to-sqa-engineer.handback.md` |
+| 1.4.2.l2.1 | code review, spec | code-reviewer (cr-spec-h3) | team | done · **PASS** round 1 of 2, 0B/0M/1W (herdr.mjs:419-425: first pane halves the anchor, a narrow anchor gives a narrow column and later panes warn below 50x10)/2S (tie order not chronological; SKILL.md "closest to readable" imprecise) · `1.4.2.l2.1-code-reviewer-to-sqa-engineer.handback.md`. Warning open → asked the human (am-h3 proposes docs-only fix round 1.2.l3.2) |
+| 1.5.2.l2.1 | critique of the docs it changes | brutal-critique (bc-h3) | team | done · **PASS** round 1 of 2, 0B/0M/4 Minor (dense paragraph; 50x10 not named; pane_not_found retry undocumented; multi-tab note) · stored by am-h3 as `1.5.2.l2.1-brutal-critique-to-agent-manager.handback.md` |
+| 1.2.l3.2 | fix round (docs only, the human 2026-11-14): spec W + S1/S2, critique 4 Minors in SKILL.md; standards S1-S4 accepted open | agent-manager (am-h3) | team | done (passed, lead check: only SKILL.md changed further (+9 → +16 lines), herdr.mjs still +52, tests unchanged; build --check and sync --check exit 0 quoted) · `1.2.l3.2-agent-manager-to-orchestrator.handback.md`; handoff to bc-h3 |
+| 1.5.2.l2.2 | re-critique, round 2 of 2 | brutal-critique (bc-h3) | team | done · **PASS** 0B/0M/0 new Minor; Warning, S1, S2, Minors 1-4 closed (SKILL.md 99-106, 115) · `1.5.2.l2.2-brutal-critique-to-agent-manager.handback.md` |
+| 3 | commit the follow-up (code, docs, tests, records); push | devops-engineer | subagent | in-progress · `3-orchestrator-to-devops-engineer.handoff.md` |
 
 ## Routing
 Agent Artifact (plugin skill + orchestrator / agent-invocation / request-routing wiring; likely a script) → AAWP. No work breakdown (AAW). Mode: subagent.
 
 ## Gates and loops
 AAWP/lld 2/1 · AAWP/test 2/1 · AAWP/code-review 2/1 · AAWP/critique 2/1 · clarify 2/1 (from `rounds --json`, source `loop`). AAWP has no gates.
+- 2026-11-14, follow-up loops 1.3.l3, 1.4.1.l3, 1.4.2.l2, 1.5.2.l2: AAWP/test 2/1, AAWP/code-review 2/1, AAWP/critique 2/1 (rounds --json, source loop); the 3-round raise below applied to the earlier loops only.
+- herdr (2026-11-14): active (watch), anchor w1:p1, herdr 0.9.5; team panes w1:p1Z, w1:p10, w1:p21, w1:p22, w1:p23 opened for 1.2.l3.1, 1.3.l3.1, 1.4.1.l3.1, 1.4.2.l2.1, 1.5.2.l2.1.
 - **AAWP/test and AAWP/code-review raised to 3 rounds for this run** (one-off; workflow file unchanged) — the human, 2026-11-12: "Fix it, 1 more round" for the 1.4.1.l1 SIGHUP Warning.
 
 ## Stages
@@ -108,8 +115,4 @@ Change kinds (2.2): docs — 5 plugins/claude/ai-dlc/agents/*.md; generated — 
 - 2026-11-12, orchestrator: 1.1.3 hand-back accepted as the intent artifact (content complete; only the file write failed).
 
 ## Next action
-Continue the current stage from the session handoff `.scratch/AAWP-20261112-herdr-skill/session-20261113-2350.md` (automatic context-limit handoff from session f1e3e3dc at 801k, 2026-11-13 23:50). Then carry on with the next action recorded before the handoff:
-
-> **Current (2026-11-13, session f1e3e3dc):** follow-up queued — run it after the tier-1 G4 of FEAT-20261020-ai-dlc-lens: write `1.2.l3.1-orchestrator-to-agent-manager.handoff.md` (team brief) and start the AAWP team (agent-manager, sqa-engineer, code-reviewer ×2, brutal-critique). History below.
->
-> Feature 2 done (PASS); Minor 1 (memory-only wording) open with the human. Wait for 1.2.1 and 1.3. Then in parallel: brutal-critique on the docs of 1.2 + 1.2.1 (1.5.2), documentation-writer Docs update (1.5.1, status in progress), and code-reviewer ×2 (1.4.1, 1.4.2) after 1.3.
+**Current (2026-11-14):** follow-up reviews all passed (critique PASS round 2; standards APPROVE with S1-S4 accepted open by the human; spec PASS, Warning documented). Team shut down (am-h3, bc-h3 requested). devops-engineer step 3 commits and pushes; then status done.
