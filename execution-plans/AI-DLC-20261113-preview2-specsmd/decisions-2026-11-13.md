@@ -15,3 +15,12 @@ Asked by the orchestrator after comparing the Copilot conversation, specsmd rese
 9. Fallback: **one release** — preview2 reads old docs/ paths with a warning; dropped in 1.0.0.
 10. Backlog location: **memory-bank/project/**.
 Orchestrator-settled (from D2/D3): events in preview2 = files + schema checked by validate; a memory-bank tree counts as documentation (documentation-writer sole author).
+
+## Round 3 (product-owner clarifications, 2026-11-13)
+11. Reader-facing documents (README.md files, docs/plugins.md, user guides, release notes) **stay in docs/**; lifecycle knowledge moves to memory-bank/. documentation-writer authors both.
+12. Unit 11 (migrate this repo's legacy docs/ history) **must ship in preview2** — priority P1, not P2.
+Also (human, 2026-11-13): **planning only** in this run — make plans, implement nothing.
+
+## G1 (2026-11-13)
+13. **G1 approved** by the human.
+14. Human recommendation for unit design (input to G2): "2 units for the product in the repo: **ai-dlc-engine** and **ai-dlc-lens**".
