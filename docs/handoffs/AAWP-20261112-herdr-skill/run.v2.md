@@ -9,7 +9,7 @@ branch: feat/ai-dlc-lens
 session: f1e3e3dc-bbb2-420f-aa4c-439c258c0179
 commit: 47a3480
 last-record: 1.5.1.l3-documentation-writer-to-orchestrator.handback.md
-updated: 2026-11-13
+updated: 2026-11-13 23:50
 ---
 # Run: herdr skill, and herdr panes for spawned agents
 
@@ -108,6 +108,8 @@ Change kinds (2.2): docs — 5 plugins/claude/ai-dlc/agents/*.md; generated — 
 - 2026-11-12, orchestrator: 1.1.3 hand-back accepted as the intent artifact (content complete; only the file write failed).
 
 ## Next action
-**Current (2026-11-13, session f1e3e3dc):** follow-up queued — run it after the tier-1 G4 of FEAT-20261020-ai-dlc-lens: write `1.2.l3.1-orchestrator-to-agent-manager.handoff.md` (team brief) and start the AAWP team (agent-manager, sqa-engineer, code-reviewer ×2, brutal-critique). History below.
+Continue the current stage from the session handoff `.scratch/AAWP-20261112-herdr-skill/session-20261113-2350.md` (automatic context-limit handoff from session f1e3e3dc at 801k, 2026-11-13 23:50). Then carry on with the next action recorded before the handoff:
 
-Feature 2 done (PASS); Minor 1 (memory-only wording) open with the human. Wait for 1.2.1 and 1.3. Then in parallel: brutal-critique on the docs of 1.2 + 1.2.1 (1.5.2), documentation-writer Docs update (1.5.1, status in progress), and code-reviewer ×2 (1.4.1, 1.4.2) after 1.3.
+> **Current (2026-11-13, session f1e3e3dc):** follow-up queued — run it after the tier-1 G4 of FEAT-20261020-ai-dlc-lens: write `1.2.l3.1-orchestrator-to-agent-manager.handoff.md` (team brief) and start the AAWP team (agent-manager, sqa-engineer, code-reviewer ×2, brutal-critique). History below.
+>
+> Feature 2 done (PASS); Minor 1 (memory-only wording) open with the human. Wait for 1.2.1 and 1.3. Then in parallel: brutal-critique on the docs of 1.2 + 1.2.1 (1.5.2), documentation-writer Docs update (1.5.1, status in progress), and code-reviewer ×2 (1.4.1, 1.4.2) after 1.3.

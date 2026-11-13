@@ -17,4 +17,4 @@
 - [Team limits](project_team-limits.md) — RA teammates have no web tools; teammates' nested spawns report to the lead; web research as subagent
 - [AAWP as agent team](feedback_aawp-as-agent-team.md) — every AAWP round runs as a peer-to-peer team, never a lone agent-manager subagent
 - [herdr decisions](project_herdr-decisions.md) — watch/run-in-pane/off, fallback detection, file-main + pane-copy fallback; bgIsolation none
-- [Preview2 specsmd decisions](project_preview2-specsmd-decisions.md) — specsmd natively; memory-bank; execution-plans + events; plugin renamed ai-dlc-engine; G1 done
+- [Preview2 specsmd decisions](project_preview2-specsmd-decisions.md) — specsmd natively; memory-bank; events; plugins engine + lens @ marketplace forgeline
