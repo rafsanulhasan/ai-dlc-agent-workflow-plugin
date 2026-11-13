@@ -3,15 +3,15 @@ run: FEAT-20261020-ai-dlc-lens
 work-item: FEAT-20261020-ai-dlc-lens (scope v2)
 version: "4.4"
 previous: run.v4.3.md
-status: active
+status: done
 lifecycle: AI-DLC (AAW plugin/mod chain override; build by agent-manager)
 mode: team for AAWP stages (human 2026-11-13: peer-to-peer agent teams; herdr watch panes); planning and research steps as subagents
-current-stage: released v1.0.0-preview1 (2026-11-13); post-release backlog (product-manager), then the closing commit
+current-stage: closed 2026-11-13 after release v1.0.0-preview1 (tag on 9eae890); open G4 conditions carried in the backlog (ITEM-113 Node 22 CI, ITEM-098 live checks, ITEM-104 M35, ITEM-056 not-verified items)
 owner: orchestrator
 session: f1e3e3dc-bbb2-420f-aa4c-439c258c0179 (took over from c6cc60b4 / 4e6863ff with the human's OK, 2026-11-13)
 branch: feat/ai-dlc-lens (feat/wf-1 merged at 734b33d)
-commit: 12cd1f1
-last-record: 77-orchestrator-to-devops-engineer.handoff.md
+commit: d65d777
+last-record: 78-orchestrator-to-devops-engineer.handoff.md
 updated: 2026-11-13
 wave: 3 (Build)
 ---
@@ -196,7 +196,8 @@ Mode choice for the build: subagents. Each chain is a fixed sequence (agent-mana
 | 74 | Release: local checks on the release commit 12cd1f1 (replace the waived CI) | sqa-engineer | subagent | done (passed: all 8 checks exit 0 on 12cd1f1 with Claude Code 2.1.323, Node 24.11.1, run one at a time: repo tests 1263 pass / 0 fail / 7 skipped; ai-dlc 1007/0; lens 926/0; validate --strict ai-dlc, lens, marketplace passed; build --check, validate.mjs --check passed. git status: only change during the run was project_preview2-specsmd-decisions.md, written by another session (not by a check), uncommitted, excluded from the release) | f1e3e3dc | sqa-engineer | `74-orchestrator-to-sqa-engineer.handoff.md` | `74-sqa-engineer-to-orchestrator.handback.md` | 2026-11-13 |
 | 75 | Release: deploy — PR → main (merge commit, signed), signed tag v1.0.0-preview1, GitHub prerelease | devops-engineer | subagent | done (passed, checked by the orchestrator on GitHub: PR #26 MERGED; origin/main = 9eae890, signed merge commit (G) fe7ec7c..9eae890; signed tag v1.0.0-preview1 → 9eae890, pushed; GitHub prerelease v1.0.0-preview1 isPrerelease true; merged from a new worktree .worktrees/release-75 (kept); no package publish) | f1e3e3dc | devops-engineer | `75-orchestrator-to-devops-engineer.handoff.md` | `75-devops-engineer-to-orchestrator.handback.md` | 2026-11-13 |
 | 76 | Release: backlog after v1.0.0-preview1 (shipped items Done; ITEM-113 Node 22 CI criterion unticked, pending) | product-manager | subagent | done (passed after fix round 76.l1.1: backlog :420 now states the P1/P2 cells as recorded; ITEM-075 carried to sprint 2 per run.v4.4.md:225 and checklist :41, row 137 corrected; ITEM-113 In Progress, Node 22 AC unticked; release section :405; diff +28/-7. Earlier: 76 hand-back failed the lead check: backlog :420 says keep-alive P1/P2 cells empty, MANUAL-CHECKS.md :19/:32 show them filled (35a0660); ITEM-075 inconsistent :137 vs :158; fix round 76.l1.1 sent to the same agent) | f1e3e3dc (continued by the automatic-handoff session) | orchestrator | `76-orchestrator-to-product-manager.handoff.md` | `76-product-manager-to-orchestrator.handback.md` | 2026-11-13 |
-| 77 | Release: commit the backlog and records 73.l1.1-77, run states, agent memory; push feat/ai-dlc-lens | devops-engineer | subagent | in-progress | automatic-handoff session after f1e3e3dc | orchestrator | `77-orchestrator-to-devops-engineer.handoff.md` | — | 2026-11-13 |
+| 77 | Release: commit the backlog and records 73.l1.1-77, run states, agent memory; push feat/ai-dlc-lens | devops-engineer | subagent | done (passed: 36e40d1 backlog, d65d777 records + run states + memory (0 secret hits), both G; build --check, sync --check exit 0; pushed 12cd1f1..d65d777) | automatic-handoff session after f1e3e3dc | orchestrator | `77-orchestrator-to-devops-engineer.handoff.md` | `77-devops-engineer-to-orchestrator.handback.md` | 2026-11-13 |
+| 78 | Close the run: closing commit of the run state and records 77-78; push | devops-engineer | subagent | in-progress | automatic-handoff session after f1e3e3dc | orchestrator | `78-orchestrator-to-devops-engineer.handoff.md` | — | 2026-11-13 |
 | 41.6 | lens / keep-alive: docs critique (41.6, 41.6.l1.1-2, PASS round 3) | brutal-critique, documentation-writer | team | done (recovered hand-back accepted after verification, step 60; human 2026-11-13) | 7ac45d8b | bc-41 | `41.6.l1.2-documentation-writer-to-brutal-critique.handoff.md` | `41.6.l1.2-brutal-critique-to-documentation-writer.handback.md` | 2026-11-13 |
 | 42.2 | icons / Cache Lab: build (two bands, Cache Lab in the agent panel; commit 1302cd4) | agent-manager | team | done (recovered hand-back accepted after verification, step 60; human 2026-11-13) | 7ac45d8b | am-42 | `42.2-agent-manager-to-sqa-engineer.handoff.md` | `42.2-agent-manager-to-orchestrator.handback.md` | 2026-11-13 |
 | 42.5 | icons / Cache Lab: README edits and critique (42.5, 42.5.l1.1, PASS round 2) | documentation-writer, brutal-critique | team | done (recovered hand-backs accepted after verification, step 60; human 2026-11-13) | 7ac45d8b | dw-42, bc-42 | `42.5-documentation-writer-to-brutal-critique.handoff.md`, `42.5.l1.1-documentation-writer-to-brutal-critique.handoff.md` | `42.5-documentation-writer-to-orchestrator.handback.md`, `42.5-brutal-critique-to-documentation-writer.handback.md`, `42.5.l1.1-brutal-critique-to-documentation-writer.handback.md` | 2026-11-13 |
@@ -314,7 +315,7 @@ Rewritten 2026-11-13 (session f1e3e3dc) from the step-61 checklist's corrected t
 - The stale worktree `.worktrees/agent-a62622e4974e96bd0` (branch `worktree-agent-a62622e4974e96bd0`, 8e80b61) is left for the human to inspect or remove.
 
 ## Next action
-**Current (2026-11-13, automatic-handoff session after f1e3e3dc):** deploy 75 checked live (PR #26 merged, origin/main 9eae890 signed G, tag v1.0.0-preview1 → 9eae890, GitHub prerelease up). product-manager 76 done (fix round 76.l1.1 passed). devops-engineer 77 in-progress: commits the backlog and the records 73.l1.1-76 (signed; pinentry warning); then close the run (status done), close leftover herdr panes.
+**Current (2026-11-13, automatic-handoff session after f1e3e3dc):** deploy 75 checked live (PR #26 merged, origin/main 9eae890 signed G, tag v1.0.0-preview1 → 9eae890, GitHub prerelease up). product-manager 76 done (fix round 76.l1.1 passed). devops-engineer 77 done (36e40d1, d65d777, pushed). Run CLOSED (status done); closing commit 78 by devops-engineer. herdr: active (watch) but no panes opened for steps 76-78 in this session (pane list shows only the anchor w1:p1; earlier panes already closed). Open after close, tracked in the backlog: ITEM-113 (Node 22 CI, blocked by the Actions billing lock), ITEM-098, ITEM-104, ITEM-056. Queued elsewhere: AAWP-20261112-herdr-skill follow-up 1.2.l3.1 (its own run state).
 
 **Current (2026-11-13, session f1e3e3dc):** G4 (tier 1) approved by the human with open conditions (record 66). Next: devops-engineer commits the gate (66.1) and the other session's memory files; documentation-writer ↔ brutal-critique run the docs marker pass (67); then the release stage (product-owner go / no-go). History below.
 
