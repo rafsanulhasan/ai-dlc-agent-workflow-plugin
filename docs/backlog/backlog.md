@@ -134,7 +134,7 @@ Source: `docs/product/active/work-breakdown-tier-1-sprint-1.md` (product-manager
 | 053 | LENS | 20.2 | Mermaid fences render offline | Feature | P2 | NI | 052, G2 | ai-dlc-lens / diagramming / diagramming-mods | Backlog | not planned |
 | 054 | LENS | 20.3 | LaTeX math via bundled MathJax. **Backlog, scheduled sprint 2** (moved out of sprint 1 by the human, 2026-10-25) | Feature | P2 | NI | 053 | ai-dlc-lens / diagramming / diagramming-mods | Backlog | 2 (carried from 1) |
 | 055 | LENS | 20.4 | PlantUML with a local Java + jar. **Backlog, scheduled sprint 2** (moved out of sprint 1 by the human, 2026-10-25); sprint 2 runs the 053.a2 security-profile check first | Feature | P2 | NI | 053, 053.a2 (sprint 2) | ai-dlc-lens / diagramming / diagramming-mods | Backlog | 2 (carried from 1) |
-| 056 | LENS | 20.5 | `THIRD_PARTY_NOTICES.md` and `ATTRIBUTION.md` entries for 053 only (Mermaid layout, ELK.js, rasteriser, font, mermaid-inline; creates `hooks/ATTRIBUTION.md`); lens checks pass. Re-scoped 2026-10-25; the 054 and 055 notices are ITEM-075 DONE 2026-11-13 (critique loop `20.5.l1` rounds 1-2, final PASS 0B/0M, `20.5.l1.2-brutal-critique-to-agent-manager.handback.md`; spec and LLD elkjs licence corrected, `20.1.l4.3-software-architect-...`). Condition: accepted as marked "Not verified": safer-bytes repo, compiled-in serde version, GWT code in the minified bundle, transitive crates | Feature | P2 | RA* | 053 | ai-dlc-lens / diagramming / diagramming-mods | Done | 1 |
+| 056 | LENS | 20.5 | `THIRD_PARTY_NOTICES.md` and `ATTRIBUTION.md` entries for 053 only (Mermaid layout, ELK.js, rasteriser, font, mermaid-inline; creates `hooks/ATTRIBUTION.md`); lens checks pass. Re-scoped 2026-10-25; the 054 and 055 notices are ITEM-075, Backlog, sprint 2 (054 and 055 are not built; `run.v4.4.md:225`, `docs/plans/release-tier-1.checklist.md:41`); ITEM-056 itself DONE 2026-11-13 (critique loop `20.5.l1` rounds 1-2, final PASS 0B/0M, `20.5.l1.2-brutal-critique-to-agent-manager.handback.md`; spec and LLD elkjs licence corrected, `20.1.l4.3-software-architect-...`). Condition: accepted as marked "Not verified": safer-bytes repo, compiled-in serde version, GWT code in the minified bundle, transitive crates | Feature | P2 | RA* | 053 | ai-dlc-lens / diagramming / diagramming-mods | Done | 1 |
 | 057 | MW | 21 | Agile skill and product tree; migrate this repository | Feature | P1 | NI | 18 (037, 038, 039) | ai-dlc / multi-agent-workflow / agile-product-tree | Backlog | not planned |
 | 058 | LENS | 22 | Umbrella, split 2026-10-25 into 069-074: Cache Lab and Context Lab; takes the lens cost fixes from root 17 | Feature | P2 | NI | 17 (032, 033, 034) | ai-dlc-lens / cache-context-lab / cache-lab; integration-2 | Done | 1 |
 | 059 | MW | 23 | New default AI-DLC phases, auto/manual switch, one run state per wave | Feature | P1 | NI | 18, 19, 21 | ai-dlc / multi-agent-workflow / default-phases | Backlog | not planned |
@@ -292,11 +292,11 @@ Run: `docs/handoffs/FEAT-20261020-ai-dlc-lens/` (`run.v4.4.md`, *Follow-ups*, *H
 - **Type**: Bug
 - **Priority**: P0
 - **Status**: Done
-- **Milestone**: Unplanned
+- **Milestone**: 1.0.0-preview1
 - **Added**: 2026-11-13
 - **Agent Chain**: software-engineer → sqa-engineer → code-reviewer
 
-Done 2026-11-13. 5 band tests were red at HEAD on the 2.1.323 test host; fixed test-only; approved. Records: `docs/handoffs/FEAT-20261020-ai-dlc-lens/42.2.l1.1` through `docs/handoffs/FEAT-20261020-ai-dlc-lens/42.4.l2.1.2`.
+Done 2026-11-13, released in v1.0.0-preview1 (2026-11-13). 5 band tests were red at HEAD on the 2.1.323 test host; fixed test-only; approved. Records: `docs/handoffs/FEAT-20261020-ai-dlc-lens/42.2.l1.1` through `docs/handoffs/FEAT-20261020-ai-dlc-lens/42.4.l2.1.2`.
 
 **Acceptance Criteria**
 - [x] The 5 band tests pass on the Claude Code 2.1.323 test host
@@ -305,16 +305,16 @@ Done 2026-11-13. 5 band tests were red at HEAD on the 2.1.323 test host; fixed t
 ### ITEM-113: Regression: Claude Code 2.1.323 `plugin validate` fails both plugins
 - **Type**: Bug
 - **Priority**: P0
-- **Status**: Done
-- **Milestone**: Unplanned
+- **Status**: In Progress
+- **Milestone**: 1.0.0-preview1
 - **Added**: 2026-11-13
 - **Agent Chain**: software-engineer → sqa-engineer → code-reviewer
 
-Done 2026-11-13. Both plugins fixed and approved (root 63). Node 22 run in CI pending: the human checks CI before G4. Records: `docs/handoffs/FEAT-20261020-ai-dlc-lens/63.2` through `docs/handoffs/FEAT-20261020-ai-dlc-lens/63.4.2`.
+Fix shipped in v1.0.0-preview1 (2026-11-13); the item stays In Progress until the Node 22 AC passes. Both plugins fixed and approved (root 63). Open: the Node 22 repository-test run is pending. GitHub Actions is locked over billing, so no Node 22 CI run has happened; the waived CI check was replaced by local checks on Node 24.11.1, not Node 22 (`74-sqa-engineer-to-orchestrator.handback.md`). Closes when a Node 22 run passes (CI after the billing fix, or a local Node 22). Records: `docs/handoffs/FEAT-20261020-ai-dlc-lens/63.2` through `docs/handoffs/FEAT-20261020-ai-dlc-lens/63.4.2`.
 
 **Acceptance Criteria**
 - [x] `plugin validate --strict` passes for `plugins/claude/ai-dlc` and `plugins/claude/ai-dlc-lens` on 2.1.323
-- [x] Node 22 run in CI passes (pending, human checks before G4)
+- [ ] Node 22 run in CI passes (pending: CI is locked over billing; local checks ran on Node 24.11.1)
 
 ### ITEM-114: `markTranscriptRead` helper in cache-state.ts
 - **Type**: TechDebt
@@ -399,3 +399,24 @@ Source: `docs/handoffs/FEAT-20261020-ai-dlc-lens/run.v4.4.md`, *Housekeeping*. A
 - [ ] The research-assistant teammate limitation (no web tools) is documented or fixed
 
 The herdr pane-layout follow-up is not filed here: it is already queued in `docs/handoffs/AAWP-20261112-herdr-skill/run.v2.md` (follow-up stages 1.2.l3.1 and 1.3.l3.1).
+
+---
+
+## Release v1.0.0-preview1 — 2026-11-13
+
+Released 2026-11-13 as a GitHub prerelease: PR #26 merged (`origin/main` = `9eae890`), tag `v1.0.0-preview1`, https://github.com/rafsanulhasan/ai-dlc-agent-workflow-plugin/releases/tag/v1.0.0-preview1. Versions: `ai-dlc` 1.0.0-preview1, `ai-dlc-lens` 0.1.0 (no bump). Scope: `docs/plans/release-tier-1.checklist.md`; go / no-go with waivers: `70-product-owner-to-orchestrator.handback.md`; release record: `75-devops-engineer-to-orchestrator.handback.md`. Release notes: `CHANGELOG.md`. Filed by product-manager, step 76.
+
+**Done, released 2026-11-13 in v1.0.0-preview1** (rows and items above carry Status Done):
+- ITEM-001, 108, 109 (milestone 1.0.0-preview1).
+- Tier 1 plan rows: 030, 031, 032, 033, 034 (with 034.c), 035, 036, 045, 046, 047, 050, 052, 053.a, 056, 058 (umbrella), 068, 069-074, 076, 077.
+- Step-44 items: 092, 093, 094, 095, 096, 097, 107.
+- ITEM-112 (regression, 5 band tests), re-milestoned 1.0.0-preview1.
+
+**Shipped but not Done (open conditions, waived for the prerelease by the human; each stays open):**
+- ITEM-113 (P0): fix shipped, In Progress. The Node 22 AC is pending (CI locked over billing; local checks ran on Node 24.11.1).
+- ITEM-098 (Backlog): live checks M25-M31, M34, P17-P26 and verification items A1, A2 still pending, and the live two-plugin band check on Claude Code 2.1.323 (keep-alive MANUAL-CHECKS P9-P11, lens O15) is not run.
+- ITEM-104 (In Progress): manual check M35 not yet run; stays In Progress until its result is recorded.
+- ITEM-056 (Done as accepted at G4): shipped with the "Not verified" notice items disclosed (safer-bytes 0.2.0 repository, compiled-in serde 1.x version, GWT code in minified elkjs, transitive crates); they remain unverified.
+- Keep-alive `MANUAL-CHECKS.md` P1 and P2 have recorded results (human, 2026-10-25; `hooks/keepalive/MANUAL-CHECKS.md:19`, `:32`), neither a clean pass. P1 (1h ping counter): terminal pass for the first ping, 1/9 to 2/9 not observed (run with a 1m interval, Claude Code version not recorded; each test subagent re-armed the count), VS Code pass (1/9 then 2/9), lens-versus-screen comparison not recorded on either surface; the 2af run's missing repaint is unexplained. P2 (subagent usage split): terminal fail on Claude Code 2.1.310, D2a applies (live usage lines `split=absent`, finished transcript `split=present`); the check ran with an Explore subagent, not the general-purpose agent its step 2 names.
+
+**Carried, not in this release** (unchanged): 034.a, 034.b, 037-044.b, 048, 049, 051, 054, 055, 065, 066, 075 (sprint 2 or next sprint not set), and 053, 057, 059-064, 067 (not planned); follow-ups ITEM-099-103, 105, 106, 110, 111, 114-119 (Backlog).
