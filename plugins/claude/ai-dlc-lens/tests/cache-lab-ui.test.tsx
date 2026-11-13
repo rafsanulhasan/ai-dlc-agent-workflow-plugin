@@ -1,5 +1,7 @@
 import { describe, expect, mock, test } from 'claude-code/testing'
 import type { Call } from '../hooks/transcripts'
+// The test runs under bun, which has timers; the hooks lib (es2023, no DOM) does not declare them.
+declare const setTimeout: (fn: (...args: never[]) => void, ms: number) => unknown
 
 // The Cache Lab accordion of the agent panel (cache-lab spec: AC-22.2.1, 22.2.12, 22.2.13, 22.1.5, 22.4, 22.7, 22.8;
 // ITEM-070 to 074 and 077; step 42 moved it from the lens view's head into the agent panel, opened from an avatar). The engine is stubbed at its edges: `process.run` answers the transcript reader's

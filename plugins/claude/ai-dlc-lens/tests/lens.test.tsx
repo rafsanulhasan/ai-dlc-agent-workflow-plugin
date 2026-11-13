@@ -6281,7 +6281,7 @@ describe('step 36.2: /ai-dlc:lens opens the AI-DLC Lens view; the lens card is g
     expect(await b.find({ type: 'Text', text: /^and now something else/ })).toBeDefined()
     // Live round 1 (2b.i): the minimised line names the top 3 (here both runs, newest first), then the count.
     expect(await b.find({ type: 'Text', text: /^Ship it/ })).toBeDefined()
-    expect((await b.findAll({ type: 'Box' })).map((x: any) => String(x.key)).filter(k => /^band-line-\d$/.test(k))).toEqual(['band-line-0', 'band-line-1'])
+    expect((await b.findAll({ type: 'Box' })).map((x: any) => String(x.key)).filter((k: string) => /^band-line-\d$/.test(k))).toEqual(['band-line-0', 'band-line-1'])
     expect(await b.find({ type: 'Text', text: /^\(2\)$/ })).toBeDefined()
     await b.unmount()
   })

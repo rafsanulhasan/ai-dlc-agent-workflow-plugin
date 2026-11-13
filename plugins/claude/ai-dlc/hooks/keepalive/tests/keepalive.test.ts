@@ -1,12 +1,12 @@
 import { describe, expect, mock, test } from 'claude-code/testing'
 import type { TestBody } from 'claude-code/testing'
 import type { On } from 'claude-code'
-import { formatDuration, parseCommandArgs, parseDuration } from '../duration.ts'
-import { NULL_IN_FILE, SETTINGS, TRUST_GATED, check, defaults, differsFromDefault, gatedDiffering, parsePrices, readMult, resolveSettings } from '../settings.ts'
-import type { Level } from '../settings.ts'
-import { grammarMistake, pingCap, pingsWithin, seedLineOf, splitFromAgentTranscript, splitFromTranscript, splitOf } from '../keepalive.ts'
-import { hhmm } from '../cache-state.ts'
-import { PREVIEW_CHARS, SETTINGS as HANDOFF_SETTINGS, previewValue } from '../../auto-handoff/config.ts'
+import { formatDuration, parseCommandArgs, parseDuration } from '../duration'
+import { NULL_IN_FILE, SETTINGS, TRUST_GATED, check, defaults, differsFromDefault, gatedDiffering, parsePrices, readMult, resolveSettings } from '../settings'
+import type { Level } from '../settings'
+import { grammarMistake, pingCap, pingsWithin, seedLineOf, splitFromAgentTranscript, splitFromTranscript, splitOf } from '../keepalive'
+import { hhmm } from '../cache-state'
+import { PREVIEW_CHARS, SETTINGS as HANDOFF_SETTINGS, previewValue } from '../../auto-handoff/config'
 
 // Keep-alive, folded in from the vendored cache-keepalive mod (../ATTRIBUTION.md).
 // The upstream tests are kept where the behaviour is, renamed for the two tracks and /ai-dlc:cache-keepalive.
@@ -66,7 +66,7 @@ function engine(on: On, o: Opts = {}) {
   let now = START
   let timers: { due: number; resolve: () => void }[] = []
   const cacheReadOf = () => (typeof o.cacheRead === 'function' ? o.cacheRead() : o.cacheRead) ?? 1_000_000
-  const split = o.split === undefined ? [1_000, 0] : o.split
+  const split = o.split === undefined ? [1_000, 0] as [number, number] : o.split
   const disk: Record<string, string> = {
     ...(split ? { [TRANSCRIPT]: [row(0, 0), row(split[0], split[1]), row(0, 0)].join('\n') } : {}),
     ...(o.trusted ? { '/home/test/.claude.json': JSON.stringify({ projects: { [ROOT]: { hasTrustDialogAccepted: true } } }) } : {}),
@@ -217,8 +217,9 @@ const keepalive = ($: Parameters<TestBody>[0], args = '') => $.command.run({ com
 const configure = ($: Parameters<TestBody>[0], args = '') => $.command.run({ command: 'ai-dlc:cache-keepalive-configure', args } as never)
 // Review round 4, W2: a mistake in that grammar is answered by the module with the problem and the usage text, which has --for in it
 const usageHead = (problem: string) => `keepalive: ${problem}. Usage: /ai-dlc:cache-keepalive-configure `
-const expectUsage = (text: string, problem: string) => {
-  expect(text.slice(0, usageHead(problem).length)).toBe(usageHead(problem))
+const expectUsage = (text: string | undefined, problem: string) => {
+  expect(typeof text).toBe('string')
+  expect(text?.slice(0, usageHead(problem).length)).toBe(usageHead(problem))
   expect(text).toContain('[--session|--machine|--for just-me|team|global]')
   expect(text).not.toContain('unanswered')
 }
@@ -3016,7 +3017,7 @@ describe('[step 40] the reason keep-alive is off, as the command says it (offCau
     engine(on)
     await configure($, 'off --session')
     const text = await reply($)
-    expect(text.startsWith('keepalive: off (switched off for this session); nothing pinged')).toBe(true)
+    expect(text?.startsWith('keepalive: off (switched off for this session); nothing pinged')).toBe(true)
     expect(text).toContain('keep-alive: off for this session') // and the switches in force are listed after it
   })
 
@@ -4211,8 +4212,8 @@ describe('[W3] /ai-dlc:cache-keepalive pings once at a time', () => {
     await $.classic.Stop(stop())
     const texts = (await Promise.all([keepalive($), keepalive($)])).map(r => r.text)
     expect(seen.forks).toBe(1)
-    expect(texts.filter(t => t.includes('a ping is already under way; nothing more pinged')).length).toBe(1)
-    expect(texts.filter(t => t.includes('cache read')).length).toBe(1)
+    expect(texts.filter(t => t?.includes('a ping is already under way; nothing more pinged')).length).toBe(1)
+    expect(texts.filter(t => t?.includes('cache read')).length).toBe(1)
   })
 
   test('three runs started together ping once', async ($, on) => {
@@ -4220,7 +4221,7 @@ describe('[W3] /ai-dlc:cache-keepalive pings once at a time', () => {
     await $.classic.Stop(stop())
     const [a, b, c] = await Promise.all([keepalive($), keepalive($), keepalive($)])
     expect(seen.forks).toBe(1)
-    expect([a, b, c].filter(r => r.text.includes('cache read')).length).toBe(1)
+    expect([a, b, c].filter(r => r.text?.includes('cache read')).length).toBe(1)
   })
 
   test('a run while a track\'s scheduled ping is out says so and pings nothing', async ($, on) => {
@@ -4306,5 +4307,206 @@ describe('[W2] grammarMistake', () => {
   test('a flag among plain words still makes it grammar, so a mistake in a sentence with --for is answered with the usage text', () => {
     expect(grammarMistake('please turn it off --for team')).toBe(true)
     expect(grammarMistake('please turn it off for team')).toBe(false)
+  })
+})
+
+// SQA 17.3.l1.1 (ITEM-034, T17.3): AC-17.3.3, 17.3.7 and 17.3.8 through the events a session sends, the way the
+// 41.3 hand-back left them unproven. Times are the stories' 10:0x, read from the mock clock: START is 10:00.
+// Subagent pings (034.b) are not built, so AC-17.3.1, 17.3.2, 17.3.5 and 17.3.6 have no code to test.
+describe('[17.3.l1.1] ITEM-034 subagent caches: stop-time settling, liveness and the no-arm rule', () => {
+  const AGENT_TRANSCRIPT = '/home/test/.claude/projects/p/s-1/subagents/agent-a1.jsonl'
+  const at = (minutes: number) => hhmm(START + minutes * MIN)
+  const noSplit = { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 900 }
+  // A sidechain row of the agent's transcript, written `minute` minutes after START, with h tokens for 1 hour and m for 5 minutes
+  const agentRow = (h: number, m: number, minute: number) => JSON.stringify({ type: 'assistant', isSidechain: true, timestamp: new Date(START + minute * MIN).toISOString(), message: { usage: { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: h + m, cache_creation: { ephemeral_1h_input_tokens: h, ephemeral_5m_input_tokens: m } } } })
+  const sends = (on: On) => {
+    const sent = { count: 0 }
+    on('session.send', () => (sent.count++, { value: undefined }) as never)
+    return sent
+  }
+  const stopAgent = ($: Parameters<TestBody>[0]) => $.classic.SubagentStop({ agent_id: 'a1', agent_transcript_path: AGENT_TRANSCRIPT } as never)
+  const noTasks = async ($: Parameters<TestBody>[0]) => { await $.classic.Stop(stop([])); await settle() }
+  const withTask = async ($: Parameters<TestBody>[0]) => { await $.classic.Stop(stop()); await settle() }
+
+  test('AC-17.3.8 background tasks running and only a subagent holds a warm 5m cache: the literal line, the track does not arm, no main-loop ping is sent', async ($, on) => {
+    const sent = sends(on)
+    const e = engine(on, { split: null })
+    const respond = responder(on)
+    await e.clock.fire(2)
+    await respond($, usageOf(0, 500), 'a1')
+    await e.clock.fire(1)
+    await withTask($)
+    expect(e.line('5m')).toBe(`keepalive 5m: subagents warm until ${at(7)}; off (only subagent caches; subagent pings off), ping 0/20, keep warm 1h (default)`)
+    expect(e.seen.states.at(-1)?.tracks.find(t => t.name === '5m')).toMatchObject({ running: false, warmUntil: 0, nextPingAt: null })
+    await e.clock.fire(10)
+    expect(e.seen.forks).toBe(0)
+    expect(sent.count).toBe(0)
+  })
+
+  test('AC-17.3.8 contrast: a warm main 5m cache as well as the subagent\'s arms the track and the main loop is pinged, never a subagent', async ($, on) => {
+    const sent = sends(on)
+    const e = engine(on, { split: null })
+    const respond = responder(on)
+    await e.clock.fire(2)
+    await respond($, usageOf(0, 500))
+    await respond($, usageOf(0, 500), 'a1')
+    await e.clock.fire(1)
+    await withTask($)
+    expect(e.line('5m')).not.toContain('only subagent caches')
+    expect(e.seen.states.at(-1)?.tracks.find(t => t.name === '5m')?.running).toBe(true)
+    await e.clock.fire(3)
+    expect(e.seen.forks).toBe(1)
+    expect(sent.count).toBe(0)
+  })
+
+  test('AC-17.3.7 a write with no split reads subagents: split unknown and arms nothing; at the stop the transcript row at 10:02 settles it: warm until 10:07 at 10:04, expired 10:07 at 10:08', async ($, on) => {
+    const sent = sends(on)
+    const e = engine(on, { split: null, files: { [AGENT_TRANSCRIPT]: [agentRow(0, 0, 1), agentRow(0, 2_000, 2)].join('\n') } })
+    const respond = responder(on)
+    await e.clock.fire(2)
+    await respond($, noSplit, 'a1')
+    await e.clock.fire(1)
+    await withTask($)
+    expect(e.line('5m')).toContain('subagents: split unknown')
+    expect(e.line('5m')).not.toContain('warm until')
+    expect(e.seen.states.at(-1)?.tracks.find(t => t.name === '5m')?.running).toBe(false)
+    await e.clock.fire(0.5)
+    await stopAgent($)
+    await e.clock.fire(0.5)
+    await noTasks($)
+    expect(e.line('5m')).toBe(`keepalive 5m: subagents warm until ${at(7)}; off (no background tasks), ping 0/20, keep warm 1h (default)`)
+    expect(e.line('1h')).toBe('keepalive 1h: off (no 1h cache write seen), ping 0/9, keep warm 8h (default)')
+    await e.clock.fire(4)
+    await noTasks($)
+    expect(e.line('5m')).toBe(`keepalive 5m: subagents expired ${at(7)}; off (no background tasks), ping 0/20, keep warm 1h (default)`)
+    expect(e.seen.forks).toBe(0)
+    expect(sent.count).toBe(0)
+  })
+
+  for (const [why, opts] of [
+    ['a transcript file that exists with no split in it', { files: { [AGENT_TRANSCRIPT]: [agentRow(0, 0, 1), JSON.stringify({ type: 'user', isSidechain: true })].join('\n') } }],
+    ['a transcript file that exists but cannot be read, whole or by its tail', { tail: 'missing' as const, failRead: new Set([AGENT_TRANSCRIPT]), files: { [AGENT_TRANSCRIPT]: agentRow(0, 2_000, 2) } }],
+  ] as const) {
+    test(`AC-17.3.7 ${why}: the reading stays subagents: split unknown, no later event re-reads the file, and nothing arms`, async ($, on) => {
+      const sent = sends(on)
+      const e = engine(on, { split: null, ...opts })
+      const respond = responder(on)
+      await e.clock.fire(2)
+      await respond($, noSplit, 'a1')
+      await e.clock.fire(1)
+      await stopAgent($)
+      const agentReads = () => e.seen.readPaths.filter(p => p === AGENT_TRANSCRIPT).length
+      expect(agentReads()).toBe(1)
+      await noTasks($)
+      expect(e.line('5m')).toBe('keepalive 5m: subagents: split unknown; off (no 5m cache write seen), ping 0/20, keep warm 1h (default)')
+      expect(e.line('1h')).toBe('keepalive 1h: subagents: split unknown; off (no 1h cache write seen), ping 0/9, keep warm 8h (default)')
+      await e.clock.fire(10)
+      await withTask($)
+      expect(e.line('5m')).toContain('subagents: split unknown')
+      expect(e.line('5m')).not.toContain('warm until')
+      await e.clock.fire(10)
+      expect(agentReads()).toBe(1)
+      // a second SubagentStop for the same agent is a later event too: the file is not read again and the reading does not change
+      await stopAgent($)
+      await withTask($)
+      expect(agentReads()).toBe(1)
+      expect(e.line('5m')).toContain('subagents: split unknown')
+      expect(e.line('5m')).not.toContain('warm until')
+      expect(e.seen.forks).toBe(0)
+      expect(sent.count).toBe(0)
+    })
+  }
+
+  test('AC-17.3.7 a second SubagentStop for an agent already settled from its transcript does not read the file again and does not move the settled time', async ($, on) => {
+    const e = engine(on, { split: null, files: { [AGENT_TRANSCRIPT]: agentRow(0, 2_000, 2) } })
+    const respond = responder(on)
+    await e.clock.fire(2)
+    await respond($, noSplit, 'a1')
+    await e.clock.fire(1)
+    await stopAgent($)
+    await noTasks($)
+    const agentReads = () => e.seen.readPaths.filter(p => p === AGENT_TRANSCRIPT).length
+    expect(agentReads()).toBe(1)
+    const settled = e.line('5m')
+    expect(settled).toContain(`subagents warm until ${at(7)}`)
+    await e.clock.fire(1)
+    await stopAgent($)
+    await noTasks($)
+    expect(agentReads()).toBe(1)
+    expect(e.line('5m')).toBe(settled)
+  })
+
+  test('AC-17.3.7 a stop whose transcript path names a file that does not exist is ignored: one debug line, no transcript line, no tail process, and the earlier live reading stays', async ($, on) => {
+    const e = engine(on, { split: null })
+    const respond = responder(on)
+    await e.clock.fire(2)
+    await respond($, noSplit, 'a1')
+    await noTasks($)
+    const before = [e.line('5m'), e.line('1h')]
+    expect(before[0]).toContain('subagents: split unknown')
+    await stopAgent($)
+    await settle()
+    expect(e.seen.logs).toContain('keepalive: subagent a1 has no transcript file, ignored')
+    expect(e.seen.logs.filter(l => l.startsWith('keepalive: subagent transcript'))).toEqual([])
+    expect(e.seen.runs.filter(r => r[0] === 'node')).toEqual([])
+    expect(e.seen.subagentStops).toBe(1)
+    await noTasks($)
+    expect([e.line('5m'), e.line('1h')]).toEqual(before)
+  })
+
+  // The pinged half of AC-17.3.3 needs 034.b (no subagent ping code yet): the 0 sends below show the feature is absent; the finished-agent guard itself is pinned by the pure markAgent/armUntil/onlyAgentsWarm tests in cache-state.test.ts.
+  test('AC-17.3.8 and 17.3.3 an idle teammate still counts as a warm subagent, a finished agent does not, and a resumed one counts again; no message is sent to any agent while 034.b is unbuilt', async ($, on) => {
+    const sent = sends(on)
+    const e = engine(on, { split: null, files: { [AGENT_TRANSCRIPT]: agentRow(0, 500, 2) } })
+    on('classic.TeammateIdle', async () => ({}) as never)
+    on('classic.SubagentStart', async () => ({}) as never)
+    const respond = responder(on)
+    await e.clock.fire(2)
+    await respond($, usageOf(0, 500), 'a1')
+    await e.clock.fire(1)
+    await withTask($)
+    expect(e.line('5m')).toContain('only subagent caches; subagent pings off')
+    await $.classic.TeammateIdle({ agent_id: 'a1' } as never)
+    await withTask($)
+    expect(e.line('5m')).toContain('only subagent caches; subagent pings off')
+    await stopAgent($)
+    await withTask($)
+    expect(e.line('5m')).not.toContain('only subagent caches')
+    await e.clock.fire(1)
+    await $.classic.SubagentStart({ agent_id: 'a1' } as never)
+    await withTask($)
+    expect(e.line('5m')).toContain('only subagent caches; subagent pings off')
+    expect(e.seen.forks).toBe(0)
+    expect(sent.count).toBe(0)
+  })
+
+  // Pins the main loop's own pings and 0 session.send; it holds whatever the subagent's status, as no subagent ping exists until 034.b.
+  test('AC-17.3.3 an armed main loop is pinged once a round whether a subagent is warm or finished, and no message is sent to any subagent (the absence pinned until 034.b)', async ($, on) => {
+    const sent = sends(on)
+    const e = engine(on, { split: null, files: { [AGENT_TRANSCRIPT]: agentRow(0, 500, 2) } })
+    const respond = responder(on)
+    await e.clock.fire(2)
+    await respond($, usageOf(0, 500))
+    await respond($, usageOf(0, 500), 'a1')
+    await e.clock.fire(1)
+    await withTask($)
+    await e.clock.fire(3)
+    expect(e.seen.forks).toBe(1)
+    await stopAgent($)
+    await e.clock.fire(3)
+    expect(e.seen.forks).toBe(2)
+    expect(sent.count).toBe(0)
+  })
+
+  test('LLD 3.7 rev 12 (a) an agent whose live write carried a split is not settled again from its transcript at the stop', async ($, on) => {
+    const e = engine(on, { split: null, files: { [AGENT_TRANSCRIPT]: agentRow(900, 0, 2) } })
+    const respond = responder(on)
+    await e.clock.fire(2)
+    await respond($, usageOf(0, 500), 'a1')
+    await e.clock.fire(1)
+    await stopAgent($)
+    await noTasks($)
+    expect(e.line('5m')).toBe(`keepalive 5m: subagents warm until ${at(7)}; off (no background tasks), ping 0/20, keep warm 1h (default)`)
+    expect(e.line('1h')).toBe('keepalive 1h: off (no 1h cache write seen), ping 0/9, keep warm 8h (default)')
   })
 })

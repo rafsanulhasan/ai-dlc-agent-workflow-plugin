@@ -1,5 +1,7 @@
 import { describe, expect, mock, test } from 'claude-code/testing'
 import { cacheKey } from '../hooks/diagram'
+// The test runs under bun, which has timers; the hooks lib (es2023, no DOM) does not declare them.
+declare const setTimeout: (fn: (...args: never[]) => void, ms: number) => unknown
 
 // registerDiagram (ITEM-053.c, diagramming LLD 4): an assistant message with Mermaid fences is drawn as
 // pictures through the child renderer. The engine is stubbed at its edges: `process.run` answers `node

@@ -191,7 +191,7 @@ test("keep-alive lives in hooks/keepalive/, registered by the auto-handoff modul
   }
   assert.ok(!fs.existsSync(path.join(hooksDir, "auto-handoff", "keepalive")), "hooks/auto-handoff/keepalive/ should be gone");
   assert.ok(!fs.existsSync(path.join(hooksDir, "auto-handoff", "tests", "keepalive.test.ts")));
-  assert.match(fs.readFileSync(path.join(hooksDir, "auto-handoff", "register.tsx"), "utf8"), /from '\.\.\/keepalive\/keepalive\.ts'/);
+  assert.match(fs.readFileSync(path.join(hooksDir, "auto-handoff", "register.tsx"), "utf8"), /from '\.\.\/keepalive\/keepalive'/);
 });
 
 // D3 (AAW-20261022-fold-cache-keepalive): skills that only work in Claude Code stay out of the Copilot plugin.

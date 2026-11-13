@@ -2,9 +2,9 @@
 // nothing else repeats a default. Engine-free: keepalive.ts reads the files and hands the levels in, and
 // tests/ in the repository checks the table against the README and the cache-keepalive-configure skill's schema.
 // Keep-alive has no /config rows (human decision, 2026-10-22, run AAW-20261022-cache-keepalive-init).
-import { ABSOLUTE_MIN, formatDuration, parseDuration } from './duration.ts'
-import type { Scope } from './duration.ts'
-import { parseBool } from '../auto-handoff/config.ts'
+import { ABSOLUTE_MIN, formatDuration, parseDuration } from './duration'
+import type { Scope } from './duration'
+import { parseBool } from '../auto-handoff/config'
 
 export type TrackKey = 'oneHour' | 'fiveMinute'
 export type TrackSettings = { enabled: boolean; ttl: number; pingEvery: number; keepWarmFor: number; maxPings: number }

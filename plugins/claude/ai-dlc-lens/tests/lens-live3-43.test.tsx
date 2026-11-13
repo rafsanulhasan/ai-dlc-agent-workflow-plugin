@@ -159,7 +159,7 @@ const pane = async ($: any, id: string, placement: 'dock' | 'inline', bodyColumn
   // Let the writes the earlier events left running finish first, so a write inside the span is the draw's own.
   for (let i = 0; i < 100; i++) await Promise.resolve()
   await wait(40)
-  return guard.draw(() => paneMount($, id, placement, bodyColumns))
+  return guard.draw<any>(() => paneMount($, id, placement, bodyColumns))
 }
 const paneMount = ($: any, id: string, placement: 'dock' | 'inline', bodyColumns: number) =>
   $.ui.mount({ plugin: PLUGIN, surface: 'vscode', component: 'Pane', requestId: id, props: { title: id, isFocused: false, bodyColumns, placement, scroll: { offset: 0, bodyRows: 80 }, view: {} }, viewport: { columns: 200, rows: 50 } } as any)

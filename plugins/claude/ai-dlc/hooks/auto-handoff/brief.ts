@@ -1,5 +1,5 @@
 import type { SessionMessage } from 'claude-code'
-import { renderTemplate, sectionHeadings } from './templates.ts'
+import { renderTemplate, sectionHeadings } from './templates'
 
 // Brief building.
 // Files, commits, issues and the last real request come from the transcript in code;

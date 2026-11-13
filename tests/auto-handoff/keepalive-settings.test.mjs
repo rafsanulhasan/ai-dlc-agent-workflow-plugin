@@ -4,6 +4,7 @@
 // (hooks/keepalive/tests/keepalive.test.ts); this suite needs node:fs, which that one cannot import.
 // The table is imported as TypeScript through Node's type stripping (Node 22.18 and later).
 // Run: node --test "tests/**/*.test.mjs".
+import "../support/resolve-ts-extensionless.mjs";
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";

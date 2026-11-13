@@ -143,7 +143,7 @@ const decode = (v: string) => v
 // A script scheme anywhere in the value, ignoring the whitespace and control characters browsers skip.
 const scripted = (v: string) => /javascript:/i.test(v.replace(/[\u0000- ]/g, ''))
 // Every url() target in the value is a fragment or a data: URI.
-const urlsLocal = (v: string) => [...v.matchAll(/url\(([^)]*)\)/gi)].every(m => local(m[1]))
+const urlsLocal = (v: string) => [...v.matchAll(/url\(([^)]*)\)/gi)].every(m => local(m[1] ?? ''))
 
 // CSS: every @import at-rule, every declaration with a CSS escape (it can hide a url()), and every
 // declaration whose url() is not local, removed whole.
@@ -198,7 +198,7 @@ function scrubTags(svg: string): string {
     const attrs = svg.slice(m.index + m[0].length, j)
     const kept: string[] = []
     for (const a of attrs.matchAll(ATTR)) {
-      const s = scrubAttr(a[1], a[2])
+      const s = scrubAttr(a[1] ?? '', a[2])
       if (s !== null) kept.push(s)
     }
     out += `<${m[1]}${kept.map(s => ` ${s}`).join('')}${/\/\s*$/.test(attrs) ? '/' : ''}>`

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'claude-code/testing'
-import { CHAIN_MAX, chainIdOf, chainSessions } from '../chain.ts'
+import { CHAIN_MAX, chainIdOf, chainSessions } from '../chain'
 
 // ITEM-076 (LLD rev 10, 19.1): the automatic handoff chain a session belongs to, read from the lineage records
 // the seed step writes (`lineage:<session id>` in $.store). A session with none, one started by hand, is a
