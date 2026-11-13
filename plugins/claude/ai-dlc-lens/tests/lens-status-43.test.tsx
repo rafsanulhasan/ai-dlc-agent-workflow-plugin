@@ -471,6 +471,7 @@ async function boot($: any, on: any, initial: Record<string, string>, clockEvery
   on('classic.SubagentStop', () => ({}))
   on('classic.Stop', () => ({}))
   current = fs
+  runCallId = ''
   await $.session.start({ cwd: '/', surface: 'vscode', isInteractive: true })
   await $.turn.start({ text: 'do the thing', turnId: 'm0' })
   for await (const _ of $.turn.step({ turnId: 'm', index: 0, model: 'claude-opus-5-5', messageCount: 1 })) {
@@ -479,11 +480,11 @@ async function boot($: any, on: any, initial: Record<string, string>, clockEvery
   return fs
 }
 
-/** The id of the Agent call `call` made last (the run's row in the pane is `wf-<id>`). */
-let lastCallId = ''
+/** The id of the first Agent call `call` made since `boot`: the run's workflow id, so its row in the pane is `wf-<id>` (a later call joins that run). */
+let runCallId = ''
 /** The orchestrator's Agent call `toolu_<n>` with the brief of step `code`; `spawn` false leaves it a `call:` placeholder. */
 async function call($: any, n: number, code: string, spawn = true) {
-  lastCallId = `toolu_${n}`
+  if (runCallId === '') runCallId = `toolu_${n}`
   await nextMs()
   const prompt = brief(code)
   await $.tool.call({ tool: 'Agent', subagent_type: 'ai-dlc:agent-manager', description: `d${n}`, prompt, tool_use_id: `toolu_${n}` })
@@ -1380,12 +1381,18 @@ describe('[44.3.l2.3] a timeout halt is temporary (W1), on the engine clock (W-B
 const stepDots = async (ui: any): Promise<string[]> => (await altsOf(ui)).filter(a => a.startsWith('step status: '))
 const stepStatus = async ($: any, want?: string): Promise<string[]> => {
   const ui = await $.ui.mount(pane())
-  // The pane may open on the run list: go into the run (its row is `wf-<call id>`), then open every closed step accordion
-  // (its `step-min` Button reads □), since a step heading is drawn inside its run only.
+  // The pane may open inside the run: go back to the run list, then into the run (its row is `wf-<workflow id>`, the id of the
+  // run's first Agent call) and open every closed step accordion (its `step-min` Button reads □), since a step heading is
+  // drawn inside its run only. A missing run row fails the test, naming the row and the rows the pane drew.
   if ((await ui.find({ type: 'Button', key: 'runs-back' })) !== undefined) await ui.press({ key: 'runs-back' })
-  if ((await ui.find({ type: 'Button', key: `wf-${lastCallId}` })) !== undefined) await ui.press({ key: `wf-${lastCallId}` })
+  const row = `wf-${runCallId}`
+  if ((await ui.find({ type: 'Button', key: row })) === undefined) {
+    const drawn = ((await ui.findAll({ type: 'Button' })) as any[]).map(b => String(b.key))
+    throw new Error(`stepStatus: the run row \`${row}\` is not in the pane; Buttons drawn: ${drawn.join(', ') || 'none'}`)
+  }
+  await ui.press({ key: row })
   for (const b of (await ui.findAll({ type: 'Button' })) as any[]) {
-    if (/step-min$/.test(String(b.key)) && String(b.text ?? b.label ?? b.props?.label ?? '') === '□') await ui.press({ key: b.key })
+    if (/step-min$/.test(String(b.key)) && String(b.props.label) === '□') await ui.press({ key: b.key })
   }
   let got = await stepDots(ui)
   if (want !== undefined) {
