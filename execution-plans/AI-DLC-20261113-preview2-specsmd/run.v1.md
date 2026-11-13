@@ -6,7 +6,7 @@ branch: plan/preview2
 worktree: .worktrees/preview2-planning
 session: 4091c818-fe58-4fbe-abec-ffd8f9ea53af
 version: v1
-commit: 18b160c
+commit: 41c769a
 last-record: 1.5.l1.3-documentation-writer-to-orchestrator.handback.md
 mode: sequential subagent chain (Mode 3); critique stages DW ↔ BC
 ---

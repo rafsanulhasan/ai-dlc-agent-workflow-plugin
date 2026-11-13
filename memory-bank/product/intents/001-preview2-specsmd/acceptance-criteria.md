@@ -1,20 +1,29 @@
 ---
 intent: 001-preview2-specsmd
-status: draft
+status: planned
 updated: 2026-11-13
 ---
 
 # Intent 001 — acceptance criteria
 
-Status: planned (G1 pending). These are the acceptance criteria for FR-1 to FR-16 of [requirements.md](requirements.md). They were drafted by `requirement-analyst` (step 1.1.9) and changed as `product-owner` required (step 1.1.10). The FR and AC numbers may change at G1.
+Status: planned (G1 approved 2026-11-13; amendment for FR-17 pending). These are the acceptance criteria for FR-1 to FR-17 of [requirements.md](requirements.md). They were drafted by `requirement-analyst` (step 1.1.9) and changed as `product-owner` required (step 1.1.10). FR-17 and AC-17.1 to AC-17.14 were drafted in steps 1.1.13 and 1.1.18 and changed as `product-owner` required in step 1.1.17. Step 1.5.l2.2 applied the human's decisions D24 and D25.
 
-Sources: `execution-plans/AI-DLC-20261113-preview2-specsmd/1.1.9-requirement-analyst-to-orchestrator.handback.md`, `1.1.10-product-owner-to-orchestrator.handback.md` and `decisions-2026-11-13.md` (D1-D12).
+Sources: `execution-plans/AI-DLC-20261113-preview2-specsmd/1.1.9-requirement-analyst-to-orchestrator.handback.md`, `1.1.10-product-owner-to-orchestrator.handback.md` and `decisions-2026-11-13.md` (D1-D25), plus FR-17 and the rename amendments from steps 1.1.13, 1.1.17 and 1.1.18 (`1.1.13-requirement-analyst-to-orchestrator.handback.md`, `1.1.17-product-owner-to-orchestrator.handback.md`, `1.1.18-requirement-analyst-to-orchestrator.handback.md`), and `execution-plans/AI-DLC-20261113-preview2-specsmd/1.1.19.1-system-engineer-to-orchestrator.handback.md` (the proposed keep-alive and migrate names).
 
 ## Conventions
 
 - "Legacy paths" are the seven preview1 `docs/` defaults of `artifacts` in `.ai-dlc/workflow.json` (`backlog`, `product`, `specs`, `decisions`, `narratives`, `plans`, `handoffs`).
 - "The contract" is unit 1's frozen spec (layout, vocabulary, ids, statuses, event schema, path map, fallback rule).
-- "Repo checks" are `node --test "tests/**/*.test.mjs"`, `node tools/build-copilot.mjs --check`, `node tools/validate.mjs`, `npx @anthropic-ai/claude-code plugin test ./plugins/claude/ai-dlc` and `npx @anthropic-ai/claude-code plugin test ./plugins/claude/ai-dlc-lens`. Each is quoted with its real output by the owning agent.
+- "Repo checks" are `node --test "tests/**/*.test.mjs"`, `node tools/build-copilot.mjs --check`, `node tools/validate.mjs`, `npx @anthropic-ai/claude-code plugin test ./plugins/claude/ai-dlc-engine` and `npx @anthropic-ai/claude-code plugin test ./plugins/claude/ai-dlc-lens`. Each is quoted with its real output by the owning agent.
+- "Old-name patterns" are the case-sensitive forms that FR-17 retires; AC-17.3, AC-17.4 and AC-17.9 use them:
+  - `ai-dlc:` (`ai-dlc-engine:` and `ai-dlc-lens:` do not contain it);
+  - `ai-dlc@`;
+  - `"name": "ai-dlc"`;
+  - `agent-memory/ai-dlc-<id>` for each plugin agent id;
+  - `ai-dlc-agent-workflow` not followed by `-plugin`;
+  - `plugins/claude/ai-dlc` or `plugins/copilot/ai-dlc` followed by a character other than a letter, a digit or `-`, or by the end of the line;
+  - the phrase `ai-dlc plugin`;
+  - the half-renamed lens forms `ai-dlc-engine:lens` and `ai-dlc-lens:lens`, and `ai-dlc-lens:keepalive` (keep-alive stays in the engine, D24).
 
 ## Decided
 
@@ -28,6 +37,21 @@ Decided by `product-owner` in step 1.1.10. These are closed; the ACs below alrea
 - **C-11 — dry-run.** The migration has a dry-run mode, at P1 (AC-11.11).
 - **C-12 — preview1 gate.** No preview2 change is merged into the preview1 release line before `1.0.0-preview1` is tagged; the version-bump merge is the last of these merges. Work on the preview2 planning branch itself continues.
 
+Rename-round clarifications, resolved since step 1.1.13 (ids R1 to R8 follow the 1.1.13 numbering; they are not the open Q1 to Q4 below):
+
+- **R1 — plugin source folders.** Renamed with the plugin: `plugins/claude/ai-dlc-engine/` and the generated `plugins/copilot/ai-dlc-engine/` (D19). The "(P)" conditional of the draft is gone.
+- **R2 — marketplace name.** `ai-dlc-suite`, fixed by D21 (`ai-dlc` is taken by TheBushidoCollective/ai-dlc, step 1.1.15). `ai-dlc-agent-workflow` becomes an old-name pattern allowed only on the allowlisted rename pages.
+- **R3 — hooks module and skills in one plugin.** A hooks-module plugin may also ship `skills/`, and `command.run` answers `/<plugin>:<skill>` (1.1.16 (a)); the lens commands are live-checked by AC-17.14 (c).
+- **R4 — lens commands.** Five move into the lens plugin and drop the "lens" prefix: `show`, `configure`, `init`, `kit` and `gate` (D22, D24). The human named `show` and `configure`; `kit` and `gate` were not contradicted and are confirmed at G2 (Q1). `lens-keepalive` does not move (R9).
+- **R5 — migration scope and fallbacks (product-owner, 1.1.17).** The migration moves memory folders and rewrites `agent` and the marketplace and plugin keys in the repository's settings files (R10); the lens accepts the `ai-dlc:` prefix for one release; `validate` detects and warns (no memory read fallback); ITEM-125 lists the AC-17.11 and AC-17.12 code; there is no fallback for plugin or marketplace names.
+- **R6 — display name and keywords.** "AI-DLC Engineering Team" kept; keyword `ai-dlc-engine` added (D20).
+- **R7 — FR-13.** Kept as P3, non-gating research on `ai-dlc-engine` and `ai-dlc-suite`; a clash goes to the human as a new decision (product-owner, 1.1.17).
+- **R8 — unit assignment.** Lens parts of AC-17.5, AC-17.11 and AC-17.14 go to ai-dlc-lens, the rest to ai-dlc-engine (D14; product-owner, 1.1.17).
+- **R9 — keep-alive and init (human, D24).** `lens-keepalive` stays in ai-dlc-engine because keep-alive and auto-handoff are engine features; its command is proposed as the separate skill `/ai-dlc-engine:cache-keepalive-lens [on|off]`, name and behaviour confirmed by the human at G2 (Q1); it keeps today's behaviour (toggles the lens setting `keepaliveSection`, answered by the lens hooks module, and reports figures the engine publishes), so it needs the ai-dlc-lens plugin. `/ai-dlc-engine:init` and `/ai-dlc-lens:init` are two separate commands.
+- **R10 — migration and settings (human, D25).** The migration rewrites the repository's `.claude/settings.json` and `.claude/settings.local.json` (this settles question Q2 of step 1.1.18). Its user entry point is a skill shipped with ai-dlc-engine, proposed as `/ai-dlc-engine:migrate [--dry-run]`, whose name and behaviour are confirmed by the human at G2 (C-7). Planning only: nothing is run or switched in this run.
+- **Exemption (product-owner, 1.1.17).** The migration's pure moves (100% similarity, `git mv`) and `init` `.gitkeep` scaffolding are exempt from the single-author rule for `memory-bank/`; content edits are not. ITEM-121 AC-3 (the backlog merge) is a content merge, so it is not exempt: `documentation-writer` writes it, `product-manager` owns its content (D2, D10, C-10).
+- **FR-13 retargeted.** ITEM-120 stays a P3 research item, retargeted to `ai-dlc-engine` and `ai-dlc-suite`.
+
 ## Open for G2
 
 Still open. The owner settles each in unit 1's frozen spec at G2, or where noted.
@@ -36,11 +60,19 @@ Still open. The owner settles each in unit 1's frozen spec at G2, or where noted
 |---|---|---|---|
 | C-4 | Does `validate` fail when a bank folder is missing on disk, or only check `artifacts` keys and paths? | software-architect | Keys and paths only; `init` creates the folders |
 | C-5 | Does `validate` check bank frontmatter (bolt id = folder, status values), or is that left to templates and review? | software-architect | Check bolt id = folder and status values only |
-| C-7 | The migration entry point: `/ai-dlc:workflow upgrade`, `init` or a new skill? | software-architect | `/ai-dlc:workflow upgrade` |
+| C-7 | Name and behaviour of the migration skill shipped with ai-dlc-engine (D25): a new dedicated skill, or `/ai-dlc-engine:workflow upgrade` extended? | software-architect | A skill shipped with ai-dlc-engine. Proposal (system-engineer, D25 favours a new dedicated skill): `/ai-dlc-engine:migrate [--dry-run]`, with `workflow upgrade` keeping only the template-key merge; confirmed by the human at G2 |
 | C-8 | Event file format (JSON or Markdown frontmatter), and whether handoff and hand-back records are themselves the events. | software-architect | The records are the events, with typed frontmatter |
 | C-9 | Does "anomaly.ts run.md-only drift" mean the hard-coded `run.md` in the skipped message (`anomaly.ts:263`) and the settings text (`settings.ts:109`)? If not, AC-9.3 changes. | software-architect | Yes |
-| C-13 | Does `build-copilot.mjs` copy plugin-root files such as NOTICE into `plugins/copilot/ai-dlc/`? AC-12.2 needs them there. | software-architect (with research input) | — |
+| C-13 | Does `build-copilot.mjs` copy plugin-root files such as NOTICE into `plugins/copilot/ai-dlc-engine/`? AC-12.2 needs them there. | software-architect (with research input) | — |
 | C-14 | Remove the stale `.handoff/config.md` (belongs to the third-party `agent-handoff` plugin) in unit 5, or leave it? No AC needs it; AC-5.5 only requires that ai-dlc never reads it. | unit 5 (agent-manager) | — |
+
+Open rename-round questions from step 1.1.18 (they extend the table above; the ids are Q1, Q3 and Q4, distinct from the resolved R1 to R10; Q2 is resolved, see R10):
+
+| Id | Question | Owner | Recommended (from 1.1.18) |
+|---|---|---|---|
+| Q1 | Confirm the command name and behaviour of the engine keep-alive command that takes over from `lens-keepalive` (proposed: the separate skill `/ai-dlc-engine:cache-keepalive-lens [on|off]`, which keeps today's behaviour of toggling the lens setting `keepaliveSection`, so it depends on the ai-dlc-lens plugin; the alternative is to merge it into `/ai-dlc-engine:cache-keepalive` or to retire it in favour of `/ai-dlc-lens:configure keepaliveSection`, which loses the figures report), confirm the migration skill name `/ai-dlc-engine:migrate [--dry-run]` (or give another), and confirm that `lens-kit` becomes `/ai-dlc-lens:kit` and `lens-gate` becomes `:gate`. | system-engineer proposes, human confirms at G2 | Proposal at G2 |
+| Q3 | The AC-17.14 spike is the first construction bolt of ai-dlc-engine, its lens part (c) goes to the lens unit, and the migration bolt waits for the spike's accepted hand-back. | software-architect | Yes |
+| Q4 | Apply the backlog amendments (documentation-writer writes them), add a documentation-writer stage to ITEM-121 for AC-3, and add FR-17 items once Q3 places the bolts. | product-manager | Apply; ITEM-126 is the placeholder until G3 |
 
 ## Acceptance criteria
 
@@ -58,7 +90,7 @@ Still open. The owner settles each in unit 1's frozen spec at G2, or where noted
 ### FR-2: intent, unit, bolt, story as first-class constructs
 - AC-2.1: The contract defines, for intent, unit, bolt and story: an id format, a folder or file name, required frontmatter keys, and allowed status values. Each id format has a worked example.
 - AC-2.2: A bolt's `id` equals its folder name, and the contract shows one naming pattern for it. This fixes the specsmd `{BBB}-{unit}` vs `bolt-{unit}-{N}` conflict.
-- AC-2.3: One list of bolt types exists in the contract. Every plugin file that names bolt types (agents, skills, templates, `workflow.json`) uses exactly that list. Check: grep for each type id across `plugins/claude/ai-dlc/`, and every hit uses only listed ids.
+- AC-2.3: One list of bolt types exists in the contract. Every plugin file that names bolt types (agents, skills, templates, `workflow.json`) uses exactly that list. Check: grep for each type id across `plugins/claude/ai-dlc-engine/`, and every hit uses only listed ids.
 - AC-2.4: One story status vocabulary exists, and every story template and skill uses only those values.
 - AC-2.5: The contract says which record is authoritative when the run state's stage status and an artifact's frontmatter `status` disagree. It also gives a worked example.
 - AC-2.6: The contract lists every specsmd inconsistency named in 1.1.5 Q1/Q4 and how preview2 resolves each one. That is at least: bolt id vs folder, the bolt-type list, story statuses, run-state vs frontmatter status, and the cascade statuses (`inception-complete` and others).
@@ -109,7 +141,7 @@ Still open. The owner settles each in unit 1's frozen spec at G2, or where noted
 
 ### FR-8: workflow.json, schema, validator, template, init
 - AC-8.1: The workflow schema's `artifacts` properties and required list, `workflow.mjs`'s known artifact keys, and the plugin template all agree on one key set. A test fails when they differ.
-- AC-8.2: In an empty git repository, running `/ai-dlc:init` creates `memory-bank/product/`, `memory-bank/project/` and `execution-plans/` (per the contract) and a `workflow.json` whose `artifacts` use the new paths. Then `node .ai-dlc/workflow.mjs validate` exits 0.
+- AC-8.2: In an empty git repository, running `/ai-dlc-engine:init` creates `memory-bank/product/`, `memory-bank/project/` and `execution-plans/` (per the contract) and a `workflow.json` whose `artifacts` use the new paths. Then `node .ai-dlc/workflow.mjs validate` exits 0.
 - AC-8.3: The `init` run in AC-8.2 installs the rewritten `docs-status` rule (FR-7) into `.claude/rules/` and `.github/instructions/`.
 - AC-8.4: Given a preview1 `workflow.json` (legacy `docs/` paths, no new keys), `validate` exits 0, prints the FR-15 fallback warning, and does not fail on the missing new keys.
 - AC-8.5: `validate` fails on an unknown `artifacts` key and on a bank artifact type whose path points outside `memory-bank/`. Tests cover both.
@@ -123,7 +155,7 @@ Still open. The owner settles each in unit 1's frozen spec at G2, or where noted
 
 ### FR-10: stale-path sweep with an allowlist
 - AC-10.1: A check runs as part of `node --test "tests/**/*.test.mjs"`. It searches these places for each of the seven legacy path prefixes and fails on any hit not on the allowlist:
-  - `plugins/claude/ai-dlc/` and `plugins/copilot/ai-dlc/`;
+  - `plugins/claude/ai-dlc-engine/` and `plugins/copilot/ai-dlc-engine/`;
   - `plugins/claude/ai-dlc-lens/`;
   - `tools/templates/`, `AGENTS.md`, `CLAUDE.md`, `.github/copilot-instructions.md`;
   - `.claude/rules/` and `.github/instructions/`.
@@ -136,7 +168,7 @@ Still open. The owner settles each in unit 1's frozen spec at G2, or where noted
 - AC-10.4: The check does not flag reader-facing paths that are not legacy prefixes, such as `docs/plugins.md` and `README.md`.
 
 ### FR-11: migration (D12: run on this repo before release)
-- AC-11.1: A documented migration entry point exists (name fixed in the contract; see C-7) and is described in a reader-facing guide under `docs/`.
+- AC-11.1: A documented migration entry point exists, a skill shipped with the ai-dlc-engine plugin (D25; proposed: `/ai-dlc-engine:migrate [--dry-run]`; name and behaviour fixed in the contract; see C-7), and is described in a reader-facing guide under `docs/`.
 - AC-11.2: Given a preview1 fixture repo with files at all seven legacy paths, after migration:
   - every file is at its mapped path (AC-1.6);
   - the file count of moved artifacts equals the count before;
@@ -158,27 +190,28 @@ Still open. The owner settles each in unit 1's frozen spec at G2, or where noted
 
 ### FR-12: attribution
 - AC-12.1: `THIRD_PARTY_NOTICES.md` has an entry for fabriqaai/specs.md: MIT, "Copyright (c) 2025 Fabriqa AI", the upstream URL, and the full MIT licence text.
-- AC-12.2: The ai-dlc plugin contains a NOTICE (or equivalent) and an ATTRIBUTION record. The record lists each plugin file that adapts specsmd material and what was adapted, and it is present in both `plugins/claude/ai-dlc/` and the generated `plugins/copilot/ai-dlc/`.
+- AC-12.2: The ai-dlc-engine plugin contains a NOTICE (or equivalent) and an ATTRIBUTION record. The record lists each plugin file that adapts specsmd material and what was adapted, and it is present in both `plugins/claude/ai-dlc-engine/` and the generated `plugins/copilot/ai-dlc-engine/`.
 - AC-12.3: Every file the contract or later units mark as adapted from specsmd appears in the ATTRIBUTION record. A reviewer compares the two lists and finds no file missing.
 - AC-12.4: The release is not tagged while AC-12.1 to AC-12.3 fail (priority P1, licence compliance).
 
 ### FR-13: brand-name check (research only)
-- AC-13.1: A research report exists as a lifecycle artifact. It covers at least the names in 1.1.8 A, and for each one it records:
+- AC-13.1: A research report exists as a lifecycle artifact. It covers at least the names in 1.1.8 A, plus `ai-dlc-engine` and `ai-dlc-suite` (fixed by D21), and for each one it records:
   - web search findings;
   - USPTO/EUIPO, npm, GitHub org and the Claude Code and Copilot marketplace checks, or states that each was unreachable;
   - a verdict.
-- AC-13.2: The release diff renames nothing. The plugin `name` stays `ai-dlc`, every `ai-dlc:` prefix, the `.ai-dlc/` folder and every `AI_DLC_*` variable are unchanged (same as AC-16.4).
+- AC-13.2: The report does not decide the name: the release ships the names FR-17 fixes. A tester confirms this: the report's verdicts change no file outside the report itself.
 - AC-13.3: The report is not release-gating (P3). Release can proceed with it missing.
 
 ### FR-14: release 1.0.0-preview2
 - AC-14.1: No preview2 change is merged into the preview1 release line before `1.0.0-preview1` is tagged.
-- AC-14.2: The ai-dlc plugin's version is `1.0.0-preview2` in `plugins/claude/ai-dlc/.claude-plugin/plugin.json`, in the generated Copilot manifest and in both marketplace entries.
-- AC-14.3: The release hand-back quotes the five repo checks plus `npx @anthropic-ai/claude-code plugin validate --strict ./plugins/claude/ai-dlc` and `… --strict .`, each with output showing success.
+- AC-14.2: The ai-dlc-engine plugin's version is `1.0.0-preview2` in `plugins/claude/ai-dlc-engine/.claude-plugin/plugin.json`, in the generated Copilot manifest and in both marketplace entries.
+- AC-14.3: The release hand-back quotes the five repo checks plus `npx @anthropic-ai/claude-code plugin validate --strict ./plugins/claude/ai-dlc-engine` and `… --strict .`, each with output showing success.
 - AC-14.4: Release notes under `docs/` (D11) describe:
   - the layout move;
   - the migration entry point;
   - the one-release fallback and its removal in 1.0.0;
-  - that it is a breaking release.
+  - that it is a breaking release;
+  - the plugin rename to `ai-dlc-engine`, the marketplace rename to `ai-dlc-suite` and the lens command renames, with the upgrade steps and the stored-data warning (AC-17.8).
 - AC-14.5: The backlog in `memory-bank/project/` has milestone `1.0.0-preview2` with every unit item Done (unit 10 excepted, P3), and has an item for removing the fallback in 1.0.0.
 - AC-14.6: G4 is approved by the human and go / no-go is recorded by `product-owner` in the run state before the tag.
 - AC-14.7: End to end: a fresh `init` repo (AC-8.2) and a migrated preview1 repo (AC-11.2) each complete one documented smoke walk-through with no error. The `sqa-engineer` hand-back quotes the steps and output.
@@ -203,10 +236,27 @@ Still open. The owner settles each in unit 1's frozen spec at G2, or where noted
 
 ### FR-16: Copilot parity and boundaries
 - AC-16.1: `node tools/build-copilot.mjs --check` passes on the release branch.
-- AC-16.2: Every new skill that works only in Claude Code is listed in `tools/claude-only-skills.json`. No skill in that list is present in `plugins/copilot/ai-dlc/`. `ai-dlc-lens` stays in `tools/claude-only-plugins.json` and only in `.claude-plugin/marketplace.json`.
+- AC-16.2: Every new skill in `ai-dlc-engine` that works only in Claude Code is listed in `tools/claude-only-skills.json`. No skill in that list is present in `plugins/copilot/ai-dlc-engine/`. The lens command skills live in `plugins/claude/ai-dlc-lens/skills/` and are not listed there; the engine keep-alive skill (D24) is Claude-only and stays listed (AC-17.13). `ai-dlc-lens` stays in `tools/claude-only-plugins.json` and only in `.claude-plugin/marketplace.json`.
 - AC-16.3: The agents and generic skills added or changed in preview2 contain no stack-specific terms (`dotnet`, NuGet, Stryker, C#, TypeScript, `npm`) outside a stack-routing table. A reviewer greps the changed files.
-- AC-16.4: The plugin `name` is `ai-dlc`. No `ai-dlc:` prefix, `.ai-dlc/` path or `AI_DLC_*` variable is renamed or removed. Check: the diff against `47a3480` shows no such removal.
+- AC-16.4: No `.ai-dlc/` path, `AI_DLC_*` variable or `ai-dlc-lens` plugin name is renamed or removed. Check: the diff against `47a3480` shows no such rename or removal. The plugin name, prefixes, marketplace name and lens command names are covered by FR-17.
 - AC-16.5: `node tools/validate.mjs` passes (harness sync and all `plugin validate --strict` runs).
+
+### FR-17: rename the plugin, the marketplace and the lens commands (planned; amendment pending approval)
+Old-name patterns are defined under Conventions. Parts for the ai-dlc-lens unit are marked "(lens)" (D14).
+- AC-17.1: The plugin `name` is `ai-dlc-engine` in `plugins/claude/ai-dlc-engine/.claude-plugin/plugin.json` and in the generated Copilot manifest. Both keep `displayName` "AI-DLC Engineering Team", and their `keywords` contain `ai-dlc` and `ai-dlc-engine` (D20). Both marketplace files are named `ai-dlc-suite` (D21) and list `ai-dlc-engine` with `source` at the renamed folder. The Claude marketplace also lists `ai-dlc-lens`; the Copilot one does not.
+- AC-17.2: These pass, each quoted with its real output: `npx @anthropic-ai/claude-code plugin validate --strict ./plugins/claude/ai-dlc-engine`; `… --strict .`; `… --strict ./plugins/claude/ai-dlc-lens`; `node tools/build-copilot.mjs --check`; `node tools/validate.mjs`. Neither `plugins/claude/ai-dlc/` nor `plugins/copilot/ai-dlc/` exists.
+- AC-17.3: A check in `node --test "tests/**/*.test.mjs"` fails on any old-name hit that is not on the allowlist. It searches `plugins/claude/ai-dlc-engine/`, `plugins/copilot/ai-dlc-engine/`, `plugins/claude/ai-dlc-lens/`, `tools/`, `tests/`, `AGENTS.md`, `CLAUDE.md`, `.github/copilot-instructions.md`, `.claude/rules/`, `.github/instructions/`, `.claude/skills/`, `.claude/settings.json`, both marketplace files, `README.md` and `docs/`. It does not flag `.ai-dlc/`, `AI_DLC_`, `ai-dlc-lens`, `ai-dlc-engine`, `ai-dlc-suite` or `ai-dlc-agent-workflow-plugin`, except the half-renamed lens forms. A tester puts `Agent("ai-dlc:orchestrator")` in an agent file and sees the check fail naming the file and line; `/ai-dlc:lens-gate` in a skill fails; `ai-dlc-lens:gate` is not flagged.
+- AC-17.4: The check uses the FR-10 allowlist file. Entries exist only for: (a) migration code, tests and fixtures; (b) the lens agent-type prefix fallback (AC-17.11), the `validate` detect-and-warn code (AC-17.12) and their tests; (c) reader-facing rename pages, that is the migration and upgrade guide and the preview2 release notes, the only places where `ai-dlc-agent-workflow`, `ai-dlc@…` install ids and `/ai-dlc:lens*` may appear; (d) history: `docs/handoffs/`, `execution-plans/`, intent and decision records in `memory-bank/`, and the contents of `.claude/agent-memory/`. Any other entry fails code review.
+- AC-17.5 (engine): The hooks-module command constants are `ai-dlc-engine:cache-keepalive`, `ai-dlc-engine:cache-keepalive-configure` and the engine keep-alive command that replaces `lens-keepalive` (D24; proposed: the separate skill `cache-keepalive-lens`, so the third constant is `ai-dlc-engine:cache-keepalive-lens`; name confirmed by the human at G2, Q1; if the human chooses at G2 to merge it into `cache-keepalive`, no third constant exists and AC-17.13 applies to `cache-keepalive`). A test asserts that each equals its skill's namespaced name. `npx @anthropic-ai/claude-code plugin test ./plugins/claude/ai-dlc-engine` passes. Each changed hooks folder has an `ATTRIBUTION.md` entry. The lens side of this AC (the lens's use of these names) goes to ai-dlc-lens.
+- AC-17.6: `init` writes `"agent": "ai-dlc-engine:orchestrator"` and creates `.claude/agent-memory/ai-dlc-engine-<agent>/` (the pattern is confirmed by AC-17.14). `manage-memory`, `agent-management` and the build's Copilot platform note name it. AC-17.3 passes.
+- AC-17.7: `workflow.mjs catalog` records the plugin name `ai-dlc-engine`. `validate` exits 0 on the preview2 default template. The agent ids in `workflow.json` stay bare.
+- AC-17.8: The README, `docs/plugins.md`, the `CLAUDE.md` dev setup, both plugin READMEs, the lens README and MANUAL-CHECKS, and the upgrade guide show `/plugin install ai-dlc-engine@ai-dlc-suite`, `copilot plugin install ai-dlc-engine@ai-dlc-suite`, `claude plugin install ai-dlc-engine@ai-dlc-suite --scope local`, `ai-dlc-lens@ai-dlc-suite` and the `/ai-dlc-lens:*` commands. The upgrade steps from preview1 are: 1 remove marketplace `ai-dlc-agent-workflow` (and the plugin); 2 add `ai-dlc-suite`; 3 install `ai-dlc-engine` (and `ai-dlc-lens`); 4 run the migration skill (D25). The guide also has a warning before step 1 that removing a marketplace deletes the plugin's stored data and settings, a note that managed `enabledPlugins` need an administrator's edit, and the old-to-new lens command table, which shows that keep-alive stays an engine command. AC-17.3 passes over these files, with category (c) of AC-17.4 the only exception.
+- AC-17.9 (dogfood): Before go / no-go the migration has run on this repository. No `.claude/agent-memory/ai-dlc-<plugin-agent-id>/` remains; each `ai-dlc-engine-<id>/` holds every file of the old folder; `.claude/settings.json` has `"agent": "ai-dlc-engine:orchestrator"`, the `ai-dlc-suite` marketplace key and no `ai-dlc-agent-workflow` key (the migration skill rewrote them, D25); the repo checks pass; the hand-back quotes the command and its output.
+- AC-17.10: Given a fixture with `ai-dlc-<id>/` memory folders, `"agent": "ai-dlc:orchestrator"`, and `extraKnownMarketplaces` and `enabledPlugins` keys under `ai-dlc-agent-workflow` in `.claude/settings.json` and `.claude/settings.local.json`: (a) each folder moves, the file count is equal, and `git log --follow` keeps the history of at least one file; (b) `agent` is rewritten; (c) project-local and non-plugin `ai-dlc-*` folders are untouched; (d) a second run changes nothing; (e) when both folders exist, identical same-name files are deduplicated, and a differing same-name file gives a non-zero exit, no change, and a message naming both paths, with `MEMORY.md` lines merged as a union; (f) a dry run lists every move, rewrite and conflict, changes nothing, and is non-zero only on a conflict; (g) the marketplace key becomes `ai-dlc-suite` and the plugin keys become `ai-dlc-engine@ai-dlc-suite` and `ai-dlc-lens@ai-dlc-suite`, other plugins' keys and the `repo` value are untouched, and an absent `settings.local.json` is skipped without error. Tests in `tests/` cover (a) to (g), through the entry point of the migration skill (D25).
+- AC-17.11 (lens): For one release the lens recognises agent types and run-record workers that carry `ai-dlc:` or `ai-dlc-engine:` and shows the same agent. Pre-rename run records display unchanged. A lens test covers both prefixes. The code carries `fallback: remove in 1.0.0`.
+- AC-17.12: `validate` emits exactly one warning per invocation when a `.claude/agent-memory/ai-dlc-<plugin-agent-id>/` folder exists or the `agent` in `.claude/settings.json` starts with `ai-dlc:`. The warning goes to stderr and the exit code is unchanged (AC-15.4). It names what it found and the migration skill (D25). There is no warning otherwise. Tests cover both cases. The code carries the fallback marker.
+- AC-17.13 (lens, D22, D24): Each of `show`, `configure`, `init`, `kit` and `gate` has a `SKILL.md` in `plugins/claude/ai-dlc-lens/skills/<name>/`. No `lens*` skill remains under `plugins/claude/ai-dlc-engine/skills/`, and there is no `keepalive` skill in the lens plugin. `tools/claude-only-skills.json` lists none of the five, and none is in `plugins/copilot/ai-dlc-engine/`. The lens hooks module registers exactly the five lens commands `ai-dlc-lens:show`, `:configure`, `:init`, `:kit` and `:gate`, and a test asserts that each equals `ai-dlc-lens:<skill folder name>`; it additionally answers the engine keep-alive command (proposed `ai-dlc-engine:cache-keepalive-lens`), which is not a lens skill and is excluded from that folder-name test. The keep-alive command that replaces `lens-keepalive` is an ai-dlc-engine skill (D24; proposed: `cache-keepalive-lens`, name confirmed by the human at G2, AC-17.5; if merged, `cache-keepalive` itself). It keeps today's behaviour: it shows or hides keep-alive in the lens Cache Lab by toggling the lens setting `keepaliveSection` in `.ai-dlc/lens.json`, which the lens hooks module answers, and it reports figures the engine publishes, so it depends on the ai-dlc-lens plugin being installed. It is listed in `tools/claude-only-skills.json` and absent from `plugins/copilot/ai-dlc-engine/`. `/ai-dlc-engine:init` and `/ai-dlc-lens:init` both exist as separate commands. No `/ai-dlc:lens*` command is registered or aliased. `plugin test ./plugins/claude/ai-dlc-lens` and `plugin validate --strict ./plugins/claude/ai-dlc-lens` pass, quoted.
+- AC-17.14 (spike, runs first): The first construction bolt is a spike, and the migration bolt does not start before its hand-back is accepted. It runs live in Claude Code with a scratch marketplace under `.scratch/`. The hand-back quotes the commands, the output and the Claude Code version, and records: (a) which `.claude/agent-memory/` folder a `memory: project` agent of a plugin named `ai-dlc-engine` writes; (b) what happens to the installed plugin, its `enabledPlugins` entries and its stored data and settings when marketplace `ai-dlc-agent-workflow` is removed, `ai-dlc-suite` is added and the plugin is reinstalled; (c, lens) whether `/ai-dlc-lens:show`, run from a skill in the lens plugin, reaches the command the lens hooks module registered. If (a) differs from `ai-dlc-engine-<agent>`, the folder pattern in AC-17.6, 17.9, 17.10 and 17.12 is replaced with the observed one through spec-driven-development before the migration bolt. If (b) contradicts AC-17.8, AC-17.8 is corrected the same way. If (c) fails, it goes to the human. In every case the human is told.
 
 ## Glossary (draft — fixed in unit 1 at G2)
 
@@ -225,3 +275,6 @@ Still open. The owner settles each in unit 1's frozen spec at G2, or where noted
 - **Memory bank project** (`memory-bank/project/`): knowledge about how the work is run (backlog, DevOps flows, harness engineering, standards).
 - **Engineering state / knowledge state**: the two halves of "done". Engineering is build, tests, reviews and gates. Knowledge is the bank content being current, written by `documentation-writer`, passed by `brutal-critique`, and with statuses that match the run state.
 - **Legacy path**: one of the seven preview1 `docs/` artifact defaults. It is read only through the fallback until 1.0.0.
+- **ai-dlc-engine**: the plugin that was named `ai-dlc` before preview2. Avoid: "ai-dlc plugin".
+- **ai-dlc-suite**: the marketplace that was named `ai-dlc-agent-workflow` before preview2.
+- **Family names**: `.ai-dlc/` and `AI_DLC_*`, shared by ai-dlc-engine and ai-dlc-lens and not renamed (D16).
