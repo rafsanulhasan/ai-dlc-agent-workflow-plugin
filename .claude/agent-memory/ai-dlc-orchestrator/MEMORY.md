@@ -18,3 +18,4 @@
 - [AAWP as agent team](feedback_aawp-as-agent-team.md) — every AAWP round runs as a peer-to-peer team, never a lone agent-manager subagent
 - [herdr decisions](project_herdr-decisions.md) — watch/run-in-pane/off, fallback detection, file-main + pane-copy fallback; bgIsolation none
 - [Preview2 specsmd decisions](project_preview2-specsmd-decisions.md) — specsmd natively; memory-bank; events; plugins engine + lens @ marketplace forgeline
+- [Tag after everything merged](feedback_tag-after-everything-merged.md) — no code after the tag; notes list all; human deletes tags (classifier blocks agents)
