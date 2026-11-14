@@ -8,7 +8,8 @@ import { fileURLToPath } from "node:url";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const REPO = path.resolve(HERE, "..", "..", "..");
-export const HERDR_MJS = path.join(REPO, "plugins", "claude", "ai-dlc", "skills", "herdr", "scripts", "herdr.mjs");
+// HERDR_MJS_UNDER_TEST points a run at a mutated copy of the script (red-before-green); unset, it is the shipped script.
+export const HERDR_MJS = process.env.HERDR_MJS_UNDER_TEST || path.join(REPO, "plugins", "claude", "ai-dlc", "skills", "herdr", "scripts", "herdr.mjs");
 export const SCHEMA = path.join(REPO, "plugins", "claude", "ai-dlc", "skills", "herdr", "templates", "herdr.schema.json");
 const FAKE_EXE = path.join(HERE, "fake-exe.mjs");
 const WIN = process.platform === "win32";

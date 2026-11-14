@@ -362,8 +362,53 @@ function liveIds() {
   return panes ? new Set(panes.map((p) => p?.pane_id).filter((x) => typeof x === "string")) : undefined;
 }
 
+// ---- placement: where a run's next pane goes ---------------------------------------------------------
+// Probed on herdr 0.9.5 / Windows: `pane layout --pane <id>` answers the tab of that pane with every pane's rect in cells
+// (`result.layout.panes[].rect`: x, y, width, height; no border cells), and a split halves its pane.
+/** The size a pane stays readable at: columns and rows of a watch view (its header, task lines and records). */
+export const READABLE = { cols: 50, rows: 10 };
+
+const isRect = (r) => isObj(r) && ["x", "y", "width", "height"].every((k) => Number.isInteger(r[k]) && r[k] >= 0) && r.width > 0 && r.height > 0;
+
+/**
+ * The split for a run's next pane, among the run's own live panes in one tab (`group`, ids): for each of them and each
+ * direction, the smaller half is (width, ⌊height/2⌋) down or (⌊width/2⌋, height) right, scored min(cols/50, rows/10); the
+ * best score wins. Ties: the top-left pane first, then down before right. So panes stack down while the halves stay
+ * readable, and a new column starts when one more row of panes would make a pane too small. Panes outside the group (the
+ * session's own pane, other runs' panes) are never split. Pure. { pane, direction, cols, rows, readable } or undefined
+ * when no group pane has a rect in `layoutPanes`.
+ */
+export function choosePlacement(layoutPanes, group) {
+  const ids = new Set(group);
+  const mine = (Array.isArray(layoutPanes) ? layoutPanes : []).filter((p) => isObj(p) && typeof p.pane_id === "string" && ids.has(p.pane_id) && isRect(p.rect))
+    .sort((a, b) => a.rect.y - b.rect.y || a.rect.x - b.rect.x);
+  let best;
+  for (const p of mine) {
+    const { width, height } = p.rect;
+    for (const direction of ["down", "right"]) {
+      const cols = direction === "right" ? Math.floor(width / 2) : width;
+      const rows = direction === "down" ? Math.floor(height / 2) : height;
+      const score = Math.min(cols / READABLE.cols, rows / READABLE.rows);
+      if (!best || score > best.score) best = { pane: p.pane_id, direction, cols, rows, score };
+    }
+  }
+  if (!best) return undefined;
+  const { score, ...place } = best;
+  return { ...place, readable: place.cols >= READABLE.cols && place.rows >= READABLE.rows };
+}
+
+/** choosePlacement over the live `pane layout` of the tab that holds the run's newest live pane; undefined when unavailable. */
+function placeInLayout(livePanes) {
+  const lay = herdrJson(["pane", "layout", "--pane", livePanes[0].pane]);
+  const panes = lay.ok ? lay.json?.result?.layout?.panes : undefined;
+  return Array.isArray(panes) ? choosePlacement(panes, livePanes.map((p) => p.pane)) : undefined;
+}
+
 /**
  * Split, label and start one pane. { ok, pane?, reason?, warnings }.
+ * Placement: the run's first pane goes right of the anchor; every later one splits a live pane of the same run, chosen
+ * by choosePlacement on the tab's layout, so a run's panes stay together and readable. Without a usable layout (the
+ * call fails, or none of the run's panes is in it) it splits down from the run's newest live pane, as before.
  * The only place that closes a pane after a failure: once the split succeeded, any later failure closes the new pane
  * here, once, and its callers (open, run) never close it again.
  */
@@ -373,9 +418,12 @@ function openPane({ root, runId, det, step, agent, job, mode, live }) {
   if (anchor && det.source !== "cached" && !fs.existsSync(path.join(stateDir(root, runId), "anchor.json"))) {
     atomicWrite(path.join(stateDir(root, runId), "anchor.json"), `${JSON.stringify({ pane: anchor, source: det.source, at: new Date().toISOString() })}\n`);
   }
-  const prior = runPanes(root, runId).find((p) => !live || live.has(p.pane));
+  const livePanes = runPanes(root, runId).filter((p) => !live || live.has(p.pane));
+  const prior = livePanes[0];
   const split = (target, dir) => herdrJson(["pane", "split", ...(target ? [target] : ["--current"]), "--direction", dir, "--no-focus", "--cwd", root]);
-  let r = prior ? split(prior.pane, "down") : split(anchor, "right");
+  const place = prior ? placeInLayout(livePanes) : undefined;
+  if (place && !place.readable) warnings.push(`layout: the new pane gets about ${place.cols}x${place.rows} cells, below ${READABLE.cols}x${READABLE.rows}`);
+  let r = place ? split(place.pane, place.direction) : prior ? split(prior.pane, "down") : split(anchor, "right");
   if (!r.ok && r.errorCode === "pane_not_found" && prior) r = split(anchor, "right");
   if (!r.ok) return { ok: false, reason: `pane split failed: ${r.reason}`, warnings };
   const pane = paneIdFrom(r.json);
