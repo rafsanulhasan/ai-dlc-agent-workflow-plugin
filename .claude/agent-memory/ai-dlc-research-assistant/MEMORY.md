@@ -1,0 +1,3 @@
+- [claude-code-subagent-memory-paths](reference_claude-code-subagent-memory-paths.md) — memory scopes map to fixed dirs; no relocation option documented (2026-11-14)
+- [instruction-import-support](reference_instruction-import-support.md) — which hosts expand @imports in rules/instructions; Copilot dirs env var (2026-11-14)
+- [standards-and-rule-twins](reference_standards-and-rule-twins.md) — specsmd/weighingms standards shape; sync-harness rule-twin comparison; stub caveats

@@ -15,3 +15,4 @@
 - [GPG-signed commits](feedback_gpg-signed-commits.md) — never disable signing; tell the human when pinentry waits; commit own paths only
 - [herdr decisions](project_herdr-decisions.md) — watch/run-in-pane/off, fallback detection, file-main + pane-copy fallback; bgIsolation none
 - [Preview2 specsmd decisions](project_preview2-specsmd-decisions.md) — specsmd natively; memory-bank; events; engine + lens @ forgeline
+- [Store critic hand-backs](feedback_store-critic-handbacks.md) — critics won't write their hand-back; store it yourself; no \a in python path strings

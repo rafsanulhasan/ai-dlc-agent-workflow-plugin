@@ -6,8 +6,8 @@ branch: plan/preview2
 worktree: .worktrees/preview2-planning
 session: eed2556b-14f1-4e26-a785-041203a2455a (auto-handoff from c4ce9349, 2026-11-14)
 version: v2 (scope widened 2026-11-14: feature 8, the .forgeline restructure, changes code — lifts 'planning only' for feature 8 alone; v1.1 is history)
-commit: ef489e4
-last-record: 11-orchestrator-to-devops-engineer.handoff.md
+commit: 8a6b18c
+last-record: 12-orchestrator-to-devops-engineer.handoff.md
 mode: sequential subagent chain (Mode 3); critique stages DW ↔ BC
 ---
 
@@ -126,7 +126,8 @@ Lifecycle AAWP (code + docs). Mode: research as parallel subagents; AAWP change/
 | 1.5.l5.5.1–.3 | G3 gate critique round 3 (final, D78) | brutal-critique ×3 | done — PASS ×3, 0 B / 0 M; Minors into gate record 10 | 1.5.l5.5.1–.3 | 1.5.l5.5.1, .2, .3 (stored by orchestrator) | passed |
 | 10 | G3 gate (+ G1 amendment D69, G2 amendment D65); supersedes 7 | human | done — APPROVED 2026-11-14 (D79–D82) | 10 | — (human, in chat) | approved |
 | 1.5.l6.1 | post-gate: remove 'pending' markers, record D79–D82 | documentation-writer | done — 65 files; bolts/stories status ready; ADR-0017 Accepted; r1/r2 deltas approved; D81, D82 recorded; link check 219/0; remaining 'pending' hits are history/templates/delta r3 only | (message) | 1.5.l6.1 | passed |
-| 11 | G3 commit | devops-engineer | in-progress | 11 | | |
+| 12 | commit pending + merge origin/main into plan/preview2 (human request) | devops-engineer | in-progress | 12 | | |
+| 11 | G3 commit | devops-engineer | done — 8a6b18c (G, 101 files; model-metadata/.scratch excluded; tree clean — verified) | 11 | 11 | passed |
 | 8.3 | tests | sqa-engineer (team) | done — new tests/build-standards.test.mjs (26), step-0 tests in stop-sync-then-check, CI-order test in validate-script; relaxed tests/workflow/handoff-naming.test.mjs (ignores artifacts.handoffs) → flagged to 8.4.2; `node --test "tests/**/*.test.mjs"`: 1299 tests, 1292 pass, 0 fail, 7 skipped (one timing flake passed on rerun) | 8.3 (agent-manager) | 8.3-sqa-engineer-to-agent-manager | passed |
 | 8.3.l1 | tests fix round 1 (from 8.4.1 warnings) | sqa-engineer ↔ agent-manager (team) | done — agent-manager fixed parser (splitFlow; comma globs refused exit 2; unknown/repeated keys invalid; YAML-ambiguous descriptions quoted; atomic writes; --help); sqa tests rewritten + budget test; `node --test "tests/**/*.test.mjs"`: 1307 tests, 1300 pass, 0 fail, 7 skipped | — | (messages) | passed |
 | 8.4.1 | code review standards | code-reviewer-standards (team) | done — round 1 approved 0 B / 3 W / 5 S; fix round 8.4.l1.1 re-review approved, 0 B / 0 W | 8.4.l1.1 (agent-manager) | 8.4.1, 8.4.1.l1.1 | passed |
@@ -147,4 +148,4 @@ herdr: not detected (HERDR_ENV unset).
 - Spec housekeeping found by requirement-analyst: spec:4/:11 still draft / G2 pending; §17 O-1, O-2, O-3, O-5 still open though D39, D41 decided them.
 
 ## Next action
-G3 approved (record 10). documentation-writer removes the pending markers for D79/D80 and records D81 (AC-16.6 non-blocking) and D82; then devops-engineer commits (step 11, signed). Then notify product-manager. No bolt starts without the human's explicit go.
+Planning complete: G3, G1 amendment and G2 amendment approved and committed (8a6b18c on plan/preview2, not pushed). Feature 8 done. Waiting for the human's explicit go before any bolt starts (first: bolt 001 spike, W1, with the human's 2–4 h session on days 1–2, D82). Uncommitted: this run-state update and the two 11 records — commit with the next change.
