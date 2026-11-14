@@ -3,16 +3,16 @@ id: 011-engine-path-sweep
 unit: engine
 intent: 001-preview2-specsmd
 type: simple-bolt
-status: draft
+status: ready
 stories: [021-stale-names-check]
-requires_bolts: [009-engine-rename, 010-lens-rename, 012-engine-migrate-plan, 014-engine-migrate-settings]
+requires_bolts: [009-engine-rename, 010-lens-rename, 012-engine-migrate-plan, 014-engine-migrate-settings, 015-engine-forgeline-root]
 enables_bolts: []
 created: 2026-11-14
 ---
 
 # Bolt 011-engine-path-sweep
 
-**Planned:** nothing here is built yet. The bolt is a draft until the human approves G3; the step codes are assigned when the bolt runs, so they read "—" for now.
+**Planned:** nothing here is built yet. The bolt is `ready` (G3 approved, 2026-11-14, D79); the step codes are assigned when the bolt runs, so they read "—" for now.
 
 ## Objective
 
@@ -38,7 +38,7 @@ AAWP simple-bolt: change → test → code-review; `docs` and `critique` run aft
 
 ## Success criteria
 
-AC-10.1 to AC-10.4, AC-16.4[011], AC-17.3, AC-17.4; plus the Definition of Done.
+AC-10.1 to AC-10.4, AC-16.4[011], AC-17.3, AC-17.4, AC-18.8 (G1 amendment D69, approved at G3, 2026-11-14 (D80)); plus the Definition of Done.
 
 The Definition of Done that holds for every bolt is in [the task plan](../../../../../../../project/plans/001-preview2-specsmd.tasks.md).
 
@@ -58,3 +58,4 @@ Paths: `E/` is the engine plugin folder (`plugins/claude/ai-dlc/` until bolt 009
 - Creates: `tests/stale-names.test.mjs`, `tools/stale-names.allowlist.json`. The test file accepts allowlist paths that do not exist yet, and its own regex strings are allowlisted.
 - Edits: the leftover list after S-7, expected to be small (about 15 files or fewer): whatever the sweep finds in engine-owned paths. A hit in a lens-owned path returns to bolt 010 as a fix round.
 - Expected allowlist entries (decided when the bolt runs): migration code and fixtures, `tests/fixtures/grammar/**`, the hook and lens fallback tests, the files that end at 1.0.0 (`runs-root.ts`, `engine-names.ts`), the `validate` detect code, the rename pages.
+- The stale-name list also holds the old `.ai-dlc/` config paths and the bank and run defaults without `.forgeline/` (bolt 015; +0.25 d, inside this bolt's range).

@@ -3,13 +3,13 @@ spec: 001-preview2-specsmd
 revision: r2
 base: memory-bank/product/specs/001-preview2-specsmd.spec.md (G2-approved, D38)
 intent: 001-preview2-specsmd
-status: draft
+status: ready
 created: 2026-11-14
 ---
 
 # Spec 001, revision delta r2 (G2 amendment, feature 8; input to G3)
 
-**In progress (G3 pending):** this delta changes the frozen spec 001 only when the human approves it at G3 (D64, D65). Until then the frozen text stands. It is a delta file, not an edit of the spec, because the spec says that after G2 it changes only through revision deltas (spec header, *Status*), and the r1 delta is written the same way. The front matter `status: draft` is this delta's own status, not the spec's.
+**Approved at G3, 2026-11-14 (D80):** this delta changes the frozen spec 001 (D64, D65) now that the human has approved it. The spec file itself is not edited by this record; this delta is the text of record, and it is written as a delta file because the spec says that after G2 it changes only through revision deltas (spec header, *Status*), as the r1 delta does. The front matter `status: ready` is this delta's own status, not the spec's.
 
 Content by `software-architect` (step 8.1.6) and `requirement-analyst` (step 8.1.7); written to the bank by `documentation-writer` (D2, step 8.5.3). Line numbers ("spec:N") refer to `memory-bank/product/specs/001-preview2-specsmd.spec.md` as approved at G2.
 
@@ -48,7 +48,7 @@ with:
 
 Informative; it describes this repository only and needs no G2 approval.
 
-> This repository dogfoods the layout under `.forgeline/` (D53, D58): its `artifacts` settings prefix every bank and run path above with `.forgeline/` (`.forgeline/memory-bank/…`, `.forgeline/execution-plans/…`). The plugin default stays as shown until bolt 015 (`.forgeline` root, proposed in D66) ships.
+> This repository dogfoods the layout under `.forgeline/` (D53, D58): its `artifacts` settings prefix every bank and run path above with `.forgeline/` (`.forgeline/memory-bank/…`, `.forgeline/execution-plans/…`). The plugin default stays as shown until bolt 015 (the `.forgeline` root; D66 and D70 are decided, FR-18 is approved at G3, 2026-11-14 (D80)) ships.
 
 ## 1.3 §2.2 (spec:79, :80)
 
@@ -126,7 +126,7 @@ with:
 
 ## 1.6 ACs and glossary
 
-The wording was confirmed by `requirement-analyst` (step 8.1.7) and is written into [the acceptance criteria](../intents/001-preview2-specsmd/acceptance-criteria.md) itself, each item marked as a G2 amendment (D65) pending the human's approval at G3. The AC file is the text of record; this delta only lists what changed there:
+The wording was confirmed by `requirement-analyst` (step 8.1.7) and is written into [the acceptance criteria](../intents/001-preview2-specsmd/acceptance-criteria.md) itself, each item marked as a G2 amendment (D65) approved at G3, 2026-11-14 (D80). The AC file is the text of record; this delta only lists what changed there:
 
 - **C-10** (AC file, *Decided*): the one exception is the standards folder, where the Blocker applies to any agent other than `agent-manager`.
 - **AC-7.1:** the `docs-status` rule excludes the standards folder from the closed list of documentation and lists the standards under agent artifacts, written by `agent-manager`.

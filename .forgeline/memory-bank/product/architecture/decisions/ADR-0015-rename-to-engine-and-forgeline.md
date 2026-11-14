@@ -1,6 +1,6 @@
 # ADR-0015: The plugin becomes `engine`, the marketplace `forgeline`; family names stay; one migrate skill
 
-- **Status:** Accepted (G2 approved, D38). Planned: nothing is built. The two points that were open at G2, the name of the migrate skill and the removal of identical duplicates during migration (below), were decided in D39.
+- **Status:** Accepted (G2 approved, D38). Planned: nothing is built. The two points that were open at G2, the name of the migrate skill and the removal of identical duplicates during migration (below), were decided in D39. The `.ai-dlc/` "Unchanged" row and its matching rejected-alternative bullet are to be superseded by ADR-0018 (planned; bolt 015, story engine/026; D66).
 - **Date:** 2026-11-13
 - **Deciders:** software-architect (1.1.14, 1.1.20), system-engineer (1.1.19), human at G2; decisions D15 to D25, D28, D30, D31, D32, D33, D34, D35, D36 and D37.
 

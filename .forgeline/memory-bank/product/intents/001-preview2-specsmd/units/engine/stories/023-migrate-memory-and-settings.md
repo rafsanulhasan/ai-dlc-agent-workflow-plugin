@@ -2,7 +2,7 @@
 id: 023-migrate-memory-and-settings
 unit: engine
 intent: 001-preview2-specsmd
-status: draft
+status: ready
 priority: must
 bolt: 014-engine-migrate-settings
 created: 2026-11-14
@@ -10,7 +10,7 @@ created: 2026-11-14
 
 # engine/023 — Memory folders and settings move to the new names
 
-**Planned:** nothing here is built yet. The story belongs to [bolt 014-engine-migrate-settings](../bolts/014-engine-migrate-settings/bolt.md), which has not started (G3 pending).
+**Planned:** nothing here is built yet. The story belongs to [bolt 014-engine-migrate-settings](../bolts/014-engine-migrate-settings/bolt.md), which has not started (G3 approved, 2026-11-14, D79).
 
 ## Story
 

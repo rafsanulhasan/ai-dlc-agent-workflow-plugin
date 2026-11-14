@@ -1,6 +1,6 @@
 # ADR-0014: `documentation-writer` is the single writer of `memory-bank/`
 
-- **Status:** Accepted (G2 approved, D38); amended by [ADR-0017](ADR-0017-standards-are-agent-artifacts.md) (D57): the standards folder is written by `agent-manager`. **In progress:** feature 8 is still being reviewed. In this repository the standards exception and the `docs-status` wording are built (ADR-0017); the rest of the rule change for consumer repositories is bolt 003 and is planned.
+- **Status:** Accepted (G2 approved, D38); amended by [ADR-0017](ADR-0017-standards-are-agent-artifacts.md) (D57; approved at G3, 2026-11-14 (D80)): the standards folder is written by `agent-manager`. In this repository the standards exception and the `docs-status` wording are built (ADR-0017); the rest of the rule change for consumer repositories is bolt 003 and is planned.
 - **Date:** 2026-11-13
 - **Deciders:** software-architect (1.1.14, 1.1.20), system-engineer (1.1.19), human at G2; the principle is human decision D2.
 

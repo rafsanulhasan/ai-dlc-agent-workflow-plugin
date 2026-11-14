@@ -1,6 +1,6 @@
 # ADR-0017: Standards are agent artifacts, written by `agent-manager` (exception to ADR-0014)
 
-- **Status:** Accepted (human decision D57, 2026-11-14). **In progress:** feature 8 is still being reviewed, and the G2 amendment of spec 001 that this ADR implies is pending the human's approval at G3 (D65). Built so far, in this repository only (steps 8.2, 8.2.l1.1): the standards folder, its generator and the wording of `docs-status`. For consumer repositories it ships with the rest of ADR-0014's rule change (bolt 003, planned).
+- **Status:** Accepted (human decision D57, 2026-11-14; the G2 amendment of spec 001 that it implies is approved at G3, 2026-11-14 (D80)). Built in this repository only (steps 8.2, 8.2.l1.1): the standards folder, its generator and the wording of `docs-status`. For consumer repositories it ships with the rest of ADR-0014's rule change (bolt 003, planned).
 - **Date:** 2026-11-14
 - **Deciders:** human (D54, D56, D57); software-architect (8.1.6). Amends [ADR-0014](ADR-0014-single-writer-of-memory-bank.md), which stays Accepted.
 

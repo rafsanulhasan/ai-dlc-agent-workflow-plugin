@@ -2,7 +2,7 @@
 id: 001-rename-platform-facts
 unit: engine
 intent: 001-preview2-specsmd
-status: draft
+status: ready
 priority: must
 bolt: 001-engine-rename-spike
 created: 2026-11-14
@@ -10,7 +10,7 @@ created: 2026-11-14
 
 # engine/001 — Platform facts the rename depends on
 
-**Planned:** nothing here is built yet. The story belongs to [bolt 001-engine-rename-spike](../bolts/001-engine-rename-spike/bolt.md), which has not started (G3 pending).
+**Planned:** nothing here is built yet. The story belongs to [bolt 001-engine-rename-spike](../bolts/001-engine-rename-spike/bolt.md), which has not started (G3 approved, 2026-11-14, D79).
 
 ## Story
 

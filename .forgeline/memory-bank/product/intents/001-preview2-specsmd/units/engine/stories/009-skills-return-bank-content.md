@@ -2,7 +2,7 @@
 id: 009-skills-return-bank-content
 unit: engine
 intent: 001-preview2-specsmd
-status: draft
+status: ready
 priority: must
 bolt: 003-engine-authorship-rule
 created: 2026-11-14
@@ -10,7 +10,7 @@ created: 2026-11-14
 
 # engine/009 — Skills return bank content plus a Docs update request
 
-**Planned:** nothing here is built yet. The story belongs to [bolt 003-engine-authorship-rule](../bolts/003-engine-authorship-rule/bolt.md), which has not started (G3 pending).
+**Planned:** nothing here is built yet. The story belongs to [bolt 003-engine-authorship-rule](../bolts/003-engine-authorship-rule/bolt.md), which has not started (G3 approved, 2026-11-14, D79).
 
 ## Story
 

@@ -3,7 +3,7 @@ id: 001-engine-rename-spike
 unit: engine
 intent: 001-preview2-specsmd
 type: spike-bolt
-status: draft
+status: ready
 stories: [001-rename-platform-facts]
 requires_bolts: []
 enables_bolts: [009-engine-rename, 010-lens-rename, 014-engine-migrate-settings]
@@ -13,7 +13,7 @@ time_box: 2d
 
 # Bolt 001-engine-rename-spike
 
-**Planned:** nothing here is built yet. The bolt is a draft until the human approves G3; the step codes are assigned when the bolt runs, so they read "—" for now.
+**Planned:** nothing here is built yet. The bolt is `ready` (G3 approved, 2026-11-14, D79); the step codes are assigned when the bolt runs, so they read "—" for now.
 
 ## Objective
 
@@ -51,7 +51,7 @@ The Definition of Done that holds for every bolt is in [the task plan](../../../
 - Finding (a) can change the memory-folder pattern in AC-17.6, AC-17.9, AC-17.10 and AC-17.12 through `spec-driven-development` before bolt 009.
 - "The migration bolt" of AC-17.14 is bolt 014 (C1): bolt 012 does not wait for this hand-back, bolt 014 does.
 - Findings (c), (h) and (i) need an interactive session (`/reload-plugins`, a new session, panes): plan for steps the human runs. The probe writes each check as a numbered script, so the human only runs it and pastes the output.
-- **Pending the human:** a 2 to 4 hour session on days 1 and 2 of W1 (30 to 60 minutes per check, plus 0.5 to 1 hour to read the hand-back and accept it), so that a failed (c) or a changed (a) is known while 002 still runs. If the human is unavailable, bolt 009 slips, and the intent end date moves with it.
+- **Confirmed by the human (D82):** a 2 to 4 hour session on days 1 and 2 of W1 (30 to 60 minutes per check, plus 0.5 to 1 hour to read the hand-back and accept it), so that a failed (c) or a changed (a) is known while 002 still runs. If the human is unavailable, bolt 009 slips, and the intent end date moves with it.
 - `time_box` is a convention, a string `<n>d`; `validate` does not check it (C2).
 - Shared bank files (the unit-brief *Bolts* sections, `units.md`, the task-plan status columns and `memory-bank/project/backlog.md`) change once per wave, in one `documentation-writer` stage after the wave's merges (S-8), not in this bolt's run. This bolt's own `bolt.md` and stories stay inside its run.
 - A conflict in a generated path is never resolved by hand: take either side and run `node tools/build-copilot.mjs`. A conflict in a `.claude/agent-memory/**` index file is an append conflict: keep both lines.

@@ -2,7 +2,7 @@
 id: 003-lens-fallback-notice
 unit: lens
 intent: 001-preview2-specsmd
-status: draft
+status: ready
 priority: must
 bolt: 008-lens-new-paths
 created: 2026-11-14
@@ -10,7 +10,7 @@ created: 2026-11-14
 
 # lens/003 — The lens keeps reading `docs/handoffs/`, with one notice per scan
 
-**Planned:** nothing here is built yet. The story belongs to [bolt 008-lens-new-paths](../bolts/008-lens-new-paths/bolt.md), which has not started (G3 pending).
+**Planned:** nothing here is built yet. The story belongs to [bolt 008-lens-new-paths](../bolts/008-lens-new-paths/bolt.md), which has not started (G3 approved, 2026-11-14, D79).
 
 ## Story
 

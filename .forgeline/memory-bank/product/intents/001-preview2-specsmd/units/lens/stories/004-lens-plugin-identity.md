@@ -2,7 +2,7 @@
 id: 004-lens-plugin-identity
 unit: lens
 intent: 001-preview2-specsmd
-status: draft
+status: ready
 priority: must
 bolt: 010-lens-rename
 created: 2026-11-14
@@ -10,7 +10,7 @@ created: 2026-11-14
 
 # lens/004 — The plugin is `lens`, in `forgeline`
 
-**Planned:** nothing here is built yet. The story belongs to [bolt 010-lens-rename](../bolts/010-lens-rename/bolt.md), which has not started (G3 pending).
+**Planned:** nothing here is built yet. The story belongs to [bolt 010-lens-rename](../bolts/010-lens-rename/bolt.md), which has not started (G3 approved, 2026-11-14, D79).
 
 ## Story
 

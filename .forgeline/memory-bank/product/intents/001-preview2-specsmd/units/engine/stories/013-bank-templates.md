@@ -2,7 +2,7 @@
 id: 013-bank-templates
 unit: engine
 intent: 001-preview2-specsmd
-status: draft
+status: ready
 priority: must
 bolt: 005-engine-planning-stages
 created: 2026-11-14
@@ -10,7 +10,7 @@ created: 2026-11-14
 
 # engine/013 — Templates for the bank files
 
-**Planned:** nothing here is built yet. The story belongs to [bolt 005-engine-planning-stages](../bolts/005-engine-planning-stages/bolt.md), which has not started (G3 pending).
+**Planned:** nothing here is built yet. The story belongs to [bolt 005-engine-planning-stages](../bolts/005-engine-planning-stages/bolt.md), which has not started (G3 approved, 2026-11-14, D79).
 
 ## Story
 

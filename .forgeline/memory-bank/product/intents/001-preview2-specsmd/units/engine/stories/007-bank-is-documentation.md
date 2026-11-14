@@ -2,7 +2,7 @@
 id: 007-bank-is-documentation
 unit: engine
 intent: 001-preview2-specsmd
-status: draft
+status: ready
 priority: must
 bolt: 003-engine-authorship-rule
 created: 2026-11-14
@@ -10,7 +10,7 @@ created: 2026-11-14
 
 # engine/007 — The bank is documentation, with one writer
 
-**Planned:** nothing here is built yet. The story belongs to [bolt 003-engine-authorship-rule](../bolts/003-engine-authorship-rule/bolt.md), which has not started (G3 pending).
+**Planned:** nothing here is built yet. The story belongs to [bolt 003-engine-authorship-rule](../bolts/003-engine-authorship-rule/bolt.md), which has not started (G3 approved, 2026-11-14, D79).
 
 ## Story
 

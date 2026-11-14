@@ -2,7 +2,7 @@
 id: 015-bolt-types-in-build-lifecycles
 unit: engine
 intent: 001-preview2-specsmd
-status: draft
+status: ready
 priority: must
 bolt: 006-engine-build-stages
 created: 2026-11-14
@@ -10,7 +10,7 @@ created: 2026-11-14
 
 # engine/015 — Bolt types applied in the build lifecycles
 
-**Planned:** nothing here is built yet. The story belongs to [bolt 006-engine-build-stages](../bolts/006-engine-build-stages/bolt.md), which has not started (G3 pending).
+**Planned:** nothing here is built yet. The story belongs to [bolt 006-engine-build-stages](../bolts/006-engine-build-stages/bolt.md), which has not started (G3 approved, 2026-11-14, D79).
 
 ## Story
 

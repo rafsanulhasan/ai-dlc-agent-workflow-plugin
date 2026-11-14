@@ -3,16 +3,16 @@ id: 002-engine-contract-tooling
 unit: engine
 intent: 001-preview2-specsmd
 type: construction-bolt
-status: draft
+status: ready
 stories: [002-artifact-types-table, 003-init-scaffolding, 004-cli-legacy-fallback, 005-front-matter-grammar, 006-bolt-types-contract]
 requires_bolts: []
-enables_bolts: [004-engine-events, 005-engine-planning-stages, 007-engine-handoff-hook, 008-lens-new-paths, 009-engine-rename, 012-engine-migrate-plan, 013-engine-notices]
+enables_bolts: [004-engine-events, 005-engine-planning-stages, 007-engine-handoff-hook, 008-lens-new-paths, 009-engine-rename, 012-engine-migrate-plan, 013-engine-notices, 015-engine-forgeline-root]
 created: 2026-11-14
 ---
 
 # Bolt 002-engine-contract-tooling
 
-**Planned:** nothing here is built yet. The bolt is a draft until the human approves G3; the step codes are assigned when the bolt runs, so they read "—" for now.
+**Planned:** nothing here is built yet. The bolt is `ready` (G3 approved, 2026-11-14, D79); the step codes are assigned when the bolt runs, so they read "—" for now.
 
 ## Objective
 

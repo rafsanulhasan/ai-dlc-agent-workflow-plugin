@@ -3,16 +3,16 @@ id: 005-engine-planning-stages
 unit: engine
 intent: 001-preview2-specsmd
 type: construction-bolt
-status: draft
+status: ready
 stories: [012-planning-stages, 013-bank-templates, 014-spike-bolt-type]
 requires_bolts: [002-engine-contract-tooling]
-enables_bolts: [006-engine-build-stages, 009-engine-rename]
+enables_bolts: [006-engine-build-stages, 009-engine-rename, 015-engine-forgeline-root]
 created: 2026-11-14
 ---
 
 # Bolt 005-engine-planning-stages
 
-**Planned:** nothing here is built yet. The bolt is a draft until the human approves G3; the step codes are assigned when the bolt runs, so they read "—" for now.
+**Planned:** nothing here is built yet. The bolt is `ready` (G3 approved, 2026-11-14, D79); the step codes are assigned when the bolt runs, so they read "—" for now.
 
 ## Objective
 
@@ -56,6 +56,7 @@ The Definition of Done that holds for every bolt is in [the task plan](../../../
 - It does not touch `orchestrator.md` or `agent-invocation`; the orchestrator's stage text is bolt 006's.
 - Bolt 013 merges before this bolt: the root `ATTRIBUTION.md` is created by 013 and appended here.
 - Reader pages (R-9): it sends *Docs update* requests to bolt 004's docs stage instead of editing README or `docs/plugins.md`.
+- D63: out-of-scope records are `dirname(backlog)/out-of-scope/` (spec line 84) in `agents/product-manager.md:43`, `skills/task-triage/SKILL.md` (lines 3, 29, 124 and the prior-rejection text) and `references/out-of-scope.md:3`. These files are already in this bolt's *Edits* list, so D63 needs no new bolt.
 - `spike-bolt` is tested with `producesCode: false` against a fixture that combines the new type with the `building` flags bolt 002 adds.
 - Shared bank files (the unit-brief *Bolts* sections, `units.md`, the task-plan status columns and `memory-bank/project/backlog.md`) change once per wave, in one `documentation-writer` stage after the wave's merges (S-8), not in this bolt's run. This bolt's own `bolt.md` and stories stay inside its run.
 - A conflict in a generated path is never resolved by hand: take either side and run `node tools/build-copilot.mjs`. A conflict in a `.claude/agent-memory/**` index file is an append conflict: keep both lines.

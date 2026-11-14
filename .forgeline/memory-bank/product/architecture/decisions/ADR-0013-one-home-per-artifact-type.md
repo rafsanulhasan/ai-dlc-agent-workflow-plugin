@@ -1,6 +1,6 @@
 # ADR-0013: One home per artifact type, one old-to-new map; the new path wins
 
-- **Status:** Accepted (G2 approved, D38). Planned: nothing is built.
+- **Status:** Accepted (G2 approved, D38). Planned: nothing is built. Its bank root and area rule are to be amended by ADR-0018 (planned; bolt 015, story engine/026; D66, D69).
 - **Date:** 2026-11-13
 - **Deciders:** software-architect (1.1.14, 1.1.20), system-engineer (1.1.19), human at G2.
 

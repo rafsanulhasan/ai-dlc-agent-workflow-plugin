@@ -1,6 +1,6 @@
 # ADR-0011: Hand-off records are the typed events
 
-- **Status:** Accepted (G2 approved, D38). Planned: nothing is built.
+- **Status:** Accepted (G2 approved, D38). Planned: nothing is built. The place of `.ai-dlc/event.schema.json` (line 19) is to be set by ADR-0018 (planned; bolt 015, story engine/026; AC-18.2).
 - **Date:** 2026-11-13
 - **Deciders:** software-architect (1.1.14, 1.1.20), system-engineer (1.1.19), human at G2.
 

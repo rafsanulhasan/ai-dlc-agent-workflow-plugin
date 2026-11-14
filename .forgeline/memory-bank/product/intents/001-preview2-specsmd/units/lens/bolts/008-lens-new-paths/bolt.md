@@ -3,7 +3,7 @@ id: 008-lens-new-paths
 unit: lens
 intent: 001-preview2-specsmd
 type: simple-bolt
-status: draft
+status: ready
 stories: [001-lens-reads-execution-plans, 002-run-state-file-names, 003-lens-fallback-notice]
 requires_bolts: [002-engine-contract-tooling, 004-engine-events]
 enables_bolts: [009-engine-rename]
@@ -12,7 +12,7 @@ created: 2026-11-14
 
 # Bolt 008-lens-new-paths
 
-**Planned:** nothing here is built yet. The bolt is a draft until the human approves G3; the step codes are assigned when the bolt runs, so they read "—" for now.
+**Planned:** nothing here is built yet. The bolt is `ready` (G3 approved, 2026-11-14, D79); the step codes are assigned when the bolt runs, so they read "—" for now.
 
 ## Objective
 
@@ -24,7 +24,7 @@ The lens reads `execution-plans/`, the record grammar, verdicts and escalations;
 - [lens/002 run-state-file-names](../../stories/002-run-state-file-names.md)
 - [lens/003 lens-fallback-notice](../../stories/003-lens-fallback-notice.md)
 
-Wave: W3 (first in priority and the longest W3 bolt; early start once 004 is merged).
+Wave: W3 (early start once 004 is merged; priority after 015).
 
 ## Stages
 

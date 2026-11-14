@@ -2,7 +2,7 @@
 id: 025-specsmd-attribution
 unit: engine
 intent: 001-preview2-specsmd
-status: draft
+status: ready
 priority: must
 bolt: 013-engine-notices
 created: 2026-11-14
@@ -10,7 +10,7 @@ created: 2026-11-14
 
 # engine/025 — The specsmd attribution ships in both plugin builds
 
-**Planned:** nothing here is built yet. The story belongs to [bolt 013-engine-notices](../bolts/013-engine-notices/bolt.md), which has not started (G3 pending).
+**Planned:** nothing here is built yet. The story belongs to [bolt 013-engine-notices](../bolts/013-engine-notices/bolt.md), which has not started (G3 approved, 2026-11-14, D79).
 
 ## Story
 

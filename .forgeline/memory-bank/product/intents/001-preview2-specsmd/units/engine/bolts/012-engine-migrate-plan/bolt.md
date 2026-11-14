@@ -3,7 +3,7 @@ id: 012-engine-migrate-plan
 unit: engine
 intent: 001-preview2-specsmd
 type: construction-bolt
-status: draft
+status: ready
 stories: [022-migrate-artifacts]
 requires_bolts: [002-engine-contract-tooling]
 enables_bolts: [011-engine-path-sweep, 014-engine-migrate-settings]
@@ -12,7 +12,7 @@ created: 2026-11-14
 
 # Bolt 012-engine-migrate-plan
 
-**Planned:** nothing here is built yet. The bolt is a draft until the human approves G3; the step codes are assigned when the bolt runs, so they read "—" for now.
+**Planned:** nothing here is built yet. The bolt is `ready` (G3 approved, 2026-11-14, D79); the step codes are assigned when the bolt runs, so they read "—" for now.
 
 ## Objective
 
@@ -22,7 +22,7 @@ created: 2026-11-14
 
 - [engine/022 migrate-artifacts](../../stories/022-migrate-artifacts.md)
 
-Wave: W3 (lowest priority of the four, non-blocking; falls back to W5, before 014, if not merged when 009's `requires_bolts` are merged and the spike hand-back is accepted).
+Wave: W3 (lowest priority of the five, non-blocking; falls back to W5, before 014, if not merged when 009's `requires_bolts` are merged and the spike hand-back is accepted).
 
 ## Stages
 
@@ -49,8 +49,9 @@ The Definition of Done that holds for every bolt is in [the task plan](../../../
 - Three conditions from the software-architect (step 1.1.28 §4) are mandatory here and in the lld: (1) 014 adds, never reorders: the memory and settings planners exist as empty entries and the commit-point order (step 6, artifacts rewritten last) is fixed; (2) the whole dry-run `kind` enum is fixed here (`memory-move`, `memory-merge`, `settings-rewrite`, `advice` included); (3) `requires_bolts: [002]` only.
 - Residue (§10.2 step 1) is a non-empty legacy default path of a key whose configured value is already its new path. When `src` equals `dst`, the source is the legacy default instead, as residue: AC-11.7 applied to a mixed block (D42). Without it, ITEM-121's AC-11.10 would fail on this repository's `handoffs`.
 - Code that ends at 1.0.0 lives in files of its own where the code base allows; in `workflow.mjs` it sits in the one LEGACY section.
-- It does not use any spike finding, so it does not wait for the spike hand-back (C1). **Pending the human (G3):** the W3 placement on the non-blocking rule, and the assumption that W3 bolts run in parallel; if capacity is serial, W3 grows by about 5 d and this bolt moves to W5 at once.
-- It is the only W3 bolt allowed to edit `workflow.mjs`, and it rebases onto 004 and 005. When it merges before bolt 009 starts, 009 absorbs it. If it has not merged when 009's `requires_bolts` are merged and the spike hand-back is accepted, it moves to W5 and runs before 014, rebasing onto the 009 and 010 renames.
+- It does not use any spike finding, so it does not wait for the spike hand-back (C1). **Approved at G3, 2026-11-14 (D79):** the W3 placement on the non-blocking rule, and the assumption that W3 bolts run in parallel; if capacity is serial, W3 grows by about 5 d and this bolt moves to W5 at once.
+- It is the only W3 bolt besides 015 allowed to edit `workflow.mjs`, and it rebases onto 004, 005 and 015 (015 merges first, D68). When it merges before bolt 009 starts, 009 absorbs it. If it has not merged when 009's `requires_bolts` are merged and the spike hand-back is accepted, it moves to W5 and runs before 014, rebasing onto 015 and the 009 and 010 renames.
+- Its fixtures take every bank and run path from `ARTIFACT_TYPES` and `tests/helpers/paths.mjs`, so the move of bolt 015 does not change them.
 - The id `012-engine-migrate-plan` replaces the working name 012a (C3, step 1.1.30.2); `012-engine-migrate` was never created and is retired.
 - Shared bank files (the unit-brief *Bolts* sections, `units.md`, the task-plan status columns and `memory-bank/project/backlog.md`) change once per wave, in one `documentation-writer` stage after the wave's merges (S-8), not in this bolt's run. This bolt's own `bolt.md` and stories stay inside its run.
 - A conflict in a generated path is never resolved by hand: take either side and run `node tools/build-copilot.mjs`. A conflict in a `.claude/agent-memory/**` index file is an append conflict: keep both lines.

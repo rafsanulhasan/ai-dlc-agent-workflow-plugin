@@ -3,7 +3,7 @@ id: 007-engine-handoff-hook
 unit: engine
 intent: 001-preview2-specsmd
 type: simple-bolt
-status: draft
+status: ready
 stories: [016-hook-reads-execution-plans, 017-hook-fallback-warning]
 requires_bolts: [002-engine-contract-tooling, 004-engine-events]
 enables_bolts: [009-engine-rename]
@@ -12,7 +12,7 @@ created: 2026-11-14
 
 # Bolt 007-engine-handoff-hook
 
-**Planned:** nothing here is built yet. The bolt is a draft until the human approves G3; the step codes are assigned when the bolt runs, so they read "—" for now.
+**Planned:** nothing here is built yet. The bolt is `ready` (G3 approved, 2026-11-14, D79); the step codes are assigned when the bolt runs, so they read "—" for now.
 
 ## Objective
 

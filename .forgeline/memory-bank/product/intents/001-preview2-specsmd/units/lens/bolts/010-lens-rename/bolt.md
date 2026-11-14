@@ -3,16 +3,16 @@ id: 010-lens-rename
 unit: lens
 intent: 001-preview2-specsmd
 type: simple-bolt
-status: draft
+status: ready
 stories: [004-lens-plugin-identity, 005-lens-commands-and-panes, 006-dual-engine-prefix]
-requires_bolts: [001-engine-rename-spike, 009-engine-rename]
+requires_bolts: [001-engine-rename-spike, 009-engine-rename, 015-engine-forgeline-root]
 enables_bolts: [011-engine-path-sweep, 014-engine-migrate-settings]
 created: 2026-11-14
 ---
 
 # Bolt 010-lens-rename
 
-**Planned:** nothing here is built yet. The bolt is a draft until the human approves G3; the step codes are assigned when the bolt runs, so they read "—" for now.
+**Planned:** nothing here is built yet. The bolt is `ready` (G3 approved, 2026-11-14, D79); the step codes are assigned when the bolt runs, so they read "—" for now.
 
 ## Objective
 
@@ -58,6 +58,6 @@ The Definition of Done that holds for every bolt is in [the task plan](../../../
 Paths: `E/` is the engine plugin folder (`plugins/claude/ai-dlc/` until bolt 009, `plugins/claude/engine/` after), `L/` the lens plugin folder (`plugins/claude/ai-dlc-lens/` until bolt 010, `plugins/claude/lens/` after), `WF/` is `E/skills/workflow/templates/`. Generated outputs (`plugins/copilot/**`, the `init` templates `AGENTS.md`, `CLAUDE.md` and `copilot-instructions.md`, `skills/plugin-management/templates/build-copilot.mjs`, the `.claude/skills/` mirrors) are never edited by hand: rebuild with `node tools/build-copilot.mjs`.
 
 - Moves: `git mv plugins/claude/ai-dlc-lens plugins/claude/lens` (51 files (from 1.1.24; recheck at bolt start)); the five skills from `E/skills/{lens,lens-configure,lens-init,lens-kit,lens-gate}` to `L/skills/{show,configure,init,kit,gate}`.
-- Edits: `L/hooks/register.tsx` (`CMD`, the `CHART` pane id, `KEEPALIVE_COMMAND`, about 45 atoms to `LENS_STATE_NS`), `L/hooks/lens.ts` (`typeOfWorker`, `roleOf`), `L/hooks/avatar.ts`, `L/hooks/settings.ts` (`rosterPath` and its fallback), `L/tests/**`, the literals in the lens-owned existing tests (`tests/lens-renderer/*` and `tests/cache-reader/*`), the lens marketplace entry, `tools/claude-only-plugins.json`, `tools/claude-only-skills.json` (five lines out), the two lens CI steps, `tests/helpers/paths.mjs` (the `LENS_*` values), and the lens lines of the agent artifacts bolt 009 changed, if any (R-14).
+- Edits: `L/hooks/register.tsx` (`CMD`, the `CHART` pane id, `KEEPALIVE_COMMAND`, about 45 atoms to `LENS_STATE_NS`), `L/hooks/lens.ts` (`typeOfWorker`, `roleOf`), `L/hooks/avatar.ts`, `L/hooks/settings.ts` (`rosterPath` and its fallback), `L/tests/**`, the literals in the lens-owned existing tests (`tests/lens-renderer/*` and `tests/cache-reader/*`), the lens marketplace entry, `tools/claude-only-plugins.json`, `tools/claude-only-skills.json` (five lines out), the two lens CI steps, `tests/helpers/paths.mjs` (the `LENS_*` values), and the lens lines of the agent artifacts bolt 009 changed, if any (R-14; a rule line is edited in its standard under `project/standards/`, never in the generated twin).
 - Creates: `L/hooks/identity.ts` (`LENS_STATE_NS` and the pane ids `lens-*`; introduced with today's values first and flipped second), `L/hooks/engine-names.ts` (the dual-prefix window and `LEGACY_PANE_IDS`), `L/tests/{engine-names,commands}.test.ts`, the lens half of `tests/state-namespace.test.mjs`.
 - Spike-sensitive values, one home each: the lens atom namespace (e) in `LENS_STATE_NS` (a grep test: no `plugin: 'ai-dlc-lens'` literal remains in `register.tsx`); the pane ids and legacy ids (h, i) in `identity.ts` and `engine-names.ts` (a grep test: no pane-id literal outside those files); the command prefixes (g) in `CMD`, each equal to its skill folder name; the dual-prefix window in `engine-names.ts`, read by `avatar.ts` and `lens.ts`; the shared keep-alive namespace follows spike (e).

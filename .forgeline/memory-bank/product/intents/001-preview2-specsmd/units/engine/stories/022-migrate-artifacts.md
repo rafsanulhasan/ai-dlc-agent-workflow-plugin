@@ -2,7 +2,7 @@
 id: 022-migrate-artifacts
 unit: engine
 intent: 001-preview2-specsmd
-status: draft
+status: ready
 priority: must
 bolt: 012-engine-migrate-plan
 created: 2026-11-14
@@ -10,7 +10,7 @@ created: 2026-11-14
 
 # engine/022 — One command moves the artifacts to their new homes
 
-**Planned:** nothing here is built yet. The story belongs to [bolt 012-engine-migrate-plan](../bolts/012-engine-migrate-plan/bolt.md), which has not started (G3 pending).
+**Planned:** nothing here is built yet. The story belongs to [bolt 012-engine-migrate-plan](../bolts/012-engine-migrate-plan/bolt.md), which has not started (G3 approved, 2026-11-14, D79).
 
 ## Story
 

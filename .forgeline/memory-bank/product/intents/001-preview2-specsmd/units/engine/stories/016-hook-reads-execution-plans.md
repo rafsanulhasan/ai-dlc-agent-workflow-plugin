@@ -2,7 +2,7 @@
 id: 016-hook-reads-execution-plans
 unit: engine
 intent: 001-preview2-specsmd
-status: draft
+status: ready
 priority: must
 bolt: 007-engine-handoff-hook
 created: 2026-11-14
@@ -10,7 +10,7 @@ created: 2026-11-14
 
 # engine/016 — Auto-handoff reads `execution-plans/` and the new record names
 
-**Planned:** nothing here is built yet. The story belongs to [bolt 007-engine-handoff-hook](../bolts/007-engine-handoff-hook/bolt.md), which has not started (G3 pending).
+**Planned:** nothing here is built yet. The story belongs to [bolt 007-engine-handoff-hook](../bolts/007-engine-handoff-hook/bolt.md), which has not started (G3 approved, 2026-11-14, D79).
 
 ## Story
 

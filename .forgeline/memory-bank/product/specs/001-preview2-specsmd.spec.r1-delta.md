@@ -3,13 +3,15 @@ spec: 001-preview2-specsmd
 revision: r1
 base: memory-bank/product/specs/001-preview2-specsmd.spec.md (G2-approved, D38)
 intent: 001-preview2-specsmd
-status: draft
+status: ready
 created: 2026-11-14
 ---
 
 # Spec 001, revision delta r1 (input to G3)
 
-**Planned (G3 pending):** this delta changes the frozen spec 001 only when the human approves G3. Until then the frozen text stands. The front matter `status: draft` is this delta's own status (the §5 vocabulary; `draft` shows as *planned*), not the spec's: the spec's own `status` becomes `frozen` through change 7.1.
+**Approved at G3, 2026-11-14 (D79):** this delta changes the frozen spec 001 now that the human has approved G3. The spec file itself is not edited by this record; this delta is the text of record. The front matter `status: ready` is this delta's own status (the §5 vocabulary; `ready` shows as *planned*, because nothing in it is built), not the spec's: the spec's own `status` becomes `frozen` through change 7.1.
+
+**Informative note (step 1.5.l5.4; not an amendment to the frozen spec):** for bolt 015 (the `.forgeline/` root, added after this delta) the bolt list, the 14-bolt count, the waves and the Requires cells of 009, 010, 011 and 014 below are superseded by the task plan and the bolt files until delta r3 (story engine/026) amends §16 and §16.1, with the new parts AC-15.8[forgeline-root], AC-15.8[forgeline-root-lens], AC-16.4[015], AC-18.4[engine], AC-18.4[lens], AC-18.7[layout], AC-18.7[name], AC-18.10[hook and metadata copies], AC-18.10[config files] and AC-18.10[runs]. The text below is unchanged.
 
 Content by `requirement-analyst` (step 1.1.30, `spec-driven-development`); written to the bank by `documentation-writer` (D2). Line numbers ("spec:N") refer to `memory-bank/product/specs/001-preview2-specsmd.spec.md` as approved at G2; "AC file:N" refers to `memory-bank/product/intents/001-preview2-specsmd/acceptance-criteria.md`.
 
@@ -17,7 +19,7 @@ Sources (all in `.forgeline/execution-plans/AI-DLC-20261113-preview2-specsmd/`):
 
 ## AC impact (read first)
 
-- **New AC:** one, AC-16.6, the `windows-latest` CI job (change 3.1). It is **pending human acceptance at G3**.
+- **New AC:** one, AC-16.6, the `windows-latest` CI job (change 3.1). It is **accepted at G3, 2026-11-14 (D79); non-blocking until a follow-up makes it required (D81)**.
 - **Clarified AC:** AC-15.2, for the lens (change 2.3, O-4 closed). The AC text does not change.
 - **Amended decision in the AC file (not an AC):** R8 (change 2.1).
 - **No other AC text changes** from this delta. Every other change is spec text, a §16 or §16.1 row, a component boundary or a test seam.
@@ -25,7 +27,7 @@ Sources (all in `.forgeline/execution-plans/AI-DLC-20261113-preview2-specsmd/`):
   - **C1.** "The migration bolt" in AC-17.14 (AC file:260: "the migration bolt does not start before its hand-back is accepted") means bolt 014, the spike-dependent half of the split. Bolt 012 requires only 002 and uses no spike finding (1.1.28 §4), so adding 001 to its Requires would only delay W3 (change 5.2).
   - **C4.** AC-17.14 labels finding (c) "(c, lens)" (AC file:260). Under the amended R8 the label is read as "consumed by the lens" (change 2.1). No text change.
 - **Two more clarify answers applied (software-architect, step 1.1.30.2):** C2, R-10 `time_box` is a convention that `validate` does not check (change 1.9); C3, the split bolts take the ids `012-engine-migrate-plan` (was 012a) and `014-engine-migrate-settings` (was 012b), and the id grammar and AC-2.2 stay as they are (change 5.1).
-- **Shown to the human at G3 (product-owner, step 1.1.25.1):** "R8 amended: AC-17.14 owned whole by engine" (change 2.1). AC-16.6 (change 3.1) and 012 in W3 on the non-blocking rule (change 5.2) are also pending the human at G3. Three readings are shown with them, so none is silent: C1 and C4 above (product-owner answers, step 1.1.30.1; no AC text changes) and the AC-15.2 clarification for the lens (change 2.3; O-4, product-owner, D43).
+- **Shown to the human at G3 (product-owner, step 1.1.25.1):** "R8 amended: AC-17.14 owned whole by engine" (change 2.1). AC-16.6 (change 3.1) and 012 in W3 on the non-blocking rule (change 5.2) were also approved at G3 (D79). Three readings are shown with them, so none is silent: C1 and C4 above (product-owner answers, step 1.1.30.1; no AC text changes) and the AC-15.2 clarification for the lens (change 2.3; O-4, product-owner, D43).
 
 ## Change index
 
@@ -48,7 +50,7 @@ Sources (all in `.forgeline/execution-plans/AI-DLC-20261113-preview2-specsmd/`):
 | 2.1 | AC file R8, R3, Q3 (AC file:50, :45, :75) | AC-17.14 owned whole by engine (R-3) | 1.1.25 item 1; 1.1.25.1 item 1 (D43) |
 | 2.2 | §16 row 001 Unit cell, row 010 | lens-consumed findings (R-3) | 1.1.25 item 1 |
 | 2.3 | §9.2, §16.1 AC-15.2, §17 O-4 | O-4 resolved as a clarification of AC-15.2, closed | 1.1.25 item 3; 1.1.25.1 item 3 (D43) |
-| 3.1 | AC file FR-16, §16 row 009, §16.1 | new AC-16.6 `windows-latest` job (pending human acceptance at G3) | 1.1.27 §4; 1.1.29 §3 |
+| 3.1 | AC file FR-16, §16 row 009, §16.1 | new AC-16.6 `windows-latest` job (accepted at G3, 2026-11-14 (D79); non-blocking until a follow-up makes it required (D81)) | 1.1.27 §4; 1.1.29 §3 |
 | 4.1 | §4.2 | G-FM: one grammar, one implementation in preview2 | 1.1.28 C-3, §5 item 1 |
 | 4.2 | §8.1 | `record-names.mjs`; hook `record.ts` | 1.1.28 §5 item 2, C-6 |
 | 4.3 | §9.1 | two TS files; per-key rule (D42); mixed row; `runs-root.mjs` | 1.1.28 §5 item 3, C-4, §6 |
@@ -253,17 +255,17 @@ Sources (all in `.forgeline/execution-plans/AI-DLC-20261113-preview2-specsmd/`):
 
 ---
 
-## 3. New AC (pending human acceptance at G3)
+## 3. New AC (accepted at G3, 2026-11-14 (D79); non-blocking until a follow-up makes it required (D81))
 
 ### 3.1 AC-16.6: a `windows-latest` CI job
 
 - **Section:** AC file, FR-16 (after AC-16.5, AC file:243); spec §16 row 009 (spec:599); spec §16.1 (new row; total line spec:728).
-- **Status:** **pending human acceptance at G3.** It is a scope addition to the frozen spec (about 0.25d). If the human does not accept it, nothing in this section is written.
+- **Status:** **accepted at G3, 2026-11-14 (D79); non-blocking until a follow-up makes it required (D81).** It is a scope addition to the frozen spec (about 0.25d). The human accepted it (D79); D81 keeps the job non-blocking until a follow-up makes it required.
 - **New AC text (AC file, FR-16):**
-  > - AC-16.6 (pending human acceptance at G3; product-owner, 1.1.27): `.github/workflows/validate.yml` has a job that runs on `windows-latest` and runs `node --test "tests/**/*.test.mjs"`, with the glob quoted. The bolt that adds it quotes the job's first run and its result. If that run shows tests that fail on Windows, fixing them is out of scope: the job keeps running `node --test` on the tests present at 009's merge, the bolt's hand-back reports the Windows failures, and `product-owner` decides the follow-up (1.1.27 item 4).
+  > - AC-16.6 (accepted at G3, 2026-11-14 (D79); non-blocking until a follow-up makes it required (D81); product-owner, 1.1.27): `.github/workflows/validate.yml` has a job that runs on `windows-latest` and runs `node --test "tests/**/*.test.mjs"`, with the glob quoted. The bolt that adds it quotes the job's first run and its result. If that run shows tests that fail on Windows, fixing them is out of scope: the job keeps running `node --test` on the tests present at 009's merge, the bolt's hand-back reports the Windows failures, and `product-owner` decides the follow-up (1.1.27 item 4).
 - **Numbering:** proposed as AC-16.6, under FR-16 next to the other repository-check ACs (AC-16.1, AC-16.5). Another FR is possible; the number does not change the delivery.
-- **§16 row 009 (Scope cell, appended):** "a `windows-latest` job in `.github/workflows/validate.yml` running `node --test \"tests/**/*.test.mjs\"` (AC-16.6, pending human acceptance at G3)".
-- **§16.1 new row:** `| AC-16.6 | §16 | 009 (pending human acceptance at G3) |`
+- **§16 row 009 (Scope cell, appended):** "a `windows-latest` job in `.github/workflows/validate.yml` running `node --test \"tests/**/*.test.mjs\"` (AC-16.6, accepted at G3, 2026-11-14 (D79); non-blocking until a follow-up makes it required (D81))".
+- **§16.1 new row:** `| AC-16.6 | §16 | 009 (accepted at G3, 2026-11-14 (D79); non-blocking until a follow-up makes it required (D81)) |`
 - **§16.1 total (spec:728):** "All 104 ACs are mapped." becomes "All 105 ACs are mapped." if AC-16.6 is accepted; otherwise unchanged.
 - **Story:** the architect attaches it to a 009 story, proposed engine/018 (1.1.27 §4). It is a story AC, not a DoD item.
 - **Reason:** the migrate fixtures (012, 014) are where Windows behaviour matters (line endings, temp paths, git spawns), and CI is `ubuntu-latest` only, so the Windows claims are checked only on a developer machine. 009 already edits `validate.yml` and precedes 014; ITEM-124 runs too late.
@@ -504,7 +506,7 @@ Only rows whose Delivery cell changes are listed; every other row is unchanged. 
 | AC-16.3 | — | DoD, every bolt; closed by ITEM-122 |
 | AC-16.4 | §11 | [009] 009; [010] 010; [011] 011 |
 | AC-16.5 | — | DoD, every bolt; closed by ITEM-124 |
-| AC-16.6 (new) | §16 | 009 (pending human acceptance at G3) |
+| AC-16.6 (new) | §16 | 009 (accepted at G3, 2026-11-14 (D79); non-blocking until a follow-up makes it required (D81)) |
 | AC-17.1 | §11 | [engine] 009; [lens] 010 |
 | AC-17.2 | §11 | [engine] 009; [lens] 010 |
 | AC-17.5 | §11 | [engine] 009; [lens] 010 |

@@ -3,7 +3,7 @@ id: 013-engine-notices
 unit: engine
 intent: 001-preview2-specsmd
 type: simple-bolt
-status: draft
+status: ready
 stories: [025-specsmd-attribution]
 requires_bolts: [002-engine-contract-tooling]
 enables_bolts: [009-engine-rename]
@@ -12,7 +12,7 @@ created: 2026-11-14
 
 # Bolt 013-engine-notices
 
-**Planned:** nothing here is built yet. The bolt is a draft until the human approves G3; the step codes are assigned when the bolt runs, so they read "—" for now.
+**Planned:** nothing here is built yet. The bolt is `ready` (G3 approved, 2026-11-14, D79); the step codes are assigned when the bolt runs, so they read "—" for now.
 
 ## Objective
 

@@ -3,7 +3,7 @@ id: 006-engine-build-stages
 unit: engine
 intent: 001-preview2-specsmd
 type: construction-bolt
-status: draft
+status: ready
 stories: [015-bolt-types-in-build-lifecycles]
 requires_bolts: [005-engine-planning-stages]
 enables_bolts: [009-engine-rename]
@@ -12,7 +12,7 @@ created: 2026-11-14
 
 # Bolt 006-engine-build-stages
 
-**Planned:** nothing here is built yet. The bolt is a draft until the human approves G3; the step codes are assigned when the bolt runs, so they read "—" for now.
+**Planned:** nothing here is built yet. The bolt is `ready` (G3 approved, 2026-11-14, D79); the step codes are assigned when the bolt runs, so they read "—" for now.
 
 ## Objective
 
