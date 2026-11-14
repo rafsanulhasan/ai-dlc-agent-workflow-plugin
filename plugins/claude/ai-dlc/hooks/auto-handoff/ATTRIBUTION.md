@@ -606,3 +606,37 @@ root 17, step 17.3.4.l1.1, code-review fix round 1 for 17.2.4; see
 - **Seed comment (step 44, 44.2.l1.10, 2026-10-31).** Comment only: the
   handoff seed's cache shows on keep-alive's band as its seed row, not on a
   status line (R44.1).
+
+Made by Rafsanul Hasan, 2026-11-13 (run FEAT-20261020-ai-dlc-lens, feature
+root 17, step 17.3.l1.1, task T17.3 / ITEM-034, tests; see
+`../keepalive/ATTRIBUTION.md`, same date):
+
+- **Tests only.** `tests/auto-handoff.test.tsx`: a subagent response adds
+  nothing to the unmeasured tokens that decide the handoff (the next main
+  request is sent), while a main response's output still counts. `register.tsx`
+  is unchanged.
+
+Made by Rafsanul Hasan, 2026-11-13 (run FEAT-20261020-ai-dlc-lens, feature
+root 42, step 42.2.l1.1, regression: the band tests red on Claude Code
+2.1.323):
+
+- **Tests only.** Claude Code 2.1.323 changed what `ui.drawn()` returns for a
+  hook that calls `next(e)`: an engine node (`{ type: 'engine', ref }`) where
+  `next(e)` sat, and the test's own hook beneath as a separate part after
+  ours. `tests/auto-handoff.test.tsx`: `mountBand` reads the band through
+  `inlineBeneath`, which puts that part back in the engine node's place (a
+  tree in the old shape is left as it is), and a new describe,
+  `[42.2.l1.1] inlineBeneath`, pins both shapes. No assertion changed;
+  `register.tsx` is unchanged.
+
+Made by Rafsanul Hasan, 2026-11-13 (run FEAT-20261020-ai-dlc-lens, feature
+root 63, step 63.2, `plugin validate --strict` on Claude Code 2.1.323):
+
+- **Import paths without an extension.** From 2.1.323, `claude plugin
+  validate` type-checks the module with the engine's own options, which
+  refuse a `.ts` / `.tsx` import path (TS5097), and `--strict` fails on it.
+  Every relative import in `*.ts`, `*.tsx` and `tests/` now names the file
+  without its extension, as the ai-dlc-lens hooks already do; the engine's
+  loader finds them. No other change. The Node tests that import `config.ts`
+  load `tests/support/resolve-ts-extensionless.mjs` at the repository root,
+  which tries `.ts` and `.tsx` for such a path.

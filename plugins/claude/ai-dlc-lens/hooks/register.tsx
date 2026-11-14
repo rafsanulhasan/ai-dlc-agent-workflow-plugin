@@ -3174,7 +3174,7 @@ function viewControls(
         {lead}
       </Box>
       <Box flexDirection="row" alignItems="center" columnGap={1}>
-        <Button key="pane-place" label={place} plain onPress={press => placePress($, place, where, press?.surface)} />
+        <Button key="pane-place" label={place} plain onPress={(press?: { surface?: unknown }) => placePress($, place, where, press?.surface)} />
         {sizeControls}
         {!band ? <Button key="pane-close" label="×" role="dismiss" plain onPress={() => $.ui.close({ id: CHART })} /> : null}
         {band && idle ? <Button key="band-close" label="×" role="dismiss" plain onPress={() => update($, bandClosedA, () => true)} /> : null}
@@ -3346,7 +3346,7 @@ async function latestFlow($: EngineInterface): Promise<{ w: string; title: strin
  * Where the workflow view is drawn: the pane (Pane props, d.ts:10867-10909) or the band above the prompt (AbovePrompt
  * props, d.ts:10809-10850). `placement`: the pane's (Pane `placement`, dock or inline, the surface's); none for the band.
  */
-type ViewSite = { surface: string; columns: number | undefined; rows: number; where: 'pane' | 'band'; placement?: 'dock' | 'inline'; runs?: true; wide?: boolean }
+type ViewSite = { surface: string; columns: number | undefined; rows: number; where: 'pane' | 'band'; placement?: 'dock' | 'inline' | 'widget'; runs?: true; wide?: boolean }
 
 /**
  * Live round 1 (the human, 2026-10-26): in a wide VS Code panel `/ai-dlc:lens` opens two docked tabs, the Run List

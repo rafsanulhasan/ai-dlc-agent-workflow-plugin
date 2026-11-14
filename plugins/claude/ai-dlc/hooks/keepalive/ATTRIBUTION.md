@@ -927,3 +927,40 @@ root 17, step 17.2.4; spec keepalive-cache-status line 82, D2a; LLD rev 5,
   2026-11-02).** `README.md` only, written by documentation-writer: the
   *In progress* markers on the band, head row, on/off and no-status-line
   sections are removed now that step 44 is done. Docs only; no code changes.
+
+- **ITEM-034 test proof (step 17.3.l1.1, sqa-engineer, 2026-11-13).** Test
+  code only; no production file changes. `tests/cache-state.test.ts` gains
+  eight pure tests of `markAgent`, `agentUnsettled`, `settleAgent`,
+  `armUntil` with agents on and `onlyAgentsWarm` (AC-17.3.1, 17.3.3, 17.3.7,
+  17.3.8). `tests/keepalive.test.ts` gains nine tests through the events
+  (AC-17.3.3, 17.3.7, 17.3.8: the literal only-subagent line with background
+  tasks and no ping, the 10:04 and 10:08 readings after a stop, an unreadable
+  or split-less transcript staying `split unknown` and read once, a stop whose
+  file does not exist ignored, `SubagentStart`, `TeammateIdle` and
+  `SubagentStop` liveness). `auto-handoff/tests/auto-handoff.test.tsx` gains
+  one test that a subagent response adds nothing to the handoff accounting
+  (`register.tsx` forwarding). Each test was seen failing under a hand
+  mutation of the code it covers; the mutation list and results are in the
+  step's hand-back. AC-17.3.2, 17.3.5 and 17.3.6 wait on ITEM-034.b, which is
+  not built.
+
+- **A transcript is read at most once per agent (step 17.4.l1.2,
+  agent-manager, 2026-11-13; AC-17.3.7).** `cache-state.ts`: `AgentCaches`
+  gets an optional `transcriptRead` flag. `keepalive.ts`, the
+  `classic.SubagentStop` hook: the flag is set when a stop reads the agent's
+  transcript, whatever the read gave. A later stop of that agent only marks
+  it finished, logs one debug line, and reads nothing, so its settled time
+  does not move. The flag lives in the ledger, so it is cleared with it at
+  `session.end` and before an automatic handoff. Tests unchanged; the three
+  AC-17.3.7 tests of step 17.3.l1.1 that failed now pass.
+
+- **Import paths without an extension, and strict test types (step 63.2,
+  agent-manager, 2026-11-13).** From Claude Code 2.1.323, `claude plugin
+  validate` type-checks the module with the engine's own options and
+  `--strict` fails on what it finds. Every relative import here drops its
+  `.ts` / `.tsx` extension (TS5097), as in `../auto-handoff/`. In
+  `tests/keepalive.test.ts`, 12 strict errors are fixed with no assertion
+  weakened: the default split is typed as the `[number, number]` tuple
+  `Opts.split` names; `expectUsage` takes the reply text as `string |
+  undefined` and first asserts that it is a string; three reads of a reply
+  text use `?.`, so an undefined text still fails the assertion.

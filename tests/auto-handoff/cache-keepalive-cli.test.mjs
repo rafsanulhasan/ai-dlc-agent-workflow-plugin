@@ -4,6 +4,7 @@
 // Node's type stripping (Node 22.18 and later); the agreement suites are skipped on older Node.
 // Run from the repository root: node --test "tests/**/*.test.mjs". Each CLI test works in a temp
 // folder; nothing under plugins/ is written.
+import "../support/resolve-ts-extensionless.mjs";
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";

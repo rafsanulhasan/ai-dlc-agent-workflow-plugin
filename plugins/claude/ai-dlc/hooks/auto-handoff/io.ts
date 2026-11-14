@@ -2,8 +2,8 @@
 // The engine is passed in as `$` and only ever called as $.noun.event(...), which is what `claude
 // plugin validate` follows. HOME and USERPROFILE are the only environment variables read here.
 import type { EngineInterface } from 'claude-code'
-import { BRIEF_DIR, keysWithValues, trustOf, trustRoot, withoutKeys } from './config.ts'
-import type { TrustTarget } from './config.ts'
+import { BRIEF_DIR, keysWithValues, trustOf, trustRoot, withoutKeys } from './config'
+import type { TrustTarget } from './config'
 
 // Windows sets USERPROFILE, not HOME. With HOME unset, every path built on it began with
 // "undefined/", which $.fs resolves under the session's working directory: briefs, templates

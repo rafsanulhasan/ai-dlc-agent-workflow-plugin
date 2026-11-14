@@ -1,4 +1,4 @@
-import { creationSplit } from '../auto-handoff/config.ts'
+import { creationSplit } from '../auto-handoff/config'
 
 // The cache ledger (spec keepalive-cache-status, D1 and D3; LLD section 2). Pure and engine-free:
 // no clock, no I/O, so tests/cache-state.test.ts drives it on its own. keepalive.ts owns the timers,
@@ -13,7 +13,8 @@ export type Ttl = '5m' | '1h'
 /** 'unknown' only under D2a: an agent's write whose usage carries no 1h/5m split. */
 export type EntryTtl = Ttl | 'unknown'
 export type LedgerEntry = { warmUntil: number }
-export type AgentCaches = { caches: Partial<Record<EntryTtl, LedgerEntry>>; status: 'running' | 'idle' | 'finished' }
+/** `transcriptRead`: a SubagentStop already read this agent's transcript (AC-17.3.7), so no later stop reads it again. */
+export type AgentCaches = { caches: Partial<Record<EntryTtl, LedgerEntry>>; status: 'running' | 'idle' | 'finished'; transcriptRead?: true }
 /** `main` never holds 'unknown'. A main write without a split sets `pendingMain` (the time of the
  * response); the next Stop resolves it from the transcript (LLD 2.1 step 3, rev 5). */
 export type Ledger = { main: Partial<Record<Ttl, LedgerEntry>>; agents: Map<string, AgentCaches>; pendingMain?: { at: number } }

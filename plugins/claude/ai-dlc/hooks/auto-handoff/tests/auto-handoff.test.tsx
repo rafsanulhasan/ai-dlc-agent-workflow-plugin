@@ -1,11 +1,11 @@
 import { describe, expect, mock, test } from 'claude-code/testing'
 import type { TestBody } from 'claude-code/testing'
 import type { FsEntry, On, SessionMessage } from 'claude-code'
-import { briefPrompt, extractFacts, factsBlock, hasUnansweredLastRequest, isValidBrief, markUnverifiedFigures } from '../brief.ts'
-import { renderTemplate } from '../templates.ts'
-import { parseBrief } from '../viewer.ts'
-import { orLog } from '../io.ts'
-import { DEFAULT_WINDOW, contextLine, creationSplit, hostFields, seedCacheFields, seedCacheLine, windowFields, windowInfo, windowOf } from '../config.ts'
+import { briefPrompt, extractFacts, factsBlock, hasUnansweredLastRequest, isValidBrief, markUnverifiedFigures } from '../brief'
+import { renderTemplate } from '../templates'
+import { parseBrief } from '../viewer'
+import { orLog } from '../io'
+import { DEFAULT_WINDOW, contextLine, creationSplit, hostFields, seedCacheFields, seedCacheLine, windowFields, windowInfo, windowOf } from '../config'
 
 // renamed: the names /rename was run with, in order; commandOrder: every slash command run, in order.
 // store: the module's store as the fake engine holds it, so a test can read what the mod stored.
@@ -249,8 +249,38 @@ async function step($: TestBody extends (...a: infer A) => unknown ? A[0] : neve
 
 let clock: ReturnType<typeof mock.clock>
 
-const mountBand = ($: Parameters<TestBody>[0]) =>
-  $.ui.mount({ plugin: 'ai-dlc', surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 20, bodyColumns: 120 } as never })
+// Claude Code 2.1.323 changed what `ui.drawn()` returns for a hook that calls `next(e)`: where our tree holds the
+// answer of `next(e)`, it now draws `{ type: 'engine', ref }`, and the tree of the test's own `ui.render` hook
+// beneath (the stand-in for the lens band) comes after our part, as a separate child of an unmarked root Box,
+// each part marked `part: { plugin }`. Up to 2.1.322 that tree was drawn in place of `next(e)`. `inlineBeneath`
+// puts each part beneath back where an engine node sits in ours, in order, so a test reads the band in the order
+// it is drawn. A tree in the old shape, or one whose engine nodes and parts beneath do not pair up, is returned
+// unchanged, so a test still sees what the host drew. Regression: '[42.2.l1.1] inlineBeneath'.
+type Drawn = { type?: unknown; part?: { plugin?: unknown }; children?: unknown[] }
+function inlineBeneath(root: unknown, plugin = 'ai-dlc'): unknown {
+  const r = root as Drawn
+  if (!r || typeof r !== 'object' || r.part || !Array.isArray(r.children)) return root
+  const parts = r.children as Drawn[]
+  const ours = parts.find(p => p?.part?.plugin === plugin)
+  if (!ours) return root
+  const beneath = parts.filter(p => p !== ours)
+  let used = 0
+  const fill = (n: unknown): unknown => {
+    if (!n || typeof n !== 'object') return n
+    const d = n as Drawn
+    if (d.type === 'engine') return used < beneath.length ? beneath[used++] : n
+    return Array.isArray(d.children) ? { ...d, children: d.children.map(fill) } : n
+  }
+  const filled = fill(ours)
+  return used > 0 && used === beneath.length ? filled : root
+}
+
+const mountBand = async ($: Parameters<TestBody>[0]) => {
+  const ui = await $.ui.mount({ plugin: 'ai-dlc', surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 20, bodyColumns: 120 } as never })
+  // the mounted drawing is frozen: a copy carries the wrapped drawn()
+  const drawn: typeof ui.drawn = async (...a) => inlineBeneath(await ui.drawn(...a)) as Awaited<ReturnType<typeof ui.drawn>>
+  return { ...ui, drawn }
+}
 
 // Step 42: keep-alive's band starts minimised (one row: whether it is on, and the master button). Opens it, whatever its state.
 const mountOpenBand = async ($: Parameters<TestBody>[0]) => {
@@ -2593,6 +2623,20 @@ describe('the handoff and the prompt cache', () => {
     expect(statuses.at(-1)).toMatch(/5m: main warm until \d+:\d\d/)
   })
 
+  // SQA 17.3.l1.1 (ITEM-034, T17.3 forwarding): register.tsx forwards every response's usage to keep-alive, but the
+  // handoff accounting stays the main conversation's: a subagent's output tokens never count toward the next request's size.
+  test('[ITEM-034] a subagent response adds nothing to the unmeasured tokens: the next main request is sent, and the output of a main response still counts', async ($, on) => {
+    const calls = engine(on, { tokens: 79_950, env: { AI_DLC_AUTO_HANDOFF_THRESHOLD_TOKENS: '80000' }, streamToolChars: 1 }) // each response reports 100 output tokens
+    await agentStep($, 'sub-1')
+    expect(calls.steps).toBe(1)
+    const sent = await step($, 2)
+    expect(calls.steps).toBe(2)
+    expect(sent.some(c => c.kind === 'text' && c.text?.includes('auto-handoff'))).toBe(false)
+    const handedOff = await step($, 3) // the main response's 100 output tokens now count: 79,950 + 100 is past 80,000
+    expect(calls.steps).toBe(2)
+    expect(handedOff.some(c => c.kind === 'text' && c.text?.includes('auto-handoff'))).toBe(true)
+  })
+
   test('the seed cache fields and panel line, for a hit, a miss and a split not reported', () => {
     expect(seedCacheFields({ input: 5, read: 0, written: 40_000, split: { '1h': 40_000, '5m': 0 } }))
       .toBe('input_tokens=5 cache_read_input_tokens=0 cache_creation_input_tokens=40000 cache_creation_1h=40000 cache_creation_5m=0 cache=miss')
@@ -2699,6 +2743,49 @@ describe('the band above the prompt draws the hooks beneath it', () => {
     await ui.unmount()
   })
 
+})
+
+// 42.2.l1.1: Claude Code 2.1.323 draws the answer of `next(e)` as an engine node and the test's hook beneath as a
+// separate part after ours (see inlineBeneath). These pin both shapes, so the band tests above read the band in
+// drawing order on either host, and a host that changes the shape again fails here first.
+describe('[42.2.l1.1] inlineBeneath: the part beneath goes back where next(e) sits', () => {
+  const LENS = { type: 'Text', children: ['LENS BAND BENEATH'], part: { plugin: 'test' } }
+  const KA = { type: 'Box', children: [{ type: 'Text', children: ['⚠ ai-dlc cache-keepalive: on'] }] }
+  const PANEL = { type: 'Text', children: ['auto-handoff panel'] }
+
+  test('2.1.323 shape: an unmarked root of [our part with an engine node, the part beneath] becomes our part with the part beneath in the engine node\'s place', () => {
+    const ours = { type: 'Box', props: { flexDirection: 'column' }, children: [PANEL, { type: 'engine', ref: 1 }, KA], part: { plugin: 'ai-dlc' } }
+    const drawn = { type: 'Box', props: { flexDirection: 'column' }, children: [ours, LENS] }
+    expect(inlineBeneath(drawn)).toEqual({ ...ours, children: [PANEL, LENS, KA] })
+    expect(textOf(inlineBeneath(drawn))).toBe('auto-handoff panelLENS BAND BENEATH⚠ ai-dlc cache-keepalive: on')
+  })
+
+  test('an engine node nested deeper in our part is filled too', () => {
+    const ours = { type: 'Box', children: [{ type: 'Box', children: [{ type: 'engine', ref: 1 }] }, KA], part: { plugin: 'ai-dlc' } }
+    expect(textOf(inlineBeneath({ type: 'Box', children: [ours, LENS] }))).toBe('LENS BAND BENEATH⚠ ai-dlc cache-keepalive: on')
+  })
+
+  test('the old shape (up to 2.1.322: the part beneath already in place, the root marked as ours) is returned unchanged', () => {
+    const old = { type: 'Box', children: [LENS, KA], part: { plugin: 'ai-dlc' } }
+    expect(inlineBeneath(old)).toBe(old)
+  })
+
+  test('a tree it cannot pair up is returned unchanged: no part of ours, no engine node, or more parts beneath than engine nodes', () => {
+    const noOurs = { type: 'Box', children: [LENS] }
+    const noEngine = { type: 'Box', children: [{ type: 'Box', children: [KA], part: { plugin: 'ai-dlc' } }, LENS] }
+    const extra = { type: 'Box', children: [{ type: 'Box', children: [{ type: 'engine', ref: 1 }], part: { plugin: 'ai-dlc' } }, LENS, LENS] }
+    for (const t of [noOurs, noEngine, extra, 'text', null]) expect(inlineBeneath(t)).toBe(t)
+  })
+
+  test('on the host the band runs on, a mounted band with no panel reads the hook beneath first, then keep-alive\'s band, and nothing is drawn twice', async ($, on) => {
+    engine(on, { tokens: 10_000, beneath: 'LENS BAND BENEATH' })
+    const ui = await mountBand($)
+    const text = textOf(await ui.drawn())
+    expect(text.split('LENS BAND BENEATH').length).toBe(2)
+    expect(text.split('⚠ ai-dlc cache-keepalive:').length).toBe(2)
+    expect(text.indexOf('LENS BAND BENEATH')).toBe(0)
+    await ui.unmount()
+  })
 })
 
 // Step 44 (R44.7, which reverses R44.4 for keep-alive): keep-alive is a band only, drawn on every surface that raises

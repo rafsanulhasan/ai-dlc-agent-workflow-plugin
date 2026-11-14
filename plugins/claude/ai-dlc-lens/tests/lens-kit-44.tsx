@@ -167,7 +167,7 @@ export async function fireInDraw(kit: Kit): Promise<number> {
 export async function pane($: any, id: string, placement: 'dock' | 'inline', kit: Kit, o: { surface?: string; bodyColumns?: number } = {}) {
   await micro()
   await wait(40)
-  return kit.guard.draw(() =>
+  return kit.guard.draw<any>(() =>
     $.ui.mount({
       plugin: PLUGIN,
       surface: o.surface ?? 'vscode',

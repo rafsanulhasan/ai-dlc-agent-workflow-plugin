@@ -13,9 +13,9 @@ import {
   reasonText,
   sourceLabel,
   trackOn,
-} from '../cache-state.ts'
-import type { SessionSwitch } from '../cache-state.ts'
-import { bandText, masterState } from '../panel.tsx'
+} from '../cache-state'
+import type { SessionSwitch } from '../cache-state'
+import { bandText, masterState } from '../panel'
 
 // ITEM-068 (T17.6; LLD rev 7 to 11): the off-line suffix and the source note, the session switches, the band
 // and Pane model (step 44: no status-line summary). All pure, driven directly. Times are local, as the line writes them.

@@ -1,19 +1,19 @@
 import type { EngineInterface, Register, Timer } from 'claude-code'
-import { TRACK_NAMES, formatDuration, parseCommandArgs, parseDuration } from './duration.ts'
-import type { ForTarget } from './duration.ts'
-import type { CommandArgs } from './duration.ts'
-import type { Scope, TrackName } from './duration.ts'
-import { SETTINGS, defaults, gatedDiffering, readMult, resolveSettings } from './settings.ts'
-import type { Level, Settings, TrackKey, TrackSettings } from './settings.ts'
-import { creationSplit, k, repoConfig, settingsEnv, trustOf } from '../auto-handoff/config.ts'
-import { chainIdOf, chainSessions } from '../auto-handoff/chain.ts'
-import type { TrustTarget } from '../auto-handoff/config.ts'
-import { homeDir, log, readRaw, repoRoot, trustGate, trustTarget } from '../auto-handoff/io.ts'
-import type { TrustCache } from '../auto-handoff/io.ts'
-import type { KeepaliveState, KeepaliveTrackState } from '../../types/index.d.ts'
-import { afterMasterPress, afterTrackPress, agentUnsettled, armUntil, bandModel, cachePart, cacheView, dropPending, emptyLedger, hhmm, isEmpty, lineOf, markAgent, masterOn, needsMainSeed, observe, observePing, onlyAgentsWarm, reasonText, rowLineOf, seedMain, settleAgent, sourceLabel, trackOn } from './cache-state.ts'
-import type { BandModel, CompactionPhase, Ledger, Lifetimes, OffTail, Reason, SessionSwitch, StopKind } from './cache-state.ts'
-import { keepaliveTree } from './panel.tsx'
+import { TRACK_NAMES, formatDuration, parseCommandArgs, parseDuration } from './duration'
+import type { ForTarget } from './duration'
+import type { CommandArgs } from './duration'
+import type { Scope, TrackName } from './duration'
+import { SETTINGS, defaults, gatedDiffering, readMult, resolveSettings } from './settings'
+import type { Level, Settings, TrackKey, TrackSettings } from './settings'
+import { creationSplit, k, repoConfig, settingsEnv, trustOf } from '../auto-handoff/config'
+import { chainIdOf, chainSessions } from '../auto-handoff/chain'
+import type { TrustTarget } from '../auto-handoff/config'
+import { homeDir, log, readRaw, repoRoot, trustGate, trustTarget } from '../auto-handoff/io'
+import type { TrustCache } from '../auto-handoff/io'
+import type { KeepaliveState, KeepaliveTrackState } from '../../types/index.d'
+import { afterMasterPress, afterTrackPress, agentUnsettled, armUntil, bandModel, cachePart, cacheView, dropPending, emptyLedger, hhmm, isEmpty, lineOf, markAgent, masterOn, needsMainSeed, observe, observePing, onlyAgentsWarm, reasonText, rowLineOf, seedMain, settleAgent, sourceLabel, trackOn } from './cache-state'
+import type { BandModel, CompactionPhase, Ledger, Lifetimes, OffTail, Reason, SessionSwitch, StopKind } from './cache-state'
+import { keepaliveTree } from './panel'
 
 // Keep-alive, folded into the ai-dlc hooks module from the vendored cache-keepalive mod (see
 // ../ATTRIBUTION.md, "cache-keepalive"). When Claude ends a turn while background tasks still run, it
@@ -1336,8 +1336,15 @@ export function registerKeepalive(on: Parameters<Register>[0], deps: KeepaliveDe
   // ITEM-034.c and 034 (LLD 3.7, rev 12): a stop with no transcript file (a forked helper, or a file not
   // written yet) is ignored. Otherwise the transcript is logged, the agent is finished (never pinged,
   // AC-17.3.3), and while it has no entry or only its 'unknown' marker its split comes from the transcript.
+  // AC-17.3.7 (17.4.l1.2): a transcript is read at most once per agent. A later stop of an agent whose
+  // transcript was read (`transcriptRead`, whatever the read gave) reads nothing and settles nothing again.
   on('classic.SubagentStop', async ($, e, next) => {
     try {
+      if (e.agent_id && ledger.agents.get(e.agent_id)?.transcriptRead) {
+        markAgent(ledger, e.agent_id, 'finished')
+        $.ui.log(`keepalive: subagent ${e.agent_id} transcript already read, not read again`, { to: 'debug' })
+        return next(e)
+      }
       const path = e.agent_transcript_path
       if (!path || !(await $.fs.exists(path))) {
         $.ui.log(`keepalive: subagent ${e.agent_id ?? '?'} has no transcript file, ignored`, { to: 'debug' })
@@ -1347,6 +1354,7 @@ export function registerKeepalive(on: Parameters<Register>[0], deps: KeepaliveDe
       if (e.agent_id) {
         const unsettled = agentUnsettled(ledger, e.agent_id)
         markAgent(ledger, e.agent_id, 'finished')
+        ledger.agents.get(e.agent_id)!.transcriptRead = true
         const r = unsettled && text !== undefined ? splitFromAgentTranscript(text) : undefined
         if (r) settleAgent(ledger, e.agent_id, r, await $.clock.now(), life())
       }

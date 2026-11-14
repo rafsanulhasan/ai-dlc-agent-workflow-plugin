@@ -5,9 +5,9 @@
 // the fresh session resumes the run from it. Engine-free, like config.ts: the host follows $ only into
 // functions declared in register.tsx, so the file reads and git calls stay there.
 
-import type { Facts } from './brief.ts'
-import { factsBlock, hasUnansweredLastRequest } from './brief.ts'
-import { renderTemplate } from './templates.ts'
+import type { Facts } from './brief'
+import { factsBlock, hasUnansweredLastRequest } from './brief'
+import { renderTemplate } from './templates'
 
 /** One run state (run.v<major>[.<minor>].md, or a run.md from before versions), as the handoff
  * skill's "Run state" template writes it. */
