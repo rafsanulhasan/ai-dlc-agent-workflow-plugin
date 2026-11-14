@@ -13,6 +13,10 @@
 - [Pause after reload request](feedback_pause-after-reload-request.md) — after asking for /reload-plugins, spawn nothing more until the human reports back
 - [Document everything explicitly](feedback_document-everything-explicitly.md) — no silent omissions or assumptions in docs; state sources and unverified host behaviour
 - [GPG-signed commits](feedback_gpg-signed-commits.md) — never disable signing; tell the human when pinentry waits; commit own paths only
+- [Commits by devops-engineer](feedback_commits-by-devops.md) — never git commit myself; Gene Kim (devops-engineer) makes every commit, I check it
+- [Team limits](project_team-limits.md) — RA teammates have no web tools; teammates' nested spawns report to the lead; web research as subagent
+- [AAWP as agent team](feedback_aawp-as-agent-team.md) — every AAWP round runs as a peer-to-peer team, never a lone agent-manager subagent
 - [herdr decisions](project_herdr-decisions.md) — watch/run-in-pane/off, fallback detection, file-main + pane-copy fallback; bgIsolation none
 - [Preview2 specsmd decisions](project_preview2-specsmd-decisions.md) — specsmd natively; memory-bank; events; engine + lens @ forgeline
 - [Store critic hand-backs](feedback_store-critic-handbacks.md) — critics won't write their hand-back; store it yourself; no \a in python path strings
+- [Tag after everything merged](feedback_tag-after-everything-merged.md) — no code after the tag; notes list all; human deletes tags (classifier blocks agents)
