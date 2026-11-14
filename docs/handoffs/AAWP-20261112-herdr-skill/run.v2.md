@@ -2,13 +2,13 @@
 run: AAWP-20261112-herdr-skill
 version: "2"
 previous: run.v1.md
-status: active
+status: done
 lifecycle: AAWP
 mode: team   # follow-up 1.2.l3 onwards runs as an AAWP agent team (human 2026-11-13); earlier stages subagent
 branch: feat/ai-dlc-lens
 session: f1e3e3dc-bbb2-420f-aa4c-439c258c0179, then its automatic-handoff session (2026-11-14)
-commit: 930848d
-last-record: 3-orchestrator-to-devops-engineer.handoff.md
+commit: abe071a
+last-record: 3-devops-engineer-to-orchestrator.handback.md
 updated: 2026-11-14
 ---
 # Run: herdr skill, and herdr panes for spawned agents
@@ -40,7 +40,7 @@ Codes corrected to the phase sub-roots (handoff, Naming): each sub-root takes it
 | 1.5.2.l2.1 | critique of the docs it changes | brutal-critique (bc-h3) | team | done · **PASS** round 1 of 2, 0B/0M/4 Minor (dense paragraph; 50x10 not named; pane_not_found retry undocumented; multi-tab note) · stored by am-h3 as `1.5.2.l2.1-brutal-critique-to-agent-manager.handback.md` |
 | 1.2.l3.2 | fix round (docs only, the human 2026-11-14): spec W + S1/S2, critique 4 Minors in SKILL.md; standards S1-S4 accepted open | agent-manager (am-h3) | team | done (passed, lead check: only SKILL.md changed further (+9 → +16 lines), herdr.mjs still +52, tests unchanged; build --check and sync --check exit 0 quoted) · `1.2.l3.2-agent-manager-to-orchestrator.handback.md`; handoff to bc-h3 |
 | 1.5.2.l2.2 | re-critique, round 2 of 2 | brutal-critique (bc-h3) | team | done · **PASS** 0B/0M/0 new Minor; Warning, S1, S2, Minors 1-4 closed (SKILL.md 99-106, 115) · `1.5.2.l2.2-brutal-critique-to-agent-manager.handback.md` |
-| 3 | commit the follow-up (code, docs, tests, records); push | devops-engineer | subagent | in-progress · `3-orchestrator-to-devops-engineer.handoff.md` |
+| 3 | commit the follow-up (code, docs, tests, records); push | devops-engineer | subagent | done (passed: d646698 feat, abe071a records, both G; build --check, sync --check, node --test 1310/1303/0/7 exit 0; pushed 930848d..abe071a; trailer names Sonnet 5.5) · `3-devops-engineer-to-orchestrator.handback.md` |
 
 ## Routing
 Agent Artifact (plugin skill + orchestrator / agent-invocation / request-routing wiring; likely a script) → AAWP. No work breakdown (AAW). Mode: subagent.
@@ -115,4 +115,4 @@ Change kinds (2.2): docs — 5 plugins/claude/ai-dlc/agents/*.md; generated — 
 - 2026-11-12, orchestrator: 1.1.3 hand-back accepted as the intent artifact (content complete; only the file write failed).
 
 ## Next action
-**Current (2026-11-14):** follow-up reviews all passed (critique PASS round 2; standards APPROVE with S1-S4 accepted open by the human; spec PASS, Warning documented). Team shut down (am-h3, bc-h3 requested). devops-engineer step 3 commits and pushes; then status done.
+**Current (2026-11-14):** run CLOSED (status done). Follow-up committed d646698 + abe071a, pushed. Open, accepted by the human: standards S1-S4 (1.4.1.l3.1). Teammates am-h3 and bc-h3 asked to shut down; their herdr panes (w1:p1Z, w1:p23) close on confirmation. This run state and the step 3 hand-back are uncommitted (commit with the next devops-engineer commit).
