@@ -4,10 +4,10 @@ lifecycle: AI-DLC (planning segments: PDLC → ASDLC → STBLC, in specsmd terms
 status: active
 branch: plan/preview2
 worktree: .worktrees/preview2-planning
-session: eed2556b-14f1-4e26-a785-041203a2455a (auto-handoff from c4ce9349, 2026-11-14)
+session: eed2556b-14f1-4e26-a785-041203a2455a (released 2026-11-14; next session takes over without asking)
 version: v2 (scope widened 2026-11-14: feature 8, the .forgeline restructure, changes code — lifts 'planning only' for feature 8 alone; v1.1 is history)
-commit: 8a6b18c
-last-record: 12-orchestrator-to-devops-engineer.handoff.md
+commit: 383f0d7
+last-record: 13-sqa-engineer-to-orchestrator.handback.md
 mode: sequential subagent chain (Mode 3); critique stages DW ↔ BC
 ---
 
@@ -126,7 +126,9 @@ Lifecycle AAWP (code + docs). Mode: research as parallel subagents; AAWP change/
 | 1.5.l5.5.1–.3 | G3 gate critique round 3 (final, D78) | brutal-critique ×3 | done — PASS ×3, 0 B / 0 M; Minors into gate record 10 | 1.5.l5.5.1–.3 | 1.5.l5.5.1, .2, .3 (stored by orchestrator) | passed |
 | 10 | G3 gate (+ G1 amendment D69, G2 amendment D65); supersedes 7 | human | done — APPROVED 2026-11-14 (D79–D82) | 10 | — (human, in chat) | approved |
 | 1.5.l6.1 | post-gate: remove 'pending' markers, record D79–D82 | documentation-writer | done — 65 files; bolts/stories status ready; ADR-0017 Accepted; r1/r2 deltas approved; D81, D82 recorded; link check 219/0; remaining 'pending' hits are history/templates/delta r3 only | (message) | 1.5.l6.1 | passed |
-| 12 | commit pending + merge origin/main into plan/preview2 (human request) | devops-engineer | in-progress | 12 | | |
+| 12 | commit pending + merge origin/main into plan/preview2 (human request) | devops-engineer | done — 970da6d (G) commit; local main ff 9eae890→c12664b; merge 383f0d7 (G, 5 conflicts: agent memory + keepalive ATTRIBUTION.md, no regeneration needed); tree clean, 0 behind origin/main (verified) | 12 | 12 | passed |
+| 13 | verify merged branch: tests, plugin tests, validations, checks | sqa-engineer | done — 12 commands exit 0: repo tests 1350 (1343 pass, 0 fail, 7 skip), ai-dlc plugin test 1007/0, lens plugin test 926/0, validate --strict ×3, build-copilot/build-standards/sync-harness --check, workflow validate | 13 | 13 | passed |
+| 14 | commit run state (ready to start bolt 001) | devops-engineer | in-progress | 14 | | |
 | 11 | G3 commit | devops-engineer | done — 8a6b18c (G, 101 files; model-metadata/.scratch excluded; tree clean — verified) | 11 | 11 | passed |
 | 8.3 | tests | sqa-engineer (team) | done — new tests/build-standards.test.mjs (26), step-0 tests in stop-sync-then-check, CI-order test in validate-script; relaxed tests/workflow/handoff-naming.test.mjs (ignores artifacts.handoffs) → flagged to 8.4.2; `node --test "tests/**/*.test.mjs"`: 1299 tests, 1292 pass, 0 fail, 7 skipped (one timing flake passed on rerun) | 8.3 (agent-manager) | 8.3-sqa-engineer-to-agent-manager | passed |
 | 8.3.l1 | tests fix round 1 (from 8.4.1 warnings) | sqa-engineer ↔ agent-manager (team) | done — agent-manager fixed parser (splitFlow; comma globs refused exit 2; unknown/repeated keys invalid; YAML-ambiguous descriptions quoted; atomic writes; --help); sqa tests rewritten + budget test; `node --test "tests/**/*.test.mjs"`: 1307 tests, 1300 pass, 0 fail, 7 skipped | — | (messages) | passed |
@@ -148,4 +150,9 @@ herdr: not detected (HERDR_ENV unset).
 - Spec housekeeping found by requirement-analyst: spec:4/:11 still draft / G2 pending; §17 O-1, O-2, O-3, O-5 still open though D39, D41 decided them.
 
 ## Next action
-Planning complete: G3, G1 amendment and G2 amendment approved and committed (8a6b18c on plan/preview2, not pushed). Feature 8 done. Waiting for the human's explicit go before any bolt starts (first: bolt 001 spike, W1, with the human's 2–4 h session on days 1–2, D82). Uncommitted: this run-state update and the two 11 records — commit with the next change.
+**Planning is complete and committed; plan/preview2 is synced with origin/main (merge 383f0d7, verified green by 13).** The human said they will continue by starting a bolt. A new session resumes here:
+
+1. Confirm the human's explicit go for a bolt (D79: no bolt starts without it). The first bolt is **`001-engine-rename-spike`** (W1, spike-bolt, time box 2 d, story engine/001 `rename-platform-facts`; enables 009, 010, 014): `.forgeline/memory-bank/product/intents/001-preview2-specsmd/units/engine/bolts/001-engine-rename-spike/bolt.md`. It runs as ASDLC with the one-off override research → probe → architecture (D40), and needs the human's 2–4 h session on days 1–2 of W1 (D82); the human accepts the spike hand-back (D39).
+2. Each bolt runs as its **own run** (this planning run's clarified intent: "building the units are later runs"): new run folder `.forgeline/execution-plans/<LIFECYCLE>-<YYYYMMDD>-bolt-001-engine-rename-spike/` with `run.v1.md`, on a branch from `plan/preview2` (devops-engineer creates the branch/worktree under `.worktrees/`). Link it back to this run (AI-DLC-20261113-preview2-specsmd) and ITEM-126.
+3. Keep this run `active` as the parent planning record: W1 also has bolt 002 (and 003/004/005 per the plan's waves); the task plan `.forgeline/memory-bank/project/plans/001-preview2-specsmd.tasks.md` is the schedule of record.
+4. Bank writes stay documentation-writer's (ADR-0014; standards are agent-manager's, ADR-0017). Commits only by devops-engineer, signed. Nothing is pushed yet (plan/preview2 is local; ask before pushing or opening a PR).
