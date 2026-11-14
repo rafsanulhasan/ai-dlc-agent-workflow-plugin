@@ -3,15 +3,15 @@ run: FEAT-20261020-ai-dlc-lens
 work-item: FEAT-20261020-ai-dlc-lens (scope v2)
 version: "4.4"
 previous: run.v4.3.md
-status: active
+status: done
 lifecycle: AI-DLC (AAW plugin/mod chain override; build by agent-manager)
 mode: team for AAWP stages (human 2026-11-13: peer-to-peer agent teams; herdr watch panes); planning and research steps as subagents
-current-stage: release notes update (step 81), then PR, human merge, re-tag; tag and prerelease deleted by the human 2026-11-14
+current-stage: closed 2026-11-14 — v1.0.0-preview1 re-released on 57ca76b (PR #28) with herdr in the notes; open G4 conditions carried in the backlog (ITEM-113, ITEM-098, ITEM-104, ITEM-056)
 owner: orchestrator
 session: f1e3e3dc-bbb2-420f-aa4c-439c258c0179 (took over from c6cc60b4 / 4e6863ff with the human's OK, 2026-11-13)
 branch: feat/ai-dlc-lens (feat/wf-1 merged at 734b33d)
-commit: d65d777
-last-record: 83-orchestrator-to-devops-engineer.handoff.md
+commit: 57ca76b
+last-record: 85-orchestrator-to-devops-engineer.handoff.md
 updated: 2026-11-14
 wave: 3 (Build)
 ---
@@ -205,8 +205,9 @@ Mode choice for the build: subagents. Each chain is a fixed sequence (agent-mana
 | 80 | Re-tag v1.0.0-preview1 on the PR #27 merge commit 07e2c7f, re-create the GitHub prerelease (notes .scratch/release-75/notes.md) | devops-engineer | subagent | done (passed: signed tag 5b4d706 → 07e2c7f pushed; prerelease re-created 2026-11-14T00:57:47Z with the saved notes) | 2026-11-14 session | orchestrator | `80-orchestrator-to-devops-engineer.handoff.md` | `80-devops-engineer-to-orchestrator.handback.md` | 2026-11-14 |
 | 81 | Release notes: add the herdr skill and pane layout to CHANGELOG v1.0.0-preview1 (human: yes, 2026-11-14) | documentation-writer, brutal-critique | team | done (critique PASS round 2 of 2, 0B/0M; round 1 Majors closed (ITEM-108 + 1.2.l3 cited; date 2026-11-14 and Checks from step 82); 2 Minors applied after the PASS, lead-checked vs records) | 2026-11-14 session | orchestrator | `81-orchestrator-to-documentation-writer.handoff.md` | `81-documentation-writer-to-orchestrator.handback.md`, `81.l1.2-brutal-critique-to-documentation-writer.handback.md` | 2026-11-14 |
 | 82 | Local checks for the re-release on 9e2cf19 (= 07e2c7f tree): the 8 checks of step 74 | sqa-engineer | subagent | done (passed: 8/8 exit 0 on 9e2cf19 (= 07e2c7f code), Claude Code 2.1.325, Node 24.11.1; repo 1310/1303/0/7 skipped; ai-dlc 1007/0; lens 926/0; 3 validates, build --check, validate.mjs --check pass) | 2026-11-14 session | orchestrator | `82-orchestrator-to-sqa-engineer.handoff.md` | `82-sqa-engineer-to-orchestrator.handback.md` | 2026-11-14 |
-| 83 | Commit CHANGELOG (herdr) + records 79-83; push; PR → main (human merges); prerelease body extracted | devops-engineer | subagent | in-progress | 2026-11-14 session | orchestrator | `83-orchestrator-to-devops-engineer.handoff.md` | — | 2026-11-14 |
-| 84 | Re-tag v1.0.0-preview1 on the new merge commit; prerelease with the CHANGELOG section | devops-engineer | subagent | pending (waits for the human: PR merged) | — | — | — | — | — |
+| 83 | Commit CHANGELOG (herdr) + records 79-83; push; PR → main (human merges); prerelease body extracted | devops-engineer | subagent | done (passed: 86c634c G, 7cd8634 G (late 79.l1.1 hand-back), pushed; PR #28 open, mergeable; notes .scratch/release-83/notes.md 11849 bytes) | 2026-11-14 session | orchestrator | `83-orchestrator-to-devops-engineer.handoff.md` | `83-devops-engineer-to-orchestrator.handback.md` | 2026-11-14 |
+| 84 | Re-tag v1.0.0-preview1 on the PR #28 merge commit 57ca76b; prerelease with .scratch/release-83/notes.md | devops-engineer | subagent | done (passed: signed tag 37be3fb → 57ca76b pushed; prerelease 2026-11-14T01:14:46Z, body = release-83 notes incl. herdr) | 2026-11-14 session | orchestrator | `84-orchestrator-to-devops-engineer.handoff.md` | `84-devops-engineer-to-orchestrator.handback.md` | 2026-11-14 |
+| 85 | Closing commit of records 83-85 and the run state; push the branch (no PR, tag unchanged) | devops-engineer | subagent | in-progress | 2026-11-14 session | orchestrator | `85-orchestrator-to-devops-engineer.handoff.md` | — | 2026-11-14 |
 | 41.6 | lens / keep-alive: docs critique (41.6, 41.6.l1.1-2, PASS round 3) | brutal-critique, documentation-writer | team | done (recovered hand-back accepted after verification, step 60; human 2026-11-13) | 7ac45d8b | bc-41 | `41.6.l1.2-documentation-writer-to-brutal-critique.handoff.md` | `41.6.l1.2-brutal-critique-to-documentation-writer.handback.md` | 2026-11-13 |
 | 42.2 | icons / Cache Lab: build (two bands, Cache Lab in the agent panel; commit 1302cd4) | agent-manager | team | done (recovered hand-back accepted after verification, step 60; human 2026-11-13) | 7ac45d8b | am-42 | `42.2-agent-manager-to-sqa-engineer.handoff.md` | `42.2-agent-manager-to-orchestrator.handback.md` | 2026-11-13 |
 | 42.5 | icons / Cache Lab: README edits and critique (42.5, 42.5.l1.1, PASS round 2) | documentation-writer, brutal-critique | team | done (recovered hand-backs accepted after verification, step 60; human 2026-11-13) | 7ac45d8b | dw-42, bc-42 | `42.5-documentation-writer-to-brutal-critique.handoff.md`, `42.5.l1.1-documentation-writer-to-brutal-critique.handoff.md` | `42.5-documentation-writer-to-orchestrator.handback.md`, `42.5-brutal-critique-to-documentation-writer.handback.md`, `42.5.l1.1-brutal-critique-to-documentation-writer.handback.md` | 2026-11-13 |
@@ -324,7 +325,7 @@ Rewritten 2026-11-13 (session f1e3e3dc) from the step-61 checklist's corrected t
 - The stale worktree `.worktrees/agent-a62622e4974e96bd0` (branch `worktree-agent-a62622e4974e96bd0`, 8e80b61) is left for the human to inspect or remove.
 
 ## Next action
-**Current (2026-11-14):** the human deleted the prerelease and tag (verified gone). PR #27 MERGED by the human (07e2c7f). Step 80 done: tag v1.0.0-preview1 → 07e2c7f, prerelease re-created. Human said yes to adding herdr to the notes: step 81 dw-81 + bc-81 (team) in-progress; Human (2026-11-14): tag v1.0.0-preview1 and the prerelease ALREADY DELETED again by the human (lead verified: remote, local, release gone). Plan: after the critique PASS, devops-engineer commits CHANGELOG + records 79-81 + run state, pushes, opens a PR; human merges; devops-engineer re-tags the new merge commit and re-creates the prerelease with the updated notes (from the CHANGELOG section). Then the closing commit of records 79-80 and this run state (devops-engineer), status done.
+**Current (2026-11-14):** the human deleted the prerelease and tag (verified gone). PR #27 MERGED by the human (07e2c7f). Step 80 done: tag v1.0.0-preview1 → 07e2c7f, prerelease re-created. Human said yes to adding herdr to the notes: step 81 dw-81 + bc-81 (team) in-progress; Human (2026-11-14): tag v1.0.0-preview1 and the prerelease ALREADY DELETED again by the human (lead verified: remote, local, release gone). Run CLOSED. Tag v1.0.0-preview1 → 57ca76b, prerelease re-created with the herdr notes. Records 83 hand-back, 84 and this run state are uncommitted: commit them with the next devops-engineer commit (they record the release, not shipped code). Plan was: after the critique PASS, devops-engineer commits CHANGELOG + records 79-81 + run state, pushes, opens a PR; human merges; devops-engineer re-tags the new merge commit and re-creates the prerelease with the updated notes (from the CHANGELOG section). Then the closing commit of records 79-80 and this run state (devops-engineer), status done.
 
 **Current (2026-11-14):** run REOPENED. Human: changes after the tag belong in preview1; remove the tag, commit everything except preview2 artifacts, push, PR; after the human merges, tag again. devops-engineer 79 in-progress (delete prerelease + tag, commit, push, PR). Then WAIT for the human to report the merge; then 80 (re-tag on the merge commit, re-create the prerelease), then close.
 
