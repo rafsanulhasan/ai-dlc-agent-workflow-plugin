@@ -2,7 +2,7 @@
 
 All notable changes to the plugins in this repository are recorded here. Each release section is also the body of the matching GitHub Release.
 
-## v1.0.0-preview1 - 2026-11-13
+## v1.0.0-preview1 - 2026-11-14
 
 **This is a prerelease.** It is the first tagged release of this repository: no tag or GitHub Release existed before it. One tag covers both plugins.
 
@@ -36,6 +36,14 @@ Keep-alive and automatic session handoff (the Claude-only hooks module):
 Workflow and agent-artifact work:
 
 - The agent-artifact lifecycle comes in two variants, `AAWH` for a harness change and `AAWP` for a plugin or mod, with review loop limits per hand-off (ITEM-045, ITEM-046, ITEM-047, ITEM-050). Both lifecycles are in the workflow template. `README.md` (line 58) says when each applies: `AAWH` for a docs-only change under the harness folders, `AAWP` for any change that holds code or touches `plugins/`, `tools/` or `tests/`. Automatic selection is not built: the `variant` command that picks the variant, with the selection rule in routing (ITEM-048), is not included (see Not included), as `README.md` also says.
+
+herdr panes (the `herdr` skill, Claude Code only; ITEM-108, and the pane layout, run `AAWP-20261112-herdr-skill` step 1.2.l3):
+
+- When a Claude Code session runs inside [herdr](https://herdr.dev), the orchestrator gives each agent it spawns a pane labelled `<agent> <step>`. The default mode, `watch`, shows the brief, the run folder's records for that agent and, when found, its transcript, and the pane closes when the agent hands back (a teammate's, when it is shut down). `run-in-pane` runs each subagent as its own `claude -p` process in its pane, and its final report becomes the hand-back; `off` opens no pane. Agent-team stages always use `watch`.
+- Settings are `mode` and `runTimeoutMinutes` (default 60, at most 720), in `.ai-dlc/herdr.json` or the variables `AI_DLC_HERDR_MODE` and `AI_DLC_HERDR_RUN_TIMEOUT_MINUTES`; `show`, `set`, `merge` and `validate` manage them.
+- Panes are placed by herdr's own layout. A run's first pane goes to the right of the session pane. Later panes stack down while each keeps at least 10 rows, then a new column starts. Without a usable layout, the previous rule applies, a single column down from the run's newest pane.
+- herdr is never installed by the plugin, and outside herdr the skill does nothing. A failure never blocks a run. The skill is not in the GitHub Copilot plugin.
+- Known limits: the run's first pane halves the session pane, so a narrow session pane caps the width of the run's column and later panes get a size warning. A `run-in-pane` child cannot answer a permission prompt, so a tool that needs approval is denied. Whether the project's `permissions.allow` rules apply to such a child is not verified.
 
 Compatibility with Claude Code 2.1.323:
 
@@ -77,11 +85,13 @@ Also not included: the backlog follow-ups ITEM-099 to ITEM-103, ITEM-105, ITEM-1
 
 ### Checks
 
-CI could not run, so these were run locally and recorded before the release. The release commit's own re-run is recorded by the release step, not here.
+CI could not run, so these were run locally. The re-release (tag 2026-11-14, with the pane layout, d646698) was checked in step 82 of the run (`82-sqa-engineer-to-orchestrator.handback.md`) on commit 9e2cf19, whose code equals the merge commit 07e2c7f, with Claude Code 2.1.325 and Node 24.11.1. Each check ran on its own and exited 0. This run did not include the live two-plugin band check, which stays open.
 
-- `node tools/build-copilot.mjs --check` and `node .claude/scripts/sync-harness.mjs --check` exit 0.
-- `plugin validate --strict` exits 0 for both plugins and the marketplace on Claude Code 2.1.323 and 2.1.322.
-- `plugin test ./plugins/claude/ai-dlc`: 1007 passing, 0 failing, on Claude Code 2.1.323 and on 2.1.322.
-- `plugin test ./plugins/claude/ai-dlc-lens`: 926 passing, 0 failing, on Claude Code 2.1.323 and on 2.1.322.
-- Repository tests: 1270 tests, 1263 passing, 0 failing, 7 skipped, on Node 24.11.1.
-- Code review ended with 0 Blockers in every recorded round; G4 was approved with the open conditions above.
+- `node tools/build-copilot.mjs --check`: the Copilot plugin and generated sources are up to date.
+- `node tools/validate.mjs --check`: every step passed (it includes the harness sync check).
+- `plugin validate --strict` passes for `ai-dlc`, `ai-dlc-lens` and the marketplace.
+- `plugin test ./plugins/claude/ai-dlc`: 1007 passing, 0 failing.
+- `plugin test ./plugins/claude/ai-dlc-lens`: 926 passing, 0 failing.
+- Repository tests: 1310 tests, 1303 passing, 0 failing, 7 skipped.
+- Earlier runs, before the pane layout was added: `plugin validate --strict` and both `plugin test` runs passed with the same counts on Claude Code 2.1.323 and 2.1.322, and the repository tests were 1270 tests, 1263 passing, 7 skipped, on Node 24.11.1.
+- Code review ended with 0 Blockers in every recorded round, the pane layout included (run `AAWP-20261112-herdr-skill`, steps 1.4.1.l3.1 and 1.4.2.l2.1); G4 was approved with the open conditions above.
