@@ -19,3 +19,4 @@
 - [Lens workflow identity](project_lens-workflow-identity.md) — a run is one workflow, one chart; parent:/merged-from join the parent; 8 per row
 - [Licence fetch recipe](reference_licence-fetch-recipe.md) — curl denied; npm pack / git clone / gh api for verbatim licences; lens vendor facts
 - [Versioned run state](project_versioned-run-state.md) — run.v<major>[.<minor>].md per session; minor pair = direction; plain continuation = next minor (11.18)
+- [Standards generator](project_standards-generator.md) — plan/preview2: rules generated from .forgeline standards; edit the standard; Windows git mv dir lock

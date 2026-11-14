@@ -1,0 +1,1 @@
+- [preview2 split-design](project_preview2-split-design.md) — workflow.mjs stays one file; .mjs vectors; merge guard to bolt 002; repo facts

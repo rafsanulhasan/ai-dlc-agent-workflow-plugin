@@ -1,0 +1,19 @@
+# Unit registry
+
+**Planned:** this registry is part of intent 001 (release `1.0.0-preview2`), whose G2 design was approved (D38). Nothing reads it yet; it is written by hand ahead of the tooling. The unit model is decided (D27, 2026-11-13) and so are the unit names `engine` and `lens` (D34, 2026-11-14); both are recorded in [ADR-0016](architecture/decisions/ADR-0016-stable-units.md) (accepted at G2, D38).
+
+A **unit** is a lasting slice of the product that every intent can touch. Its slug is the name here, with no number. Each intent that touches a unit keeps that unit's work in `product/intents/{NNN}-{intent-slug}/units/{unit-slug}/` (a `unit-brief.md`, `stories/` and `bolts/`). A new unit is one new row in this table.
+
+## Registered units
+
+| Slug | Purpose | Owned code paths (today) | Owned code paths (after the rename bolts, planned) |
+|---|---|---|---|
+| `engine` | The AI-DLC team (agents, skills, workflow tooling) including keep-alive and auto-handoff, and the contract between the product and a target repository: memory-bank layout, intents/units/bolts, execution plans and typed events, the fallback, the `migrate` skill. The upstream unit: it never depends on the lens. | `plugins/claude/ai-dlc/` (including `hooks/auto-handoff/` and `hooks/keepalive/`, except the lens's five command skills `lens`, `lens-configure`, `lens-init`, `lens-kit`, `lens-gate`), `plugins/copilot/ai-dlc/` (generated), `tools/` (all of it), `.ai-dlc/` templates (`workflow.mjs`, `workflow.schema.json`, `event.schema.json` once it exists), both marketplace files, `.github/workflows/validate.yml`, and everything under `tests/` except `tests/lens-renderer/` and `tests/cache-reader/`; in the shared registration files (Rules) every entry except the lens's. | `plugins/claude/engine/`, `plugins/copilot/engine/` (generated), the same tools, templates (installed under `.forgeline/ai-dlc/` after bolt 015, FR-18), marketplace files and tests; `tools/stale-names.allowlist.json` is added. `tests/helpers/paths.mjs` is added (engine file; `LENS_PLUGIN` and `LENS_DIR` are lens entries). |
+| `lens` | The Claude-only live view of runs, read from `execution-plans/` and the event records. Depends on the engine contract, never the reverse in code. | `plugins/claude/ai-dlc-lens/` (its hooks module, its tests and `MANUAL-CHECKS.md`; the folder is renamed by D31) and, for the five lens command skills named at left, `plugins/claude/ai-dlc/skills/lens*` until they move, plus `tests/lens-renderer/` and `tests/cache-reader/`, and the lens's entries in the shared registration files. | `plugins/claude/lens/` including `plugins/claude/lens/skills/` with the five command skills `show`, `configure`, `init`, `kit`, `gate` (D22, D24); its config files are read from their `CONFIG_PATHS` places (story lens/007, built in engine bolt 015, FR-18). |
+
+## Rules
+
+- **Slug.** Lower-case kebab-case, no number, never reused for a different slice.
+- **Dependency.** `lens` depends on `engine`; the engine never depends on the lens in code. One engine skill, `cache-keepalive-lens`, names a lens setting in its text only (D28).
+- **Ownership.** A path belongs to one unit. The exception is the shared registration files (`.claude-plugin/marketplace.json`, `tools/claude-only-plugins.json`, `tools/claude-only-skills.json`, `.github/workflows/validate.yml`, `tests/helpers/paths.mjs`): the engine owns each file, and the lens owns its own entries in it (its marketplace entry, its plugin line, its skill lines, its CI steps, `LENS_PLUGIN` and `LENS_DIR`); only a lens bolt changes a lens entry. The lens's five command skills move from the engine's skill folder to the lens's in bolt 010; until then the table lists them under the lens.
+- **Intent scope.** An intent lists, in its own `units.md`, which of these units it touches and how its requirements split between them: see [the intent's unit decomposition](intents/001-preview2-specsmd/units.md).

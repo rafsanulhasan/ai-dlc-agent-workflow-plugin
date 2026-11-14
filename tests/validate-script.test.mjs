@@ -60,6 +60,13 @@ test("every step runs even after a failure, and any failure exits 1", () => {
   assert.equal(missing.failed.length, 4);
 });
 
+test("CI runs the standards check before the harness sync check", () => {
+  const ci = fs.readFileSync(path.join(REPO, ".github", "workflows", "validate.yml"), "utf8");
+  const at = (s) => ci.indexOf(s);
+  assert.ok(at("node tools/build-standards.mjs --check") > 0);
+  assert.ok(at("node tools/build-standards.mjs --check") < at("node .claude/scripts/sync-harness.mjs --check"));
+});
+
 test("CI runs the harness sync check before the two plugin validations", () => {
   const ci = fs.readFileSync(path.join(REPO, ".github", "workflows", "validate.yml"), "utf8");
   const at = (s) => ci.indexOf(s);

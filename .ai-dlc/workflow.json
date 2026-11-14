@@ -706,12 +706,12 @@
     "maxFailures": 1
   },
   "artifacts": {
-    "backlog": "docs/backlog/backlog.md",
-    "product": "docs/product/",
-    "specs": "docs/specs/<feature-slug>.spec.md",
-    "decisions": "docs/architecture/decisions/",
-    "narratives": "docs/architecture/narratives/<feature-slug>.md",
-    "plans": "docs/plans/<feature-slug>.tasks.md",
-    "handoffs": "docs/handoffs/{LIFECYCLE}-{YYYYMMDD}-{feature-slug}/"
+    "backlog": ".forgeline/memory-bank/project/backlog.md",
+    "product": ".forgeline/memory-bank/product/",
+    "specs": ".forgeline/memory-bank/product/specs/<feature-slug>.spec.md",
+    "decisions": ".forgeline/memory-bank/product/architecture/decisions/",
+    "narratives": ".forgeline/memory-bank/product/architecture/narratives/<feature-slug>.md",
+    "plans": ".forgeline/memory-bank/project/plans/<feature-slug>.tasks.md",
+    "handoffs": ".forgeline/execution-plans/{LIFECYCLE}-{YYYYMMDD}-{feature-slug}/"
   }
 }

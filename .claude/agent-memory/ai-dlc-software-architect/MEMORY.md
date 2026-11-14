@@ -2,4 +2,9 @@
 - [Wave 3 Cache Lab design](project_wave3-cache-lab-design.md) — ADR-0006 transcript reader, 4 MiB caps; ADR-0007 handoff chain = one session
 - [Step 44 band and pane seats](project_step44-band-and-pane-seats.md) — ADR-0008 keep-alive band everywhere, lens follows placement; host seat facts; next ADR was 0009
 - [ITEM-104 halted state, ADR-0009](project_item104-halted-state-adr0009.md) — marks in agentsA row, staged via ITEM-106; journey narrative; next ADR 0010
-- [herdr design, ADR-0010](project_herdr-design-adr0010.md) — orchestrator drives herdr panes via skill script; result-file hand-back
+- [herdr design, ADR-0010](project_herdr-design-adr0010.md) — orchestrator drives herdr panes via skill script; result-file hand-back; next ADR 0011
+- [preview2 G2 fixes](project_preview2-g2-fixes.md) — shared registration files, settings rewrite scope, pane ids lens-*, plan = schedule
+- [preview2 bolt design](project_preview2-bolt-design.md) — 1.1.23: AC parts, 31 stories, 011 after dogfood (R-1), refines R-1..R-11
+- [preview2 split reconcile](project_preview2-split-reconcile.md) — 1.1.28: G-FM one impl, fallback in own files, D42 per-key resolver + migrate residue
+- [preview2 unit design](project_preview2-unit-design.md) — 2 units, records-as-events, bolt types as skippable stage subsets, spike first, ADR drafts 0011-0016
+- [preview2 .forgeline, ADR-0017](project_preview2-forgeline-adr0017.md) — standards exception to ADR-0014; D45 layout; bolt 015 before ITEM-121; next ADR 0018

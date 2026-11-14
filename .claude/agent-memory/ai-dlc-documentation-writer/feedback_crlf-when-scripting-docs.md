@@ -10,3 +10,5 @@ Line endings differ by file: check each file against HEAD before a scripted edit
 **Why:** the working tree (and the committed blobs) use CRLF; `git diff` then shows whole-file churn if the endings drift. The cause was not pinned down, so do not assume a script is safe.
 
 **How to apply:** after any scripted edit, count bare LF per touched file (`(?<!\r)\n`) and normalise to CRLF with `replace(/\r\n/g,"\n").replace(/\n/g,"\r\n")` before writing. Check `git diff --stat` afterwards: the line counts should match the intended edits. Prefer the Edit tool for a handful of changes.
+
+**Step 1.5.l3.6 addendum:** memory-bank files are MIXED: backlog, README and others are CRLF, the spec and some other files are LF, and a few CRLF files have one LF line. Count with `tr -cd "" < f | wc -c` against `wc -l`; `grep -c $''` in the Bash tool matches every line and lies. Preserve each file's dominant EOL and each untouched line's own EOL, then diff against a backup.
