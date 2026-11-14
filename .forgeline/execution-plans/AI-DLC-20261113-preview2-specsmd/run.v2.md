@@ -1,0 +1,138 @@
+---
+run: AI-DLC-20261113-preview2-specsmd
+lifecycle: AI-DLC (planning segments: PDLC → ASDLC → STBLC, in specsmd terms intent → unit design → bolt design)
+status: active
+branch: plan/preview2
+worktree: .worktrees/preview2-planning
+session: eed2556b-14f1-4e26-a785-041203a2455a (auto-handoff from c4ce9349, 2026-11-14)
+version: v2 (scope widened 2026-11-14: feature 8, the .forgeline restructure, changes code — lifts 'planning only' for feature 8 alone; v1.1 is history)
+commit: c4b5c22
+last-record: 1.1.32-orchestrator-to-product-manager.handoff.md
+mode: sequential subagent chain (Mode 3); critique stages DW ↔ BC
+---
+
+# Run state — preview2 planning: specsmd memory bank, bolts, events
+
+## Request
+"Integrate specsmd into my plugin. Redefine our handoff skill with the memory bank (of specsmd) idea instead of our docs structure. All the docs go to memory bank; instead of handoff, an execution-plans folder for the bolts' execution plans, handoffs/handbacks and the event-driven things Copilot stated. Suggest a name. Start the planning with specsmd steps like unit design and bolt design. Target repos get `memory-bank/product` (the product) and `memory-bank/project` (DevOps flows, agent harness engineering, other non-product work)."
+
+## Clarified intent
+**Planning only (human, 2026-11-13: "make plan only, don't implement anything yet").** No plugin, hook, skill, agent, schema, tooling or test changes in this run; only planning artifacts (intent, unit briefs, bolt plans, backlog entries) and run records. Plan `1.0.0-preview2`: adapt specsmd natively (intents → units → bolts), move all lifecycle docs to `memory-bank/product|project`, replace `docs/handoffs/` with `execution-plans/` holding bolt execution plans, hand-offs/hand-backs and typed events. Planning only in this run; building the units are later AAWP runs.
+
+## Decisions (human, 2026-11-13) — `decisions-2026-11-13.md`
+D1 adapt specsmd natively, MIT attribution · D2 stage agents own content, documentation-writer sole author of memory-bank files, brutal-critique gates · D3 scope bank + bolts + typed events (files + schema), no deterministic runtime · D4 keep `ai-dlc` id, brand name later after a clash check · D5 base `feat/ai-dlc-lens` 47a3480 · D6 plan with specsmd steps · D7 preview1 ships first; this is preview2 (breaking, with migration) · D8 dogfood: this run's artifacts go to `memory-bank/` and `execution-plans/` now · D9 old `docs/` paths read for one release · D10 backlog → `memory-bank/project/`.
+
+## Artifact paths (this run, dogfooded — D8)
+- Intent: `memory-bank/product/intents/001-preview2-specsmd/requirements.md` (+ `inception-log.md`)
+- Units: `memory-bank/product/intents/001-preview2-specsmd/units.md`, `units/{UUU}-{unit}/unit-brief.md`
+- Bolts: `memory-bank/product/bolts/{BBB}-{unit}/bolt.md`
+- Backlog: `memory-bank/project/backlog.md` (moved from `docs/backlog/backlog.md` at G1)
+- Run records: this folder.
+Known gap (corrected 2026-11-14, 6.2): auto-handoff, ai-dlc-lens and run discovery take their folder from `artifacts.handoffs` (fallback `docs/handoffs/`). Before D42 they read `docs/handoffs/`, so this run had to be pointed at by hand; on `plan/preview2` after 6.2 they read `execution-plans/`, and the old `docs/handoffs/` runs are the ones not found. The main checkout (`feat/ai-dlc-lens`) still has `docs/handoffs/`.
+
+## Work breakdown (product-manager, `1.1.6-work-breakdown.md`)
+Units 1–13: 1 Foundations (P0) · 2 bank in tooling · 3 authorship + docs-status · 4 intents/units/bolts in lifecycles+agents · 5 execution-plans + typed events + handoff rewrite · 6 hooks + lens paths · 7 path sweep · 8 migration · 9 attribution · 10 brand research · 11 dogfood repo · 12 integration · 13 docs + release.
+
+## Stages
+| step | stage | agent | status | handoff | hand-back | verification |
+|---|---|---|---|---|---|---|
+| 1.1.1–1.1.5 | research (Copilot chat, specsmd, repo) | research-assistant | done | 1.1.1…1.1.5 | 1.1.1.l1.2, 1.1.2, 1.1.3, 1.1.5 | passed (1.1.1, 1.1.1.l1.1 failed: sign-in) |
+| 1.1.4 | worktree | devops-engineer | done | 1.1.4 | 1.1.4 | passed |
+| 1.1.6 | work breakdown | product-manager | done | 1.1.6 | 1.1.6 | passed |
+| 1.1.7 | intent brief (PDLC brief) | product-owner | done | 1.1.7 | 1.1.7 | passed |
+| 1.1.8 | brand check + .handoff/config.md | research-assistant | done | 1.1.8 | 1.1.8 | passed |
+| 1.1.9 | ACs (PDLC stories) | requirement-analyst | done | 1.1.9 | 1.1.9 | passed |
+| 1.1.10 | clarify (C-1,2,3,6,10,11,12) | product-owner | done | 1.1.10 | 1.1.10 | passed |
+| 1.1.11 | backlog content | product-manager | done | 1.1.11 | 1.1.11 | passed |
+| 1.5.1 | write intent into memory bank | documentation-writer | done | 1.5.1 | 1.5.1 | passed |
+| 1.5.2 | gate critique round 1 | brutal-critique | done (PASS, 3 Major) | 1.5.2 | 1.5.2 | passed |
+| 1.5.l1.1 | ACs + backlog + fixes | documentation-writer | done | 1.5.l1.1 | 1.5.l1.1 | passed |
+| 1.5.l1.2 | gate critique round 2 (limit) | brutal-critique | done (PASS, 2 Major) | 1.5.l1.2 | 1.5.l1.2 | passed |
+| 1.1.12 | accept (PDLC accept) | product-owner | done (Accepted, FR-5 condition) | 1.1.12 | 1.1.12 | passed |
+| 1.5.l1.3 | final G1 touch-up (no 3rd critique) | documentation-writer | done | 1.5.l1.3 | 1.5.l1.3 | passed |
+| 2 | run-start commit | devops-engineer | done (18b160c, signed) | 2 | 2 | passed |
+| 3 | G1 gate | human | done — APPROVED 2026-11-13 | 3 | (human, in chat) | approved |
+| 1.1.13–1.1.18 | FR-17 rename amendment (RA, PO, research) | requirement-analyst, product-owner, research-assistant | done | 1.1.13–1.1.18 | same | passed |
+| 1.5.l2.x | amendment write-up and critique (2 rounds PASS) | documentation-writer ↔ brutal-critique | done | 1.5.l2.1–1.5.l2.6 | same | passed |
+| 4 | G1 amendment gate | human | done — APPROVED 2026-11-13 (D26) | 4 | — | approved; commit 8fb7f7e |
+| 1.1.14, 1.1.19, 1.1.19.1, 1.1.20 | unit design, LLD, refine | software-architect, system-engineer | done | same | same | passed |
+| 1.1.21 (rev 1–3), 1.1.22 | frozen spec; G2 fix decisions | requirement-analyst, software-architect | done | same | 1.1.21, 1.1.21.1, 1.1.21.2, 1.1.22 | passed |
+| 1.5.l3.x | G2 documents, name sweeps (D30–D37), critique REVISE → PASS | documentation-writer ↔ brutal-critique | done | 1.5.l3.1–1.5.l3.8 | same | passed |
+| 5 | G2 gate | human | done — APPROVED 2026-11-14 (D38–D41) | 5 | — | approved; commit c4b5c22 |
+| 1.1.23 | STBLC split + bolt design (31 stories, 13 bolts) | software-architect | done | 1.1.23 | 1.1.23 | passed |
+| 1.1.24 | STBLC split-design | system-engineer | done — two reports (original dispatch S-1…S-8; re-dispatch F-1…F-11, R-12…R-14); both say no lib/ split; conflicts listed in 1.1.24.1 for the architect to reconcile | 1.1.24 | 1.1.24 (original, full), 1.1.24.1 (re-dispatch, condensed only; its scratch copy was overwritten) | passed |
+| 1.1.25 | product-owner questions (R-3, R-8, O-4) | product-owner | done (all three accepted; R8 amended: AC-17.14 owned whole by engine; follow-ups.md moves in ITEM-121; O-4 yes) | 1.1.25 | 1.1.25, 1.1.25.1 (duplicate re-dispatch, agrees) | passed |
+| 1.1.26 | estimate | software-engineer | done (~44 ideal days elapsed, range 34–63; readings A/B differ <0.2d) | 1.1.26 | 1.1.26 | passed |
+| 1.1.27 | order (G3) | product-owner | done (W1–W6 stand; 007/008 start after 004 merges; 012 split if architect agrees; Windows CI AC in 009; 2 clarify-human) | 1.1.27 | 1.1.27 | passed |
+| 1.1.28 | split-design reconciliation (Refine) | software-architect | done (C-1..C-7 mostly reading A; F-11 write-documentation/templates/bank/; 012 split sound; r1 item list; D42: 007/008 testable here) | 1.1.28 | 1.1.28 | passed |
+| 1.1.29 | 012 split final + 012a wave | product-owner | done (14 bolts; 012a in W3 non-blocking, W5 fallback; new clarify-human) | 1.1.29 | 1.1.29 | passed |
+| 1.1.30 | spec revision delta r1 content | requirement-analyst | done with clarify C1–C4 (content in .scratch/preview2-g3/1.1.30-r1-delta.md, 2 [OPEN] marks) | 1.1.30 | 1.1.30 | passed |
+| 1.1.30.1 | clarify C1, C4 | product-owner | done (C1 (a): migration bolt = 014; C4 no change) | 1.1.30.1 | 1.1.30.1 | passed |
+| 1.1.30.2 | clarify C2, C3 | software-architect | done (C2 convention only; C3 ids 012-engine-migrate-plan, 014-engine-migrate-settings) | 1.1.30.2 | 1.1.30.2 | passed |
+| 1.5.l4.1 | G3 documents (r1 delta, 31 stories, 14 bolts, task plan, backlog, unit briefs, README) | documentation-writer | done | 1.5.l4.1 | 1.5.l4.1 | passed |
+| 1.5.l4.2.1–.3 | G3 gate critique round 1 (delta; stories+bolts; plan+backlog+briefs) | brutal-critique ×3 | done — .1 REVISE (1B 4M), .2 PASS (4M), .3 REVISE (1B 5M); failure 1/1 used | 1.5.l4.2 | 1.5.l4.2.1, .2, .3 | passed |
+| 1.5.l4.3 | G3 fix round (all findings) | documentation-writer | done (all fixed except .3 m1, m3 left for PM; .2 m5 not needed) | 1.5.l4.3 | 1.5.l4.3 | passed |
+| 1.5.l4.4.1–.3 | G3 re-critique (last round) | brutal-critique ×3 | done — PASS ×3, 0 B / 0 M; Minors open (in gate record) | 1.5.l4.4 | 1.5.l4.4.1, .2, .3 | passed |
+| 7 | G3 gate | human | pending — awaiting decision | 7 | — | — |
+| 1.1.31 | backlog + task-plan content | product-manager | done (14 bolts; ~39.5 ideal days elapsed, 31–58; 44 if 012a falls back) | 1.1.31 | 1.1.31 | passed |
+| — | spec delta r1; stories, bolts, plan; critique; G3 | requirement-analyst; documentation-writer ↔ brutal-critique; human | pending | | | |
+
+## Joined requests
+### Feature 6 — Q1 answered "now" (D42, 2026-11-14)
+Request: point this repository's `artifacts.handoffs` at `execution-plans/` now. Lifecycle AAWH (change set = `.ai-dlc/workflow.json`, docs, in harnessPaths). Mode: sequential subagent chain. Branch `plan/preview2`.
+| step | stage | agent | status | handoff | hand-back | verification |
+|---|---|---|---|---|---|---|
+| 6.1.1 | intent | product-owner | done (handoffs key only; old folders stay; 2 clarify-human questions, defaults applied) | 6.1.1 | 6.1.1 | passed |
+| 6.2 | change | agent-manager | done (workflow.json:715, AGENTS.md:316,342 — docs; validate, rounds, sync --check quoted) | 6.2 | 6.2 | passed |
+| 6.5 | critique | brutal-critique | done — PASS round 1 (0 Blocker, 0 Major; Minors 1–4 open, optional round 2 offered to the human) | 6.5 | 6.5 | passed |
+Feature 6 status: done (2026-11-14). Uncommitted; commit with the G3 records (devops-engineer).
+
+### Feature 8 — move preview2 into `.forgeline` (human, 2026-11-14)
+Request (verbatim): "1. standards in E:\Projects\personal\ai-dlc-agent-workflow-plugin\.worktrees\preview2-planning\memory-bank\product is missing. see specsmd docs and E:\Projects\BS23\weighingms\memory-bank.m move those rules from .claude to standards 2. The memory-bank is in the root but it should be inside .forgeline 3. The execution-plan is in the root but it should be inside .forgeline 4. all the items in .ai-dlc folder should be moved to .forgeline 5. the .handoff folder should be moved to should reside in .forgeline\handoffs\ and .ai-dlc\auto-handoff.json + schema file should be moved to .forgeline\handoffs\ 6. the memory-bank\{product | project}\decisions and memory-bank\{product | project}\narratives should be moved to .forgeline\memory-bank\{product | project}\architecture. — move all preview2 related things into the worktree from the root repo" + "also .claude\agent-memory goes under .forgeline\memory-bank\agent-memory\. move it". (Reference folder is E:\Projects\BS23\weighingms\memory-bank; memory-bank.m does not exist.)
+Clarified (human answers, 2026-11-14) — D44 move + update code (hooks, workflow.mjs, build, tests) now, in this worktree; lifts "planning only" for feature 8 only · D45 `architecture/decisions/` + `architecture/narratives/` · D46 map: `.forgeline/ai-dlc/{workflow.json, workflow.mjs, workflow.schema.json, catalog.json}`; `.forgeline/cost-saving/{cache-keepalive,auto-handoff}{,.schema}.json` (supersedes item 5 for auto-handoff); `.forgeline/models/claude/metadata{,.schema}.json` (no copilot/ yet); `.handoff/` → `.forgeline/handoffs/`; `memory-bank/` → `.forgeline/memory-bank/`; `execution-plans/` → `.forgeline/execution-plans/`; `.claude/agent-memory/` → `.forgeline/memory-bank/agent-memory/` · D47 rules: standards become the source (`.forgeline/memory-bank/product/standards/`, layout from specsmd + weighingms `memory-bank`), short pointer stubs stay in `.claude/rules` and `.github/instructions` · D48 root-repo preview2 items (orchestrator/architect preview2 memories, `ai-dlc-system-engineer/` memory, `.scratch/preview2-g3`, `.scratch/preview2-specsmd`) move into the worktree and leave the root.
+Decisions after research (human, 2026-11-14): D49 agent memory stays in `.claude/agent-memory/` (host-fixed; supersedes that part of D46) · D50 plugin-wide now: plugin defaults, init, install skills and tests move to `.forgeline/` in this change (pulls part of the preview2 bolts forward) · D51 standards split: `.forgeline/memory-bank/product/standards/` = product standards (licensing, compliance); `.forgeline/memory-bank/project/standards/` = code and architecture standards (today's `.claude/rules`); the human asked for a critique of this decision (8.1.4) · D52 project standards are the source because rules can be Claude- or Copilot-specific; `.claude/rules` and `.github/instructions` point to them (confirms the D47 direction; stub loading checked in 8.1.5).
+After the critique (human, 2026-11-14): D53 D50 revised — now only dogfood: move this repo's memory-bank, execution-plans and handoffs under .forgeline/ via workflow.json artifacts settings, no code change; the plugin-wide code move becomes a new bolt after bolt 002 with a migration story and an explicit D16 reversal · D54 D51 revised — one standards home, .forgeline/memory-bank/project/standards/ (licensing, compliance as entries there or product docs) · D55 D52 waited for 8.1.5 · D56 standards are the source; a repo-local generator writes full .claude/rules + .github/instructions twins now (AAWP code) · D57 standards files are agent artifacts owned by agent-manager (ADR-0014 exception + docs-status wording to be routed) · D58 six other artifacts keys → .forgeline/memory-bank paths · D59 plugin edits allowed now: docs-rules docs-status template (standards = agent artifacts) + plugin-management SKILL.md (fresh agent-manager) · D60 bring architect project_preview2-unit-design.md into the worktree, delete in main · D61 handoff tool config back to .handoff/config.md · D62 bring the hooks-module TS5097 fix from feat/ai-dlc-lens into plan/preview2 · D63 out-of-scope records → .forgeline/memory-bank/project/out-of-scope/ · D64 D45 adopted for consumers (architecture/{decisions,narratives}/; G2 amendment of spec 001 lines 62, 79, 80, 127, 128) · D65 ADR-0017 G2 amendment now, approved with G3 · D66 bolt 015 reverses D16 for the .ai-dlc/ folder only (AI_DLC_*, markers, tags stay; lens.json → .forgeline/ai-dlc/); default timing: before ITEM-121 and the preview2 release · D67 old docs/handoffs/ runs move with ITEM-121.
+Risk (stop condition, resolved by D49): Claude Code's native subagent memory path `.claude/agent-memory/<agent>/` may be fixed by the host — 8.1.3 checks; if fixed, back to the human before any move.
+Lifecycle AAWP (code + docs). Mode: research as parallel subagents; AAWP change/review rounds as an agent team (Mode 5, CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1). G3 (record 7) stays pending; the G3 set is re-pathed and re-critiqued, then G3 re-presented.
+| step | stage | agent | status | handoff | hand-back | verification |
+|---|---|---|---|---|---|---|
+| 8.1.1 | research: old-path inventory | research-assistant | done — PARTIAL (agents, most skills, tests/workflow, tests/model-metadata, bank link counts not swept); one claim false: says `.ai-dlc/` absent in worktree, but `ls` shows 10 files there, so the 'gate inert' conclusion is wrong | 8.1.1 | 8.1.1 | passed (partial; full sweep moves into 8.2) |
+| 8.1.2 | research: standards layout + rule map | research-assistant | done — upstream standards/ flat, no product/project split; weighingms keeps rules full, standards point to rules (opposite of D47); sync-harness needs identical stubs on both twins | 8.1.2 | 8.1.2 | passed |
+| 8.1.3 | research: agent-memory relocation feasibility | research-assistant | done — host fixes `.claude/agent-memory/<name>/` for `memory: project` (docs, Medium); recommends keep as is; repo facts spot-checked (manage-memory SKILL 9 hits, build-copilot.mjs:92, test file, 15 agents `memory: project`) | 8.1.3 | 8.1.3 | passed |
+| 8.1.4 | critique of D50–D52 | brutal-critique | done — REVISE ×3 (D50: reverses D16/ADR-0015, pre-empts bolts 002/004/011/ITEM-121, no D9 migration; D51: two homes vs ADR-0013/spec §2.2; D52: reverses weighingms, enforcement unverified). One claim corrected: the human WAS shown the weighingms evidence (question 4, 2026-11-14) | 8.1.4 | 8.1.4 | passed |
+| 8.1.5 | research: do pointer stubs in rules/instructions load the standard? | research-assistant | done — no: Copilot never expands @ in *.instructions.md; Claude @import in rules undocumented (one issue report) and ignores paths:; recommends generated full twins from the standard | 8.1.5 | 8.1.5 | passed |
+| 8.2 | change: dogfood move, root items, standards + generator, sweep | agent-manager (team) | done — A (224 files moved, sha1-identical; artifacts.handoffs → .forgeline/execution-plans/), B (main-checkout preview2 items gone), C (tools/build-standards.mjs, 2 standards, 4 generated twins, Stop chain step 0, CI --check), D sweep (AGENTS.md, CLAUDE.md, handoffs/config.md); checks quoted: validate, build-copilot --check, sync-harness --check, build-standards --check all exit 0; orchestrator checked: folders moved, old ones gone, git status matches changed paths, workflow.json:715 | 8.2 | 8.2 (written by agent-manager) | passed |
+| 8.2.l1.1 | follow-up change D58–D61 | agent-manager (team) | done — 7 artifacts keys → .forgeline (verified workflow.json); docs-status template + standard list standards as agent artifacts, Copilot rebuilt; unit-design memory moved (main: M MEMORY.md, D file — verified); .handoff/config.md restored, .forgeline/handoffs gone (verified); checks exit 0 except `plugin validate --strict` exit 1 — pre-existing on plan/preview2 HEAD (TS5097 in hooks module, unchanged files), passes on feat/ai-dlc-lens → human question | 8.2.l1.1 | 8.2.l1.1 | passed |
+| 8.2.l2.1 | plugin-management SKILL.md (D59, self-owned skill) | fresh agent-manager (agent-manager-pm) | done — §1, §8, §9 describe standards build, Stop chain step 0, CI order, .forgeline; Copilot rebuilt; checks exit 0; critique 8.5.2 PASS (2 Minors fixed); plugin validate exit 0 because the hooks fix is staged (8.2.l3.1 in progress) | 8.2.l2.1 | 8.2.l2.1 | passed |
+| 8.5.1.l2.1 | docs critique of follow-up | brutal-critique (team) | done — round 1 PASS + 1 Major + 2 Minors; fix round 8.5.1.l2.1.1 → round 2 PASS, no findings (2 of 2 rounds used); template wording now neutral (no "memory bank" in docs-rules templates, verified) | 8.5.1.l2.1, 8.5.1.l2.1.1 | 8.5.1.l2.1, 8.5.1.l2.1.1 | passed |
+| 8.3.l2.1 | tests for follow-up | sqa-engineer (team) | done — handoff-naming test: same artifacts keys, every value starts .forgeline/ (S1), template tail kept, rest deep-equal; `node --test "tests/**/*.test.mjs"`: 1307 tests, 1300 pass, 0 fail, 7 skipped | 8.3.l2.1 | (message) | passed |
+| 8.4.l2 | code re-review of follow-up | code-reviewer ×2 (team) | done — standards approved 0 B / 0 W / 1 S (assert each artifacts path exists; optional); spec approved 0 B / 0 M / 0 W. Both wrote 8.4.l2.1-…; orchestrator renamed to 8.4.1.l2.1 (standards, restored from its message) and 8.4.2.l2.1 (spec) | | 8.4.1.l2.1, 8.4.2.l2.1 | passed |
+| 8.2.l3.1 | hooks-module fix from feat/ai-dlc-lens (D62) | devops-engineer | done — cec4254 cherry-picked whole as signed 8b35a33 (G verified), 35 files (20 hooks, 9 lens, 6 tests), `--only` pathspec: 0 feature-8 paths in it, 121 staged renames intact (verified); validate --strict ×2 exit 0, plugin test 1007 pass / 0 fail. Note: whole commit also brings ITEM-034 keepalive/auto-handoff behaviour changes and lens import fixes, beyond the TS5097 import lines | 8.2.l3.1 | (message) | passed |
+| 8.2.l1.2 | D63 out-of-scope location | agent-manager (team) | done — plugin hard-codes docs/backlog/out-of-scope/ (task-triage SKILL.md:3,29,124; references/out-of-scope.md:3; product-manager.md:43); spec 001:84 derives it, bolt 005 changes it; this repo: AGENTS.md row (verified); critique 8.5.1.l2.2 PASS (loop 2 closed); open: confirm product-manager.md:43 is in bolt 005 → architect | — | 8.2.l1.2 | passed |
+| 8.1.6 | ADR-0014 exception + spec paths + new bolt outline (content) | software-architect | done — ADR-0017 full text + ADR-0014 edits; spec §14/AC-7.1–7.3/glossary changes need G2 amendment; D45 for consumers (option A recommended) needs human; broken bank links listed; latent conflicts (area + overlap rules before ITEM-121); bolt 015-engine-forgeline-root outline; 5 human questions | 8.1.6 | 8.1.6 | passed |
+| 8.5.2 | critique of plugin-management SKILL.md | brutal-critique (team) | done — PASS round 1, 2 Minors (sha wording, sync list); validate exit 0 explained by devops' staged cherry-pick of the hooks fix (not committed yet) | 8.5.2 | 8.5.2 | passed |
+| 8.1.7 | AC wording for ADR-0017 (D65) | requirement-analyst | done — final text for AC-7.1/7.2/7.3, glossary Memory bank; also C-10, AC-7.5 bullet 1, glossary lines 276–277, spec §14 line 550; relayed to documentation-writer | 8.1.7 | 8.1.7 | passed |
+| 8.5.3 | memory-bank writes: ADR-0017, ADR-0014, spec 001 G2 amendment (D64, D65), link fixes, release-note items | documentation-writer | done — ADR-0017 new, ADR-0014 edited, spec.r2-delta.md new (spec 001 untouched, per its delta rule), AC/glossary/C-10 edits marked pending G3, README + 4 link fixes + 5 run-path fixes; link check 191/0 broken; files verified; 2 stale run paths left (inception-log.md:45, backlog.md:24); release-note items listed for ITEM-123 | 8.5.3 | 8.5.3 | passed |
+| 8.5.4 | gate critique of 8.5.3 | brutal-critique | done — round 1 REVISE (3 B / 5 M / 3 m); fix round 8.5.4.l1.1 (documentation-writer; link check 193/0; bare-path grep verified empty by orchestrator) → round 2 (8.5.4.l1.2) PASS, no new findings | 8.5.4, 8.5.4.l1.2 | 8.5.4, 8.5.4.l1.1, 8.5.4.l1.2 | passed |
+| 9 | checkpoint commit (worktree: feature 8 + G3 set; main: D60 paths) | devops-engineer | in-progress | 9 | | |
+| 1.1.32 | G3 re-plan: bolt 015, D63–D67, ITEM-111/126 (content) | product-manager | in-progress | 1.1.32 | | |
+| 8.3 | tests | sqa-engineer (team) | done — new tests/build-standards.test.mjs (26), step-0 tests in stop-sync-then-check, CI-order test in validate-script; relaxed tests/workflow/handoff-naming.test.mjs (ignores artifacts.handoffs) → flagged to 8.4.2; `node --test "tests/**/*.test.mjs"`: 1299 tests, 1292 pass, 0 fail, 7 skipped (one timing flake passed on rerun) | 8.3 (agent-manager) | 8.3-sqa-engineer-to-agent-manager | passed |
+| 8.3.l1 | tests fix round 1 (from 8.4.1 warnings) | sqa-engineer ↔ agent-manager (team) | done — agent-manager fixed parser (splitFlow; comma globs refused exit 2; unknown/repeated keys invalid; YAML-ambiguous descriptions quoted; atomic writes; --help); sqa tests rewritten + budget test; `node --test "tests/**/*.test.mjs"`: 1307 tests, 1300 pass, 0 fail, 7 skipped | — | (messages) | passed |
+| 8.4.1 | code review standards | code-reviewer-standards (team) | done — round 1 approved 0 B / 3 W / 5 S; fix round 8.4.l1.1 re-review approved, 0 B / 0 W | 8.4.l1.1 (agent-manager) | 8.4.1, 8.4.1.l1.1 | passed |
+| 8.4.2 | code review spec | code-reviewer-spec (team) | approved round 1: 0 B / 0 M; scopes A–D pass; relaxed handoff-naming test ruled in scope and safe (S1: also assert the .forgeline/execution-plans/ prefix); W1 six artifacts keys still docs/ → human question; W2 docs/handoffs runs no longer discovered → preview2 release notes | — | 8.4.2 | passed |
+| 8.5.1 | docs critique | brutal-critique (team) | done — round 1 PASS + 4 Majors; fix round 8.5.1.l1.1 (agent-manager) → round 2 PASS, no new findings; Major 4 (D57: ADR-0014 exception + docs-status wording) open, must land before the run closes (lead routes) | 8.5.1, 8.5.1.l1.1 | 8.5.1-, 8.5.1.l1.1-brutal-critique-to-agent-manager | passed |
+| 8.5 | docs critique + G3 set re-path | brutal-critique, documentation-writer | pending | | | |
+
+## Direction change (v1.1, 2026-11-13)
+After G1 the human (a) named two product units, ai-dlc-engine and ai-dlc-lens, and (b) decided to rename the plugin to ai-dlc-engine and the marketplace (name TBC), keeping .ai-dlc/ and AI_DLC_*. G1 artifacts need an amendment (FR-17 rename; FR-13, FR-16, AC-13.2, AC-16.4, D4 references) → G1-amendment approval by the human. Unit design proceeds in parallel on the two units.
+
+## Gates and loops
+G1, G2, G3: approver human. Loop limits (`rounds --json`, 2026-11-13): every loop 2 rounds / 1 failure (source: loop); gate-critique 2 / 1 (default); clarify 2 / 1.
+herdr: not detected (HERDR_ENV unset).
+
+## Open clarifications
+- 1.1.30 round 1: closed 2026-11-14 (C1–C4 answered, 1.1.30.1, 1.1.30.2).
+- Spec housekeeping found by requirement-analyst: spec:4/:11 still draft / G2 pending; §17 O-1, O-2, O-3, O-5 still open though D39, D41 decided them.
+
+## Next action
+Step 9 commit (devops) and 1.1.32 re-plan (PM) running. Then documentation-writer writes the re-plan into the bank, brutal-critique gate critique, then re-present G3 (record 7 superseded by a new gate record) with: the G3 set, the G2 amendment (delta r2, ADR-0017, D64/D65), bolt 015, and the old G3 open points.

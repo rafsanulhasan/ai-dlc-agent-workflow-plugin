@@ -313,7 +313,7 @@ Whenever you need knowledge — library/API/SDK behavior, framework conventions,
 
 - **AI-DLC**, the full lifecycle (idea → G1 → G2 → G3 → G4 → release), is the default for feature work; enter at the earliest missing artifact.
 - Eight named lifecycles, its segments and focused entry points: **PDLC** product design · **ASDLC** architecture & design · **STBLC** story & task breakdown · **FDLC** feature development · **BFLC** bug fixing · **RLC** refactoring · **TLC** testing · **CRLC** code review.
-- **Every handoff is an artifact.** Each run has a folder, `docs/handoffs/{LIFECYCLE}-{YYYYMMDD}-{feature-slug}/`. Before work changes hands the sender writes a handoff record, `{step}[.{sub}][.l{loop}[.{round}]][.{n}]-{from}-to-{to}.handoff.md` (for example `1.2-orchestrator-to-software-engineer.handoff.md`), which the receiver verifies before it starts; the receiver's report is stored verbatim as the hand-back with the same step code and the agents swapped (`1.2-software-engineer-to-orchestrator.handback.md`). Each feature is one top-level step `N`, and every hand-off for it, follow-ups included, sits in the sub-root of its phase: `N.1` planning, `N.2` implementation, `N.3` testing, `N.4` code review (`N.4.1` standards, `N.4.2` spec), `N.5` documentation; `N.3.l1` is loop 1 of testing and `N.3.l1.2` its round 2. Only a new feature, a gate record or a whole-run hand-off takes the next free top-level number (`handoff`, *Naming*). In subagent mode the orchestrator writes both; in a Claude Code agent team the teammates do.
+- **Every handoff is an artifact.** Each run has a folder, `.forgeline/execution-plans/{LIFECYCLE}-{YYYYMMDD}-{feature-slug}/` (this repository's `artifacts.handoffs` in `.ai-dlc/workflow.json`; the runs already under `docs/handoffs/` stay there). Auto-handoff, ai-dlc-lens and the orchestrator's session-start run discovery take their folder from `artifacts.handoffs`, so they look only under `.forgeline/execution-plans/` and no longer list the runs left in `docs/handoffs/`: to resume one of those, point the session at its folder. Before work changes hands the sender writes a handoff record, `{step}[.{sub}][.l{loop}[.{round}]][.{n}]-{from}-to-{to}.handoff.md` (for example `1.2-orchestrator-to-software-engineer.handoff.md`), which the receiver verifies before it starts; the receiver's report is stored verbatim as the hand-back with the same step code and the agents swapped (`1.2-software-engineer-to-orchestrator.handback.md`). Each feature is one top-level step `N`, and every hand-off for it, follow-ups included, sits in the sub-root of its phase: `N.1` planning, `N.2` implementation, `N.3` testing, `N.4` code review (`N.4.1` standards, `N.4.2` spec), `N.5` documentation; `N.3.l1` is loop 1 of testing and `N.3.l1.2` its round 2. Only a new feature, a gate record or a whole-run hand-off takes the next free top-level number (`handoff`, *Naming*). In subagent mode the orchestrator writes both; in a Claude Code agent team the teammates do.
 - **Runs survive a lost session.** Each run keeps its run state in its folder (stages with their step codes and status, gate decisions, open clarifications, the last record, the next action), written before every spawn and after every return or gate. It is versioned, one file per session (`run.v1.md`; a change of direction adds a minor pair, `run.v1.1.md` and `run.v1.2.md`; a new request scope the next major, `run.v2.md`); a session seeded by an automatic handoff keeps its parent session's version, and an older version is never changed or deleted (`handoff`, *Run state*, Versions). A new session offers to resume unfinished runs from the highest version.
 - **The human is the decision maker.** Humans set intent, approve gates G1 (stories/ACs), G2 (frozen spec), G3 (task plan) and G4 (review report), and resolve ambiguity. Agents never guess intent.
 - **The team's workflow is in `.ai-dlc/workflow.json`** — lifecycles and stages, who hands off to whom, gates and their approvers, the clarify matrix and routing. It overrides the defaults above wherever they differ. `node .ai-dlc/workflow.mjs show` prints it (`--mermaid` for diagrams) and `validate` checks it against `.ai-dlc/catalog.json` (the installed plugin's agents and skills) and the project's own; a Stop hook blocks finishing while it is invalid. Change it with `/ai-dlc:workflow edit <change>` (`agent-manager`).
@@ -333,14 +333,17 @@ Whenever you need knowledge — library/API/SDK behavior, framework conventions,
 
 | Artifact | Path |
 |---|---|
-| Backlog | `docs/backlog/backlog.md` |
-| Product docs / stories | `docs/product/` |
-| Frozen specs | `docs/specs/<feature-slug>.spec.md` |
-| ADRs | `docs/architecture/decisions/` |
-| Architecture narratives | `docs/architecture/narratives/<feature-slug>.md` |
-| Task plans | `docs/plans/<feature-slug>.tasks.md` |
-| Handoff records, hand-backs and run state | `docs/handoffs/{LIFECYCLE}-{YYYYMMDD}-{feature-slug}/` (`run.v<version>.md` is the run state, one current version per session, the highest current; `*.handoff.md` the records, `*.handback.md` the agents' reports) |
+| Backlog | `.forgeline/memory-bank/project/backlog.md` |
+| Out-of-scope records (feature requests rejected in triage) | `.forgeline/memory-bank/project/out-of-scope/`, next to `backlog.md`. The `task-triage` skill and `product-manager` name `docs/backlog/out-of-scope/`; in this repository read and write this folder instead |
+| Product docs / stories | `.forgeline/memory-bank/product/` |
+| Frozen specs | `.forgeline/memory-bank/product/specs/<feature-slug>.spec.md` |
+| ADRs | `.forgeline/memory-bank/product/architecture/decisions/` |
+| Architecture narratives | `.forgeline/memory-bank/product/architecture/narratives/<feature-slug>.md` |
+| Task plans | `.forgeline/memory-bank/project/plans/<feature-slug>.tasks.md` |
+| Handoff records, hand-backs and run state | `.forgeline/execution-plans/{LIFECYCLE}-{YYYYMMDD}-{feature-slug}/` (`run.v<version>.md` is the run state, one current version per session, the highest current; `*.handoff.md` the records, `*.handback.md` the agents' reports). Older runs stay in `docs/handoffs/`, which auto-handoff, ai-dlc-lens and session-start run discovery no longer read (see *Lifecycles and gates*) |
 | Team workflow | `.ai-dlc/workflow.json` (its `artifacts` section overrides the paths above) |
+
+Every `artifacts` key of this repository points into `.forgeline/`, where this repository tries out the preview2 layout before the plugin ships it: new backlog items, product docs, specs, ADRs, narratives and plans go to `.forgeline/memory-bank/`, and run records to `.forgeline/execution-plans/`. The files written before the move stay in `docs/` (`docs/backlog/`, `docs/product/`, `docs/specs/`, `docs/architecture/`, `docs/plans/`, `docs/handoffs/`) and are not moved.
 
 ### Quality gates
 
@@ -360,7 +363,7 @@ Whenever you need knowledge — library/API/SDK behavior, framework conventions,
 - Only `documentation-writer` writes or updates documentation (READMEs, user guides and other reader-facing pages, release notes and changelogs), status markers included. This holds in every lifecycle and workflow, custom ones too. Lifecycle artifacts are not documentation, even under `docs/` (the backlog and out-of-scope records, product briefs and stories, specs, ADRs, narratives, plans, run records, test and review reports): the agents whose stages produce them write them.
 - Every other agent owns its work, not the documents about it: when its work changes what the documentation should say, it puts a *Docs update* request in its hand-back (the documents, the status from the run state, what changed) and never edits the documentation itself. The orchestrator runs a `documentation-writer` stage in the same run right after the stage that sent the request, and again whenever that status changes.
 - Status markers: *planned* (accepted, building not started), *in progress* (from the start of the building stage until the run's last review or gate stage, never the release or its go / no-go gate, is `done`; a done build with reviews pending stays *in progress*), none once done (described as it is). The status comes from the run state; the backlog only for work no run records; never from a guess.
-- The full rule is `.claude/rules/docs-status.md` (Copilot: `.github/instructions/docs-status.instructions.md`), installed by `init`.
+- The full rule is `.claude/rules/docs-status.md` (Copilot: `.github/instructions/docs-status.instructions.md`), installed by `init`. In this repository both are generated from the standard `.forgeline/memory-bank/project/standards/docs-status.md`.
 <!-- ai-dlc:end project-facts -->
 
 <!-- ai-dlc:begin workspace-folders -->
@@ -387,3 +390,4 @@ Stack-specific rules live in `.claude/rules/` (Claude) and `.github/instructions
 <!-- ai-dlc:end conventions -->
 
 - See "Architecture" and "Watch out for" in `CLAUDE.md`, and `.claude/rules/plugin-development.md`.
+- In this repository every rule and its Copilot twin are generated from a standard in `.forgeline/memory-bank/project/standards/<name>.md` by `node tools/build-standards.mjs`: change the standard, never the generated `.claude/rules/` or `.github/instructions/` file (agent-manager owns the standards).

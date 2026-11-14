@@ -291,3 +291,82 @@ test("both steps failing with no stdin payload at all: still fail-open and silen
   assert.match(r.stderr, /crashed \(exit 2\)/);
   assert.match(r.stderr, /crashed \(exit 3\)/);
 });
+
+// Step 0: the standards build (tools/build-standards.mjs), run before the sync, never blocking.
+const standards = (body) => w("tools/build-standards.mjs", body);
+
+test("step 0 absent: behaviour unchanged, no standards message", () => {
+  sync("");
+  build("process.exit(0);\n");
+  const r = run();
+  assert.equal(r.status, 0);
+  assert.equal(r.stdout, "");
+});
+
+test("step 0 runs before the sync: the sync sees what the standards build wrote (order observable), and its message comes first", () => {
+  standards('const fs = process.getBuiltinModule("node:fs"); fs.writeFileSync("standards.flag", ""); console.log("update .claude/rules/a.md from s"); console.log("1 twin(s) current, 1 standard(s)"); console.log("note .claude/rules/x.md: left");\n');
+  sync('const fs = process.getBuiltinModule("node:fs"); if (!fs.existsSync("standards.flag")) process.exit(2); console.log("update .claude/skills/s/SKILL.md");\n');
+  build("process.exit(0);\n");
+  const r = run();
+  assert.equal(r.status, 0);
+  const msg = JSON.parse(r.stdout).systemMessage;
+  assert.match(msg, /^Standards build wrote 1 rule twin\(s\):\nupdate \.claude\/rules\/a\.md from s\n/);
+  assert.doesNotMatch(msg, /twin\(s\) current|note \.claude/);
+  assert.match(msg, /Harness sync wrote 1 change/);
+  assert.ok(msg.indexOf("Standards build") < msg.indexOf("Harness sync"));
+});
+
+test("step 0 nothing to write: no message", () => {
+  standards('console.log("2 twin(s) current, 1 standard(s)");\n');
+  sync("");
+  build("process.exit(0);\n");
+  const r = run();
+  assert.equal(r.status, 0);
+  assert.equal(r.stdout, "");
+});
+
+test("step 0 exit 1 or 2: reported, never blocks, the sync and the check still run", () => {
+  for (const code of [1, 2]) {
+    standards(`console.error("refuse .claude/rules/a.md: edited by hand"); process.exit(${code});\n`);
+    sync(WROTE);
+    build("process.exit(0);\n");
+    const r = run();
+    assert.equal(r.status, 0, `exit ${code}`);
+    const out = JSON.parse(r.stdout);
+    assert.equal(out.decision, undefined);
+    assert.match(out.systemMessage, new RegExp(`Standards build did not finish \\(exit ${code}\\)`));
+    assert.match(out.systemMessage, /refuse \.claude\/rules\/a\.md/);
+    assert.match(out.systemMessage, /Harness sync wrote 1 change/);
+  }
+});
+
+test("step 0 timing out: one line naming the step, never blocks, the later steps still run", () => {
+  standards("setInterval(() => {}, 1000);\n");
+  sync(WROTE);
+  build("process.exit(0);\n");
+  const r = run({ hook_event_name: "Stop" }, { AI_DLC_STOP_STEP_MS: "1500" });
+  assert.equal(r.status, 0);
+  const out = JSON.parse(r.stdout);
+  assert.equal(out.decision, undefined);
+  assert.match(out.systemMessage, /the standards build \(tools\/build-standards\.mjs\) timed out after 1\.5 s; skipped, the stop is not blocked\./);
+  assert.match(out.systemMessage, /Harness sync wrote 1 change/);
+});
+
+test("step 0 never changes the exit code: a stale Copilot plugin still blocks after a failing standards build", () => {
+  standards("process.exit(1);\n");
+  sync("");
+  build(STALE);
+  const out = JSON.parse(run().stdout);
+  assert.equal(out.decision, "block");
+  assert.match(out.systemMessage, /Standards build did not finish \(exit 1\)/);
+});
+
+test("[8.4.1] the three step budgets sum to less than the hook timeout in .claude/settings.json", () => {
+  const src = fs.readFileSync(path.join(REPO, ".claude", "hooks", "stop-sync-then-check.mjs"), "utf8");
+  const num = (re) => Number(src.match(re)[1].replace(/_/g, ""));
+  const total = num(/const STANDARDS_MS = ([\d_]+)/) + 2 * num(/const STEP_MS = ([\d_]+)/);
+  const settings = JSON.parse(fs.readFileSync(path.join(REPO, ".claude", "settings.json"), "utf8"));
+  const entry = settings.hooks.Stop.flatMap((g) => g.hooks).find((h) => h.command.includes("stop-sync-then-check.mjs"));
+  assert.ok(entry, "the combined Stop hook is registered");
+  assert.ok(total / 1000 < entry.timeout, `${total / 1000} s < ${entry.timeout} s`);
+});

@@ -64,8 +64,20 @@ test("AC-19.6.2 AAWP planning records (N.1.1 intent, N.1.2 design, N.1.3 LLD, Re
 });
 
 test(".ai-dlc copies equal the templates (line endings normalised)", () => {
-  for (const f of ["workflow.json", "workflow.schema.json"]) {
-    const norm = (t) => t.replace(/\r\n/g, "\n");
-    assert.equal(norm(read(path.join(REPO, ".ai-dlc", f))), norm(read(path.join(TPL, f))), f);
+  const norm = (t) => t.replace(/\r\n/g, "\n");
+  assert.equal(norm(read(path.join(REPO, ".ai-dlc", "workflow.schema.json"))), norm(read(path.join(TPL, "workflow.schema.json"))), "workflow.schema.json");
+  // This repository keeps every artifacts path under .forgeline/ (D53, D58-D61). Each key must keep the
+  // template's last path segment (file name or folder name, with its placeholders); every other value (parsed JSON,
+  // formatting is not compared) must still equal the template.
+  const own = JSON.parse(read(path.join(REPO, ".ai-dlc", "workflow.json")));
+  const tpl = JSON.parse(read(path.join(TPL, "workflow.json")));
+  const last = (p) => p.replace(/\/$/, "").split("/").pop();
+  assert.deepEqual(Object.keys(own.artifacts), Object.keys(tpl.artifacts), "same artifacts keys");
+  for (const [k, v] of Object.entries(own.artifacts)) {
+    assert.ok(v.startsWith(".forgeline/"), k + " starts with .forgeline/");
+    assert.equal(last(v), last(tpl.artifacts[k]), k + " keeps the template's last path segment");
+    assert.equal(v.endsWith("/"), tpl.artifacts[k].endsWith("/"), k + " keeps the trailing slash of the template");
   }
+  own.artifacts = tpl.artifacts;
+  assert.deepEqual(own, tpl, "workflow.json equals the template apart from the artifacts paths");
 });

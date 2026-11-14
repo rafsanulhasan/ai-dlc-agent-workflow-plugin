@@ -14,3 +14,4 @@
 - [Document everything explicitly](feedback_document-everything-explicitly.md) — no silent omissions or assumptions in docs; state sources and unverified host behaviour
 - [GPG-signed commits](feedback_gpg-signed-commits.md) — never disable signing; tell the human when pinentry waits; commit own paths only
 - [herdr decisions](project_herdr-decisions.md) — watch/run-in-pane/off, fallback detection, file-main + pane-copy fallback; bgIsolation none
+- [Preview2 specsmd decisions](project_preview2-specsmd-decisions.md) — specsmd natively; memory-bank; events; engine + lens @ forgeline

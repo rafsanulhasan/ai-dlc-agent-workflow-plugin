@@ -1,4 +1,5 @@
 ---
+# Generated from .forgeline/memory-bank/project/standards/docs-status.md by tools/build-standards.mjs (sha256 8b2da4c115ab of this file without this line). Do not edit: change the standard, then run node tools/build-standards.mjs.
 description: "Who writes documentation (documentation-writer only), what counts as documentation, how every other agent asks for it, and the status markers (planned, in progress until the last review or gate is done, none once done) taken from the run state, the backlog only for work no run records; every agent, lifecycle and workflow"
 applyTo: "**"
 ---
@@ -18,7 +19,7 @@ This rule binds every agent in every lifecycle and workflow: AI-DLC, PDLC, ASDLC
 Everything else is not documentation, and this rule does not cover it, even under `docs/`:
 
 - **Lifecycle artifacts**, written by the agents whose stage produces them: everything under the paths of the workflow's `artifacts` section (defaults: the backlog `docs/backlog/` with its out-of-scope records `docs/backlog/out-of-scope/`, product briefs and stories `docs/product/`, specs `docs/specs/`, ADRs `docs/architecture/decisions/`, architecture narratives `docs/architecture/narratives/`, task plans `docs/plans/`, run records `docs/handoffs/`), and wherever they are kept: the glossary, research notes, low-level designs, test plans, test and mutation reports, review reports and critiques. In general, what a stage lists as its output (`produces`) belongs to that stage's agent.
-- **Agent artifacts**: agent definitions, skills, rules and instructions, hooks, commands and prompts, the workflow file, `AGENTS.md`, `CLAUDE.md`, `.github/copilot-instructions.md`.
+- **Agent artifacts**: agent definitions, skills, rules and instructions, the standards the rules and instructions are generated from, wherever a repository keeps them, hooks, commands and prompts, the workflow file, `AGENTS.md`, `CLAUDE.md`, `.github/copilot-instructions.md`. `agent-manager` writes them, standards included.
 - **Agent memory** (`.claude/agent-memory/`).
 - **Text a build generates** (for example a list a build script writes between markers), which stays with the build.
 
